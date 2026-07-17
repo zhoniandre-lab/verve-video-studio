@@ -44,6 +44,8 @@ html, body { background: radial-gradient(1200px 600px at 10% -10%, #2a1458 0%, t
 
 @keyframes spin-slow { to { transform: rotate(360deg); } }
 .spin-slow { animation: spin-slow 1s linear infinite; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.card, .step-dot, .chip, .btn { animation: fadeIn 0.3s ease-out; }
 
 .glow { box-shadow: 0 0 40px -10px var(--accent); }
 

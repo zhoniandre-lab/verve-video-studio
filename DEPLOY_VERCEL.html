@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deploy ke Vercel — Klik 3x Jadi! 🚀</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg,#0b0720,#1a0b2e,#2d0b3e); color:#f0eefc;
+    padding:16px; padding-bottom:60px; }
+  .container { max-width:720px; margin:0 auto; }
+  h1 { font-size:1.6rem; background: linear-gradient(90deg,#c4b5fd,#f9a8d4);
+    -webkit-background-clip:text; background-clip:text; color:transparent; margin-bottom:6px; }
+  .sub { color:#c4b5fd; margin-bottom:20px; font-size:0.95rem; }
+  .success-box { background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.1));
+    border:1px solid rgba(34,197,94,0.4); border-radius:16px; padding:18px; margin-bottom:14px; }
+  .success-box h2 { margin:0 0 8px; font-size:1.15rem; color:#bbf7d0; }
+  .success-box p { margin:4px 0; font-size:0.95rem; color:#d1fae5; }
+  .card { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+    border-radius:16px; padding:18px; margin-bottom:14px; backdrop-filter: blur(10px); }
+  .big { font-size:1.15rem; font-weight:700; margin:0 0 10px; display:flex; align-items:center; gap:10px; }
+  .num { width:38px; height:38px; background:linear-gradient(135deg,#8b5cf6,#ec4899);
+    border-radius:12px; display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0; }
+  p, li { line-height:1.6; font-size:0.95rem; color:#e4e0f5; }
+  .code-block { position:relative; background:#0b0718; border:1px solid rgba(139,92,246,0.3);
+    border-radius:12px; padding:14px; margin:10px 0; font-family:menlo,consolas,monospace;
+    font-size:0.85rem; color:#c4b5fd; word-break:break-all; white-space:pre-wrap; }
+  .copy-btn { position:absolute; top:8px; right:8px; background:linear-gradient(135deg,#8b5cf6,#ec4899);
+    color:white; border:none; border-radius:8px; padding:6px 12px; font-size:0.75rem; font-weight:700; cursor:pointer; }
+  .copy-btn.copied { background:#22c55e; }
+  .big-btn { display:block; width:100%; text-align:center; padding:18px;
+    background: linear-gradient(135deg,#22c55e,#10b981); color:#fff; border-radius:14px;
+    font-weight:800; font-size:1.15rem; text-decoration:none; margin:14px 0;
+    box-shadow: 0 10px 30px -8px #10b981; animation: pulse 2s infinite; }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 10px 30px -8px #10b981; transform:scale(1); }
+    50% { box-shadow: 0 10px 40px -4px #22c55e; transform:scale(1.02); }
+  }
+  .note { background:rgba(251,191,36,0.1); border-left:3px solid #fbbf24;
+    padding:10px 12px; border-radius:8px; margin:10px 0; color:#fde68a; font-size:0.9rem; }
+  .tip { background:rgba(34,197,94,0.1); border-left:3px solid #22c55e;
+    padding:10px 12px; border-radius:8px; margin:10px 0; color:#bbf7d0; font-size:0.9rem; }
+  ol, ul { padding-left:22px; }
+  li { margin:8px 0; }
+  .env-table { width:100%; border-collapse:collapse; margin:10px 0; font-size:0.88rem; }
+  .env-table th, .env-table td { padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.08); vertical-align:top; }
+  .env-table th { color:#c4b5fd; font-weight:700; }
+  .env-table td:first-child { font-family:menlo,consolas,monospace; color:#f9a8d4; white-space:nowrap; }
+  .checkbox { display:flex; align-items:flex-start; gap:10px; margin:10px 0; }
+  .checkbox input { width:20px; height:20px; margin-top:2px; accent-color:#ec4899; flex-shrink:0; }
+  .screenshot-hint { background:rgba(139,92,246,0.15); border:1px dashed rgba(139,92,246,0.4);
+    border-radius:10px; padding:10px; margin-top:8px; font-size:0.88rem; color:#ddd6fe; }
+  .checkmark { font-size:1.4rem; margin-right:8px; }
+  .step-link { display:inline-block; color:#f9a8d4; word-break:break-all; font-family:menlo,consolas,monospace;
+    background:#0b0718; padding:4px 8px; border-radius:6px; font-size:0.85rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎉 Berhasil di-push ke GitHub!</h1>
+  <p class="sub">Langkah selanjutnya: deploy ke Vercel cuma 3 klik + isi 3 kolom. Selesai 2 menit.</p>
+
+  <div class="success-box">
+    <h2>✅ Repo kamu sudah online di GitHub:</h2>
+    <p><span class="checkmark">📦</span>
+      <a class="step-link" id="repoUrl" href="https://github.com/zhoniandre-lab/verve-video-studio" target="_blank">
+        https://github.com/zhoniandre-lab/verve-video-studio
+      </a>
+    </p>
+    <p style="font-size:0.85rem; color:#86efac;">Semua file kode sudah ter-upload. Buka link di atas buat lihat.</p>
+  </div>
+
+  <p style="text-align:center; font-size:1rem; margin:20px 0;">👇 <b>KLIK TOMBOL HIJAU DI BAWAH INI</b> buat mulai deploy 👇</p>
+
+  <a class="big-btn" href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fzhoniandre-lab%2Fverve-video-studio&project-name=verve-video-studio&repository-name=verve-video-studio" target="_blank">
+    🚀 DEPLOY KE VERCEL SEKARANG
+  </a>
+
+  <div class="card">
+    <p class="big"><span class="num">1</span>Setelah klik tombol di atas</p>
+    <p>Kamu akan dibawa ke halaman Vercel "Import Project" dengan repo kamu sudah terisi otomatis. Kalau diminta login, login dengan akun GitHub (yang sama tadi).</p>
+    <div class="note">📱 Di HP layar kecil, bagian Environment Variables kadang tersembunyi — scroll ke <b>bawah</b> halaman, cari tulisan <b>"Environment Variables"</b>, lalu klik <b>"Expand"</b> atau <b>"Add"</b>.</div>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">2</span>Isi 3 Environment Variables satu-persatu</p>
+    <p>Di bagian Environment Variables, masukkan 3 key berikut. Tap tombol SALIN untuk setiap KEY dan VALUE:</p>
+
+    <p><b>Variable 1:</b></p>
+    <table class="env-table">
+      <tr><th>KEY</th><td>
+        <div class="code-block" style="margin:0;"><button class="copy-btn" onclick="copy(this)">SALIN</button>HCNSEC_API_KEY</div>
+      </td></tr>
+      <tr><th>VALUE</th><td>
+        <p style="margin:0; font-size:0.9rem;">👉 Ini diisi dengan <b>API Key dari akun api.hcnsec.cn</b> kamu (login ke <a class="step-link" href="https://api.hcnsec.cn" target="_blank">api.hcnsec.cn</a>, copy API key kamu, lalu paste di kolom value).</p>
+      </td></tr>
+    </table>
+
+    <p><b>Variable 2:</b></p>
+    <table class="env-table">
+      <tr><th>KEY</th><td>
+        <div class="code-block" style="margin:0;"><button class="copy-btn" onclick="copy(this)">SALIN</button>HCNSEC_BASE_URL</div>
+      </td></tr>
+      <tr><th>VALUE</th><td>
+        <div class="code-block" style="margin:0;"><button class="copy-btn" onclick="copy(this)">SALIN</button>https://api.hcnsec.cn/v1</div>
+      </td></tr>
+    </table>
+
+    <p><b>Variable 3:</b></p>
+    <table class="env-table">
+      <tr><th>KEY</th><td>
+        <div class="code-block" style="margin:0;"><button class="copy-btn" onclick="copy(this)">SALIN</button>NEXTAUTH_SECRET</div>
+      </td></tr>
+      <tr><th>VALUE</th><td>
+        <div class="code-block" style="margin:0;"><button class="copy-btn" onclick="copy(this)">SALIN</button>verve-ai-studio-2026-zhoniandre-super-secret-key-9xK3mP7qR</div>
+      </td></tr>
+    </table>
+
+    <div class="screenshot-hint">
+      📸 Cara nambahinnya: ketik nama KEY di kolom kiri, paste VALUE di kolom kanan, lalu klik <b>"Add"</b>. Ulangi sampai ketiganya terdaftar. Pastikan di dropdown "Environment" tercentang semua (Production, Preview, Development).
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">3</span>Klik Deploy</p>
+    <p>Setelah 3 variabel terisi, klik tombol <b>"Deploy"</b> (warna hitam/hijau) di kanan atas. Tunggu 1-3 menit — Vercel lagi build project kamu.</p>
+    <div class="tip">⏳ Jangan tutup halaman selama proses build. Nanti akan muncul layar "Congratulations!" dengan foto 🔥 — itu artinya berhasil!</p>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">4</span>Buka aplikasi kamu!</p>
+    <p>Setelah sukses, Vercel kasih link aplikasi kamu formatnya:</p>
+    <div class="code-block" style="text-align:center; font-size:1rem;">verve-video-studio-xxxx.vercel.app</div>
+    <p>Klik link itu — aplikasi <b>Verve AI Video Studio</b> sudah ONLINE dan bisa dipakai di HP maupun PC! 🎉</p>
+    <p><b>Coba test:</b></p>
+    <div class="checkbox"><input type="checkbox" class="cb"><div>Masukkan niche (misal: "tips produktivitas"), klik Generate Keyword</div></div>
+    <div class="checkbox"><input type="checkbox" class="cb"><div>Lanjut sampai Step 5, pilih style spectrum "Particles", warna pink</div></div>
+    <div class="checkbox"><input type="checkbox" class="cb"><div>Klik Render Video — tunggu, video harusnya bisa di-download</div></div>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">5</span>(Opsional) Hubungkan ke Supabase nanti</p>
+    <p>Kalau mau fitur simpan project/history, nanti bisa kita setup Supabase. Tapi untuk saat ini aplikasi bisa dipakai penuh tanpa Supabase kok. 👍</p>
+    <div class="tip">🔐 Token GitHub yang kamu kasih tadi sudah saya bersihkan dari sini, tapi saya <b>saranin kamu hapus juga dari GitHub</b> setelah deploy selesai untuk keamanan penuh:
+      buka <a class="step-link" href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a> → cari token "verve-ai" → klik Delete. Project di Vercel tetap jalan karena pakai deploy key terpisah dari Vercel.</div>
+  </div>
+
+  <div class="card" style="background:linear-gradient(135deg, rgba(139,92,246,0.2),rgba(236,72,153,0.1)); border-color:rgba(236,72,153,0.4);">
+    <p style="font-size:1.1rem; font-weight:800; margin:0; text-align:center;">🎬 Selesai! Selamat berkarya bro! 🎉</p>
+    <p style="text-align:center; font-size:0.9rem; color:#fce7f3; margin-top:8px;">
+      Kalau ada error di Vercel atau pas generate video, kirim screenshot/error message ke saya, nanti saya benerin + update kode.
+    </p>
+  </div>
+</div>
+
+<script>
+function copy(btn){
+  const block = btn.parentElement;
+  const clone = block.cloneNode(true);
+  clone.querySelector(".copy-btn")?.remove();
+  const text = clone.textContent.trim();
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.textContent = "TERSALIN!"; btn.classList.add("copied");
+    setTimeout(()=>{btn.textContent="SALIN"; btn.classList.remove("copied");},1800);
+  }).catch(()=>{
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); ta.remove();
+    btn.textContent = "TERSALIN!"; btn.classList.add("copied");
+    setTimeout(()=>{btn.textContent="SALIN"; btn.classList.remove("copied");},1800);
+  });
+}
+</script>
+</body>
+</html>
