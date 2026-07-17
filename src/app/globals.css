@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #07070d;
+  --panel: #0f0f1a;
+  --panel2: #141426;
+  --accent: #8b5cf6;
+  --accent2: #ec4899;
+  --ok: #22c55e;
+  --txt: #e8e8f0;
+  --muted: #9a9ab0;
+}
+
+html, body { background: radial-gradient(1200px 600px at 10% -10%, #2a1458 0%, transparent 60%),
+                         radial-gradient(900px 500px at 110% 10%, #5b1637 0%, transparent 55%),
+                         var(--bg);
+  color: var(--txt); min-height: 100vh; }
+* { box-sizing: border-box; }
+
+.btn { @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition; }
+.btn-primary { background: linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+.btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+.btn-ghost { @apply bg-white/5 border border-white/10 text-white; }
+.btn-ghost:hover { @apply bg-white/10; }
+.btn-danger { @apply bg-red-500/20 text-red-300 border border-red-500/40; }
+
+.card { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+        border: 1px solid rgba(255,255,255,0.08); @apply rounded-2xl p-5 shadow-2xl; }
+.input, .select, .textarea {
+  @apply w-full rounded-xl px-3 py-2 bg-black/40 border border-white/10 text-white;
+  outline: none;
+}
+.input:focus, .select:focus, .textarea:focus { @apply border-purple-500/60; }
+
+.chip { @apply inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-white/10 border border-white/10 text-white/80; }
+
+.tabs { @apply flex gap-1 p-1 bg-white/5 rounded-xl border border-white/10; }
+.tab { @apply px-4 py-2 rounded-lg cursor-pointer text-sm text-white/70; }
+.tab.active { @apply bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg; }
+
+.step-dot { @apply w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-white/10 border border-white/20; }
+.step-dot.active { background: linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; border-color:transparent; }
+.step-dot.done { background: var(--ok); color:#fff; border-color:transparent; }
+
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+.spin-slow { animation: spin-slow 1s linear infinite; }
+
+.glow { box-shadow: 0 0 40px -10px var(--accent); }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 10px; height:10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }

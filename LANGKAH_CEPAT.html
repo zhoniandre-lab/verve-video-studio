@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Langkah Cepat — Push ke GitHub</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg,#0b0720,#1a0b2e,#2d0b3e); color:#f0eefc;
+    padding:16px; padding-bottom:60px; }
+  .container { max-width:720px; margin:0 auto; }
+  h1 { font-size:1.5rem; background: linear-gradient(90deg,#c4b5fd,#f9a8d4);
+    -webkit-background-clip:text; background-clip:text; color:transparent; margin-bottom:6px; }
+  .sub { color:#c4b5fd; margin-bottom:20px; font-size:0.9rem; }
+  .card { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+    border-radius:16px; padding:18px; margin-bottom:14px; backdrop-filter: blur(10px); }
+  .big { font-size:1.1rem; font-weight:700; margin:0 0 10px; display:flex; align-items:center; gap:10px; }
+  .num { width:36px; height:36px; background:linear-gradient(135deg,#8b5cf6,#ec4899);
+    border-radius:12px; display:flex; align-items:center; justify-content:center; font-weight:800; flex-shrink:0; }
+  p, li { line-height:1.6; font-size:0.95rem; color:#e4e0f5; }
+  a { color:#f9a8d4; word-break:break-all; }
+  .note { background:rgba(251,191,36,0.1); border-left:3px solid #fbbf24;
+    padding:10px 12px; border-radius:8px; margin:10px 0; color:#fde68a; font-size:0.9rem; }
+  .tip { background:rgba(34,197,94,0.1); border-left:3px solid #22c55e;
+    padding:10px 12px; border-radius:8px; margin:10px 0; color:#bbf7d0; font-size:0.9rem; }
+  .code-block { position:relative; background:#0b0718; border:1px solid rgba(139,92,246,0.3);
+    border-radius:12px; padding:14px; margin:10px 0; font-family:menlo,consolas,monospace;
+    font-size:0.82rem; color:#c4b5fd; word-break:break-all; white-space:pre-wrap; }
+  .copy-btn { position:absolute; top:8px; right:8px; background:linear-gradient(135deg,#8b5cf6,#ec4899);
+    color:white; border:none; border-radius:8px; padding:6px 12px; font-size:0.75rem; font-weight:700; cursor:pointer; }
+  .copy-btn.copied { background:#22c55e; }
+  .step-link { display:block; background:linear-gradient(135deg,#8b5cf6,#ec4899); color:#fff;
+    padding:14px; border-radius:14px; font-weight:700; text-align:center; text-decoration:none;
+    margin:10px 0; box-shadow:0 8px 20px -8px #ec4899; }
+  input, textarea { width:100%; padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.15);
+    background:#0b0718; color:#fff; font-size:0.95rem; margin:8px 0; font-family:inherit; }
+  input:focus, textarea:focus { outline:none; border-color:#ec4899; }
+  .pasted-note { font-size:0.82rem; color:#bbf7d0; margin-top:4px; }
+  .screenshot-guide { background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3);
+    border-radius:12px; padding:12px; margin-top:10px; }
+  ol, ul { padding-left:22px; }
+  li { margin:6px 0; }
+  .warn { background:rgba(239,68,68,0.1); border-left:3px solid #ef4444; padding:10px 12px;
+    border-radius:8px; color:#fecaca; font-size:0.88rem; margin:10px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⚡ Hanya 2 langkah dari kamu, sisanya saya yang kerja</h1>
+  <p class="sub">Gak perlu install Git, gak perlu buka terminal. Kamu cukup: <b>(1) bikin repo kosong di GitHub</b> + <b>(2) kasih saya token akses</b>. Selepas itu saya yang push kodenya langsung dari sini.</p>
+
+  <div class="card">
+    <p class="big"><span class="num">1</span>Buat repo KOSONG di GitHub</p>
+    <ol>
+      <li>Buka link ini di HP browser (login dulu kalau belum):</li>
+    </ol>
+    <a class="step-link" href="https://github.com/new" target="_blank">📦 github.com/new</a>
+    <ol start="2">
+      <li><b>Repository name</b> isi: <code style="background:#0b0718;padding:2px 6px;border-radius:4px;">verve-video-studio</code> (boleh nama lain, nanti kasih tau saya)</li>
+      <li>Pilih <b>Public</b></li>
+      <li>⚠️ <b>JANGAN centang</b> ketiga kotak di bawah ("Add a README", ".gitignore", "License") — biarkan kosong semua!</li>
+      <li>Klik tombol hijau <b>"Create repository"</b></li>
+      <li>Setelah halaman repo muncul (yang ada tulisan "Quick setup"), <b>cukup biarkan halaman itu terbuka</b> — jangan ketik apapun lagi. Selesai langkah 1 ✅</li>
+    </ol>
+    <div class="tip">💡 Jangan klik/kirim command apapun di halaman itu — nanti saya yang kirim kode dari sini.</div>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">2</span>Buat "Personal Access Token" (ini kunci buat saya bisa masukin kode)</p>
+    <ol>
+      <li>Buka link ini (tab baru):</li>
+    </ol>
+    <a class="step-link" href="https://github.com/settings/tokens/new" target="_blank">🔑 github.com/settings/tokens/new</a>
+    <ol start="2">
+      <li>Kalau diminta password, masukin password GitHub kamu</li>
+      <li>Isi <b>Note</b>: <code style="background:#0b0718;padding:2px 6px;border-radius:4px;">verve-ai</code></li>
+      <li><b>Expiration</b>: pilih <b>"No expiration"</b> (biar gak perlu bikin ulang)</li>
+      <li>Di <b>"Select scopes"</b>, cukup centang <b>☑️ repo</b> (paling atas, otomatis centang semua sub-nya)</li>
+      <li>Klik tombol hijau <b>"Generate token"</b> di paling bawah</li>
+      <li>Token kamu muncul sebagai tulisan panjang mulai dengan <code>ghp_....</code> — <b>salin (copy)</b> token itu.</li>
+    </ol>
+    <div class="warn">⚠️ Token ini hanya muncul SEKALI. Kalau kamu pindah halaman tanpa copy, harus buat ulang.</div>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">3</span>Kirim ke saya — SELESAI 🎉</p>
+    <p>Kembali ke chat ini, lalu balas dengan format:</p>
+    <div class="code-block"><button class="copy-btn" onclick="copy(this)">SALIN</button>username: username_github_kamu
+repo: verve-video-studio
+token: ghp_xxxxxxxxxxxxxxxxxxxxxx</div>
+    <p class="pasted-note">✅ Ganti baris kedua (kalau kamu pakai nama repo lain) dan baris ketiga dengan token yang kamu copy. Kalau repo pakai nama default, baris ke-2 bisa tidak ditulis.</p>
+    <div class="note">📩 Contoh pesan yang bisa kamu kirim:
+      <br><i>"username: budianwar<br>
+      token: ghp_abcd1234xyz..."</i>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="big"><span class="num">4</span>Setelah saya push selesai</p>
+    <p>Nanti saya kasih link untuk klik ke Vercel. Kamu tinggal klik 2-3 kali di Vercel (saya temenin step by step juga), aplikasi kamu langsung online dengan URL kayak <code>verve-video-studio-xxx.vercel.app</code>. 🚀</p>
+  </div>
+
+  <div class="card" style="background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.3)">
+    <p class="big"><span class="num" style="background:linear-gradient(135deg,#ef4444,#f97316)">🔐</span>Soal keamanan token</p>
+    <p>Token ini hanya saya pakai untuk push kode project video kamu ke repo GitHub itu saja. Setelah selesai push, kamu bisa langsung hapus tokennya di <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a> (klik "Delete" di samping token "verve-ai"). Jadi akses saya otomatis tercabut. Aman bro. 👍</p>
+  </div>
+</div>
+
+<script>
+function copy(btn){
+  const block = btn.parentElement;
+  const clone = block.cloneNode(true);
+  clone.querySelector(".copy-btn")?.remove();
+  const text = clone.textContent.trim();
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.textContent = "TERSALIN!"; btn.classList.add("copied");
+    setTimeout(()=>{btn.textContent="SALIN"; btn.classList.remove("copied");},1800);
+  }).catch(()=>{
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); ta.remove();
+    btn.textContent = "TERSALIN!"; btn.classList.add("copied");
+    setTimeout(()=>{btn.textContent="SALIN"; btn.classList.remove("copied");},1800);
+  });
+}
+</script>
+</body>
+</html>
