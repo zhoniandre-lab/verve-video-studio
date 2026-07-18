@@ -51,39 +51,70 @@ function getCreds(req: Request) {
 
 async function sleep(ms:number){return new Promise(r=>setTimeout(r,ms));}
 
+function mapModelKie(modelId: string): string {
+  const m = String(modelId || "v5.5").toLowerCase();
+  if (m.includes("v5.5") || m.includes("v5_5")) return "V5_5";
+  if (m.includes("v5")) return "V5";
+  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "V4_5PLUS";
+  if (m.includes("v4.5all") || (m.includes("v4.5") && m.includes("all"))) return "V4_5ALL";
+  if (m.includes("v4.5")) return "V4_5";
+  if (m.includes("v4")) return "V4";
+  if (m.includes("v3.5") || m.includes("v3_5")) return "V3_5";
+  return "V5_5";
+}
+function mapModelGeneric(modelId: string): string {
+  const m = String(modelId || "v5.5").toLowerCase();
+  if (m.includes("v5.5")) return "suno-v5.5";
+  if (m.includes("v5")) return "suno-v5";
+  if (m.includes("v4.5")) return "suno-v4.5";
+  if (m.includes("v4")) return "suno-v4";
+  if (m.includes("v3.5")) return "chirp-v3.5";
+  return m;
+}
+
 function buildBody(payload: any, provider: Provider): any {
   const {
     prompt, lyrics, title, genre, tags, custom,
-    model, instrumental, vocalGender,
+    model, instrumental, vocalGender, style_bits,
   } = payload;
 
-  // Map model label ke id yang dipakai provider
-  const modelId = String(model || "v5.5").toLowerCase();
-  let kieModel = "V5_5";
-  if (modelId.includes("v5.5") || modelId.includes("v5_5")) kieModel = "V5_5";
-  else if (modelId.includes("v5")) kieModel = "V5";
-  else if (modelId.includes("v4.5") && modelId.includes("plus")) kieModel = "V4_5PLUS";
-  else if (modelId.includes("v4.5") && modelId.includes("all")) kieModel = "V4_5ALL";
-  else if (modelId.includes("v4.5")) kieModel = "V4_5";
-  else if (modelId.includes("v4")) kieModel = "V4";
-  else if (modelId.includes("v3.5") || modelId.includes("v3_5")) kieModel = "V3_5";
-  else if (modelId.includes("udio")) kieModel = "V5_5";
+  const sb = style_bits || {};
+  const tempoWord = sb.tempo === "fast" ? "uptempo" : sb.tempo === "mid" ? "mid-tempo" : "slow tempo";
+  const eraWord = sb.era ? `era ${sb.era}` : "";
+  const instrWord = sb.instruments ? `instruments: ${sb.instruments}` : "";
+
+  // Bangun style string yang kaya
+  const styleParts = [
+    tags || "",
+    eraWord,
+    tempoWord,
+    instrWord,
+    "professional studio recording, high quality audio, emotional vocals",
+  ].map(s=>(s||"").trim()).filter(Boolean);
+  const styleStr = styleParts.join(", ");
+
+  // prompt final (dipakai di non-custom mode atau sebagai "deskripsi")
+  const fallbackPrompt = [title, genre, styleStr].filter(Boolean).join(", ");
+  const finalPrompt = (prompt || "").trim() || fallbackPrompt;
+
+  const finalLyrics = (lyrics || "").trim();
+  const isCustom = !!custom && finalLyrics.length > 30;
 
   if (provider === "kie") {
-    const isCustom = !!(custom && lyrics);
     const body: any = {
-      model: kieModel,
+      model: mapModelKie(model),
       customMode: isCustom,
       instrumental: !!instrumental,
-      title: title || "Verve AI Song",
+      title: (title || "Verve AI Song").slice(0,80),
       callBackUrl: "playground",
     };
     if (isCustom) {
-      body.lyrics = lyrics;
-      body.style = tags || genre || "pop, emotional";
-      body.prompt = prompt || lyrics.slice(0,400);
+      body.lyrics = finalLyrics;
+      body.style = styleStr;
+      body.prompt = finalPrompt.slice(0,480);
     } else {
-      body.prompt = prompt || `${title || ""} ${genre || ""} ${tags || ""}`.trim() || "pop ballad, emotional";
+      body.prompt = finalPrompt.slice(0,500);
+      body.style = styleStr;
     }
     if (!instrumental) {
       if (vocalGender === "male") body.vocalGender = "m";
@@ -95,28 +126,23 @@ function buildBody(payload: any, provider: Provider): any {
 
   // apiframe / sunor / aimusic — suno-compatible
   const body: any = {
-    prompt: prompt || `${title || ""} ${genre || ""} ${tags || ""}`.trim(),
-    title: title || "Verve AI Song",
-    tags: tags || genre || "pop, emotional",
+    prompt: isCustom ? finalLyrics : finalPrompt,
+    title: (title || "Verve AI Song").slice(0,80),
+    tags: tags || styleStr,
     make_instrumental: !!instrumental,
     wait_audio: false,
     mv: "chirp-v3-5",
+    model: mapModelGeneric(model),
   };
-  if (modelId.includes("v5.5")) body.model = "suno-v5.5";
-  else if (modelId.includes("v5")) body.model = "suno-v5";
-  else if (modelId.includes("v4.5")) body.model = "suno-v4.5";
-  else if (modelId.includes("v4")) body.model = "suno-v4";
-  else if (modelId.includes("v3.5")) body.model = "chirp-v3.5", body.mv = "chirp-v3-5";
-  else if (modelId) body.model = modelId;
-
   if (vocalGender === "male") body.gender = "male";
   else if (vocalGender === "female") body.gender = "female";
 
-  if (custom && lyrics) {
-    body.prompt = lyrics;
-    body.lyrics = lyrics;
+  if (isCustom) {
+    body.lyrics = finalLyrics;
     body.custom_mode = true;
-    body.tags = tags || genre || body.tags;
+    body.prompt = finalLyrics;
+    body.style = styleStr;
+    body.tags = tags || styleStr;
   }
   return body;
 }

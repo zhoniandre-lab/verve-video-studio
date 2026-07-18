@@ -39,11 +39,32 @@ const VOICES = ["alloy","echo","fable","onyx","nova","shimmer"];
 
 // SUNO/AI Music models (mirip kampunglagu/apiframe)
 const MUSIC_MODELS = [
-  { id: "suno-v5.5",   label: "Suno V5.5",  credit: "11 kredit", badge:"🔥 Terbaru" },
-  { id: "suno-v5",     label: "Suno V5",    credit: "11 kredit" },
-  { id: "suno-v4.5",   label: "Suno V4.5",  credit: "11 kredit" },
-  { id: "suno-v4",     label: "Suno V4",    credit: "11 kredit" },
-  { id: "suno-v3.5",   label: "Suno V3.5",  credit: "11 kredit" },
+  { id: "suno-v5.5",   label: "Suno V5.5",  credit: "12 kredit", badge:"🔥 Terbaru" },
+  { id: "suno-v5",     label: "Suno V5",    credit: "12 kredit" },
+  { id: "suno-v4.5",   label: "Suno V4.5",  credit: "12 kredit" },
+  { id: "suno-v4",     label: "Suno V4",    credit: "12 kredit" },
+  { id: "suno-v3.5",   label: "Suno V3.5",  credit: "12 kredit" },
+];
+
+const MUSIC_GENRE_PRESETS = [
+  "pop ballad","slow rock","rock balada","akustik","dangdut koplo",
+  "religi","trap edm","cinematic epic","lofi","r&b soul","keroncong",
+];
+const MUSIC_ERA_PRESETS = [
+  { id:"",        label:"🏷️ Era bebas" },
+  { id:"90s",     label:"📼 90an" },
+  { id:"2000s",   label:"💿 2000an" },
+  { id:"80s",     label:"🎙️ 80an" },
+  { id:"modern",  label:"🔥 Modern 2025" },
+];
+const MUSIC_TEMPO_PRESETS = [
+  { id:"slow",    label:"🐢 Slow" },
+  { id:"mid",     label:"🚶 Medium" },
+  { id:"fast",    label:"⚡ Fast/Uptempo" },
+];
+const MUSIC_INSTRUMENT_PRESETS = [
+  "piano akustik","gitar akustik petikan","biola","string orchestra",
+  "gitar listrik melow","drum lembut","seruling","keyboard synth 80an","harmonika",
 ];
 
 const STORAGE_KEY = "verve_project_v1";
@@ -264,9 +285,14 @@ export default function Home() {
   const [musicModel, setMusicModel] = useState<string>("suno-v5.5");
   const [musicVocalType, setMusicVocalType] = useState<"vocal"|"instrumental">("vocal");
   const [musicVocalGender, setMusicVocalGender] = useState<"auto"|"male"|"female">("auto");
+  const [musicEra, setMusicEra] = useState<string>("");         // 90an, 2000an, dll
+  const [musicInstruments, setMusicInstruments] = useState<string>(""); // piano, gitar akustik, dll
+  const [musicTempo, setMusicTempo] = useState<string>("slow");  // slow / mid / fast
+  const [musicCustomLyrics, setMusicCustomLyrics] = useState<string>(""); // lirik editable yang dipakai Suno
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [sunoApiKey, setSunoApiKey] = useState<string>("");
   const [sunoProvider, setSunoProvider] = useState<Provider>("kie");
+  const [sunoCredits, setSunoCredits] = useState<string>("");
 
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
@@ -812,12 +838,17 @@ Dibuat dengan Verve AI Video Studio`;
     setStageText("Menulis lirik lagu lengkap...");
     setLoading("lyrics");
     try {
+      const extraStyle = [musicTempo!=="slow"?musicTempo:"", musicEra, musicInstruments].filter(Boolean).join(", ");
       const l = await callApi("/lyrics", {
         title: selectedTitle.text, keyword: selectedTitle.keyword, niche,
-        genre: musicGenre, mood: musicMood,
+        genre: [musicGenre, extraStyle].filter(Boolean).join(", "),
+        mood: musicMood,
       });
       setLyrics(l);
-      setStageText("✅ Lirik siap!");
+      // Auto-fill lirik ke kolom custom supaya bisa diedit & dipakai pas generate
+      setMusicCustomLyrics(l.lyrics || "");
+      if (l.genre) setMusicGenre(l.genre);
+      setStageText("✅ Lirik siap! Scroll ke kolom Lirik Lagu untuk edit jika perlu.");
     } catch(e:any){ setErr(e.message); }
     setTimeout(()=>setStageText(""),2500); setLoading(null);
   }
@@ -827,20 +858,35 @@ Dibuat dengan Verve AI Video Studio`;
     setStageText("Meminta AI membuat lagu (bisa 30-90 detik)...");
     setLoading("aimusic"); setAiMusicStatus("memulai..."); setAiMusicUrl("");
     try {
-      let prompt = lyrics?.style_prompt_suno || `${musicMood}, ${musicGenre}, indonesian`;
-      const text = lyrics?.lyrics || `${selectedTitle.text} ${niche}`;
+      // Bangun style prompt yang terarah dari genre + era + instrumen + tempo + mood
+      const tempoWord = musicTempo==="fast"?"uptempo, energetic":musicTempo==="mid"?"mid-tempo, steady":"slow tempo, ballad";
+      const eraWord = musicEra ? `era ${musicEra}` : "";
+      const instrWord = musicInstruments ? `instruments: ${musicInstruments}` : "";
+      const styleBits = [musicGenre, eraWord, tempoWord, instrWord, musicMood, "indonesian vocals, high quality studio recording"]
+        .map(s=>(s||"").trim()).filter(Boolean).join(", ");
+
+      // Tentukan lirik yang dipakai: kolom editable → hasil generate lirik → auto
+      const finalLyrics = musicCustomLyrics.trim() || lyrics?.lyrics || "";
+      const useCustomLyrics = finalLyrics.length > 30;
+
+      const prompt = lyrics?.style_prompt_suno || styleBits;
+
       const r = await fetch("/api/hcnsec/music", {
         method:"POST", headers:{
           "Content-Type":"application/json",
           ...(sunoApiKey?{"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider}:{}),
         },
         body: JSON.stringify({
-          title: selectedTitle.text, prompt, lyrics: lyrics?.lyrics,
-          genre: musicGenre, tags: `${musicGenre}, ${musicMood}`,
-          custom: !!lyrics?.lyrics,
+          title: selectedTitle.text.slice(0,80),
+          prompt,
+          lyrics: useCustomLyrics ? finalLyrics : undefined,
+          genre: musicGenre,
+          tags: styleBits,
+          custom: useCustomLyrics,
           model: musicModel,
           instrumental: musicVocalType === "instrumental",
           vocalGender: musicVocalGender,
+          style_bits: { era: musicEra, instruments: musicInstruments, tempo: musicTempo },
         }),
       });
       const txt = await r.text();
@@ -852,17 +898,19 @@ Dibuat dengan Verve AI Video Studio`;
       if (data.audio_url) {
         setAiMusicUrl(data.audio_url);
         setAiMusicStatus("selesai");
+        // Kasih info kredit per generate kalau ada provider info
+        setSunoCredits(`1 generate ${musicModel} = ~12 kredit (Kie.ai)`);
         setStageText("✅ Lagu AI siap!");
       } else if (data.id) {
         setAiMusicStatus("memproses...");
-        for (let i=0;i<24;i++){
-          await new Promise(res=>setTimeout(res,5000));
+        for (let i=0;i<36;i++){
+          await new Promise(res=>setTimeout(res,4000));
           const pr = await fetch(`/api/hcnsec/music?id=${data.id}`, {
             headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider} : {},
           });
           const pd = await pr.json().catch(()=>({}));
-          setAiMusicStatus(`memproses... ${Math.round((i+1)/24*100)}%`);
-          if (pd.audio_url) { setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai"); setStageText("✅ Lagu AI siap!"); break; }
+          setAiMusicStatus(`memproses... ${Math.round((i+1)/36*100)}%`);
+          if (pd.audio_url) { setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai"); setStageText("✅ Lagu AI siap!"); setSunoCredits(`1 generate ${musicModel} = ~12 kredit (${pd.provider||sunoProvider})`); break; }
           if (pd.status === "error" || pd.error) throw new Error(pd.error||"Gagal generate musik");
         }
         if (!aiMusicUrl) setStageText("⏳ Lagu masih diproses server. Coba play 1 menit lagi ya bro (refresh halaman).");
@@ -1211,9 +1259,16 @@ Dibuat dengan Verve AI Video Studio`;
                       </div>
                     )}
 
-                    {/* KOLOM STYLE SUNO (mirip kampunglagu) */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <label className="block">
+                    {/* INFO KREDIT */}
+                    {sunoApiKey && sunoCredits && (
+                      <div className="text-[10px] text-green-300 bg-green-500/10 border border-green-400/20 rounded px-2 py-1">
+                        💰 {sunoCredits}
+                      </div>
+                    )}
+
+                    {/* BARIS 1: Model / Tipe / Gender / Tempo */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <label className="block col-span-2 sm:col-span-1">
                         <span className="lbl">Model AI</span>
                         <select className="select text-sm py-2" value={musicModel} onChange={e=>setMusicModel(e.target.value)}>
                           {MUSIC_MODELS.map(m=>(
@@ -1227,28 +1282,86 @@ Dibuat dengan Verve AI Video Studio`;
                           <button type="button" onClick={()=>setMusicVocalType("vocal")}
                             className={`btn btn-sm ${musicVocalType==="vocal"?"btn-primary":"btn-ghost"}`}>🎤 Vokal</button>
                           <button type="button" onClick={()=>setMusicVocalType("instrumental")}
-                            className={`btn btn-sm ${musicVocalType==="instrumental"?"btn-primary":"btn-ghost"}`}>🎹 Instrumen</button>
+                            className={`btn btn-sm ${musicVocalType==="instrumental"?"btn-primary":"btn-ghost"}`}>🎹 Instr</button>
                         </div>
                       </label>
                       <label className="block">
                         <span className="lbl">Gender Vokal</span>
                         <select className="select text-sm py-2" value={musicVocalGender} onChange={e=>setMusicVocalGender(e.target.value as any)} disabled={musicVocalType==="instrumental"}>
                           <option value="auto">🔀 Auto</option>
-                          <option value="male">♂ Male (Pria)</option>
-                          <option value="female">♀ Female (Wanita)</option>
+                          <option value="male">♂ Pria</option>
+                          <option value="female">♀ Wanita</option>
                         </select>
+                      </label>
+                      <label className="block col-span-2 sm:col-span-1">
+                        <span className="lbl">Tempo</span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {MUSIC_TEMPO_PRESETS.map(t=>(
+                            <button key={t.id} type="button" onClick={()=>setMusicTempo(t.id)}
+                              className={`btn btn-sm text-[11px] ${musicTempo===t.id?"btn-primary":"btn-ghost"}`}>{t.label}</button>
+                          ))}
+                        </div>
                       </label>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    {/* BARIS 2: Genre chip preset + input */}
+                    <div>
+                      <span className="lbl">🎸 Genre</span>
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {MUSIC_GENRE_PRESETS.map(g=>(
+                          <button key={g} type="button" onClick={()=>setMusicGenre(g)}
+                            className={`chip text-[10px] cursor-pointer ${musicGenre===g?"bg-pink-500/40 border-pink-400":"hover:bg-white/20"}`}>{g}</button>
+                        ))}
+                      </div>
+                      <input className="input py-2 text-sm" value={musicGenre} onChange={e=>setMusicGenre(e.target.value)} placeholder="pop ballad, slow rock, dll"/>
+                    </div>
+
+                    {/* BARIS 3: Era preset + Instrumen chip + Mood */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <label className="block">
-                        <span className="lbl">Genre</span>
-                        <input className="input py-2 text-sm" value={musicGenre} onChange={e=>setMusicGenre(e.target.value)} placeholder="pop ballad"/>
+                        <span className="lbl">📼 Era / Tahun</span>
+                        <div className="grid grid-cols-5 gap-1 mb-1">
+                          {MUSIC_ERA_PRESETS.map(e=>(
+                            <button key={e.id} type="button" onClick={()=>setMusicEra(e.id)}
+                              className={`btn btn-sm text-[10px] px-1 ${musicEra===e.id?"btn-primary":"btn-ghost"}`}>{e.label}</button>
+                          ))}
+                        </div>
+                        <input className="input py-2 text-sm" value={musicEra} onChange={e=>setMusicEra(e.target.value)} placeholder="90s / 2000s / 80s (opsional)"/>
                       </label>
                       <label className="block">
-                        <span className="lbl">Mood</span>
-                        <input className="input py-2 text-sm" value={musicMood} onChange={e=>setMusicMood(e.target.value)} placeholder="menyentuh"/>
+                        <span className="lbl">🎭 Mood</span>
+                        <input className="input py-2 text-sm" value={musicMood} onChange={e=>setMusicMood(e.target.value)} placeholder="sedih, menyentuh, haru, semangat"/>
                       </label>
+                    </div>
+
+                    <div>
+                      <span className="lbl">🎻 Instrumen (opsional)</span>
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {MUSIC_INSTRUMENT_PRESETS.map(ins=>{
+                          const active = musicInstruments.toLowerCase().includes(ins.split(" ")[0]);
+                          return (
+                            <button key={ins} type="button"
+                              onClick={()=>setMusicInstruments(active? "" : ins)}
+                              className={`chip text-[10px] cursor-pointer ${active?"bg-purple-500/40 border-purple-400":"hover:bg-white/20"}`}>{ins}</button>
+                          );
+                        })}
+                      </div>
+                      <input className="input py-2 text-sm" value={musicInstruments} onChange={e=>setMusicInstruments(e.target.value)} placeholder="piano akustik, gitar melow, string orchestra..."/>
+                    </div>
+
+                    {/* LIRIK EDITABLE */}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="lbl">📝 Lirik Lagu (untuk custom mode)</span>
+                        {musicCustomLyrics && <button className="text-[10px] text-red-300 hover:text-red-400" onClick={()=>setMusicCustomLyrics("")}>🗑️ Bersihkan</button>}
+                      </div>
+                      <textarea className="textarea text-sm" rows={isMobile?4:6}
+                        value={musicCustomLyrics}
+                        onChange={e=>setMusicCustomLyrics(e.target.value)}
+                        placeholder={"Klik '✍️ Buat Lirik Dulu' untuk dibuatkan AI, atau tulis lirik sendiri di sini (pakai format [Verse], [Chorus] untuk hasil yang akurat).\n\nKalau kosong, AI bikin lagu otomatis dari prompt style (mood/genre/instrumen)."}/>
+                      <div className="text-[10px] text-white/50 mt-1">
+                        💡 Kalau lirik terisi, lagu dibuat dari lirik INI (custom mode) — jadi judul/genre/mood nyambung ke lirik.
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -1261,12 +1374,6 @@ Dibuat dengan Verve AI Video Studio`;
                     </div>
                     {aiMusicStatus && <div className="text-[11px] text-white/60 break-word">Status: {aiMusicStatus}</div>}
                     {aiMusicUrl && <audio controls src={aiMusicUrl} className="w-full"/>}
-                    {lyrics && (
-                      <details className="text-xs">
-                        <summary className="cursor-pointer text-white/70 py-1">Lihat lirik yang digenerate ↓</summary>
-                        <pre className="mt-2 p-2 rounded-lg bg-black/40 text-[10px] whitespace-pre-wrap text-white/80 max-h-40 overflow-auto">{lyrics.lyrics}</pre>
-                      </details>
-                    )}
                   </div>
                 )}
 
