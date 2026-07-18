@@ -9,6 +9,7 @@ import {
 } from "@/lib/types";
 import type { VizStyle, AudioMode, ImageSource } from "@/lib/types";
 import type { VideoMeta } from "@/lib/hcnsec";
+import { StudioEditor, ExportPanel } from "./studio-editor";
 
 type Mode = "slideshow" | "t2v";
 
@@ -326,14 +327,15 @@ export default function Home() {
   const [previewDuration, setPreviewDuration] = useState(0);
   const [previewMuted, setPreviewMuted] = useState(false);
   // ===== CapCut-style editor state =====
-  const [editorTab, setEditorTab] = useState<"main"|"filter"|"adjust"|"sticker"|"text"|"audio"|"spectrum">("main");
+  const [editorTab, setEditorTab] = useState<"edit"|"audio"|"text"|"sticker"|"overlay"|"filter"|"adjust"|"effect"|"speed"|"main">("edit");
   const [activeFilter, setActiveFilter] = useState<string>("none");
-  const [brightness, setBrightness] = useState(0);   // -100..100
+  const [brightness, setBrightness] = useState(0);
   const [contrast, setContrast] = useState(0);
   const [saturation, setSaturation] = useState(0);
   const [sharpen, setSharpen] = useState(0);
-  const [vignetteAmt, setVignetteAmt] = useState(50);
-  const [spectrumSticker, setSpectrumSticker] = useState<string>("bars-bottom"); // bars-bottom / wave-center / disc / none
+  const [vignetteAmt, setVignetteAmt] = useState(75);
+  const [videoSpeed, setVideoSpeed] = useState(1);
+  const [spectrumSticker, setSpectrumSticker] = useState<string>("bars-bottom");
   const renderStartRef = useRef<number>(0);
   const [draftList, setDraftList] = useState<Array<{id:string;title:string;slides:number;updatedAt:number;thumb?:string;step?:number}>>([]);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
@@ -1402,7 +1404,7 @@ Dibuat dengan Verve AI Video Studio`;
     return [preset, `brightness(${bright}) contrast(${contr}) saturate(${sat})`, sharp].filter(Boolean).join(" ");
   }
   function resetAdjust() {
-    setBrightness(0); setContrast(0); setSaturation(0); setSharpen(0); setVignetteAmt(50); setActiveFilter("none");
+    setBrightness(0); setContrast(0); setSaturation(0); setSharpen(0); setVignetteAmt(75); setActiveFilter("none");
   }
   stopPreviewRef.current = stopPreview;
   function seekPreview(t: number) {
@@ -1660,8 +1662,8 @@ Dibuat dengan Verve AI Video Studio`;
       )}
 
       {mode === "slideshow" ? (
-        <div className="mt-4 lg:mt-6 grid lg:grid-cols-3 gap-4 sm:gap-6">
-          <div className="lg:col-span-2 card min-w-0">
+        <div className={`mt-4 lg:mt-6 ${step<=4?"grid lg:grid-cols-3":""} gap-4 sm:gap-6`}>
+          <div className={`${step<=4?"lg:col-span-2":"w-full"} card min-w-0`}>
             <StepBar step={step} />
 
             {step === 1 && (
@@ -2118,364 +2120,82 @@ Dibuat dengan Verve AI Video Studio`;
               </section>
             )}
 
-            {step === 5 && (
-              <section className="mt-4 space-y-3">
-                <h2 className="section-title">🎬 Step 5 · Studio Edit (ala CapCut)</h2>
+            {step === 5 && slides.length>0 && (
+              <StudioEditor
+                slides={slides}
+                aspectRatio={aspectRatio}
+                isMobile={isMobile}
+                selectedTitle={selectedTitle}
+                niche={niche}
+                slideDuration={slideDuration} setSlideDuration={setSlideDuration}
+                transitionDur={transitionDur} setTransitionDur={setTransitionDur}
+                transition={transition} setTransition={setTransition}
+                showTitle={showTitle} setShowTitle={setShowTitle}
+                showLyrics={showLyrics} setShowLyrics={setShowLyrics}
+                captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
+                vizStyle={vizStyle} setVizStyle={setVizStyle}
+                vizColor={vizColor} setVizColor={setVizColor}
+                logoDataUrl={logoDataUrl} setLogoDataUrl={setLogoDataUrl}
+                logoPosition={logoPosition} setLogoPosition={setLogoPosition}
+                onLogoUpload={handleLogoUpload}
+                activeFilter={activeFilter} setActiveFilter={setActiveFilter}
+                brightness={brightness} setBrightness={setBrightness}
+                contrast={contrast} setContrast={setContrast}
+                saturation={saturation} setSaturation={setSaturation}
+                sharpen={sharpen} setSharpen={setSharpen}
+                vignetteAmt={vignetteAmt} setVignetteAmt={setVignetteAmt}
+                spectrumSticker={spectrumSticker} setSpectrumSticker={setSpectrumSticker}
+                videoSpeed={videoSpeed} setVideoSpeed={setVideoSpeed}
+                getFilterString={getFilterString}
+                resetAdjust={resetAdjust}
+                audioMode={audioMode} setAudioMode={setAudioMode}
+                aiMusicUrl={aiMusicUrl} ttsUrl={ttsUrl} musicUrl={musicUrl}
+                proxifyAudioUrl={proxifyAudioUrl}
+                previewAudioRef={previewAudioRef}
+                previewCanvasRef={previewCanvasRef}
+                previewPlaying={previewPlaying}
+                previewCurrent={previewCurrent} setPreviewCurrent={setPreviewCurrent}
+                previewDuration={previewDuration}
+                previewMuted={previewMuted} setPreviewMuted={setPreviewMuted}
+                togglePreview={togglePreview}
+                stopPreview={stopPreview}
+                seekPreview={seekPreview}
+                onBack={()=>setStep(4)}
+                onExport={()=>{stopPreview(); setStep(6);}}
+                onSaveDraft={()=>saveDraftManually()}
+              />
+            )}
 
-                {/* LOGO */}
-                <div className="p-3 rounded-xl bg-black/30 border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold flex items-center gap-2">🖼️ Logo/Channel</div>
-                      <div className="text-[11px] text-white/50 break-word">Upload logo channel; muncul di tengah spectrum atau pojok video</div>
-                    </div>
-                    {logoDataUrl && (
-                      <img src={logoDataUrl} className="w-10 h-10 rounded-full border-2 border-white/30 flex-shrink-0" alt="logo"/>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <label className="btn btn-ghost text-xs py-1.5 cursor-pointer">
-                      📁 Upload Logo
-                      <input type="file" accept="image/*" hidden onChange={e=>handleLogoUpload(e.target.files?.[0])}/>
-                    </label>
-                    {logoDataUrl && (
-                      <>
-                        <div className="flex gap-1 flex-wrap">
-                          {([["center","🎯 Tengah"],["corner","📍 Pojok"],["none","❌ Sembunyi"]] as const).map(([v,l])=>(
-                            <button key={v} onClick={()=>setLogoPosition(v)}
-                              className={`btn btn-sm ${logoPosition===v?"btn-primary":"btn-ghost"}`}>{l}</button>
-                          ))}
-                        </div>
-                        <button className="btn btn-danger btn-sm" onClick={()=>setLogoDataUrl("")}>🗑️</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* KARAOKE */}
-                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-black/30 border border-white/10">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold flex items-center gap-2">🎤 Karaoke Lirik</div>
-                    <div className="text-[11px] text-white/50 break-word">Tampilkan baris lirik per-slide dengan gaya karaoke (outline glow)</div>
-                  </div>
-                  <div className={`toggle ${showLyrics?"on":""}`} onClick={()=>setShowLyrics(v=>!v)}/>
-                </div>
-
-                {showLyrics && (
-                  <div>
-                    <span className="lbl">💬 Gaya keterangan/caption (CapCut-style)</span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {[
-                        {id:"capcut", label:"🟡 CapCut Pop", desc:"Kata menyala kuning"},
-                        {id:"neon", label:"💫 Neon", desc:"Highlight progresif"},
-                      ].map(s=>(
-                        <button key={s.id} onClick={()=>setCaptionStyle(s.id as CaptionStyle)}
-                          className={`style-card ${captionStyle===s.id?"active":""}`}>
-                          <div className="text-xs sm:text-sm font-bold">{s.label}</div>
-                          <div className="text-[10px] text-white/60 mt-0.5">{s.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Quality */}
-                <div>
-                  <span className="lbl">⚡ Kualitas render {isMobile ? "· HP default: Cepat" : ""}</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {QUALITY_OPTIONS.map(q=>(
-                      <button key={q.id} onClick={()=>setQuality(q.id as RenderQuality)}
-                        className={`q-tile ${quality===q.id?"active":""}`}>
-                        <div className="text-xs sm:text-sm font-bold">{q.label}</div>
-                        <div className="text-[10px] text-white/60 mt-0.5">{q.res} · {q.fps}fps</div>
-                        {q.tag && <div className="text-[9px] text-pink-300 mt-0.5">{q.tag}</div>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Spectrum */}
-                <div>
-                  <span className="lbl">🎨 Style spectrum</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {VIZ_STYLES.filter((v,i,a)=>a.findIndex(x=>x.id===v.id)===i).map(s=>(
-                      <button key={s.id} onClick={()=>setVizStyle(s.id)}
-                        className={`style-card ${vizStyle===s.id?"active":""}`}>
-                        <div className="text-xs sm:text-sm font-bold truncate">{s.emoji} {s.label}</div>
-                        <div className="text-[10px] text-white/60 mt-0.5 truncate">{s.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Warna */}
-                <div>
-                  <span className="lbl">🎨 Warna tema</span>
-                  <div className="flex gap-2 flex-wrap items-center">
-                    {COLOR_PRESETS.map(c=>(
-                      <button key={c.hex} onClick={()=>setVizColor(c.hex)} title={c.name}
-                        className={`color-swatch ${vizColor===c.hex?"active":""}`}
-                        style={{background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
-                    ))}
-                    <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)}
-                           className="w-10 h-10 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
-                  </div>
-                </div>
-
-                {/* Timing */}
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="lbl">Durasi per slide: <b>{slideDuration.toFixed(1)}s</b></span>
-                    <input type="range" min={1.5} max={8} step={0.5} value={slideDuration}
-                           onChange={e=>setSlideDuration(Number(e.target.value))}/>
-                  </label>
-                  <label className="block">
-                    <span className="lbl">Transisi: <b>{transitionDur.toFixed(2)}s</b></span>
-                    <input type="range" min={0} max={2} step={0.1} value={transitionDur}
-                           onChange={e=>setTransitionDur(Number(e.target.value))}/>
-                  </label>
-                </div>
-
-                {/* Transition style */}
-                <div>
-                  <span className="lbl">✨ Efek transisi antar slide</span>
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {TRANSITION_STYLES.map(t=>(
-                      <button key={t.id} onClick={()=>setTransition(t.id as Transition)}
-                        className={`q-tile ${transition===t.id?"active":""}`}>
-                        <div className="text-xs font-bold truncate">{t.emoji} {t.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-black/30 border border-white/10">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">📝 Tampilkan judul di video</div>
-                    <div className="text-xs text-white/50 break-word">Judul overlay dengan animasi glow</div>
-                  </div>
-                  <div className={`toggle ${showTitle?"on":""}`} onClick={()=>setShowTitle(v=>!v)}/>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-ghost" onClick={()=>setStep(4)}>← Kembali</button>
-                  <button className="btn" onClick={togglePreview} disabled={loading==="render"||slides.length===0}>
-                    {previewPlaying?"⏹ Stop Preview":"▶️ Preview Video"}
-                  </button>
-                  <button className="btn btn-ghost" onClick={()=>saveDraftManually()} disabled={loading==="render"||slides.length===0}>
-                    💾 Simpan
-                  </button>
-                  <button className="btn btn-primary glow" onClick={doRender} disabled={loading==="render"}>
-                    {loading==="render"?<Spinner/>:"🎬"} Render Video Sekarang
-                  </button>
-                  {videoUrl && <button className="btn btn-ok" onClick={downloadVideo}>💾 Download MP4</button>}
-                </div>
-
-                {loading==="render" && (
-                  <div>
-                    <div className="progress-track"><div className="progress-fill" style={{width:`${Math.round(progress*100)}%`}}/></div>
-                    <div className="flex justify-between text-[11px] text-white/60 mt-1">
-                      <span>{Math.round(progress*100)}%</span>
-                      {renderETA && <span>ETA ~{renderETA}</span>}
-                    </div>
-                  </div>
-                )}
-
-                {/* ===== CAPCUT BOTTOM TOOLBAR + PANEL ===== */}
-                <div className="rounded-xl bg-black/50 border border-white/10 overflow-hidden">
-                  <div className="flex items-center justify-between gap-1 p-2 overflow-x-auto">
-                    {[
-                      {id:"filter", icon:"🎨", label:"Filter"},
-                      {id:"adjust", icon:"☀️", label:"Sesuaikan"},
-                      {id:"sticker", icon:"🎧", label:"Stiker"},
-                      {id:"text", icon:"💬", label:"Teks"},
-                      {id:"spectrum", icon:"📊", label:"Spectrum"},
-                      {id:"audio", icon:"🎵", label:"Audio"},
-                    ].map(t=>(
-                      <button key={t.id} onClick={()=>setEditorTab(editorTab===t.id?"main":t.id as any)}
-                              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg shrink-0 min-w-[56px] text-[10px] ${editorTab===t.id?"bg-pink-500/30 border border-pink-400/40":"bg-white/5 border border-transparent"}`}>
-                        <span className="text-lg">{t.icon}</span>
-                        <span className="text-white/80">{t.label}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* PANEL FILTER */}
-                  {editorTab==="filter" && (
-                    <div className="p-3 border-t border-white/10 space-y-2">
-                      <div className="text-xs font-bold mb-1">🎨 Filter Video (8 preset)</div>
-                      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-                        {[
-                          {id:"none", label:"❌ Original"},
-                          {id:"cinematic", label:"🎬 Cinematic"},
-                          {id:"vivid", label:"🌈 Vivid"},
-                          {id:"warm", label:"🔥 Warm"},
-                          {id:"cool", label:"❄️ Cool"},
-                          {id:"bw", label:"⚫ Hitam Putih"},
-                          {id:"vintage", label:"📼 Vintage"},
-                          {id:"dreamy", label:"💫 Dreamy"},
-                          {id:"cinema4k", label:"💎 4K Cinema"},
-                        ].map(f=>{
-                          const fstr = f.id==="none"?"none":
-                            f.id==="cinematic"?"contrast(1.18) saturate(0.85) brightness(0.95)":
-                            f.id==="vivid"?"saturate(1.4) contrast(1.12) brightness(1.05)":
-                            f.id==="warm"?"sepia(0.18) saturate(1.15) brightness(1.02)":
-                            f.id==="cool"?"hue-rotate(-10deg) saturate(1.1) brightness(1.02)":
-                            f.id==="bw"?"grayscale(1) contrast(1.1)":
-                            f.id==="vintage"?"sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)":
-                            f.id==="dreamy"?"brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)":
-                            "contrast(1.22) saturate(0.95) brightness(0.92)";
-                          return (
-                            <button key={f.id} onClick={()=>setActiveFilter(f.id)}
-                                    className={`shrink-0 flex flex-col items-center gap-1 ${activeFilter===f.id?"opacity-100":"opacity-70"}`}>
-                              <div className="w-14 h-14 rounded-lg overflow-hidden border-2"
-                                   style={{borderColor:activeFilter===f.id?"#ec4899":"rgba(255,255,255,0.1)"}}>
-                                {slides[0] ? (
-                                  <img src={slides[0].imageUrl} className="w-full h-full object-cover" style={{filter:fstr}} alt=""/>
-                                ) : <div className="w-full h-full bg-gray-800"/>}
-                              </div>
-                              <span className="text-[9px] text-white/80 whitespace-nowrap">{f.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PANEL SESUAIKAN */}
-                  {editorTab==="adjust" && (
-                    <div className="p-3 border-t border-white/10 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs font-bold">☀️ Sesuaikan (Kecerahan/Kontras/dll)</div>
-                        <button onClick={resetAdjust} className="text-[10px] px-2 py-1 rounded bg-white/10">↻ Reset</button>
-                      </div>
-                      {[
-                        {label:"☀️ Kecerahan", v:brightness, set:setBrightness, min:-50, max:50},
-                        {label:"◐ Kontras", v:contrast, set:setContrast, min:-50, max:50},
-                        {label:"🎨 Saturasi", v:saturation, set:setSaturation, min:-50, max:80},
-                        {label:"✨ Pertajam", v:sharpen, set:setSharpen, min:0, max:50},
-                        {label:"🌑 Vignette", v:vignetteAmt, set:setVignetteAmt, min:0, max:100},
-                      ].map((s,i)=>(
-                        <label key={i} className="block">
-                          <div className="flex justify-between text-[11px] mb-1">
-                            <span>{s.label}</span><span className="text-white/50 font-mono">{s.v>0?"+":""}{s.v}</span>
-                          </div>
-                          <input type="range" min={s.min} max={s.max} step={1} value={s.v}
-                                 onChange={e=>s.set(Number(e.target.value))} className="w-full"/>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* PANEL STIKER SPECTRUM */}
-                  {editorTab==="sticker" && (
-                    <div className="p-3 border-t border-white/10 space-y-2">
-                      <div className="text-xs font-bold mb-1">🎧 Stiker Spectrum (audio visualizer overlay)</div>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          {id:"none", icon:"❌", label:"None"},
-                          {id:"bars-bottom", icon:"📊", label:"Bars Bawah"},
-                          {id:"wave-center", icon:"〰️", label:"Wave Tengah"},
-                          {id:"wave-bottom", icon:"📶", label:"Wave Bawah"},
-                          {id:"bars-top", icon:"📈", label:"Bars Atas"},
-                          {id:"circle", icon:"⭕", label:"Circle"},
-                          {id:"disc", icon:"💿", label:"Disc Putar"},
-                          {id:"diamond", icon:"💎", label:"Diamond"},
-                        ].map(s=>(
-                          <button key={s.id} onClick={()=>setSpectrumSticker(s.id)}
-                                  className={`p-2 rounded-lg border text-center ${spectrumSticker===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
-                            <div className="text-xl">{s.icon}</div>
-                            <div className="text-[9px] text-white/70 mt-0.5">{s.label}</div>
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-white/50 pt-1">💡 Spectrum center besar bisa pakai logo channelmu.</p>
-                    </div>
-                  )}
-
-                  {/* PANEL TEKS */}
-                  {editorTab==="text" && (
-                    <div className="p-3 border-t border-white/10 space-y-2">
-                      <div className="text-xs font-bold mb-1">💬 Teks / Keterangan</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <button onClick={()=>setShowTitle(v=>!v)} className={`q-tile ${showTitle?"active":""}`}>
-                          <div className="text-xs font-bold">🏷️ Judul</div>
-                          <div className="text-[10px] text-white/60">{showTitle?"ON":"OFF"}</div>
-                        </button>
-                        <button onClick={()=>setShowLyrics(v=>!v)} className={`q-tile ${showLyrics?"active":""}`}>
-                          <div className="text-xs font-bold">🎤 Karaoke</div>
-                          <div className="text-[10px] text-white/60">{showLyrics?"ON":"OFF"}</div>
-                        </button>
-                      </div>
-                      <div className="text-[10px] text-white/60 pt-1">Gaya caption:</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[
-                          {id:"capcut", label:"🟡 CapCut Pop", desc:"Kata kuning"},
-                          {id:"neon", label:"💫 Neon", desc:"Highlight"},
-                          {id:"boldwhite", label:"⚪ Bold Putih", desc:"Garis outline"},
-                          {id:"gradient", label:"🌈 Gradient", desc:"Warna gradasi"},
-                        ].map(s=>(
-                          <button key={s.id} onClick={()=>setCaptionStyle(s.id as CaptionStyle)}
-                                  className={`style-card ${captionStyle===s.id?"active":""}`}>
-                            <div className="text-[11px] font-bold">{s.label}</div>
-                            <div className="text-[9px] text-white/60">{s.desc}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PANEL SPECTRUM (warna+style) */}
-                  {editorTab==="spectrum" && (
-                    <div className="p-3 border-t border-white/10 space-y-2">
-                      <div className="text-xs font-bold mb-1">📊 Style Spectrum Utama</div>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {VIZ_STYLES.filter((v,i,a)=>a.findIndex(x=>x.id===v.id)===i).map(s=>(
-                          <button key={s.id} onClick={()=>setVizStyle(s.id)}
-                                  className={`p-2 rounded-lg border text-center text-[10px] ${vizStyle===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
-                            <div className="text-base">{s.emoji}</div>
-                            <div className="text-white/80 truncate">{s.label}</div>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="text-xs font-bold mt-2">🎨 Warna tema</div>
-                      <div className="flex gap-2 flex-wrap items-center">
-                        {COLOR_PRESETS.map(c=>(
-                          <button key={c.hex} onClick={()=>setVizColor(c.hex)}
-                                  className={`color-swatch ${vizColor===c.hex?"active":""}`}
-                                  style={{width:32,height:32,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
-                        ))}
-                        <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)} className="w-9 h-9 rounded-full bg-transparent border-0 p-0"/>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* PANEL AUDIO quick */}
-                  {editorTab==="audio" && (
-                    <div className="p-3 border-t border-white/10 space-y-2">
-                      <div className="text-xs font-bold mb-1">🎵 Audio — Source</div>
-                      <div className="grid grid-cols-4 gap-1.5 text-[10px]">
-                        {[
-                          {id:"tts",l:"🗣️ TTS"},{id:"music",l:"🎵 Musik"},{id:"aimusic",l:"🤖 AI"},{id:"both",l:"🔀 Campur"}
-                        ].map(m=>(
-                          <button key={m.id} onClick={()=>setAudioMode(m.id as AudioMode)}
-                                  className={`py-2 rounded-lg border ${audioMode===m.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>{m.l}</button>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-[11px]">🔊 Volume/Preview mute</span>
-                        <button onClick={()=>setPreviewMuted(m=>!m)}
-                                className={`px-3 py-1 rounded-full text-[10px] ${previewMuted?"bg-red-500/30 border border-red-400":"bg-white/10 border border-white/10"}`}>
-                          {previewMuted?"🔇 Mute":"🔊 Bunyi"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+            {step === 5 && slides.length===0 && (
+              <section className="mt-4 p-8 text-center">
+                <div className="text-5xl mb-3">🎞️</div>
+                <div className="text-white/70 mb-4">Belum ada slide. Kembali ke Step 3 buat generate gambar dulu ya bro.</div>
+                <button className="btn btn-primary" onClick={()=>setStep(3)}>← Ke Step Gambar</button>
               </section>
             )}
+
+            {step === 6 && (
+              <ExportPanel
+                slides={slides}
+                isMobile={isMobile}
+                selectedTitle={selectedTitle}
+                niche={niche}
+                quality={quality} setQuality={setQuality}
+                loading={loading} progress={progress} renderETA={renderETA} stageText={stageText}
+                videoUrl={videoUrl} videoBlob={videoBlob}
+                meta={meta}
+                onBack={()=>setStep(5)}
+                onRender={doRender}
+                onDownload={downloadVideo}
+                onCopy={copyField}
+                copiedField={copiedField}
+                onDownloadMeta={downloadMetaText}
+              />
+            )}
+
           </div>
 
+          {step<=4 && (
           <aside className="card lg:sticky lg:top-4 self-start min-w-0">
             <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
               👁️ Preview Live
@@ -2607,6 +2327,7 @@ Dibuat dengan Verve AI Video Studio`;
             )}
             <ProjectMeta title={selectedTitle?.text} niche={niche} slides={slides.length} quality={quality} ratio={aspectRatio} viz={vizStyle}/>
           </aside>
+          )}
 
           {videoUrl && meta && (
             <div className="lg:col-span-3 card mt-2 min-w-0">
@@ -2745,7 +2466,7 @@ Dibuat dengan Verve AI Video Studio`;
                       <div className="text-sm font-bold truncate">{d.title}</div>
                       <div className="text-[10px] text-white/50 flex gap-2 flex-wrap">
                         <span>🖼️ {d.slides||0} slide</span>
-                        <span>• Step {d.step||1}/5</span>
+                        <span>• Step {d.step||1}/6</span>
                         <span>• {new Date(d.updatedAt).toLocaleDateString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
                       </div>
                     </div>

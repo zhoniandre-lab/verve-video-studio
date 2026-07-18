@@ -39,6 +39,11 @@ export interface RenderOptions {
   showTitle?: boolean;
   showLyrics?: boolean;
   beatSync?: boolean;
+  // ===== CAPCUT-STYLE COLOR / FILTER / ADJUST =====
+  videoFilter?: string;       // CSS canvas filter string (dari preset + brightness/contrast/saturation/sharpen)
+  vignetteStrength?: number;  // 0..1 (default 0.75)
+  videoSpeed?: number;        // 0.5..2 (default 1) - affects visuals only
+  spectrumSticker?: string;   // "bars-bottom"|"wave-center"|"disc"|"none" — small overlay visualizer
   onProgress?: (p: number) => void;
   onStage?: (s: string) => void;
 }
@@ -299,11 +304,17 @@ interface DrawState {
   showTitle?:boolean; showCaption?:boolean;
   logoImg?:HTMLImageElement|HTMLCanvasElement|null; logoPos?:"center"|"corner"|"none";
   captions?:CaptionWord[]; captionStyle?:CaptionStyle;
+  videoFilter?: string;
+  vignetteStrength?: number;
+  spectrumSticker?: string;
 }
 
 function drawFrame(s: DrawState) {
   const { W,H,bars,rgb,style,imgs,slideIdx,isTransition,nextIdx,transT,slideT,bass,beat } = s;
   const ctx = s._canvas.getContext("2d", { alpha: false, desynchronized: true })!;
+
+  // Reset filter di awal frame
+  ctx.filter = s.videoFilter || "none";
 
   // ===== MOBILE SPEED: kurangi gradient & efek berat =====
   // Flat dark bg (gak bikin radial gradient tiap frame — 2-3× lebih cepat di mobile GPU)
@@ -325,9 +336,11 @@ function drawFrame(s: DrawState) {
 
   // Vignette PRA-RENDERED (dibuat sekali di setup) — tidak buat radial gradient tiap frame
   if ((s as any)._vignette) {
-    ctx.globalAlpha = 0.75;
+    ctx.filter = "none";
+    ctx.globalAlpha = (typeof s.vignetteStrength==="number" ? s.vignetteStrength : 0.75);
     ctx.drawImage((s as any)._vignette, 0, 0, W, H);
     ctx.globalAlpha = 1;
+    ctx.filter = s.videoFilter || "none";
   }
 
   if (isTransition && nxt) {
@@ -817,13 +830,19 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
       logoImg, logoPos: opts.logoPosition||"center",
       captions: finalCaptions, captionStyle: capStyle,
       showTitle: opts.showTitle,
+      videoFilter: opts.videoFilter,
+      vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
+      spectrumSticker: opts.spectrumSticker,
     } as any);
   }
   onStage?.("WebCodecs tidak tersedia, pakai MediaRecorder...");
   return renderMediaRecorder({canvas,imgs,audio,fps,totalDur,slideDur,transDur,
     prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",spec,particles,onProgress,onStage,
     logoImg,logoPos:opts.logoPosition||"center",
-    captions:finalCaptions,captionStyle:capStyle,showTitle:opts.showTitle} as any);
+    captions:finalCaptions,captionStyle:capStyle,showTitle:opts.showTitle,
+    videoFilter: opts.videoFilter,
+    vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
+    spectrumSticker: opts.spectrumSticker} as any);
 }
 
 interface RenderBase {
@@ -937,6 +956,9 @@ async function renderWebCodecs(b:any){
       phase:t*0.5,_canvas:canvas,_transition:transition,_vignette:vigC,
       showTitle:showTitle!==false, showCaption: !!captions?.length,
       logoImg,logoPos,captions,captionStyle,
+      videoFilter: b.videoFilter,
+      vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
+      spectrumSticker: b.spectrumSticker,
     } as any);
 
     const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
@@ -1003,7 +1025,10 @@ async function renderMediaRecorder(b:any){
     drawFrame({time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
       phase:t*0.5,_canvas:canvas,_transition:transition,showTitle:showTitle!==false,
-      logoImg,logoPos,captions,captionStyle,showCaption:!!captions?.length} as any);
+      logoImg,logoPos,captions,captionStyle,showCaption:!!captions?.length,
+      videoFilter: b.videoFilter,
+      vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
+      spectrumSticker: b.spectrumSticker} as any);
     onProgress?.(t/totalDur);
     if(elapsed<totalDur+0.2) requestAnimationFrame(tick);
     else{mr.stop();actx?.close();}
