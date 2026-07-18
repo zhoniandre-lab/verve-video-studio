@@ -18,17 +18,31 @@ import { NextResponse } from "next/server";
  */
 export const dynamic = "force-dynamic";
 const DEFAULT_SUNO_BASE = "https://api.aimusic.so"; // free-tier compatible (suno-compatible)
-const APIFRAME_BASE = "https://apiframe.ai/api";   // apiframe.ai (key-based)
+const APIFRAME_BASE = "https://apiframe.ai/api";      // apiframe.ai
+const KIE_BASE = "https://api.kie.ai";                // kie.ai (prefix: "kie-"/"sk-kie"/"kie_")
+const SUNOR_BASE = "https://api.sunor.cc";            // sunor.cc
+
+function detectBase(key: string): string {
+  const k = key.toLowerCase().trim();
+  if (!k) return DEFAULT_SUNO_BASE;
+  // kie.ai: "kie-" / "sk-kie-" / "kie_" / panjang hex 32+
+  if (k.startsWith("kie") || k.startsWith("sk-kie")) return KIE_BASE;
+  // apiframe: "afk_" / "af_"
+  if (k.startsWith("afk_") || k.startsWith("af_")) return APIFRAME_BASE;
+  // sunor: "snr_" / "sunor_"
+  if (k.startsWith("snr_") || k.startsWith("sunor_")) return SUNOR_BASE;
+  // default fallback: coba apiframe dulu (paling banyak user)
+  return APIFRAME_BASE;
+}
 
 function getCreds(req: Request) {
   const hdrKey = req.headers.get("x-suno-key") || "";
   const hdrBase = req.headers.get("x-suno-base") || "";
   const envKey = process.env.SUNO_API_KEY || process.env.MUSIC_API_KEY || "";
   const envBase = process.env.SUNO_BASE_URL || "";
-  // Pilih key: user header > env
   const key = (hdrKey || envKey || "").trim();
   let base = (hdrBase || envBase || "").replace(/\/$/, "");
-  if (!base) base = key ? APIFRAME_BASE : DEFAULT_SUNO_BASE;
+  if (!base) base = detectBase(key);
   return { key, base };
 }
 
@@ -81,15 +95,19 @@ export async function POST(req: Request) {
 
     const headers: Record<string,string> = { "Content-Type": "application/json" };
     if (key) {
-      // Support Bearer atau raw key
-      headers["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${key}`;
-      headers["apikey"] = key.replace(/^Bearer\s+/i, ""); // apiframe.ai style
+      const rawKey = key.replace(/^Bearer\s+/i, "");
+      headers["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
+      headers["apikey"] = rawKey;                 // apiframe / openai-compat
+      headers["x-api-key"] = rawKey;              // kie.ai / generic
+      headers["X-API-Key"] = rawKey;
     }
 
-    // Try several endpoints
+    // Try several endpoints (berurutan; yang pertama success dipakai)
     const endpoints = [
       `${base}/v1/generate`,
       `${base}/v1/music/generate`,
+      `${base}/v1/suno/generate`,       // kie.ai style
+      `${base}/api/v1/generate`,
       `${base}/generate`,
       `${base}/api/generate`,
       `${base}/suno/generate`,
@@ -155,6 +173,8 @@ export async function GET(req: Request) {
     const endpoints = [
       `${base}/v1/status/${id}`,
       `${base}/v1/music/status/${id}`,
+      `${base}/v1/suno/status/${id}`,
+      `${base}/api/v1/status/${id}`,
       `${base}/status/${id}`,
       `${base}/api/status/${id}`,
       `${base}/feed/${id}`,

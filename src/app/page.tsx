@@ -59,32 +59,75 @@ function useIsMobile() {
   return m;
 }
 
-// ===== API Key Modal (mirip araz.biz.id) =====
+// ===== API Key Modal (mirip araz.biz.id) — multi-provider =====
+type Provider = "apiframe" | "kie" | "sunor";
+const PROVIDERS: { id:Provider; name:string; url:string; note:string; free:string; prefix?:string }[] = [
+  { id:"kie",      name:"🥇 Kie.ai",       url:"https://kie.ai?ref=verve",
+    note:"Bisa diakses dari Indonesia (Cloudflare longgar), 5.000 kredit GRATIS daftar, support Suno V3.5–V5.5 🔥",
+    free:"5.000 kredit (~±40 lagu) tanpa kartu", prefix:"kie-" },
+  { id:"apiframe", name:"apiframe.ai",     url:"https://apiframe.ai/?ref=verve",
+    note:"300 kredit/bulan GRATIS — tapi kadang diblok Cloudflare dari IP Indo. Solusi: pakai VPN/Mode Desktop/HP beda, atau pilih Kie.ai.",
+    free:"300 kredit/bulan (~27 lagu)", prefix:"afk_" },
+  { id:"sunor",    name:"Sunor.cc",        url:"https://sunor.cc/?ref=verve",
+    note:"Alternatif cadangan, 25 kredit satu kali saat daftar.",
+    free:"25 kredit (~2 lagu) saat daftar", prefix:"snr_" },
+];
+
+function detectProvider(key: string): Provider {
+  const k = key.trim().toLowerCase();
+  if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
+  if (k.startsWith("snr") || k.startsWith("sunor")) return "sunor";
+  return "apiframe";
+}
+function creditUrl(p: Provider) {
+  if (p === "kie") return "https://api.kie.ai/v1/credits";
+  if (p === "sunor") return "https://api.sunor.cc/v1/credits";
+  return "https://apiframe.ai/api/credit";
+}
+
 function ApiKeyModal({ open, onClose, onSave, currentKey }:{
   open: boolean; onClose: ()=>void; onSave: (k:string)=>void; currentKey: string;
 }) {
   const [text, setText] = useState(currentKey);
+  const [provider, setProvider] = useState<Provider>(detectProvider(currentKey));
   const [checking, setChecking] = useState(false);
   const [credits, setCredits] = useState<string>("");
-  useEffect(()=>{ if (open) { setText(currentKey); setCredits(""); } }, [open, currentKey]);
+  useEffect(()=>{ if (open) { setText(currentKey); setProvider(detectProvider(currentKey)); setCredits(""); } }, [open, currentKey]);
 
   async function cekKredit() {
     if (!text.trim()) return;
     setChecking(true); setCredits("");
+    const key = text.trim();
+    const prov = detectProvider(key);
     try {
-      const r = await fetch("https://apiframe.ai/api/credit", {
-        headers: { "Authorization": `Bearer ${text.trim()}`, "apikey": text.trim() },
-      }).catch(()=>null);
-      if (!r || !r.ok) { setCredits("Tidak bisa cek (mungkin key belum aktif atau bukan apiframe.ai)."); }
-      else {
-        const d = await r.json().catch(()=>({}));
-        setCredits(`Kredit tersedia: ${d.credit ?? d.credits ?? d.balance ?? JSON.stringify(d).slice(0,80)}`);
+      const endpoints = prov === "kie"
+        ? [creditUrl(prov), "https://api.kie.ai/api/v1/credits"]
+        : prov === "sunor"
+          ? [creditUrl(prov), "https://api.sunor.cc/api/credits"]
+          : [creditUrl(prov)];
+      let ok = false;
+      for (const u of endpoints) {
+        const r = await fetch(u, {
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "apikey": key,
+            "x-api-key": key,
+          },
+        }).catch(()=>null);
+        if (r && r.ok) {
+          const d = await r.json().catch(()=>({}));
+          setCredits(`✅ Kredit tersedia: ${d.credit ?? d.credits ?? d.balance ?? d.points ?? d.remaining ?? JSON.stringify(d).slice(0,80)}`);
+          ok = true; break;
+        }
       }
+      if (!ok) setCredits("⚠️ Tidak bisa cek otomatis (mungkin key belum aktif, IP diblok, atau bukan key "+prov+"). Coba generate lagu langsung, kalo berhasil berarti key valid.");
     } catch(e:any){ setCredits(`Error: ${e.message}`); }
     setChecking(false);
   }
 
   if (!open) return null;
+  const curProv = PROVIDERS.find(p=>p.id===provider) || PROVIDERS[0];
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-box modal-enter" onClick={e=>e.stopPropagation()}>
@@ -93,23 +136,52 @@ function ApiKeyModal({ open, onClose, onSave, currentKey }:{
             <span className="text-2xl">🔑</span>
             <div>
               <h3 className="text-lg font-black">Setelan API Key Music</h3>
-              <p className="text-[11px] text-white/60">Untuk AI Music (Suno-style) unlimited</p>
+              <p className="text-[11px] text-white/60">Untuk AI Music (Suno-style) unlimited — pilih provider yang bisa dibuka di HP kamu</p>
             </div>
           </div>
           <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-lg flex-shrink-0">×</button>
         </div>
 
-        <ol className="text-xs sm:text-sm text-white/80 space-y-2 mb-4 list-decimal pl-5">
-          <li>Buka <a href="https://apiframe.ai/?ref=verve" target="_blank" rel="noreferrer"
-            className="text-cyan-300 underline font-bold">apiframe.ai</a> lalu daftar/login email.</li>
-          <li>Masuk ke dashboard, cari menu <b>API Key</b>, lalu <b>copy</b> key kamu.</li>
-          <li>Tempel key di bawah lalu klik <b>Tambah</b>. Key tersimpan di HP kamu saja (tidak dikirim ke server kami).</li>
+        {/* Pilih provider */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {PROVIDERS.map(p=>(
+            <button key={p.id} type="button" onClick={()=>setProvider(p.id)}
+              className={`p-2 rounded-lg text-[11px] font-bold text-center border transition ${
+                provider===p.id
+                  ? "bg-gradient-to-br from-purple-600/40 to-pink-600/40 border-pink-400/60 text-white"
+                  : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+              }`}>
+              {p.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-2.5 rounded-lg bg-black/30 border border-white/10 text-[11px] text-white/80 mb-3 space-y-1.5">
+          <div>
+            👉 <a href={curProv.url} target="_blank" rel="noreferrer"
+                 className="text-cyan-300 underline font-bold break-all">{curProv.url.replace("https://","")}</a>
+          </div>
+          <div className="text-white/70">{curProv.note}</div>
+          <div className="text-green-300">🎁 {curProv.free}</div>
+          {curProv.prefix && <div className="text-yellow-300">🔑 Awalan key biasanya: <code className="bg-black/40 px-1 rounded">{curProv.prefix}…</code></div>}
+        </div>
+
+        <ol className="text-xs sm:text-sm text-white/80 space-y-1.5 mb-3 list-decimal pl-5">
+          <li>Klik link <b>{curProv.name}</b> di atas, daftar/login (email/Google).</li>
+          <li>Buka menu <b>API Key / API Keys</b> di dashboard, lalu <b>Create key</b> → copy.</li>
+          <li>Tempel di kolom bawah, klik <b>Tambah</b>. Key cuma tersimpan di HP kamu 🤙</li>
         </ol>
 
+        {provider === "apiframe" && (
+          <div className="text-[11px] p-2 rounded-lg bg-orange-500/10 border border-orange-400/30 text-orange-100 mb-3">
+            ⚠️ <b>apiframe.ai diblok Cloudflare di HP kamu (sama kayak screenshot)?</b> Solusi: (1) coba nyalakan VPN ke SG/MY, (2) buka lewat <b>Mode Desktop</b> Chrome, atau (3) <b>pilih Kie.ai</b> di tab atas — bisa akses normal tanpa VPN ✅
+          </div>
+        )}
+
         <label className="block mb-2">
-          <span className="lbl">API Key</span>
-          <input className="input" value={text} onChange={e=>setText(e.target.value)}
-                 placeholder="afk_xxxxx atau sk-..." autoFocus />
+          <span className="lbl">API Key ({curProv.name})</span>
+          <input className="input" value={text} onChange={e=>{ setText(e.target.value); setProvider(detectProvider(e.target.value)); }}
+                 placeholder={`${curProv.prefix||"sk-"}xxxxxxxx...`} autoFocus />
         </label>
 
         <div className="flex flex-wrap gap-2 mb-2">
@@ -123,10 +195,10 @@ function ApiKeyModal({ open, onClose, onSave, currentKey }:{
             <button className="btn btn-danger" onClick={()=>{ onSave(""); setText(""); setCredits(""); }}>🗑️ Hapus</button>
           )}
         </div>
-        {credits && <div className="text-[11px] text-cyan-200 bg-cyan-500/10 border border-cyan-400/30 rounded-lg p-2">{credits}</div>}
+        {credits && <div className="text-[11px] text-cyan-200 bg-cyan-500/10 border border-cyan-400/30 rounded-lg p-2 break-word">{credits}</div>}
 
         <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-white/40">
-          💡 Key disimpan di localStorage browser kamu, aman. Tanpa key kamu masih bisa coba free trial (kadang penuh).
+          💡 Key disimpan di localStorage browser kamu saja (tidak dikirim ke server Verve). Tanpa key kamu masih bisa coba free trial (kadang penuh).
         </div>
       </div>
     </div>
@@ -1124,7 +1196,9 @@ Dibuat dengan Verve AI Video Studio`;
 
                     {!sunoApiKey && (
                       <div className="text-[11px] p-2 rounded-lg bg-yellow-500/10 border border-yellow-400/30 text-yellow-100">
-                        💡 Gratis terbatas. Klik <b>🔑 Set API Key</b> untuk daftar di apiframe.ai (login email) & dapatkan kuota musik unlimited.
+                        💡 Gratis terbatas. Klik <b>🔑 Set API Key</b> — ada 3 provider:
+                        <b className="text-pink-300"> Kie.ai</b> (paling lancar di Indo, 5.000 kredit GRATIS 🔥),
+                        <b className="text-cyan-300"> apiframe.ai</b>, dan Sunor.cc.
                       </div>
                     )}
 
