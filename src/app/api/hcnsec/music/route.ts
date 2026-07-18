@@ -73,9 +73,13 @@ function mapModelGeneric(modelId: string): string {
 }
 
 function buildBody(payload: any, provider: Provider): any {
+  // Dukung payload "Kampung-style" yang pisah title, lyrics, deskripsi utama
+  const rawTitle = (payload._raw_title || payload.title || "").toString().trim();
+  const rawLyrics = (payload._raw_lyrics || payload.lyrics || "").toString().trim();
+  const rawStyle = (payload._raw_style || payload.prompt || payload.tags || "").toString().trim();
+
   const {
-    prompt, lyrics, title, genre, tags, custom,
-    model, instrumental, vocalGender, style_bits,
+    genre, tags, custom, model, instrumental, vocalGender, style_bits,
   } = payload;
 
   const sb = style_bits || {};
@@ -83,29 +87,24 @@ function buildBody(payload: any, provider: Provider): any {
   const eraWord = sb.era ? `era ${sb.era}` : "";
   const instrWord = sb.instruments ? `instruments: ${sb.instruments}` : "";
 
-  // Bangun style string yang kaya
-  const styleParts = [
-    tags || "",
-    eraWord,
-    tempoWord,
-    instrWord,
-    "professional studio recording, high quality audio, emotional vocals",
-  ].map(s=>(s||"").trim()).filter(Boolean);
-  const styleStr = styleParts.join(", ");
+  const autoStyleParts = [genre || "", eraWord, tempoWord, instrWord].map(s=>(s||"").trim()).filter(Boolean);
+  // Gabung style manual (rawStyle / deskripsi utama) + auto bits
+  const styleStr = [rawStyle, autoStyleParts.join(", "), "professional studio recording, high quality audio"]
+    .map(s=>(s||"").trim()).filter(Boolean).join(", ");
 
-  // prompt final (dipakai di non-custom mode atau sebagai "deskripsi")
-  const fallbackPrompt = [title, genre, styleStr].filter(Boolean).join(", ");
-  const finalPrompt = (prompt || "").trim() || fallbackPrompt;
-
-  const finalLyrics = (lyrics || "").trim();
-  const isCustom = !!custom && finalLyrics.length > 30;
+  // Title pakai rawTitle
+  const finalTitle = (rawTitle || "Verve AI Song").slice(0, 80);
+  const finalPrompt = rawStyle || [finalTitle, styleStr].filter(Boolean).join(", ");
+  const finalLyrics = rawLyrics;
+  // Custom mode AKTIF kalau lirik terisi (>30 char) dan bukan instrumental
+  const isCustom = (custom !== false) && finalLyrics.length > 30 && !instrumental;
 
   if (provider === "kie") {
     const body: any = {
       model: mapModelKie(model),
       customMode: isCustom,
       instrumental: !!instrumental,
-      title: (title || "Verve AI Song").slice(0,80),
+      title: finalTitle,
       callBackUrl: "playground",
     };
     if (isCustom) {
@@ -127,7 +126,7 @@ function buildBody(payload: any, provider: Provider): any {
   // apiframe / sunor / aimusic — suno-compatible
   const body: any = {
     prompt: isCustom ? finalLyrics : finalPrompt,
-    title: (title || "Verve AI Song").slice(0,80),
+    title: finalTitle,
     tags: tags || styleStr,
     make_instrumental: !!instrumental,
     wait_audio: false,
