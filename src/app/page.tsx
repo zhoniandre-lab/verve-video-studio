@@ -238,11 +238,15 @@ export default function Home() {
     setNKeywords(mobileNow ? 3 : 5);
     setTransitionDur(mobileNow ? 0.5 : 0.8);
 
-    // Coba restore draft dari sessionStorage (supaya tidak hilang saat refresh/rotasi)
+    // Coba restore draft dari sessionStorage (supaya tidak hilang saat refresh/rotasi/toggle desktop site)
+    let restoredSlides: Slide[] = [];
+    let restoredLyrics: string[] = [];
+    let restoredLogo = "";
     try {
       const raw = sessionStorage.getItem(STORAGE_KEY);
       if (raw) {
         const d = JSON.parse(raw);
+        if (typeof d.step === "number") setStep(d.step);
         if (d.niche) setNiche(d.niche);
         if (d.keywordMode) setKeywordMode(d.keywordMode);
         if (d.manualKeywords) setManualKeywords(d.manualKeywords);
@@ -250,6 +254,7 @@ export default function Home() {
         if (Array.isArray(d.keywords)) setKeywords(d.keywords);
         if (Array.isArray(d.titles)) setTitles(d.titles);
         if (d.selectedTitleId) setSelectedTitleId(d.selectedTitleId);
+        if (d.imageSource) setImageSource(d.imageSource);
         if (d.imageStyle) setImageStyle(d.imageStyle);
         if (d.aspectRatio) setAspectRatio(d.aspectRatio);
         if (d.nSlides) setNSlides(d.nSlides);
@@ -268,34 +273,72 @@ export default function Home() {
         if (d.musicModel) setMusicModel(d.musicModel);
         if (d.musicVocalType) setMusicVocalType(d.musicVocalType);
         if (d.musicVocalGender) setMusicVocalGender(d.musicVocalGender);
+        if (d.logoPosition) setLogoPosition(d.logoPosition);
         if (d.storyboard) setStoryboard(d.storyboard);
-        // slides tidak di-restore (dataURL besar, bikin storage penuh)
+        // Restore slides (sudah di-downscale jadi 1280px jadi relatif kecil untuk sessionStorage ~5MB max)
+        if (Array.isArray(d.slides) && d.slides.length && d.slides[0]?.imageUrl) {
+          restoredSlides = d.slides.slice(0,12);
+          restoredLyrics = Array.isArray(d.lyricLines) && d.lyricLines.length === restoredSlides.length
+            ? d.lyricLines : restoredSlides.map((s:any)=>s.lyric||"");
+        }
+        if (d.logoDataUrl) restoredLogo = d.logoDataUrl;
       }
     } catch {}
+    // Restore slides/logo di microtask supaya tidak blocking render awal
+    if (restoredSlides.length) {
+      setTimeout(()=>{
+        setSlides(restoredSlides);
+        setLyricLines(restoredLyrics);
+        if (restoredLogo) setLogoDataUrl(restoredLogo);
+        setStageText(`💾 Draft tersimpan otomatis — ${restoredSlides.length} slide dipulihkan`);
+        setTimeout(()=>setStageText(""), 2500);
+      }, 30);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save draft ke sessionStorage (setiap perubahan state penting — kecuali blob/dataURL besar)
+  // Auto-save draft ke sessionStorage (setiap perubahan state penting)
   useEffect(() => {
     if (!didInit.current) return;
     const t = setTimeout(() => {
       try {
+        // Jangan simpan dataURL gambar yang besar (lebih dari ~800KB per slide) untuk hindari quota
+        const compactSlides = slides.map(s=>{
+          if (!s.imageUrl || !s.imageUrl.startsWith("data:")) return s;
+          // data:image/jpeg;base64,...  → cek panjang
+          if (s.imageUrl.length > 800_000) return { ...s, _tooBig: true };
+          return s;
+        });
+        const anyTooBig = compactSlides.some((s:any)=>s._tooBig);
         const snap = {
-          niche, keywordMode, manualKeywords, nKeywords, keywords: keywords.slice(0,30),
-          titles: titles.slice(0,50).map(t=>({id:t.id,keyword:t.keyword,text:t.text})), selectedTitleId,
-          imageStyle, aspectRatio, nSlides, audioMode, ttsVoice, ttsText,
+          v: 2, savedAt: Date.now(),
+          step, niche, keywordMode, manualKeywords, nKeywords,
+          keywords: keywords.slice(0,30),
+          titles: titles.slice(0,50).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
+          selectedTitleId, imageSource, imageStyle, aspectRatio, nSlides,
+          audioMode, ttsVoice, ttsText,
           vizStyle, vizColor, slideDuration, transitionDur, transition,
-          showTitle, showLyrics, musicGenre, musicMood, musicModel,
-          musicVocalType, musicVocalGender, storyboard,
+          showTitle, showLyrics, logoPosition, logoDataUrl: logoDataUrl.slice(0,200_000),
+          musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
+          storyboard,
+          slides: anyTooBig ? [] : compactSlides,
+          lyricLines: anyTooBig ? [] : lyricLines.slice(0,12),
         };
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+        try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snap)); }
+        catch(e:any) {
+          // Quota exceeded — coba tanpa slides
+          try {
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify({...snap, slides:[], lyricLines:[], logoDataUrl:""}));
+          } catch {}
+        }
       } catch {}
-    }, 500);
+    }, 700);
     return () => clearTimeout(t);
-  }, [niche,keywordMode,manualKeywords,nKeywords,keywords,titles,selectedTitleId,
-      imageStyle,aspectRatio,nSlides,audioMode,ttsVoice,ttsText,
+  }, [step, niche,keywordMode,manualKeywords,nKeywords,keywords,titles,selectedTitleId,
+      imageSource,imageStyle,aspectRatio,nSlides,slides,audioMode,ttsVoice,ttsText,
       vizStyle,vizColor,slideDuration,transitionDur,transition,
-      showTitle,showLyrics,musicGenre,musicMood,musicModel,musicVocalType,musicVocalGender,storyboard]);
+      showTitle,showLyrics,logoDataUrl,logoPosition,musicGenre,musicMood,musicModel,
+      musicVocalType,musicVocalGender,storyboard,lyricLines]);
 
   function setErr(e: any) {
     const msg = e?.message || e?.error || String(e || "Terjadi kesalahan");
