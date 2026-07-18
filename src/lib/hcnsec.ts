@@ -10,27 +10,18 @@ const API_KEY = process.env.HCNSEC_API_KEY;
 const BASE_URL = (process.env.HCNSEC_BASE_URL || "https://api.hcnsec.cn/v1").replace(/\/$/, "");
 
 if (!API_KEY) {
-  console.warn("[hcnsec] HCNSEC_API_KEY belum di-set di .env / Vercel env vars");
+  console.warn("[hcnsec] HCNSEC_API_KEY belum di-set");
 }
 
 function h() {
-  if (!API_KEY) throw new Error("HCNSEC_API_KEY belum di-set di environment variable Vercel. Masukkan di Project Settings → Environment Variables.");
-  return {
-    Authorization: `Bearer ${API_KEY}`,
-    "Content-Type": "application/json",
-  };
+  if (!API_KEY) throw new Error("HCNSEC_API_KEY belum di-set di Vercel → Settings → Environment Variables.");
+  return { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" };
 }
 
 class ApiError extends Error {
   status: number;
   endpoint?: string;
-  body?: any;
-  constructor(msg: string, status = 500, endpoint?: string, body?: any) {
-    super(msg);
-    this.status = status;
-    this.endpoint = endpoint;
-    this.body = body;
-  }
+  constructor(msg: string, status = 500, endpoint?: string) { super(msg); this.status = status; this.endpoint = endpoint; }
 }
 
 async function postJson(path: string, body: any, timeoutSec = 120): Promise<any> {
@@ -38,266 +29,213 @@ async function postJson(path: string, body: any, timeoutSec = 120): Promise<any>
   const to = setTimeout(() => c.abort(), timeoutSec * 1000);
   try {
     const r = await fetch(`${BASE_URL}${path}`, {
-      method: "POST",
-      headers: h(),
-      body: JSON.stringify(body),
-      signal: c.signal,
+      method: "POST", headers: h(), body: JSON.stringify(body), signal: c.signal,
     });
     const isBinary = path.endsWith("/speech");
     if (isBinary) {
-      if (!r.ok) {
-        const txt = await r.text().catch(() => "");
-        throw new ApiError(`Audio API error ${r.status}: ${txt.slice(0, 300)}`, r.status, path);
-      }
-      const buf = await r.arrayBuffer();
-      return Buffer.from(buf).toString("base64");
+      if (!r.ok) throw new ApiError(`Audio ${r.status}`, r.status, path);
+      return Buffer.from(await r.arrayBuffer()).toString("base64");
     }
     const txt = await r.text();
     let payload: any;
     try { payload = JSON.parse(txt); } catch { payload = { raw: txt }; }
     if (!r.ok) {
       const msg =
-        payload?.error?.message ||
-        payload?.message ||
-        payload?.msg ||
-        payload?.error ||
-        (typeof payload === "string" ? payload : txt.slice(0, 500)) ||
-        `HTTP ${r.status}`;
-      throw new ApiError(`${msg}`, r.status, path, payload);
+        payload?.error?.message || payload?.message || payload?.msg || payload?.error ||
+        (typeof payload === "string" ? payload : txt.slice(0, 400)) || `HTTP ${r.status}`;
+      throw new ApiError(String(msg), r.status, path);
     }
     return payload;
   } catch (e: any) {
-    if (e.name === "AbortError") throw new ApiError(`Request timeout (${timeoutSec}s). Coba lagi atau gunakan kualitas cepat.`, 504, path);
+    if (e.name === "AbortError") throw new ApiError(`Timeout ${timeoutSec}s di ${path}`, 504, path);
     if (e instanceof ApiError) throw e;
     throw new ApiError(e?.message || "Unknown error", 500, path);
   } finally {
     clearTimeout(to);
   }
 }
-
-async function retry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1000): Promise<T> {
+async function retry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 800): Promise<T> {
   let lastErr: any;
   for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e: any) {
-      lastErr = e;
-      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
-    }
+    try { return await fn(); }
+    catch (e) { lastErr = e; if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs*(i+1))); }
   }
   throw lastErr;
 }
 
-// ================ CHAT ================
+// ============== CHAT ==============
 export async function chat(messages: { role: string; content: string }[], model?: string) {
-  const data: any = await retry(
-    () =>
-      postJson("/chat/completions", {
-        model: model || DEFAULT_CHAT_MODEL,
-        messages,
-        temperature: 0.8,
-      }),
-    2
-  );
+  const data: any = await retry(() => postJson("/chat/completions", {
+    model: model || DEFAULT_CHAT_MODEL, messages, temperature: 0.85,
+  }));
   return (data.choices?.[0]?.message?.content || "").trim();
 }
 
 export async function generateKeywords(niche: string, n = 5, model?: string) {
-  const sys =
-    "Kamu adalah ahli SEO & content creator YouTube Shorts/TikTok profesional. " +
-    `Buat ${n} keyword/topik video yang menarik, relevan, dan banyak dicari untuk niche user. ` +
-    "Output HANYA list, 1 per baris, tanpa nomor, tanpa tanda petik, tanpa penjelasan.";
-  const resp = await chat(
-    [
-      { role: "system", content: sys },
-      { role: "user", content: niche },
-    ],
-    model
-  );
-  return resp
-    .split("\n")
-    .map((l: string) => l.replace(/^[-•*0-9.)\s"]+|["\s]+$/g, "").trim())
-    .filter(Boolean)
-    .slice(0, Math.max(1, n));
+  const sys = "Kamu ahli SEO & content creator YouTube Shorts/TikTok. " +
+    `Buat ${n} keyword/topik video menarik & banyak dicari untuk niche user. ` +
+    "Output HANYA 1 per baris, tanpa nomor/penjelasan.";
+  return (await chat([{role:"system",content:sys},{role:"user",content:niche}], model))
+    .split("\n").map((l:string)=>l.replace(/^[-•*0-9.)\s"]+|["\s]+$/g,"").trim()).filter(Boolean).slice(0,n);
 }
 
 export async function generateTitles(keyword: string, niche: string, n = 3, model?: string) {
-  const sys =
-    "Kamu copywriter YouTube Shorts/TikTok profesional berbahasa Indonesia. " +
-    `Buat ${n} judul video pendek (maks 8 kata) untuk keyword: "${keyword}", niche "${niche}". ` +
-    "Judul clickbait tapi jujur. Output HANYA 1 judul per baris, tanpa nomor.";
-  const resp = await chat(
-    [
-      { role: "system", content: sys },
-      { role: "user", content: keyword },
-    ],
-    model
-  );
-  return resp
-    .split("\n")
-    .map((l: string) => l.replace(/^[-•*0-9.)\s"]+|["\s]+$/g, "").trim())
-    .filter(Boolean)
-    .slice(0, Math.max(1, n));
+  const sys = "Copywriter YouTube Shorts Indonesia. " +
+    `Buat ${n} judul pendek (maks 8 kata) untuk keyword "${keyword}", niche "${niche}". ` +
+    "Clickbait tapi jujur, bisa pakai angka/emo. Output 1 per baris tanpa nomor.";
+  return (await chat([{role:"system",content:sys},{role:"user",content:keyword}], model))
+    .split("\n").map((l:string)=>l.replace(/^[-•*0-9.)\s"]+|["\s]+$/g,"").trim()).filter(Boolean).slice(0,n);
 }
 
 export async function generateScript(title: string, keyword: string, slides: number, model?: string) {
-  const sys =
-    `Buat narasi video singkat Bahasa Indonesia untuk video "${title}" (keyword: ${keyword}), ` +
-    `bagi menjadi ${slides} baris (1 baris per slide). ` +
-    "Narasi santai natural gaya host YouTube Shorts. Total pendek saja.";
-  const resp = await chat(
-    [
-      { role: "system", content: sys },
-      { role: "user", content: title },
-    ],
-    model
-  );
-  return resp
-    .split("\n")
-    .map((l: string) => l.replace(/^[-•*0-9.)\s"]+/, "").trim())
-    .filter(Boolean)
-    .slice(0, Math.max(1, slides));
+  const sys = `Narasi singkat Bahasa Indonesia untuk video "${title}" (keyword: ${keyword}), ` +
+    `${slides} baris (1 baris=1 slide). Gaya host YouTube Shorts santai. Total pendek.`;
+  return (await chat([{role:"system",content:sys},{role:"user",content:title}], model))
+    .split("\n").map((l:string)=>l.replace(/^[-•*0-9.)\s"]+/,"").trim()).filter(Boolean).slice(0,slides);
 }
 
-export async function generateImagePrompt(title: string, keyword: string, niche: string, style: string) {
-  const sys =
-    "Buat 1 prompt text-to-image Bahasa Inggris, detail untuk AI gambar. " +
-    `Tentang "${title}" keyword "${keyword}", niche "${niche}", gaya "${style}". ` +
-    "Sebutkan: shot type, lighting, composition, mood, colors. Tambahkan 'no text, no watermark, sharp, high quality' di akhir. Output HANYA prompt.";
-  return (
-    await chat([
-      { role: "system", content: sys },
-      { role: "user", content: title },
-    ])
-  ).replace(/^["']|["']$/g, "");
-}
+// ============== IMAGE PROMPT ==============
+// Art style presets buat hasil "WAH"
+export const IMAGE_STYLES = [
+  { id: "cinematic", label: "🎬 Cinematic 8K",
+    suffix: "cinematic shot, 8k UHD, shot on ARRI Alexa, anamorphic lens, shallow depth of field, volumetric lighting, film grain, color graded, hyper detailed, photorealistic, epic composition" },
+  { id: "studio", label: "📸 Studio Photo",
+    suffix: "professional studio photograph, 85mm f/1.4 lens, crisp focus, studio lighting, softbox, high end retouching, 8k, hyperrealistic, award winning photography" },
+  { id: "epic", label: "⚔️ Epic Fantasy",
+    suffix: "epic fantasy concept art, octane render, unreal engine 5, dramatic god rays, cinematic lighting, hyper detailed, 8k, matte painting, artstation trending, greg rutkowski style" },
+  { id: "anime", label: "🌸 Anime Premium",
+    suffix: "anime key visual, makoto shinkai style, ultra detailed, vibrant colors, beautiful lighting, studio ghibli inspired, 4k, illustration, intricate details, cinematic anime scene" },
+  { id: "cyberpunk", label: "🌃 Cyberpunk Neon",
+    suffix: "cyberpunk 2077 aesthetic, neon lights, rain reflections, blade runner style, cinematic, volumetric fog, ultra detailed, 8k, ray tracing, vibrant neon colors, night city" },
+  { id: "3d", label: "🧊 3D Render Pixar",
+    suffix: "3D pixar style render, disney animation, octane render, soft lighting, adorable character design, ultra detailed, cinema 4d, vibrant colors, subsurface scattering, 8k" },
+  { id: "oil", label: "🎨 Oil Painting",
+    suffix: "oil painting, classical art, rembrandt lighting, thick brush strokes, museum quality, dramatic chiaroscuro, highly detailed, romanticism, master painter, 4k" },
+  { id: "minimalist", label: "◻️ Minimalist Aesthetic",
+    suffix: "minimalist aesthetic photography, clean composition, pastel colors, soft natural light, negative space, editorial, muted tones, instagram aesthetic, 4k" },
+];
 
-// ================ IMAGE ================
-// Coba beberapa kombinasi model/size/format untuk kompatibilitas maksimal
-const IMAGE_SIZE_FALLBACKS = ["1024x1024", "1024x1792", "1792x1024", "512x512", "768x768"];
-const IMAGE_MODEL_FALLBACKS = [
+// ============== IMAGE GENERATION ==============
+// Ukuran yang umumnya didukung OpenAI-compatible APIs
+const SAFE_SIZES = ["1024x1024", "1024x1792", "1792x1024", "512x512", "768x768"];
+const IMAGE_MODELS = [
   DEFAULT_IMAGE_MODEL,
   "step-image-edit-2",
+  "step-1.5v-image",
   "dall-e-3",
   "dall-e-2",
   "stable-diffusion-xl",
+  "sdxl",
   "flux",
   "flux-schnell",
+  "flux-pro",
   "midjourney",
+  "imagen-3",
 ];
 
-function extractUrlFromItem(item: any): string | null {
+function extractUrl(item: any): string | null {
   if (!item) return null;
-  // Kemungkinan field
-  if (typeof item === "string" && item.startsWith("http")) return item;
+  if (typeof item === "string" && (item.startsWith("http") || item.startsWith("data:"))) return item;
   if (item.b64_json) return `data:image/png;base64,${item.b64_json}`;
   if (item.url) return item.url;
   if (item.image_url) return typeof item.image_url === "string" ? item.image_url : item.image_url.url;
-  if (item.image) return typeof item.image === "string" ? (item.image.startsWith("http") ? item.image : `data:image/png;base64,${item.image}`) : null;
+  if (item.image) return typeof item.image === "string"
+    ? (item.image.startsWith("http") || item.image.startsWith("data:") ? item.image : `data:image/png;base64,${item.image}`)
+    : null;
   return null;
 }
 
-export async function generateImage(prompt: string, size = "1024x1024", model?: string): Promise<{ url: string; model: string; size: string }> {
-  const errors: string[] = [];
-  const modelsToTry = [model || DEFAULT_IMAGE_MODEL, ...IMAGE_MODEL_FALLBACKS.filter((m) => m !== (model || DEFAULT_IMAGE_MODEL))];
-  const sizesToTry = [size, ...IMAGE_SIZE_FALLBACKS.filter((s) => s !== size)];
-  const formats = ["b64_json", "url"];
+interface GenImageResult { url: string; model: string; size: string; prompt: string; }
 
-  for (const m of modelsToTry) {
-    for (const s of sizesToTry) {
-      for (const fmt of formats) {
+export async function generateImage(prompt: string, styleSuffix?: string, size = "1024x1024"): Promise<GenImageResult> {
+  const fullPrompt = styleSuffix ? `${prompt}, ${styleSuffix}, no text, no watermark, no logo, sharp focus` : `${prompt}, no text, no watermark, sharp focus`;
+  const errors: string[] = [];
+  // urutkan size: yang diminta dulu, lalu yang lain
+  const sizes = [size, ...SAFE_SIZES.filter(s => s !== size)];
+
+  for (const model of IMAGE_MODELS) {
+    for (const sz of sizes) {
+      for (const fmt of ["url", "b64_json"] as const) {
         try {
-          const body: any = { model: m, prompt, size, n: 1 };
-          body.response_format = fmt;
-          // untuk model edit, beberapa provider butuh image; skip jika tidak ada
+          // body minimal — hanya field yang umum
+          const body: any = { model, prompt: fullPrompt, size, n: 1, response_format: fmt };
           const data = await postJson("/images/generations", body, 90);
           const item = data.data?.[0] ?? data;
-          const url = extractUrlFromItem(item);
-          if (url && url.length > 100) return { url, model: m, size: s };
-          // url valid tapi pendek? cek jika ada data lain
-          if (url && url.startsWith("http")) return { url, model: m, size: s };
+          const url = extractUrl(item);
+          if (url && url.length > 100) return { url, model, size: sz, prompt: fullPrompt };
         } catch (e: any) {
-          // Jangan coba semua model jika errornya auth (401)
-          if (e.status === 401) throw new ApiError("API Key salah / tidak valid. Periksa HCNSEC_API_KEY di Vercel.", 401);
-          if (e.status === 402) throw new ApiError("Saldo API kamu habis. Top up saldo di api.hcnsec.cn", 402);
-          const short = `${m}/${s}/${fmt}: ${e.message.slice(0, 100)}`;
-          errors.push(short);
-          // jika model not found, break size loop untuk model ini
-          if (/model.*not.*found|invalid.*model|unknown.*model|does not exist/i.test(e.message)) break;
-          // jika size invalid, coba size berikutnya
+          // Auth / quota / content-policy: jangan coba model lain
+          if (e.status === 401) throw new ApiError("API Key salah / tidak valid. Cek HCNSEC_API_KEY.", 401);
+          if (e.status === 402) throw new ApiError("Saldo API habis. Top up di api.hcnsec.cn.", 402);
+          if (/content.?policy|safety|inappropriate|blocked|nsfw/i.test(e.message)) {
+            throw new ApiError("Prompt ditolak safety filter. Coba ubah kata-kata dalam prompt.", 400);
+          }
+          errors.push(`${model}/${sz}/${fmt}: ${e.message.slice(0,80)}`);
+          // kalau model not found, break size loop untuk model ini
+          if (/model.*not.*found|unknown.*model|invalid.*model|does not exist/i.test(e.message)) break;
+          // size tidak didukung, coba size berikut
           if (/size|resolution|dimension/i.test(e.message)) continue;
-          // jika format tidak didukung, coba format lain
+          // format tidak didukung, coba format lain
           if (/response_format|b64/i.test(e.message)) continue;
         }
       }
     }
   }
-
-  const detail = errors.slice(0, 4).join(" | ");
   throw new ApiError(
-    `Gambar gagal di-generate dengan semua kombinasi. Coba: (1) upload gambar sendiri, (2) cek saldo API di api.hcnsec.cn, (3) pastikan model ${DEFAULT_IMAGE_MODEL} tersedia. Detail: ${detail}`,
-    500,
-    "/images/generations"
+    `Gagal generate gambar dengan semua kombinasi.\n\n${errors.slice(0,6).join("\n")}\n\n💡 Coba style lain atau upload gambar sendiri.`,
+    500, "/images/generations"
   );
 }
 
-// ================ TTS ================
+export async function enhancePrompt(basePrompt: string, style = "cinematic"): Promise<string> {
+  const sys = "Kamu adalah prompt engineer ahli AI gambar. " +
+    "Ubah prompt user menjadi prompt English yang SANGAT detail untuk AI gambar, tambahkan detail visual: " +
+    "shot type, lighting (golden hour, studio, volumetric, neon), komposisi (rule of thirds, centered), " +
+    "color palette, mood, detail tekstur, kualitas (8k, hyperdetailed, sharp focus). " +
+    "Prompt harus padat 1 kalimat panjang, tanpa enter. Output HANYA prompt.";
+  const p = await chat([
+    { role: "system", content: sys },
+    { role: "user", content: `Style: ${style}. Prompt dasar: ${basePrompt}` }
+  ]);
+  return p;
+}
+
+// ============== TTS ==============
 export async function generateSpeech(text: string, voice = "alloy", model?: string): Promise<string> {
-  const b64: string = await retry(
-    () =>
-      postJson(
-        "/audio/speech",
-        { model: model || DEFAULT_TTS_MODEL, input: text.slice(0, 3500), voice, response_format: "mp3" },
-        120
-      ),
-    2
-  );
+  const b64: string = await retry(() => postJson("/audio/speech",
+    { model: model || DEFAULT_TTS_MODEL, input: text.slice(0, 3500), voice, response_format: "mp3" }, 120));
   return `data:audio/mp3;base64,${b64}`;
 }
 
-// ================ TEXT-TO-VIDEO ================
+// ============== TEXT-TO-VIDEO ==============
 const VIDEO_ENDPOINTS = ["/videos/generations", "/video/generations"];
 
-export async function generateVideo(
-  prompt: string,
-  opts?: { imageUrl?: string; duration?: number; model?: string; aspectRatio?: string; negativePrompt?: string }
-): Promise<{ video_url: string; status: string; id?: string; endpoint?: string; model: string }> {
+export async function generateVideo(prompt: string, opts?: {
+  imageUrl?: string; duration?: number; model?: string; aspectRatio?: string; negativePrompt?: string;
+}): Promise<{ video_url: string; status: string; id?: string; endpoint?: string; model: string }> {
   const model = opts?.model || DEFAULT_VIDEO_MODEL;
   const duration = Math.min(Math.max(opts?.duration || 5, 2), 8);
-  const body: any = {
-    model,
-    prompt,
-    duration,
+  const body: any = { model, prompt, duration,
     aspect_ratio: opts?.aspectRatio || "16:9",
     negative_prompt: opts?.negativePrompt || "blurry, low quality, distorted, deformed, watermark, text, ugly",
   };
   if (opts?.imageUrl && !opts.imageUrl.startsWith("data:")) body.image_url = opts.imageUrl;
-
   let lastErr: any = null;
   for (const ep of VIDEO_ENDPOINTS) {
     try {
       const data = await postJson(ep, body, 60);
       const item = data.data?.[0] ?? data;
-      const url = item.url || item.video_url || item.output?.url || "";
       return {
-        video_url: url,
-        status: item.status || data.status || (url ? "ready" : "pending"),
-        id: item.id || data.id || data.task_id,
-        endpoint: ep,
-        model,
+        video_url: item.url || item.video_url || item.output?.url || "",
+        status: item.status || data.status || "pending",
+        id: item.id || data.id || data.task_id, endpoint: ep, model,
       };
-    } catch (e: any) {
-      lastErr = e;
-      if (e.status === 404) continue;
-      throw e;
-    }
+    } catch (e: any) { lastErr = e; if (e.status === 404) continue; throw e; }
   }
   throw new ApiError(
-    `Text-to-Video belum tersedia untuk model "${model}" di akun ini (404 di semua endpoint). ` +
-    `Cek dashboard api.hcnsec.cn untuk model video yang tersedia (Kling/Wan/Sora/dll), lalu kasih tau saya nama modelnya. ` +
-    `Sementara pakai mode Slideshow + Spectrum.`,
-    404,
-    "video"
+    `Text-to-Video belum tersedia di akun (model "${model}" tidak ditemukan/404). ` +
+    `Cek dashboard api.hcnsec.cn untuk model video yang tersedia. ` +
+    `Sementara pakai mode Slideshow + Spectrum yang keren.`, 404, "video"
   );
 }
 
@@ -308,19 +246,12 @@ export async function pollVideo(taskId: string, endpoint = "/videos/generations"
     const data = await r.json().catch(() => ({}));
     const item = data.data?.[0] ?? data;
     return { video_url: item.url || item.video_url || "", status: item.status || data.status || "unknown" };
-  } catch {
-    return { video_url: "", status: "error" };
-  }
+  } catch { return { video_url: "", status: "error" }; }
 }
 
 export function listModels() {
-  return {
-    chat: CHAT_MODELS,
-    defaultChat: DEFAULT_CHAT_MODEL,
-    defaultImage: DEFAULT_IMAGE_MODEL,
-    defaultTts: DEFAULT_TTS_MODEL,
-    defaultVideo: DEFAULT_VIDEO_MODEL,
-  };
+  return { chat: CHAT_MODELS, imageStyles: IMAGE_STYLES, imageModels: IMAGE_MODELS,
+    defaultChat: DEFAULT_CHAT_MODEL, defaultImage: DEFAULT_IMAGE_MODEL, defaultTts: DEFAULT_TTS_MODEL, defaultVideo: DEFAULT_VIDEO_MODEL };
 }
 
 export { ApiError };

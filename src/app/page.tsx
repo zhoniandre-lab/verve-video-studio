@@ -12,12 +12,21 @@ interface TitleItem { id: string; keyword: string; text: string; }
 interface Slide { id: string; imageUrl: string; }
 
 const COLOR_PRESETS = ["#ec4899", "#8b5cf6", "#22d3ee", "#f59e0b", "#22c55e", "#ef4444", "#ffffff"];
-const IMAGE_STYLES = ["cinematic photo", "3D illustration", "anime style", "watercolor painting",
-                      "cyberpunk art", "realistic photo", "minimalist flat design"];
+// Style presets (sesuai server)
+const IMAGE_STYLE_PRESETS = [
+  { id: "cinematic", label: "🎬 Cinematic 8K", desc: "Film look, ARRI Alexa" },
+  { id: "epic", label: "⚔️ Epic Fantasy", desc: "Concept art, UE5" },
+  { id: "studio", label: "📸 Studio Photo", desc: "Foto profesional HD" },
+  { id: "anime", label: "🌸 Anime Premium", desc: "Makoto Shinkai style" },
+  { id: "cyberpunk", label: "🌃 Cyberpunk Neon", desc: "Blade Runner" },
+  { id: "3d", label: "🧊 3D Pixar", desc: "Cartoon 3D lucu" },
+  { id: "oil", label: "🎨 Oil Painting", desc: "Lukisan klasik" },
+  { id: "minimalist", label: "◻️ Minimalist", desc: "Aesthetic pastel" },
+];
 const IMAGE_SIZES = [
-  { label: "16:9 Landscape", val: "1792x1024" },
-  { label: "9:16 Shorts/TikTok", val: "1024x1792" },
-  { label: "1:1 Square", val: "1024x1024" },
+  { label: "📱 9:16 Shorts/TikTok", val: "1024x1792" },
+  { label: "🖥️ 16:9 YouTube", val: "1792x1024" },
+  { label: "⬛ 1:1 Instagram", val: "1024x1024" },
 ];
 const VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
 
@@ -55,7 +64,7 @@ export default function Home() {
 
   // Step 3
   const [imageSource, setImageSource] = useState<ImageSource>("ai");
-  const [imageStyle, setImageStyle] = useState("cinematic photo");
+  const [imageStyle, setImageStyle] = useState("cinematic");
   const [imageSize, setImageSize] = useState("1792x1024");
   const [nSlides, setNSlides] = useState(isMobile ? 3 : 4);
   const [slides, setSlides] = useState<Slide[]>([]);
@@ -164,6 +173,7 @@ export default function Home() {
             niche,
             style: imageStyle,
             size: imageSize,
+            enhance: true,
           }),
         });
         const data = await res.json();
@@ -471,11 +481,22 @@ export default function Home() {
                     <input type="number" className="input" value={nSlides} min={1} max={isMobile?6:10}
                            onChange={(e) => setNSlides(Number(e.target.value))} />
                   </label>
-                  <label className="block">
-                    <div className="text-xs sm:text-sm text-white/70 mb-1">Style</div>
-                    <select className="select" value={imageStyle} onChange={(e)=>setImageStyle(e.target.value)}>
-                      {IMAGE_STYLES.map((s)=><option key={s} value={s}>{s}</option>)}
-                    </select>
+                  <label className="block sm:col-span-2">
+                    <div className="text-xs sm:text-sm text-white/70 mb-2">🎨 Style Gambar (pilih 1)</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {IMAGE_STYLE_PRESETS.map((s) => (
+                        <button key={s.id} type="button"
+                          onClick={()=>setImageStyle(s.id)}
+                          className={`p-2 rounded-xl border text-left transition ${
+                            imageStyle===s.id
+                              ? "bg-gradient-to-br from-purple-600/40 to-pink-600/40 border-pink-400 shadow-lg"
+                              : "bg-white/5 border-white/10 hover:bg-white/10"
+                          }`}>
+                          <div className="text-sm font-bold">{s.label}</div>
+                          <div className="text-[10px] text-white/60">{s.desc}</div>
+                        </button>
+                      ))}
+                    </div>
                   </label>
                   <label className="block">
                     <div className="text-xs sm:text-sm text-white/70 mb-1">Rasio</div>
