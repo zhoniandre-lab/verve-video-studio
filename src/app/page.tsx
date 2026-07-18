@@ -1056,9 +1056,9 @@ Dibuat dengan Verve AI Video Studio`;
                 <div>
                   <span className="lbl">Mode audio</span>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                    {([["tts","🔊 TTS AI"],["music","🎵 Musik File"],["both","🎶 TTS+Musik"],["aimusic","🎼 AI Music"],["none","🔇 Mute"]] as const).map(([v,l])=>(
+                    {([["tts","🔊 TTS"],["music","🎵 Musik"],["both","🎶 TTS+Musik"],["aimusic","🎼 AI Music"],["none","🔇 Mute"]] as const).map(([v,l])=>(
                       <button key={v} onClick={()=>setAudioMode(v as AudioMode)}
-                        className={`btn ${audioMode===v?"btn-primary":"btn-ghost"} text-xs sm:text-sm`}>{l}</button>
+                        className={`btn ${audioMode===v?"btn-primary":"btn-ghost"} text-xs sm:text-sm px-2 sm:px-3`}>{l}</button>
                     ))}
                   </div>
                 </div>
@@ -1320,7 +1320,7 @@ Dibuat dengan Verve AI Video Studio`;
           <aside className="card lg:sticky lg:top-4 self-start min-w-0">
             <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">👁️ Preview Live</h3>
             <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
-                 style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"100%":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"100%":"320px"}:{aspectRatio:"16/9"}}>
+                 style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
               {slides[0] ? (
                 <img src={slides[0].imageUrl} className="w-full h-full object-cover" alt="preview"/>
               ) : (

@@ -56,9 +56,9 @@ main { position: relative; z-index: 1; }
 
 /* ==================== MOBILE FIRST ==================== */
 main {
-  padding-left: 12px;
-  padding-right: 12px;
-  padding-top: 12px;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 10px;
   padding-bottom: 24px;
   width: 100%;
   max-width: 100%;
@@ -67,6 +67,13 @@ main {
 @media (min-width: 640px) {
   main { padding: 24px; max-width: 1152px; margin: 0 auto; }
 }
+
+/* Grid gap aman untuk mobile */
+.grid { gap: 0.6rem !important; }
+@media (min-width: 640px) { .grid { gap: 1rem !important; } }
+
+/* Step bar gap lebih kecil di mobile */
+.step-dot + div { margin-left: 2px; }
 
 /* Glass card */
 .card {
@@ -81,23 +88,28 @@ main {
     0 1px 0 rgba(255,255,255,0.08) inset;
   width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 @media (min-width: 640px) {
-  .card { border-radius: 1.25rem; padding: 1.5rem; }
+  .card { border-radius: 1.25rem; padding: 1.5rem; overflow: visible; }
 }
+/* Grid container safe */
+.grid { min-width: 0; }
+[class*="lg:col-span-"] { min-width: 0; }
 
 /* Buttons */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-  padding: 0.6rem 0.9rem; border-radius: 0.85rem; font-weight: 700; font-size: 0.82rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+  padding: 0.55rem 0.65rem; border-radius: 0.8rem; font-weight: 700; font-size: 0.78rem;
   transition: all .18s ease; border: 1px solid transparent; cursor: pointer;
-  user-select: none; white-space: nowrap;
+  user-select: none; white-space: normal; text-align: center; line-height: 1.2;
   min-height: 44px;
   touch-action: manipulation;
   flex-shrink: 0;
+  word-break: break-word;
 }
 @media (min-width: 640px) {
-  .btn { padding: 0.7rem 1.1rem; font-size: 0.875rem; border-radius: 0.9rem; gap: 0.5rem; }
+  .btn { padding: 0.7rem 1.1rem; font-size: 0.875rem; border-radius: 0.9rem; gap: 0.5rem; white-space: nowrap; line-height: 1.3; }
 }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.5; pointer-events: none; }
@@ -387,8 +399,9 @@ input[type=range]::-moz-range-thumb {
 }
 
 /* ====== Audio / video elements responsive ====== */
-audio, video { max-width: 100%; }
-audio { width: 100%; height: 40px; }
+audio, video { max-width: 100%; width: 100%; }
+audio { width: 100%; height: 44px; border-radius: 8px; }
+video { border-radius: 12px; }
 
 /* ====== Image grid safe ====== */
 .img-grid img { display: block; width: 100%; height: 100%; object-fit: cover; }
