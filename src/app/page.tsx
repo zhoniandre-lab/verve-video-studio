@@ -318,6 +318,10 @@ export default function Home() {
   const [copiedField, setCopiedField] = useState<string>("");
 
   const previewAudioRef = useRef<HTMLAudioElement|null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement|null>(null);
+  const previewRafRef = useRef<number|null>(null);
+  const previewAudioBufRef = useRef<{data:Float32Array;sampleRate:number}|null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const renderStartRef = useRef<number>(0);
   const selectedTitle = useMemo(() => titles.find(t=>t.id===selectedTitleId), [titles, selectedTitleId]);
 
@@ -1110,6 +1114,195 @@ Dibuat dengan Verve AI Video Studio`;
     finally { setLoading(null); }
   }
 
+  // ===== PREVIEW VIDEO (slide transisi + lirik overlay + spectrum) — render live sebelum klik Render =====
+  function stopPreview() {
+    if (previewRafRef.current) { cancelAnimationFrame(previewRafRef.current); previewRafRef.current = null; }
+    if (previewAudioRef.current && !previewAudioRef.current.paused) previewAudioRef.current.pause();
+    setPreviewPlaying(false);
+  }
+  async function togglePreview() {
+    const canvas = previewCanvasRef.current;
+    if (!canvas) return;
+    if (previewPlaying) { stopPreview(); return; }
+
+    // Tentukan audio untuk preview
+    const previewSrc = proxifyAudioUrl(
+      (audioMode==="aimusic" && aiMusicUrl) ? aiMusicUrl :
+      (audioMode==="tts" && ttsUrl) ? ttsUrl :
+      (audioMode==="music" && musicUrl) ? musicUrl :
+      (audioMode==="both" && (musicUrl||aiMusicUrl)) ? (aiMusicUrl||musicUrl) : ""
+    );
+    const audEl = previewAudioRef.current;
+    if (audEl) {
+      audEl.src = previewSrc;
+      audEl.currentTime = 0;
+    }
+
+    // Load canvas & images
+    const ctx = canvas.getContext("2d")!;
+    const prof = QUALITY_OPTIONS.find(q=>q.id===quality);
+    const W = canvas.width, H = canvas.height;
+    // Load slides ke HTMLImageElement
+    const imgs: HTMLImageElement[] = [];
+    for (const s of slides) {
+      const im = new Image(); im.crossOrigin = "anonymous";
+      im.src = s.imageUrl;
+      try { await new Promise<void>((res,rej)=>{ im.onload=()=>res(); im.onerror=()=>res(); setTimeout(()=>res(),4000); }); } catch {}
+      imgs.push(im);
+    }
+    // Setup audio + analyser
+    let actx: AudioContext|null = null; let analyser: AnalyserNode|null = null; let freq = new Uint8Array(0);
+    const startT = performance.now();
+    setPreviewPlaying(true);
+
+    const draw = () => {
+      previewRafRef.current = requestAnimationFrame(draw);
+      const now = performance.now();
+      let t = 0;
+      if (audEl && !audEl.paused && audEl.duration) t = audEl.currentTime;
+      else t = (now - startT)/1000;
+
+      // Slide index
+      const sd = Math.max(1, slideDuration);
+      const td = Math.min(sd*0.6, isMobile?0.5:0.8);
+      const perS = sd + td;
+      let slideIdx = Math.floor(t/perS);
+      let localT = t - slideIdx*perS;
+      let inTrans = localT >= sd;
+      let transT = inTrans ? (localT-sd)/td : 0;
+      let nextIdx = Math.min(slideIdx+1, imgs.length-1);
+      slideIdx = Math.min(slideIdx, imgs.length-1);
+      const slideT = Math.min(1, localT/sd);
+
+      // Gambar background (slide) dengan transisi
+      ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+      const drawImg = (img:HTMLImageElement, alpha=1, zoom=1, ox=0, oy=0)=>{
+        if (!img.naturalWidth) { ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H); return; }
+        const ir = img.naturalWidth/img.naturalHeight, cr = W/H;
+        let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;
+        if (ir>cr) { sh=img.naturalHeight; sw=sh*cr; sx=(img.naturalWidth-sw)/2; }
+        else { sw=img.naturalWidth; sh=sw/cr; sy=(img.naturalHeight-sh)/2; }
+        ctx.save(); ctx.globalAlpha = alpha;
+        // Ken Burns: slight zoom
+        const z = zoom; const zs = z*(ir>cr?sh:sw);
+        ctx.translate(W/2+ox,H/2+oy); ctx.scale(z,z); ctx.translate(-W/2-ox,-H/2-oy);
+        ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
+        ctx.restore();
+      };
+      // Zoom Ken Burns subtle
+      const zb = 1 + slideT*0.04;
+      drawImg(imgs[slideIdx], 1, zb);
+      if (inTrans && imgs[nextIdx]) {
+        // Fade transition simple untuk preview
+        const nextZ = 1 + (1-transT)*0.04;
+        drawImg(imgs[nextIdx], transT, nextZ);
+      }
+      // Vignette
+      const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.7);
+      vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.55)");
+      ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+      // Spectrum ringkas (pakai analyser live, atau fake sine kalo ga ada audio)
+      if (analyser) {
+        analyser.getByteFrequencyData(freq);
+      } else {
+        freq = new Uint8Array(64);
+        for (let i=0;i<64;i++) freq[i] = 80 + Math.sin(t*2+i*0.2)*40 + Math.sin(t*5+i*0.3)*20;
+      }
+      let bass=0; const bEnd=Math.floor(freq.length*0.1);
+      for (let i=0;i<bEnd;i++) bass+=freq[i]; bass/=bEnd||1; bass/=255;
+      // Bars bawah
+      const bars=40, bw=(W*0.9)/bars, baseY=H-24, grad=ctx.createLinearGradient(0,H,0,0);
+      grad.addColorStop(0,vizColor); grad.addColorStop(1,"#22d3ee");
+      ctx.save(); ctx.shadowBlur=14; ctx.shadowColor=vizColor;
+      for (let i=0;i<bars;i++){
+        const v=freq[Math.floor(i/bars*freq.length)]/255;
+        const h=18+v*H*0.18;
+        ctx.fillStyle=grad;
+        ctx.fillRect(W*0.05+i*bw+1, baseY-h, bw-2, h);
+      }
+      ctx.restore();
+
+      // Title overlay
+      if (showTitle) {
+        ctx.save();
+        ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
+        ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,sans-serif`;
+        ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10; ctx.lineWidth=4; ctx.strokeStyle="rgba(0,0,0,0.8)";
+        ctx.strokeText(selectedTitle?.text||niche||"", W/2, H-40, W*0.9);
+        ctx.fillText(selectedTitle?.text||niche||"", W/2, H-40, W*0.9);
+        ctx.restore();
+      }
+
+      // Lirik/kapisi (ambil dari lyricLines, durasi per baris)
+      if (showLyrics && lyricLines.some(x=>!!x)) {
+        const lines = lyricLines.filter(x=>!!x && x.trim());
+        const leadIn = 1.2;
+        const totalLyricT = 180; // placeholder 3menit, nanti diganti dari audio
+        const dur = audEl?.duration || Math.max(lines.length*sd, totalLyricT);
+        const perL = (dur-leadIn-1)/lines.length;
+        const activeLine = Math.max(0,Math.min(lines.length-1, Math.floor((t-leadIn)/perL)));
+        const lt = ((t-leadIn) - activeLine*perL)/perL;
+        const line = lines[activeLine] || "";
+        ctx.save();
+        ctx.fillStyle="#fde047"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        const fs = Math.floor(H*0.055);
+        ctx.font=`900 ${fs}px system-ui,sans-serif`;
+        // highlight per-kata sederhana
+        const words = line.split(/\s+/);
+        const maxW=W*0.88;
+        let curL="", curW=0; const rows:string[]=[];
+        words.forEach(w=>{
+          const t2 = curL?curL+" "+w:w;
+          if (ctx.measureText(t2).width > maxW && curL) { rows.push(curL); curL=w; } else curL=t2;
+        });
+        if (curL) rows.push(curL);
+        const lh=fs*1.25; const baseY=H*0.7;
+        rows.forEach((row,ri)=>{
+          const y = baseY - (rows.length-1)*lh/2 + ri*lh;
+          const wds = row.split(/\s+/);
+          let totalW=0; const widths=wds.map(w=>{const m=ctx.measureText(w).width; totalW+=m; return m;});
+          const sw=ctx.measureText(" ").width; totalW+=sw*(wds.length-1);
+          let x=W/2-totalW/2;
+          wds.forEach((w,wi)=>{
+            const isActive = (wi/Math.max(1,wds.length)) <= lt;
+            ctx.save();
+            ctx.lineWidth=Math.max(5,fs/7); ctx.strokeStyle="rgba(0,0,0,0.9)"; ctx.lineJoin="round";
+            ctx.strokeText(w,x+widths[wi]/2,y);
+            ctx.fillStyle=isActive?"#fde047":"#fff";
+            ctx.fillText(w,x+widths[wi]/2,y);
+            ctx.restore();
+            x+=widths[wi]+sw;
+          });
+        });
+        ctx.restore();
+      }
+
+      // Logo pojok
+      // (sederhana)
+    };
+    draw();
+    if (audEl && previewSrc) {
+      try {
+        if (!actx) {
+          const AC = (window as any).AudioContext||(window as any).webkitAudioContext;
+          actx = new AC();
+          analyser = actx.createAnalyser();
+          analyser.fftSize=256;
+          const src = actx.createMediaElementSource(audEl);
+          src.connect(analyser); analyser.connect(actx.destination);
+          freq = new Uint8Array(analyser.frequencyBinCount);
+        }
+        if (actx.state==="suspended") actx.resume();
+        await audEl.play().catch(()=>{});
+        audEl.onended = ()=>stopPreview();
+      } catch(e) {}
+    }
+  }
+
+  // Auto stop kalau keluar dari step 5 / halaman
+  useEffect(()=>()=>stopPreview(), []);
+
   // Auto-isi judul lagu dari judul high-CTR yang dipilih (sekali)
   useEffect(()=>{
     if (selectedTitle && !musicTitle) {
@@ -1740,6 +1933,9 @@ Dibuat dengan Verve AI Video Studio`;
 
                 <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost" onClick={()=>setStep(4)}>← Kembali</button>
+                  <button className="btn" onClick={togglePreview} disabled={loading==="render"||slides.length===0}>
+                    {previewPlaying?"⏹ Stop Preview":"▶️ Preview Video"}
+                  </button>
                   <button className="btn btn-primary glow" onClick={doRender} disabled={loading==="render"}>
                     {loading==="render"?<Spinner/>:"🎬"} Render Video Sekarang
                   </button>
@@ -1760,28 +1956,50 @@ Dibuat dengan Verve AI Video Studio`;
           </div>
 
           <aside className="card lg:sticky lg:top-4 self-start min-w-0">
-            <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">👁️ Preview Live</h3>
+            <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
+              👁️ Preview Live
+              {step===5 && slides.length>0 && (
+                <button onClick={togglePreview}
+                  className={`ml-auto text-[11px] px-3 py-1.5 rounded-lg ${previewPlaying?"bg-red-500/30 border-red-500/40":"bg-purple-500/30 border-purple-400/40"} border text-white whitespace-nowrap`}>
+                  {previewPlaying?"⏹ Stop":"▶️ Preview Video"}
+                </button>
+              )}
+            </h3>
             <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
-              {slides[0] ? (
+              {step===5 && previewPlaying ? (
+                <canvas ref={previewCanvasRef}
+                  width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
+                  height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
+                  className="w-full h-full"/>
+              ) : slides[0] ? (
                 <img src={slides[0].imageUrl} className="w-full h-full object-cover" alt="preview"/>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-white/40 text-xs text-center px-3" style={{aspectRatio:aspectRatio==="9:16"?"9/16":aspectRatio==="1:1"?"1/1":"16/9"}}>
                   Belum ada gambar
                 </div>
               )}
-              <SpectrumVisualizer
-                audioEl={previewAudioRef.current || undefined}
-                style={vizStyle}
-                color={vizColor}
-                logoUrl={logoDataUrl || undefined}
-                width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
-                height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
-              />
+              {!(step===5 && previewPlaying) && (
+                <SpectrumVisualizer
+                  audioEl={previewAudioRef.current || undefined}
+                  style={vizStyle}
+                  color={vizColor}
+                  logoUrl={logoDataUrl || undefined}
+                  width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
+                  height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
+                />
+              )}
               <div className="absolute bottom-2 left-2 right-2 text-white text-center text-xs sm:text-sm font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,1)] px-2 break-word"
                    style={{textShadow:`0 0 12px ${vizColor}`}}>
                 {showTitle ? (selectedTitle?.text || niche || "Judul video di sini") : ""}
               </div>
+              {step===5 && slides.length>0 && !previewPlaying && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white/90 text-[10px] border border-white/10">
+                    Tap ▶️ Preview Video di atas buat lihat hasil sebelum render
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-2">
               <audio ref={previewAudioRef} controls className="w-full"

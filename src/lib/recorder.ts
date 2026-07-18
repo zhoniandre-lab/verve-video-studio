@@ -96,15 +96,35 @@ async function decodeAudio(url: string, onStage?:(s:string)=>void) {
       actx.close();
       throw new Error("Audio tidak bisa diputar (format corrupt/CORS). Coba generate ulang lagu atau pakai file upload ya bro.");
     }
-    const ch0 = audioBuf.getChannelData(0);
-    let data = ch0;
-    if (audioBuf.numberOfChannels > 1) {
-      const ch1 = audioBuf.getChannelData(1);
-      data = new Float32Array(ch0.length);
-      for (let i=0;i<ch0.length;i++) data[i] = (ch0[i]+ch1[i])*0.5;
+    // KONVERSI ke STEREO 44100Hz — ini format PALING kompatibel untuk Android/iOS/YouTube.
+    // Sebelumnya mono + sampleRate mentah (bisa 24k/32k/48k) bikin beberapa HP Android
+    // memutar video tanpa suara (padahal YouTube bisa karena YouTube re-encode otomatis).
+    const targetSR = 44100;
+    const nCh = 2;
+    const nFrames = Math.round(audioBuf.duration * targetSR);
+    const resampleRatio = targetSR / audioBuf.sampleRate;
+    const outL = new Float32Array(nFrames);
+    const outR = new Float32Array(nFrames);
+    const srcCh = audioBuf.numberOfChannels;
+    const sL = audioBuf.getChannelData(0);
+    const sR = srcCh > 1 ? audioBuf.getChannelData(1) : sL;
+    for (let i=0;i<nFrames;i++){
+      const srcIdx = i / resampleRatio;
+      const i0 = Math.floor(srcIdx);
+      const i1 = Math.min(i0+1, sL.length-1);
+      const f = srcIdx - i0;
+      const l0 = sL[i0]||0, l1 = sL[i1]||0;
+      const r0 = sR[i0]||0, r1 = sR[i1]||0;
+      outL[i] = l0*(1-f) + l1*f;
+      outR[i] = r0*(1-f) + r1*f;
     }
+    // Mix down untuk spectrum/analysis (mono untuk internal)
+    const mono = new Float32Array(nFrames);
+    for (let i=0;i<nFrames;i++) mono[i] = (outL[i]+outR[i])*0.5;
+    // Interleaved stereo untuk encoder (f32-planar butuh channel terpisah nanti)
     actx.close();
-    return { data, sampleRate: audioBuf.sampleRate, channels: audioBuf.numberOfChannels, duration: audioBuf.duration };
+    return { data: mono, sampleRate: targetSR, channels: nCh, duration: nFrames/targetSR,
+      stereoL: outL, stereoR: outR };
   } catch(e:any) {
     if (e?.name === "AbortError") throw new Error("Ambil audio timeout. Cek koneksi lalu render ulang.");
     throw e;
@@ -614,22 +634,38 @@ function supportsWebCodecs(){
     && (typeof(window as any).MP4Muxer!=="undefined"||typeof(window as any).Mp4Muxer!=="undefined");
 }
 
-// ===== Build captions from lyrics per-slide (linear timing) =====
-function buildCaptionsFromLyrics(lyrics: string[], slideDur:number, transDur:number, fps:number): CaptionWord[] {
+// ===== Build captions dari array baris lirik (distribusi MERATA ke SELURUH durasi audio/slides)
+// Ini penting biar karaoke selesai PAS di akhir lagu, bukan tiap slide kecepatan sendiri.
+function buildCaptionsFromLyrics(lyrics: string[], totalDur:number, leadIn:number=1.2): CaptionWord[] {
   const out: CaptionWord[] = [];
-  const perSlide = slideDur + transDur;
+  // Bersihkan & gabung semua baris jadi satu list kata, + tandai baris
+  interface Tok { text:string; baris:number; }
+  const tokens: Tok[] = [];
+  let curLine = 0;
   for (let i=0;i<lyrics.length;i++){
-    const line = lyrics[i]?.trim();
+    const line = (lyrics[i]||"").trim();
     if (!line) continue;
-    const words = line.split(/\s+/).filter(Boolean);
-    if (!words.length) continue;
-    const slideStart = i*perSlide + transDur*0.5;
-    const slideActive = slideDur;
-    const durPerWord = slideActive / words.length;
-    words.forEach((w,j)=>{
-      out.push({ text:w, start:slideStart + j*durPerWord, end:slideStart + (j+1)*durPerWord, line:0 });
-    });
+    // Bersihkan marker [Verse], [Chorus] dll — jangan dinyanyikan
+    let cleaned = line.replace(/^\[(Intro|Verse|Chorus|Bridge|Outro|Pre-Chorus|Refrain|Hook|Interlude)[^\]]*\]\s*/i,"");
+    if (!cleaned.trim()) continue;
+    const words = cleaned.split(/\s+/).filter(Boolean);
+    words.forEach(w => tokens.push({text:w, baris:curLine}));
+    curLine++;
   }
+  if (!tokens.length) return out;
+  const lyricStart = leadIn;
+  const lyricEnd = Math.max(lyricStart+1, totalDur - 0.8);
+  const avail = lyricEnd - lyricStart;
+  // Beri bobot per kata: panjang char
+  const totalWeight = tokens.reduce((s,t)=>s + Math.max(1, t.text.replace(/[.,!?;:'"\-]/g,"").length*0.7 + 1), 0);
+  let cursor = lyricStart;
+  tokens.forEach((t)=>{
+    const w = Math.max(0.22, (Math.max(1,t.text.replace(/[.,!?;:'"\-]/g,"").length*0.7+1)/totalWeight)*avail);
+    out.push({ text:t.text, start:cursor, end:cursor+w*0.9, line:t.baris });
+    cursor += w;
+  });
+  // Pastikan kata terakhir end-nya pas di akhir
+  if (out.length) out[out.length-1].end = lyricEnd;
   return out;
 }
 
@@ -674,12 +710,12 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   const spec = precomputeSpectrum(audio?.data||null, audio?.sampleRate||44100, totalFrames, fps, prof.bars);
   onStage2 = null;
 
-  // Build captions
+  // Build captions (distribusi sepanjang durasi audio total — LEBIH AKURAT)
   let finalCaptions: CaptionWord[] = [];
   let capStyle: CaptionStyle = captionStyle || "capcut";
   if (captions && captions.length) finalCaptions = captions;
   else if (opts.lyrics?.length && opts.showLyrics) {
-    finalCaptions = buildCaptionsFromLyrics(opts.lyrics, slideDur, transDur, fps);
+    finalCaptions = buildCaptionsFromLyrics(opts.lyrics, totalDur, 1.2);
   }
 
   const particles: DrawState["particles"] = [];
@@ -706,7 +742,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
 interface RenderBase {
   canvas:HTMLCanvasElement; ctx:CanvasRenderingContext2D;
   imgs:HTMLCanvasElement[];
-  audio:{data:Float32Array;sampleRate:number;duration:number}|null;
+  audio:{data:Float32Array;sampleRate:number;duration:number;channels?:number;stereoL?:Float32Array;stereoR?:Float32Array}|null;
   fps:number; totalFrames:number; totalDur:number;
   slideDur:number; transDur:number;
   prof:typeof QUALITY_PROFILES.fast;
@@ -727,7 +763,9 @@ async function renderWebCodecs(b:any){
     target: new Mp4Muxer.ArrayBufferTarget(),
     fastStart:"in-memory",
     video:{codec:"avc",width:canvas.width,height:canvas.height},
-    audio: audio?{codec:"aac",sampleRate:audio.sampleRate,numberOfChannels:1}:undefined,
+    // STEREO 44100Hz — kompatibel dengan SEMUA HP Android/iOS/WhatsApp/YouTube
+    audio: audio?{codec:"aac",sampleRate:audio.sampleRate,numberOfChannels:audio.channels||2}:undefined,
+    firstTimestampBehavior:"offset",
   });
 
   let videoResolve!:()=>void;
@@ -750,14 +788,22 @@ async function renderWebCodecs(b:any){
       output:(chunk:any,meta:any)=>muxer.addAudioChunk(chunk,meta),
       error:(e:any)=>console.error("[AudioEncoder]",e),
     });
-    audioEncoder.configure({codec:"mp4a.40.2",sampleRate:audio.sampleRate,numberOfChannels:1,bitrate:128_000});
+    const nCh = audio.channels || 2;
+    // AAC-LC stereo 192kbps — kompatibel dengan semua HP, WhatsApp, Reels, YouTube
+    audioEncoder.configure({codec:"mp4a.40.2",sampleRate:audio.sampleRate,numberOfChannels:nCh,bitrate:192_000});
     const frameSize=1024;
     let offset=0;
+    const sL = audio.stereoL || audio.data;
+    const sR = audio.stereoR || audio.data;
     while(offset<audio.data.length){
       const len=Math.min(frameSize,audio.data.length-offset);
-      const buf=new Float32Array(frameSize);
-      buf.set(audio.data.subarray(offset,offset+len));
-      const ad=new (window as any).AudioData({format:"f32-planar",sampleRate:audio.sampleRate,numberOfFrames:frameSize,numberOfChannels:1,timestamp:(offset/audio.sampleRate)*1e6,data:buf});
+      // f32-planar: [L0,L1,..Ln-1,R0,R1,..Rn-1]
+      const buf=new Float32Array(frameSize*nCh);
+      for (let i=0;i<len;i++){
+        buf[i] = sL[offset+i]||0;
+        if (nCh>1) buf[frameSize+i] = sR[offset+i]||0;
+      }
+      const ad=new (window as any).AudioData({format:"f32-planar",sampleRate:audio.sampleRate,numberOfFrames:frameSize,numberOfChannels:nCh,timestamp:(offset/audio.sampleRate)*1e6,data:buf});
       audioEncoder.encode(ad); ad.close(); offset+=frameSize;
     }
     audioEncoder.flush().then(audioResolve);
