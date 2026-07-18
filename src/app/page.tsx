@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpectrumVisualizer from "@/components/SpectrumVisualizer";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
+import { cropImageToRatio, copyToClipboard } from "@/lib/imgutils";
 import type { VizStyle as VizStyleType, AudioMode, ImageSource } from "@/lib/types";
+import type { VideoMeta } from "@/lib/hcnsec";
 
 type Mode = "slideshow" | "t2v";
 type Quality = "fast" | "balanced" | "high";
@@ -93,6 +95,10 @@ export default function Home() {
   const [t2vDuration, setT2vDuration] = useState(5);
   const [t2vResult, setT2vResult] = useState<{ video_url: string; status: string; error?: string } | null>(null);
 
+  // Metadata YouTube (hasil akhir)
+  const [meta, setMeta] = useState<VideoMeta | null>(null);
+  const [copiedField, setCopiedField] = useState<string>("");
+
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const selectedTitle = useMemo(() => titles.find((t) => t.id === selectedTitleId), [titles, selectedTitleId]);
 
@@ -158,8 +164,8 @@ export default function Home() {
   // ===== Step 3 =====
   async function doGenerateImages() {
     if (!selectedTitle) return setErr("Pilih judul dulu");
-    setStageText(`Generate ${nSlides} gambar AI...`);
-    const newSlides: Slide[] = [];
+    setStageText(`Generate ${nSlides} gambar AI (1024x1024 native)...`);
+    const rawSlides: Slide[] = [];
     const errs: string[] = [];
     for (let i = 0; i < nSlides; i++) {
       setStageText(`Gambar ${i + 1}/${nSlides}...`);
@@ -172,28 +178,29 @@ export default function Home() {
             keyword: selectedTitle.keyword,
             niche,
             style: imageStyle,
-            size: imageSize,
             enhance: true,
           }),
         });
         const data = await res.json();
-        if (!res.ok || data.error) {
-          throw new Error(data.error || `Error ${res.status}`);
-        }
-        newSlides.push({ id: `s${i}_${Date.now()}_${i}`, imageUrl: data.url });
+        if (!res.ok || data.error) throw new Error(data.error || `Error ${res.status}`);
+        // Crop dari 1024x1024 ke rasio target
+        setStageText(`Cropping ke rasio ${imageSize}...`);
+        const cropped = await cropImageToRatio(data.url, imageSize);
+        rawSlides.push({ id: `s${i}_${Date.now()}_${i}`, imageUrl: cropped });
       } catch (e: any) {
         console.error(e);
         errs.push(`#${i+1}: ${e.message?.slice(0,120) || "gagal"}`);
       }
     }
-    if (!newSlides.length) {
-      setErr(`Semua ${nSlides} gambar gagal di-generate.\n\nPenyebab kemungkinan:\n• Saldo di api.hcnsec.cn habis\n• Model "${"step-image-edit-2"}" tidak support text-to-image (mungkin model edit, butuh gambar awal)\n• Koneksi HP tidak stabil\n\nDetail error:\n${errs.slice(0,3).join("\n")}\n\n💡 Solusi: coba upload gambar sendiri dulu, atau hubungi saya untuk ganti model gambar.`);
+    if (!rawSlides.length) {
+      setErr(`Semua ${nSlides} gambar gagal.\n\nDetail:\n${errs.slice(0,4).join("\n")}\n\n💡 Coba: ganti style ke "Studio Photo" (paling stabil), atau upload gambar sendiri.`);
     } else {
-      if (errs.length) setStageText(`Berhasil ${newSlides.length}/${nSlides} gambar (${errs.length} gagal). Lanjut...`);
-      setSlides(newSlides);
+      if (errs.length) setStageText(`✅ ${rawSlides.length}/${nSlides} gambar berhasil di-crop`);
+      else setStageText(`✅ ${rawSlides.length} gambar siap!`);
+      setSlides(rawSlides);
       setError("");
     }
-    setStageText("");
+    setTimeout(() => setStageText(""), 2000);
     setLoading(null);
   }
 
@@ -268,7 +275,19 @@ export default function Home() {
       setVideoBlob(blob);
       const u = URL.createObjectURL(blob);
       setVideoUrl(u);
-      setStageText("✅ Video siap di-download!");
+      setStageText("✅ Video siap! Membuat metadata YouTube...");
+      // Auto-generate metadata
+      try {
+        const m = await callApi("/metadata", {
+          title: selectedTitle?.text,
+          keyword: selectedTitle?.keyword,
+          niche,
+        });
+        setMeta(m);
+      } catch (e: any) {
+        console.warn("Metadata gagal:", e);
+      }
+      setStageText("✅ Selesai! Video + metadata siap.");
     } catch (e: any) {
       setErr(e.message || "Render gagal");
     } finally {
@@ -312,9 +331,45 @@ export default function Home() {
 
   function downloadVideo() {
     if (!videoBlob) return;
-    const safeTitle = (selectedTitle?.text || "video").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 50) || "video";
+    const safeTitle = (meta?.titleHighCTR || selectedTitle?.text || "video").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 50) || "video";
     const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
     downloadBlob(videoBlob, `${safeTitle}_${Date.now()}.${ext}`);
+  }
+
+  async function copyField(key: string, text: string) {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedField(key);
+      setTimeout(() => setCopiedField(""), 1500);
+    }
+  }
+
+  function downloadMetaText() {
+    if (!meta || !selectedTitle) return;
+    const txt =
+`=== JUDUL YOUTUBE (high CTR) ===
+${meta.titleHighCTR}
+
+=== JUDUL ALTERNATIF ===
+${meta.titleAlternatives.map((t,i)=>`${i+1}. ${t}`).join("\n")}
+
+=== DESKRIPSI ===
+${meta.description}
+
+=== TAGS ===
+${meta.tags.join(", ")}
+
+=== HASHTAGS ===
+${meta.hashtags}
+
+Sumber: Verve AI Video Studio`;
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `meta_${(meta.titleHighCTR||"video").replace(/[^\w\- ]+/g,"").slice(0,30)}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ===== T2V =====
@@ -691,6 +746,43 @@ export default function Home() {
             )}
             <ProjectMeta title={selectedTitle?.text} niche={niche} slides={slides.length} quality={quality} />
           </aside>
+
+          {/* Metadata panel (full width, muncul setelah video siap) */}
+          {videoUrl && meta && (
+            <div className="lg:col-span-3 card mt-2">
+              <h2 className="text-lg sm:text-xl font-bold mb-3 flex items-center gap-2">
+                📋 YouTube Metadata (siap copy)
+              </h2>
+              <p className="text-xs text-white/60 mb-3">
+                Judul high-CTR, deskripsi, dan tag sudah di-generate AI. Tap tombol SALIN untuk menyalin.
+              </p>
+
+              <MetaRow label="🏷️ Judul High-CTR" value={meta.titleHighCTR} onCopy={()=>copyField("title", meta.titleHighCTR)} copied={copiedField==="title"} />
+
+              {meta.titleAlternatives.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-xs text-white/70 mb-1">🔄 Judul alternatif:</div>
+                  {meta.titleAlternatives.map((t, i) => (
+                    <div key={i} className="flex items-center gap-2 mb-1">
+                      <div className="flex-1 text-sm bg-black/30 rounded-lg p-2 truncate">{t}</div>
+                      <button onClick={()=>copyField(`alt${i}`, t)}
+                        className={`btn text-xs ${copiedField===`alt${i}`?"bg-green-600":"btn-ghost"}`}>
+                        {copiedField===`alt${i}`?"✓":"SALIN"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <MetaRow label="📝 Deskripsi" value={meta.description} onCopy={()=>copyField("desc", meta.description)} copied={copiedField==="desc"} multiline />
+              <MetaRow label="#️⃣ Tags (comma separated)" value={meta.tags.join(", ")} onCopy={()=>copyField("tags", meta.tags.join(", "))} copied={copiedField==="tags"} />
+              <MetaRow label="🔖 Hashtags" value={meta.hashtags} onCopy={()=>copyField("hash", meta.hashtags)} copied={copiedField==="hash"} />
+
+              <button onClick={downloadMetaText} className="btn btn-primary mt-2">
+                📥 Download semua metadata (.txt)
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         // ========= T2V =========
@@ -759,6 +851,27 @@ export default function Home() {
 
       <Footer />
     </main>
+  );
+}
+
+function MetaRow({ label, value, onCopy, copied, multiline }: {
+  label: string; value: string; onCopy: () => void; copied: boolean; multiline?: boolean;
+}) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs sm:text-sm text-white/70">{label}</div>
+        <button onClick={onCopy}
+          className={`btn text-xs ${copied ? "bg-green-600 text-white" : "btn-ghost"}`}>
+          {copied ? "✓ Tersalin" : "SALIN"}
+        </button>
+      </div>
+      {multiline ? (
+        <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 whitespace-pre-wrap">{value}</div>
+      ) : (
+        <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 truncate">{value}</div>
+      )}
+    </div>
   );
 }
 
