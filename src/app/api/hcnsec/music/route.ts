@@ -106,14 +106,22 @@ function buildBody(payload: any, provider: Provider): any {
       instrumental: !!instrumental,
       title: finalTitle,
       callBackUrl: "playground",
+      // negativeTags default: hal2 yang bikin lirik ngawur / bahasa asing
+      negativeTags: "korean, japanese, chinese, heavy metal, edm, autotune, robotic, off-key, distorted",
     };
     if (isCustom) {
-      body.lyrics = finalLyrics;
-      body.style = styleStr;
-      body.prompt = finalPrompt.slice(0,480);
+      // PENTING (docs Kie): di custom mode, `prompt` WAJIB diisi lirik yang sama dg `lyrics`
+      // — "prompt will be strictly used as the lyrics". Kalau diisi style desc, AI nyanyi deskripsi & jadinya ngawur/Korea.
+      body.prompt = finalLyrics.slice(0, 5000);
+      body.lyrics = finalLyrics.slice(0, 5000);
+      body.style = styleStr.slice(0, 480);
+      // styleWeight rendah = lebih patuh ke lirik; audioWeight normal; weirdness rendah biar gak aneh
+      body.styleWeight = 0.55;
+      body.audioWeight = 0.7;
+      body.weirdnessConstraint = 0.3;
     } else {
       body.prompt = finalPrompt.slice(0,500);
-      body.style = styleStr;
+      body.style = styleStr.slice(0,480);
     }
     if (!instrumental) {
       if (vocalGender === "male") body.vocalGender = "m";

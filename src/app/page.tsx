@@ -447,7 +447,7 @@ export default function Home() {
     setError(msg);
   }
 
-  async function callApi(path: string, body: any) {
+  async function callApi(path: string, body: any, timeoutMs = 90000) {
     setLoading(path); setError("");
     try {
       const headers: Record<string,string> = { "Content-Type":"application/json" };
@@ -455,9 +455,13 @@ export default function Home() {
         headers["X-Suno-Key"] = sunoApiKey;
         headers["X-Suno-Provider"] = sunoProvider;
       }
+      const ac = new AbortController();
+      const to = setTimeout(()=>ac.abort(), timeoutMs);
       const r = await fetch(`/api/hcnsec${path}`, {
         method: "POST", headers, body: JSON.stringify(body),
+        signal: ac.signal, cache: "no-store",
       });
+      clearTimeout(to);
       let data: any = {};
       const txt = await r.text();
       try { data = txt ? JSON.parse(txt) : {}; }
@@ -1048,8 +1052,9 @@ Dibuat dengan Verve AI Video Studio`;
       <ModeTabs mode={mode} setMode={(m)=>{setMode(m); setStep(1); setError(""); setStageText(""); setMeta(null); setVideoUrl(""); setVideoBlob(null);}} />
 
       {error && (
-        <div className="mt-3 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-100 text-sm whitespace-pre-wrap break-words backdrop-blur">
-          ⚠️ {error}
+        <div className="mt-3 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-100 text-sm whitespace-pre-wrap break-words backdrop-blur flex gap-2 items-start">
+          <span className="flex-1">⚠️ {error}</span>
+          <button onClick={()=>setError("")} className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-100 text-lg leading-none">×</button>
         </div>
       )}
       {stageText && (
