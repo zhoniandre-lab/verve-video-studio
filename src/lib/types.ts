@@ -1,4 +1,15 @@
-export type VizStyle = "bars" | "circle" | "particles" | "luxury";
+export type VizStyle =
+  | "luxury"        // Trap Nation premium (default)
+  | "bars"          // Classic neon bottom bars
+  | "circle"        // NCS radial wave
+  | "ncs"           // alias for circle
+  | "particles"     // Dot particles + ring
+  | "trapnation"    // Classic Trap Nation circular waves
+  | "monstercat"    // Monstercat dots radial
+  | "proximity"     // Proximity mirror bars
+  | "retrowave"     // Synthwave sun + grid
+  | "dubstep"       // Middle gravity bars
+  | "tunnel";       // 3D tunnel
 
 export type AudioMode = "tts" | "music" | "both" | "none";
 export type ImageSource = "ai" | "upload" | "both";
@@ -9,27 +20,24 @@ export interface VideoProject {
   id?: string;
   title: string; niche: string; keywords: string[]; titles: string[];
   slides: Slide[]; vizStyle: VizStyle; vizColor: string; audioMode: AudioMode;
-  slideDuration: number; audioUrl?: string; ttsText?: string; videoUrl?: string;
+  slideDuration: number; transitionDuration?: number;
+  slideshowTransition?: string;
+  audioUrl?: string; ttsText?: string; videoUrl?: string;
   status?: "draft" | "generating" | "ready" | "error";
+  quality?: string;
+  aspectRatio?: string;
+  showTitle?: boolean;
+  metadata?: any;
   created_at?: string;
 }
 
 // Model diurutkan dari PALING CEPAT & MURAH ke yang berat
-// Berdasarkan harga di screenshot:
-//  - MiniMax-M2.7: $0.3/$1.2 per 1M (paling murah, ringan)
-//  - glm-4.7: $0.25/$1.1 (cepat, model bagus)
-//  - Qwen3.6-35B-A3B: $0.15/$1 (paling kecil, MoE 3B aktif, SUPER cepat)
-//  - Qwen3.5-397B-A17B: $0.48/$2.88 (besar tapi andal)
-//  - kimi-k2.6: $0.5/$1.99
-//  - glm-5.1: $0.45/$2.1
-//  - MiniMax-M3: $5/$5 (mahal)
-//  - step-3.7-flash: $2/request (pay-per-request, lambat) — jangan dipakai default!
 export const FAST_CHAT_MODELS = [
-  "Qwen3.6-35B-A3B",     // paling kecil & cepat
-  "glm-4.7",             // cepat, bagus
-  "MiniMax-M2.7",        // murah
-  "kimi-k2.6",           // cepat
-  "Qwen3.5-397B-A17B",   // andal besar
+  "Qwen3.6-35B-A3B",
+  "glm-4.7",
+  "MiniMax-M2.7",
+  "kimi-k2.6",
+  "Qwen3.5-397B-A17B",
   "Qwen3-Coder-Next-FP8",
   "glm-5.1",
   "sensenova-6.7-flash-lite",
@@ -45,8 +53,43 @@ export const FAST_CHAT_MODELS = [
   "kat-coder-pro-v2.5",
 ];
 
-export const DEFAULT_CHAT_MODEL = FAST_CHAT_MODELS[0]; // Qwen3.6-35B-A3B — TERCEPAT
+export const VIZ_STYLES: {id:VizStyle; label:string; emoji:string; desc:string}[] = [
+  { id:"luxury",     label:"Trap Nation Premium", emoji:"🔥", desc:"Logo berdenyut + bars + partikel" },
+  { id:"trapnation", label:"Trap Nation Classic", emoji:"🎧", desc:"Lingkaran gelombang klasik" },
+  { id:"circle",     label:"NCS Circle Wave",    emoji:"💫", desc:"Gelombang radial biru" },
+  { id:"monstercat", label:"Monstercat Dots",    emoji:"🔴", desc:"Titik-titik radial" },
+  { id:"proximity",  label:"Proximity Mirror",   emoji:"🪞", desc:"Bars mirror atas-bawah" },
+  { id:"bars",       label:"Classic Bars",       emoji:"📊", desc:"Bars neon bawah" },
+  { id:"dubstep",    label:"Dubstep Gravity",    emoji:"🌀", desc:"Bars dari tengah" },
+  { id:"particles",  label:"Particles",          emoji:"✨", desc:"Titik-titik beat" },
+  { id:"retrowave",  label:"Retro/Synthwave",    emoji:"🌆", desc:"Matahari + grid 80an" },
+  { id:"tunnel",     label:"3D Tunnel",          emoji:"🚇", desc:"Terowongan 3D" },
+];
+
+export const TRANSITION_STYLES: {id: string; label:string; emoji:string}[] = [
+  { id:"zoom",   label:"Slow Zoom",  emoji:"🔍" },
+  { id:"fade",   label:"Fade",       emoji:"🌫️" },
+  { id:"slide",  label:"Slide",      emoji:"➡️" },
+  { id:"blur",   label:"Blur",       emoji:"💨" },
+  { id:"glitch", label:"Glitch/RGB", emoji:"⚡" },
+  { id:"none",   label:"Cut",        emoji:"✂️" },
+];
+
+export const QUALITY_OPTIONS = [
+  { id:"fast",     label:"⚡ Cepat (HP)",   bitrate:"1.5 Mbps", res:"480p",  fps:24, tag:"Rekomendasi HP" },
+  { id:"balanced", label:"⚖️ Seimbang",     bitrate:"3.5 Mbps", res:"720p",  fps:30, tag:"Default" },
+  { id:"high",     label:"💎 Tinggi",       bitrate:"6 Mbps",   res:"1080p", fps:30, tag:"Laptop" },
+  { id:"max",      label:"🚀 MAX (60fps)",  bitrate:"9 Mbps",   res:"1080p", fps:60, tag:"PC Gaming" },
+];
+
+export const ASPECT_RATIOS = [
+  { id:"16:9", label:"🖥️ 16:9 YouTube",     w:1920, h:1080 },
+  { id:"9:16", label:"📱 9:16 Shorts/TikTok", w:1080, h:1920 },
+  { id:"1:1",  label:"⬛ 1:1 Instagram",    w:1080, h:1080 },
+];
+
+export const DEFAULT_CHAT_MODEL = FAST_CHAT_MODELS[0];
 export const DEFAULT_IMAGE_MODEL = "step-image-edit-2";
 export const DEFAULT_TTS_MODEL = "stepaudio-2.5-tts";
 export const DEFAULT_VIDEO_MODEL = "kling-v1";
-export const CHAT_MODELS = FAST_CHAT_MODELS; // backward compat
+export const CHAT_MODELS = FAST_CHAT_MODELS;

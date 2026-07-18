@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-type Style = "bars" | "circle" | "particles" | "luxury";
+type Style = "bars" | "circle" | "ncs" | "particles" | "luxury" | "trapnation" | "monstercat" | "proximity" | "retrowave" | "dubstep" | "tunnel";
 
 interface Props {
   audioEl?: HTMLAudioElement | null;
@@ -143,8 +143,9 @@ export default function SpectrumVisualizer({
 
       if (style === "luxury") drawLuxury(ctx, freqArray, timeArray, nBass, nMid, nTreb, nAvg, t, width, height, color, logo);
       else if (style === "bars") drawBars(ctx, freqArray, nBass, width, height, color);
-      else if (style === "circle") drawCircle(ctx, freqArray, nBass, t, width, height, color);
+      else if (style === "circle" || style === "ncs") drawCircle(ctx, freqArray, nBass, t, width, height, color);
       else if (style === "particles") drawParticlesMode(ctx, freqArray, nBass, t, width, height, color);
+      else drawOtherStyles(ctx, freqArray, nBass, nMid, nAvg, t, width, height, color, style);
 
       rafRef.current = requestAnimationFrame(render);
     };
@@ -452,6 +453,104 @@ function barGrad(ctx: CanvasRenderingContext2D, c: string, _W: number, H: number
   g.addColorStop(0.5, "#a855f7");
   g.addColorStop(1, "#22d3ee");
   return g;
+}
+
+// Draw styles lain untuk preview (mirip logic di recorder)
+function drawOtherStyles(
+  ctx: CanvasRenderingContext2D,
+  freq: Uint8Array<ArrayBuffer>,
+  bass: number, mid: number, avg: number,
+  t: number, W: number, H: number, c: string,
+  style: string,
+) {
+  const bars = 64;
+  const step = Math.max(1, Math.floor(freq.length / bars));
+  const vals: number[] = [];
+  for (let i=0;i<bars;i++) vals.push((freq[i*step]||0)/255);
+
+  if (style === "trapnation") {
+    ctx.save();
+    ctx.translate(W/2, H*0.4);
+    const R = Math.min(W,H)*0.1*(1+bass*0.4);
+    ctx.rotate(-t*0.8);
+    for (let ring=0; ring<2; ring++) {
+      ctx.strokeStyle = hexA(c, 0.6-ring*0.2);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i=0;i<bars;i++){
+        const a = (i/bars)*Math.PI*2;
+        const rr = R + ring*20 + vals[i]*Math.min(W,H)*0.3;
+        const x=Math.cos(a)*rr, y=Math.sin(a)*rr;
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.rotate(t*0.8);
+    ctx.fillStyle = "#fff";
+    ctx.shadowBlur = 25; ctx.shadowColor = c;
+    ctx.beginPath(); ctx.arc(0,0,R*0.6,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  else if (style === "monstercat") {
+    ctx.save(); ctx.translate(W/2,H*0.4);
+    for (let i=0;i<bars;i++){
+      const a=(i/bars)*Math.PI*2-Math.PI/2;
+      const rr = Math.min(W,H)*0.15 + vals[i]*Math.min(W,H)*0.28;
+      ctx.fillStyle = hexA(c,0.9);
+      ctx.beginPath(); ctx.arc(Math.cos(a)*rr,Math.sin(a)*rr,2+vals[i]*8,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  else if (style === "proximity") {
+    const nb = bars; const bw = (W*0.8)/nb*0.8;
+    for (let i=0;i<nb;i++){
+      const v = vals[i]; const h = v*H*0.3;
+      const x = W/2+(i-nb/2)*(bw+3);
+      ctx.fillStyle = hexA(c,0.85);
+      roundRect(ctx, x-bw/2, H-h-8, bw, h, bw/2); ctx.fill();
+      roundRect(ctx, x-bw/2, 8, bw, h*0.5, bw/2); ctx.fill();
+    }
+  }
+  else if (style === "dubstep") {
+    const cy = H*0.5; const bw=W/bars*0.6, gap=W/bars*0.4;
+    for (let i=0;i<bars;i++){
+      const h = vals[i]*H*0.45; const x=i*(bw+gap)+gap/2;
+      const g = ctx.createLinearGradient(0,cy-h/2,0,cy+h/2);
+      g.addColorStop(0,"rgba(255,255,255,0.9)"); g.addColorStop(0.5,c); g.addColorStop(1,"rgba(255,255,255,0.2)");
+      ctx.fillStyle = g;
+      roundRect(ctx, x, cy-h/2, bw, h, bw*0.3); ctx.fill();
+    }
+  }
+  else if (style === "retrowave") {
+    const sunY = H*0.5; const sunR = Math.min(W,H)*0.18;
+    const sg = ctx.createLinearGradient(0,sunY-sunR,0,sunY+sunR);
+    sg.addColorStop(0,c); sg.addColorStop(1,"rgba(255,120,60,0.6)");
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(W/2,sunY,sunR,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = hexA(c,0.4+bass*0.4); ctx.lineWidth=1;
+    for (let i=0;i<10;i++){
+      const yy = H*0.6 + (i/10)*H*0.35;
+      ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke();
+    }
+    const bw=W/bars*0.75;
+    for (let i=0;i<bars;i++){
+      const h = vals[i]*H*0.2;
+      ctx.fillStyle = hexA(c,0.9);
+      roundRect(ctx, i*(bw+W/bars*0.25)+W/bars*0.12, H-h-4, bw, h, 2); ctx.fill();
+    }
+  }
+  else if (style === "tunnel") {
+    ctx.save(); ctx.translate(W/2,H*0.4);
+    const rings = 10;
+    for (let i=rings-1;i>=0;i--){
+      const k = (i+((t*2)%1))/rings;
+      const sz = k*Math.min(W,H)*0.8;
+      ctx.strokeStyle = hexA(c, 0.2+(1-k)*0.5);
+      ctx.lineWidth=2;
+      ctx.strokeRect(-sz/2,-sz*9/16/2,sz,sz*9/16);
+    }
+    ctx.restore();
+  }
 }
 function hexA(hex: string, a: number) {
   const c = hex.replace("#", "");
