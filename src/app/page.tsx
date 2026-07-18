@@ -804,10 +804,20 @@ export default function Home() {
       }
       const hasLyrics = finalLyrics.some(x=>!!x);
 
+      const effSpeed = Math.max(0.25, Number(videoSpeed)||1);
+      const filterStr = getFilterString();
+      const vignetteStrength = Math.max(0, Math.min(1, (vignetteAmt/100)*0.8));
       const blob = await renderSlideshow({
         images: slides.map(s=>s.imageUrl),
         audioUrl: audioUrl || undefined,
-        slideDuration, transitionDuration: transitionDur,
+        slideDuration: slideDuration/effSpeed,
+        transitionDuration: transitionDur/effSpeed,
+        videoSpeed: effSpeed,
+        videoFilter: activeFilter==="none" && brightness===0 && contrast===0 && saturation===0 && sharpen===0
+          ? undefined
+          : filterStr,
+        vignetteStrength,
+        spectrumSticker: spectrumSticker || "bars-bottom",
         vizStyle, vizColor, title: showTitle ? (selectedTitle?.text || niche) : undefined,
         lyrics: showLyrics && hasLyrics ? finalLyrics : undefined,
         logoUrl: logoDataUrl || undefined,
@@ -1401,6 +1411,9 @@ Dibuat dengan Verve AI Video Studio`;
     else if (fp === "vintage") preset = "sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)";
     else if (fp === "dreamy") preset = "brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)";
     else if (fp === "cinema4k") preset = "contrast(1.22) saturate(0.95) brightness(0.92)";
+    else if (fp === "8k") preset = "contrast(1.25) saturate(1.08) brightness(0.98)";
+    else if (fp === "clearll") preset = "contrast(1.08) saturate(1.12) brightness(1.02)";
+    else if (fp === "senja") preset = "sepia(0.25) saturate(1.2) brightness(1.0) hue-rotate(-10deg)";
     return [preset, `brightness(${bright}) contrast(${contr}) saturate(${sat})`, sharp].filter(Boolean).join(" ");
   }
   function resetAdjust() {
@@ -1462,24 +1475,25 @@ Dibuat dengan Verve AI Video Studio`;
     const startT = performance.now();
     setPreviewPlaying(true);
 
+    const effSpeed = Math.max(0.25, Number(videoSpeed)||1);
     const draw = () => {
       previewRafRef.current = requestAnimationFrame(draw);
       const now = performance.now();
       let t = 0;
-      if (audEl && !audEl.paused && audEl.duration) t = audEl.currentTime;
-      else t = (now - startT)/1000;
+      if (audEl && !audEl.paused && audEl.duration) t = audEl.currentTime*effSpeed;
+      else t = ((now - startT)/1000)*effSpeed;
 
-      // Slide index
-      const sd = Math.max(1, slideDuration);
-      const td = Math.min(sd*0.6, isMobile?0.5:0.8);
+      // Slide index — durasi/transisi dibagi speed untuk efek speed-up visual
+      const sd = Math.max(0.3, slideDuration/effSpeed);
+      const td = Math.min(sd*0.6, (isMobile?0.5:0.8)/effSpeed);
       const perS = sd + td;
       let slideIdx = Math.floor(t/perS);
       let localT = t - slideIdx*perS;
       let inTrans = localT >= sd;
-      let transT = inTrans ? (localT-sd)/td : 0;
+      let transT = td>0 && inTrans ? Math.min(1,(localT-sd)/td) : 0;
       let nextIdx = Math.min(slideIdx+1, imgs.length-1);
       slideIdx = Math.min(slideIdx, imgs.length-1);
-      const slideT = Math.min(1, localT/sd);
+      const slideT = Math.min(1, sd>0?localT/sd:0);
 
       // Gambar background (slide) dengan transisi + filter CapCut
       ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
@@ -1663,7 +1677,7 @@ Dibuat dengan Verve AI Video Studio`;
 
       {mode === "slideshow" ? (
         <div className={`mt-4 lg:mt-6 ${step<=4?"grid lg:grid-cols-3":""} gap-4 sm:gap-6`}>
-          <div className={`${step<=4?"lg:col-span-2":"w-full"} card min-w-0`}>
+          <div className={`${step<=4?"lg:col-span-2 card":""} w-full min-w-0`}>
             <StepBar step={step} />
 
             {step === 1 && (
@@ -2135,7 +2149,7 @@ Dibuat dengan Verve AI Video Studio`;
                 captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
                 vizStyle={vizStyle} setVizStyle={setVizStyle}
                 vizColor={vizColor} setVizColor={setVizColor}
-                logoDataUrl={logoDataUrl} setLogoDataUrl={setLogoDataUrl}
+                logoDataUrl={logoDataUrl}
                 logoPosition={logoPosition} setLogoPosition={setLogoPosition}
                 onLogoUpload={handleLogoUpload}
                 activeFilter={activeFilter} setActiveFilter={setActiveFilter}
@@ -2155,7 +2169,6 @@ Dibuat dengan Verve AI Video Studio`;
                 previewCanvasRef={previewCanvasRef}
                 previewPlaying={previewPlaying}
                 previewCurrent={previewCurrent} setPreviewCurrent={setPreviewCurrent}
-                previewDuration={previewDuration}
                 previewMuted={previewMuted} setPreviewMuted={setPreviewMuted}
                 togglePreview={togglePreview}
                 stopPreview={stopPreview}
@@ -2512,7 +2525,7 @@ function ModeTabs({mode,setMode}:{mode:Mode;setMode:(m:Mode)=>void}) {
 }
 
 function StepBar({step}:{step:number}) {
-  const labels = ["Keyword","Judul","Gambar","Audio","Render"];
+  const labels = ["Keyword","Judul","Gambar","Audio","Edit","Ekspor"];
   return (
     <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1">
       {labels.map((l,i)=>{

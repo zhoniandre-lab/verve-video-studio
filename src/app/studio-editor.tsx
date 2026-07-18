@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   VIZ_STYLES, TRANSITION_STYLES, QUALITY_OPTIONS,
 } from "@/lib/types";
@@ -14,11 +14,9 @@ function formatDur(s:number): string {
   const m=Math.floor(s/60), sec=Math.floor(s%60);
   return `${m}:${sec.toString().padStart(2,"0")}`;
 }
-
 function Spinner() {
-  return <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full inline-block spin-slow"/>;
+  return <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full inline-block animate-spin"/>;
 }
-
 function MetaRow({label,value,onCopy,copied,multiline}:{label:string;value:string;onCopy:()=>void;copied:boolean;multiline?:boolean;}) {
   return (
     <div className="mb-2 min-w-0">
@@ -35,7 +33,23 @@ function MetaRow({label,value,onCopy,copied,multiline}:{label:string;value:strin
   );
 }
 
-// ===== CapCut-style FULLSCREEN Studio Editor (Step 5) =====
+// ============ STICKER PRESETS ============
+const STICKER_PRESETS = [
+  {id:"none",        icon:"❌", label:"None"},
+  {id:"bars-bottom", icon:"📊", label:"Bars Bwh"},
+  {id:"wave-bottom", icon:"📶", label:"Wave"},
+  {id:"wave-center", icon:"〰️", label:"Wave Mid"},
+  {id:"bars-top",    icon:"📈", label:"Bars Atas"},
+  {id:"circle",      icon:"⭕", label:"Circle"},
+  {id:"disc",        icon:"💿", label:"Disc"},
+  {id:"diamond",     icon:"💎", label:"Diamond"},
+  {id:"subscribe",   icon:"🔴", label:"SUBSCRIBE"},
+  {id:"like",        icon:"👍", label:"Like"},
+  {id:"bell",        icon:"🔔", label:"Lonceng"},
+  {id:"fire",        icon:"🔥", label:"Fire"},
+];
+
+// ============ CAPCUT FULLSCREEN STUDIO (Step 5) ============
 type StudioEditorProps = {
   slides: any[]; aspectRatio: "16:9"|"9:16"|"1:1"; isMobile: boolean;
   selectedTitle?: {text:string; keyword:string}; niche: string;
@@ -47,8 +61,7 @@ type StudioEditorProps = {
   captionStyle: any; setCaptionStyle:(v:any)=>void;
   vizStyle: any; setVizStyle:(v:any)=>void;
   vizColor: string; setVizColor:(v:string)=>void;
-  logoDataUrl: string; setLogoDataUrl:(v:string)=>void;
-  logoPosition: any; setLogoPosition:(v:any)=>void;
+  logoDataUrl: string; logoPosition: any; setLogoPosition:(v:any)=>void;
   onLogoUpload:(f:File|undefined)=>void;
   activeFilter: string; setActiveFilter:(v:string)=>void;
   brightness: number; setBrightness:(v:number)=>void;
@@ -65,17 +78,15 @@ type StudioEditorProps = {
   proxifyAudioUrl:(u:string)=>string;
   previewAudioRef: any; previewCanvasRef: any;
   previewPlaying: boolean;
-  previewCurrent: number; setPreviewCurrent?:(v:number)=>void;
-  previewDuration?: number; setPreviewDuration?:(v:number)=>void;
+  previewCurrent: number; setPreviewCurrent:(v:number)=>void;
   previewMuted: boolean; setPreviewMuted:(v:boolean|((p:boolean)=>boolean))=>void;
   togglePreview: ()=>void;
-  stopPreview?: ()=>void;
+  stopPreview: ()=>void;
   seekPreview: (t:number)=>void;
   onBack: ()=>void;
   onExport: ()=>void;
   onSaveDraft: ()=>void;
 };
-
 export function StudioEditor(p: StudioEditorProps) {
   const {
     slides, aspectRatio, isMobile, selectedTitle, niche,
@@ -95,6 +106,7 @@ export function StudioEditor(p: StudioEditorProps) {
 
   const [tab, setTab] = useState<"edit"|"audio"|"text"|"sticker"|"overlay"|"filter"|"adjust"|"effect"|"speed">("edit");
   const [activeSlide, setActiveSlide] = useState(0);
+  const timelineStripRef = useRef<HTMLDivElement|null>(null);
 
   const TABS = [
     {id:"edit",    icon:"✂️", label:"Edit"},
@@ -103,73 +115,91 @@ export function StudioEditor(p: StudioEditorProps) {
     {id:"sticker", icon:"🎧", label:"Stiker"},
     {id:"overlay", icon:"🖼️", label:"Overlay"},
     {id:"filter",  icon:"🎨", label:"Filter"},
-    {id:"adjust",  icon:"☀️", label:"Sesuaikan"},
+    {id:"adjust",  icon:"☀️", label:"Adjust"},
     {id:"effect",  icon:"✨", label:"Efek"},
     {id:"speed",   icon:"⚡", label:"Speed"},
   ] as const;
 
   const FILTERS = [
-    {id:"none", label:"Original"},
-    {id:"cinematic", label:"🎬 Cinematic"},
-    {id:"vivid", label:"🌈 Vivid"},
-    {id:"warm", label:"🔥 Warm"},
-    {id:"cool", label:"❄️ Cool"},
-    {id:"bw", label:"⚫ B/W"},
-    {id:"vintage", label:"📼 Vintage"},
-    {id:"dreamy", label:"💫 Dreamy"},
-    {id:"cinema4k", label:"💎 4K"},
-    {id:"8k", label:"🌟 8K"},
-    {id:"clearll", label:"🔍 Jelas"},
-    {id:"senja", label:"🌅 Senja"},
+    {id:"none", label:"Original", css:"none"},
+    {id:"cinematic", label:"🎬 Cinematic", css:"contrast(1.18) saturate(0.85) brightness(0.95)"},
+    {id:"vivid", label:"🌈 Vivid", css:"saturate(1.4) contrast(1.12) brightness(1.05)"},
+    {id:"warm", label:"🔥 Warm", css:"sepia(0.18) saturate(1.15) brightness(1.02)"},
+    {id:"cool", label:"❄️ Cool", css:"hue-rotate(-10deg) saturate(1.1) brightness(1.02)"},
+    {id:"bw", label:"⚫ B/W", css:"grayscale(1) contrast(1.1)"},
+    {id:"vintage", label:"📼 Vintage", css:"sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)"},
+    {id:"dreamy", label:"💫 Dreamy", css:"brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)"},
+    {id:"cinema4k", label:"💎 4K", css:"contrast(1.22) saturate(0.95) brightness(0.92)"},
+    {id:"8k", label:"🌟 8K", css:"contrast(1.25) saturate(1.08) brightness(0.98)"},
+    {id:"clearll", label:"🔍 Jelas", css:"contrast(1.08) saturate(1.12) brightness(1.02)"},
+    {id:"senja", label:"🌅 Senja", css:"sepia(0.25) saturate(1.2) brightness(1.0) hue-rotate(-10deg)"},
   ];
-
-  const filterCssFor = (id:string) => {
-    if (id==="none") return "none";
-    if (id==="cinematic") return "contrast(1.18) saturate(0.85) brightness(0.95)";
-    if (id==="vivid") return "saturate(1.4) contrast(1.12) brightness(1.05)";
-    if (id==="warm") return "sepia(0.18) saturate(1.15) brightness(1.02)";
-    if (id==="cool") return "hue-rotate(-10deg) saturate(1.1) brightness(1.02)";
-    if (id==="bw") return "grayscale(1) contrast(1.1)";
-    if (id==="vintage") return "sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)";
-    if (id==="dreamy") return "brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)";
-    if (id==="cinema4k") return "contrast(1.22) saturate(0.95) brightness(0.92)";
-    if (id==="8k") return "contrast(1.25) saturate(1.08) brightness(0.98)";
-    if (id==="clearll") return "contrast(1.08) saturate(1.12) brightness(1.02)";
-    if (id==="senja") return "sepia(0.25) saturate(1.2) brightness(1.0) hue-rotate(-10deg)";
-    return "none";
-  };
 
   const ratioStyle: React.CSSProperties = aspectRatio==="9:16" ? {aspectRatio:"9/16"}
     : aspectRatio==="1:1" ? {aspectRatio:"1/1"} : {aspectRatio:"16/9"};
 
   const transDur = Math.min(slideDuration*0.6, isMobile?0.5:0.8);
-  const totalDur = slides.length*(slideDuration/videoSpeed) + (transitionDur/videoSpeed);
   const curSlideDur = slideDuration/videoSpeed;
+  const totalDur = Math.max(slides.length*curSlideDur + transitionDur/videoSpeed, 1);
+
+  // Auto-scroll playhead into view
+  useEffect(()=>{
+    const el = timelineStripRef.current;
+    if (!el) return;
+    const pct = previewCurrent/totalDur;
+    const scrollTarget = pct * el.scrollWidth - el.clientWidth/2;
+    el.scrollTo({left:scrollTarget, behavior:"auto"});
+  }, [previewCurrent, totalDur]);
+
+  // Thumb size per ratio
+  const thumbW = aspectRatio==="9:16"?42:aspectRatio==="1:1"?54:72;
+  const thumbH = aspectRatio==="9:16"?72:aspectRatio==="1:1"?54:42;
+  const playheadPct = Math.min(100, Math.max(0,(previewCurrent/totalDur)*100));
+
+  const audioSrc = (audioMode==="aimusic"&&aiMusicUrl)?aiMusicUrl:
+                  (audioMode==="tts"&&ttsUrl)?ttsUrl:
+                  (audioMode==="music"&&musicUrl)?musicUrl:
+                  (aiMusicUrl||musicUrl||ttsUrl);
+
+  // Auto-set audio src ke elemen preview
+  useEffect(()=>{
+    const el = previewAudioRef.current;
+    if (!el) return;
+    const src = audioSrc ? proxifyAudioUrl(audioSrc) : "";
+    if (el.src !== src && (src || el.src)) {
+      try { el.src = src; } catch(e){}
+    }
+    el.muted = previewMuted;
+  }, [audioSrc, previewMuted, previewAudioRef, proxifyAudioUrl]);
 
   return (
     <section className="mt-0">
-      <div className="flex flex-col bg-black rounded-2xl overflow-hidden border border-white/10 -mx-1 sm:mx-0">
+      {/* FULLSCREEN STUDIO: di HP pakai fixed inset-0; di desktop tampil dalam card */}
+      <div className={"studio-shell " + (isMobile ? "studio-mobile fixed inset-0 z-40" : "relative rounded-2xl")}
+           style={isMobile?{background:"#000"}:{}}>
+        {isMobile && <div className="h-[env(safe-area-inset-top)] bg-black"/>}
+
         {/* TOP BAR */}
-        <div className="flex items-center gap-2 p-2 bg-gradient-to-b from-white/5 to-transparent border-b border-white/10">
-          <button onClick={onBack} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 text-lg">←</button>
-          <div className="flex-1 min-w-0 text-center">
-            <div className="text-sm font-black truncate">🎬 Studio Edit</div>
+        <div className="flex items-center gap-2 p-2 bg-black/95 border-b border-white/10 relative z-10">
+          <button onClick={onBack} className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-white/10 text-lg active:scale-95">←</button>
+          <div className="flex-1 min-w-0 text-center px-1">
+            <div className="text-sm font-black truncate text-white">🎬 Studio Edit</div>
             <div className="text-[10px] text-white/50 truncate">{selectedTitle?.text || niche || "Video"} · {slides.length} slide</div>
           </div>
-          <button onClick={onSaveDraft} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 text-sm">💾</button>
+          <button onClick={onSaveDraft} className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-white/10 text-sm active:scale-95">💾</button>
           <button onClick={onExport} className="px-4 h-10 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-white text-sm font-bold shadow-lg shadow-pink-500/30 active:scale-95">
             Ekspor →
           </button>
         </div>
 
-        {/* PREVIEW AREA */}
-        <div className="relative flex items-center justify-center bg-black/80 p-3 sm:p-4 min-h-[38vh]">
-          <div className="relative w-full max-w-[88vw] sm:max-w-[420px] mx-auto rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl"
-               style={ratioStyle}>
+        {/* PREVIEW AREA (flex-1) */}
+        <div className="studio-preview-area relative flex-1 flex items-center justify-center bg-gradient-to-b from-black to-[#0a0418] overflow-hidden p-2">
+          <div className="relative rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl mx-auto"
+               style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%"}}>
             {previewPlaying ? (
               <canvas ref={previewCanvasRef}
-                width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
-                height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
+                width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
+                height={isMobile?(aspectRatio==="9:16"?640:aspectRatio==="1:1"?480:360):(aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480)}
                 className="w-full h-full block" />
             ) : slides[activeSlide] ? (
               <img src={slides[activeSlide].imageUrl}
@@ -177,13 +207,14 @@ export function StudioEditor(p: StudioEditorProps) {
                    className="w-full h-full object-cover block" alt="preview"/>
             ) : <div className="w-full h-full bg-neutral-900"/>}
 
-            {/* Vignette overlay */}
+            {/* Vignette overlay live */}
             <div className="absolute inset-0 pointer-events-none" style={{
-              background:`radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,${(vignetteAmt/100)*0.8}) 100%)`
+              background:`radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,${(vignetteAmt/100)*0.8}) 100%)`
             }}/>
 
+            {/* Center Play */}
             {!previewPlaying && slides.length>0 && (
-              <button onClick={()=>togglePreview && (togglePreview as any)()}
+              <button onClick={()=>togglePreview()}
                 className="absolute inset-0 flex items-center justify-center">
                 <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/50 backdrop-blur-md border-2 border-white/40 flex items-center justify-center text-3xl text-white shadow-2xl active:scale-95">
                   ▶️
@@ -191,6 +222,7 @@ export function StudioEditor(p: StudioEditorProps) {
               </button>
             )}
 
+            {/* Overlay badges */}
             <div className="absolute top-2 right-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-white text-[10px] font-mono border border-white/10">
               {formatDur(previewCurrent)} / {formatDur(totalDur)}
             </div>
@@ -198,32 +230,81 @@ export function StudioEditor(p: StudioEditorProps) {
               🖼️ {activeSlide+1}/{slides.length}
             </div>
             {activeFilter!=="none" && (
-              <div className="absolute bottom-12 left-2 bg-pink-500/80 backdrop-blur px-2 py-0.5 rounded-full text-white text-[9px] font-bold">
+              <div className="absolute bottom-14 left-2 bg-pink-500/80 backdrop-blur px-2 py-0.5 rounded-full text-white text-[9px] font-bold">
                 🎨 {FILTERS.find(f=>f.id===activeFilter)?.label}
+              </div>
+            )}
+            {videoSpeed!==1 && (
+              <div className="absolute bottom-14 right-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-white text-[9px] font-bold border border-white/10">
+                ⚡ {videoSpeed}x
+              </div>
+            )}
+            {/* Subscribe sticker */}
+            {spectrumSticker==="subscribe" && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-full text-[11px] font-black shadow-lg border-2 border-white">
+                🔴 SUBSCRIBE
+              </div>
+            )}
+            {spectrumSticker==="like" && (
+              <div className="absolute bottom-20 right-4 flex flex-col items-center gap-0.5">
+                <div className="w-11 h-11 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-2xl active:scale-95">👍</div>
+                <div className="text-white text-[10px] font-bold drop-shadow-lg">1.2M</div>
+              </div>
+            )}
+            {spectrumSticker==="bell" && (
+              <div className="absolute top-14 right-4 w-11 h-11 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-2xl">🔔</div>
+            )}
+            {spectrumSticker==="fire" && (
+              <div className="absolute top-14 left-4 bg-gradient-to-r from-orange-500 to-red-500 text-white px-2 py-1 rounded-full text-[10px] font-black shadow-lg flex items-center gap-1">
+                🔥 FYP
               </div>
             )}
           </div>
         </div>
 
-        {/* TIMELINE THUMBNAIL STRIP */}
-        <div className="px-2 py-2 bg-gradient-to-b from-black/40 to-black/60 border-y border-white/5">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
-            {slides.map((s:any, i:number)=>(
-              <button key={s.id} onClick={()=>setActiveSlide(i)}
-                className={`relative shrink-0 snap-start rounded-md overflow-hidden border-2 transition ${activeSlide===i?"border-pink-400 scale-105 shadow-lg shadow-pink-500/30":"border-white/10 opacity-70"}`}
-                style={aspectRatio==="9:16"?{width:42,height:72}:aspectRatio==="1:1"?{width:54,height:54}:{width:68,height:40}}>
-                <img src={s.imageUrl} className="w-full h-full object-cover"
-                     style={{filter: filterCssFor(activeFilter)}} alt=""/>
-                <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[9px] text-center py-0.5 font-bold">{i+1}</div>
-              </button>
-            ))}
+        {/* TIMELINE (thumbnail strip + playhead + waveform) */}
+        <div className="bg-[#0a0418] border-y border-white/10 px-1 py-1.5">
+          {/* Waveform bar audio (fake bars) */}
+          <div className="flex items-end gap-[2px] h-6 px-1 mb-1">
+            {Array.from({length:60}).map((_,i)=>{
+              const base = 0.2 + Math.sin(i*0.4)*0.15 + Math.sin(i*1.3)*0.1 + Math.random()*0.3;
+              return <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-pink-500/40 to-cyan-400/40"
+                style={{height:`${Math.min(1,base)*100}%`}}/>;
+            })}
+          </div>
+          <div className="relative">
+            {/* Playhead PUTIH garis vertikal */}
+            <div className="absolute top-0 bottom-0 w-0.5 bg-white z-10 pointer-events-none shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+                 style={{left:`calc(${playheadPct}% - 1px)`}}>
+              <div className="absolute -top-0.5 -left-1.5 w-3.5 h-3.5 bg-white rotate-45"/>
+            </div>
+            <div ref={timelineStripRef}
+                 className="flex items-center gap-1 overflow-x-auto py-1 px-1 snap-x timeline-strip no-scrollbar"
+                 style={{scrollBehavior:"auto"}}>
+              {slides.map((s:any, i:number)=>{
+                const isActive = i===activeSlide;
+                return (
+                  <button key={s.id}
+                    onClick={()=>{
+                      setActiveSlide(i);
+                      seekPreview(i*(curSlideDur+transitionDur/videoSpeed));
+                    }}
+                    className={`relative shrink-0 snap-start rounded-md overflow-hidden border-2 transition ${isActive?"border-pink-400 scale-[1.05] shadow-lg shadow-pink-500/40":"border-white/10 opacity-60"}`}
+                    style={{width:thumbW,height:thumbH}}>
+                    <img src={s.imageUrl} className="w-full h-full object-cover"
+                         style={{filter: isActive?getFilterString():"none"}} alt=""/>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[9px] text-center py-0.5 font-bold">{i+1}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="mt-1 px-1">
             <input type="range" min={0} max={totalDur} step={0.05}
                    value={previewCurrent}
                    onChange={e=>{
                      const t = Number(e.target.value);
-                     setActiveSlide(Math.min(slides.length-1, Math.floor(t/(curSlideDur+transitionDur))));
+                     setActiveSlide(Math.min(slides.length-1, Math.floor(t/(curSlideDur+transitionDur/videoSpeed))));
                      seekPreview(t);
                    }}
                    className="w-full accent-pink-500 h-1"/>
@@ -231,25 +312,25 @@ export function StudioEditor(p: StudioEditorProps) {
         </div>
 
         {/* PLAYBACK CONTROLS */}
-        <div className="flex items-center justify-between gap-2 px-4 py-2 bg-black/40">
-          <button onClick={()=>seekPreview(Math.max(0,previewCurrent-5))} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg">⏮</button>
+        <div className="flex items-center justify-between gap-2 px-4 py-2 bg-black">
+          <button onClick={()=>seekPreview(Math.max(0,previewCurrent-5))} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg active:scale-95">⏮</button>
           <button onClick={togglePreview}
                   className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white text-2xl shadow-lg shadow-pink-500/40 active:scale-95">
             {previewPlaying?"⏸":"▶️"}
           </button>
-          <button onClick={()=>seekPreview(Math.min(totalDur, previewCurrent+5))} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg">⏭</button>
-          <button onClick={()=>setPreviewMuted(!previewMuted)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg">
+          <button onClick={()=>seekPreview(Math.min(totalDur, previewCurrent+5))} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg active:scale-95">⏭</button>
+          <button onClick={()=>setPreviewMuted(!previewMuted)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg active:scale-95">
             {previewMuted?"🔇":"🔊"}
           </button>
-          <div className="text-[11px] text-white/70 font-mono ml-auto">{formatDur(previewCurrent)} / {formatDur(totalDur)}</div>
+          <div className="text-[11px] text-white/70 font-mono ml-auto tabular-nums">{formatDur(previewCurrent)} / {formatDur(totalDur)}</div>
         </div>
 
-        {/* TOOLBAR 9 TABS */}
-        <div className="flex items-stretch gap-0.5 p-1.5 bg-black/60 border-t border-white/10 overflow-x-auto">
+        {/* TOOLBAR 9 TABS (sticky) */}
+        <div className="flex items-stretch gap-0.5 p-1.5 bg-black border-t border-white/10 overflow-x-auto no-scrollbar">
           {TABS.map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg shrink-0 min-w-[58px] text-[10px] font-semibold transition ${
-                tab===t.id?"bg-gradient-to-b from-pink-500/40 to-pink-500/20 border border-pink-400/50 text-white":"text-white/70 hover:bg-white/5 border border-transparent"
+              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg shrink-0 min-w-[58px] text-[10px] font-semibold transition active:scale-95 ${
+                tab===t.id?"bg-gradient-to-b from-pink-500/40 to-pink-500/20 border border-pink-400/50 text-white":"text-white/60 hover:bg-white/5 border border-transparent"
               }`}>
               <span className="text-lg leading-none">{t.icon}</span>
               <span className="whitespace-nowrap">{t.label}</span>
@@ -257,37 +338,56 @@ export function StudioEditor(p: StudioEditorProps) {
           ))}
         </div>
 
-        {/* PANEL */}
-        <div className="bg-gradient-to-b from-[#15091f] to-black border-t border-white/10 p-3 max-h-[38vh] overflow-y-auto">
+        {/* PANEL KONTEN */}
+        <div className="bg-gradient-to-b from-[#15091f] to-black border-t border-white/5 p-3 overflow-y-auto studio-panel"
+             style={{maxHeight:"42vh"}}>
           {tab==="edit" && <EditTab {...{slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport}}/>}
-          {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,aiMusicUrl,ttsUrl,musicUrl,proxifyAudioUrl,previewAudioRef}}/>}
+          {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,aiMusicUrl,ttsUrl,musicUrl,proxifyAudioUrl,audioSrc}}/>}
           {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle}}/>}
           {tab==="sticker" && <StickerTab {...{spectrumSticker,setSpectrumSticker}}/>}
           {tab==="overlay" && <OverlayTab {...{logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle}}/>}
-          {tab==="filter" && <FilterTab {...{slides,activeSlide,activeFilter,setActiveFilter,FILTERS,filterCssFor}}/>}
+          {tab==="filter" && <FilterTab {...{slides,activeSlide,activeFilter,setActiveFilter,FILTERS}}/>}
           {tab==="adjust" && <AdjustTab {...{brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,vignetteAmt,setVignetteAmt,resetAdjust}}/>}
           {tab==="effect" && <EffectTab {...{transition,setTransition,showTitle,setShowTitle,showLyrics,setShowLyrics}}/>}
           {tab==="speed" && <SpeedTab {...{videoSpeed,setVideoSpeed,curSlideDur}}/>}
         </div>
 
+        {isMobile && <div className="h-[env(safe-area-inset-bottom)] bg-black"/>}
+
+        {/* Hidden audio */}
         <audio ref={previewAudioRef} preload="metadata" className="hidden"/>
       </div>
+
+      {/* Global styles utk fullscreen editor di HP */}
+      <style jsx global>{`
+        .studio-mobile { padding-bottom: 0; display:flex; flex-direction:column; }
+        .studio-preview-area { min-height: 0; }
+        .studio-panel::-webkit-scrollbar { width: 4px; }
+        .studio-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .timeline-strip { scrollbar-width: none; }
+        @media (min-width: 768px) {
+          .studio-shell { background:#000; border:1px solid rgba(255,255,255,0.1); }
+        }
+      `}</style>
     </section>
   );
 }
 
+// ====== TAB PANELS ======
 function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport}:any){
   return (
     <div className="space-y-3">
       <div className="text-xs font-bold text-white/80">✂️ Edit Klip</div>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <div className="flex justify-between text-[11px] mb-1"><span>⏱ Durasi klip</span><b>{slideDuration.toFixed(1)}s</b></div>
+          <div className="flex justify-between text-[11px] mb-1"><span>⏱ Durasi klip</span><b className="text-pink-300">{slideDuration.toFixed(1)}s</b></div>
           <input type="range" min={1.5} max={8} step={0.5} value={slideDuration}
                  onChange={e=>setSlideDuration(Number(e.target.value))} className="w-full accent-pink-500"/>
         </label>
         <label className="block">
-          <div className="flex justify-between text-[11px] mb-1"><span>🔀 Transisi</span><b>{transitionDur.toFixed(2)}s</b></div>
+          <div className="flex justify-between text-[11px] mb-1"><span>🔀 Transisi</span><b className="text-pink-300">{transitionDur.toFixed(2)}s</b></div>
           <input type="range" min={0} max={2} step={0.1} value={transitionDur}
                  onChange={e=>setTransitionDur(Number(e.target.value))} className="w-full accent-pink-500"/>
         </label>
@@ -311,26 +411,23 @@ function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,
   );
 }
 
-function AudioTab({audioMode,setAudioMode,aiMusicUrl,ttsUrl,musicUrl,proxifyAudioUrl,previewAudioRef}:any){
-  const src = (audioMode==="aimusic"&&aiMusicUrl)?aiMusicUrl:
-              (audioMode==="tts"&&ttsUrl)?ttsUrl:
-              (audioMode==="music"&&musicUrl)?musicUrl:
-              (aiMusicUrl||musicUrl||ttsUrl);
+function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl}:any){
   return (
     <div className="space-y-3">
       <div className="text-xs font-bold text-white/80">🎵 Audio</div>
       <div className="grid grid-cols-5 gap-1.5">
         {[{id:"tts",l:"🗣️ TTS"},{id:"music",l:"🎵 Musik"},{id:"aimusic",l:"🤖 AI"},{id:"both",l:"🔀 Campur"},{id:"none",l:"🔇 Mute"}].map((m:any)=>(
           <button key={m.id} onClick={()=>setAudioMode(m.id)}
-            className={`py-2 rounded-lg text-[10px] font-bold border ${audioMode===m.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>{m.l}</button>
+            className={`py-2.5 rounded-lg text-[10px] font-bold border active:scale-95 ${audioMode===m.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}>{m.l}</button>
         ))}
       </div>
-      <div className="text-[11px] text-white/60">
+      <div className="text-[11px] text-white/60 p-2 rounded-lg bg-white/5">
         💡 Tap <b>← Kembali</b> di top bar buat ganti sumber audio / generate ulang lagu AI.
       </div>
-      {src && (
-        <audio controls src={proxifyAudioUrl(src)} className="w-full"/>
+      {audioSrc && (
+        <audio controls src={proxifyAudioUrl(audioSrc)} className="w-full"/>
       )}
+      <div className="text-[10px] text-white/50">Volume audio diatur oleh tombol 🔊 di kontrol playback.</div>
     </div>
   );
 }
@@ -366,24 +463,18 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
 function StickerTab({spectrumSticker,setSpectrumSticker}:any){
   return (
     <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">🎧 Stiker Spectrum</div>
+      <div className="text-xs font-bold text-white/80">🎧 Stiker & Spectrum</div>
       <div className="grid grid-cols-4 gap-1.5">
-        {[
-          {id:"none",icon:"❌",label:"None"},
-          {id:"bars-bottom",icon:"📊",label:"Bars Bawah"},
-          {id:"wave-bottom",icon:"📶",label:"Wave"},
-          {id:"wave-center",icon:"〰️",label:"Wave Mid"},
-          {id:"bars-top",icon:"📈",label:"Bars Atas"},
-          {id:"circle",icon:"⭕",label:"Circle"},
-          {id:"disc",icon:"💿",label:"Disc"},
-          {id:"diamond",icon:"💎",label:"Diamond"},
-        ].map((s:any)=>(
+        {STICKER_PRESETS.map((s:any)=>(
           <button key={s.id} onClick={()=>setSpectrumSticker(s.id)}
-            className={`p-2 rounded-lg border text-center ${spectrumSticker===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
+            className={`p-2 rounded-lg border text-center active:scale-95 ${spectrumSticker===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
             <div className="text-xl">{s.icon}</div>
-            <div className="text-[9px] text-white/70 mt-0.5">{s.label}</div>
+            <div className="text-[9px] text-white/70 mt-0.5 leading-tight">{s.label}</div>
           </button>
         ))}
+      </div>
+      <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">
+        💡 Stiker muncul di preview saat kamu tap play. Spectrum bars pakai audio aktif.
       </div>
     </div>
   );
@@ -421,10 +512,10 @@ function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizCo
           {COLOR_PRESETS.map(c=>(
             <button key={c.hex} onClick={()=>setVizColor(c.hex)}
               className={`color-swatch ${vizColor===c.hex?"active":""}`}
-              style={{width:28,height:28,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
+              style={{width:30,height:30,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
           ))}
           <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)}
-            className="w-9 h-9 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
+            className="w-10 h-10 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
         </div>
       </div>
       <div>
@@ -440,22 +531,22 @@ function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizCo
   );
 }
 
-function FilterTab({slides,activeSlide,activeFilter,setActiveFilter,FILTERS,filterCssFor}:any){
+function FilterTab({slides,activeSlide,activeFilter,setActiveFilter,FILTERS}:any){
+  const previewSrc = slides[Math.min(activeSlide,slides.length-1)]?.imageUrl;
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs font-bold text-white/80">🎨 Filter Video</div>
-        <button onClick={()=>setActiveFilter("none")} className="text-[10px] px-2 py-1 rounded bg-white/10">↻ Reset</button>
+        <button onClick={()=>setActiveFilter("none")} className="text-[10px] px-2 py-1 rounded bg-white/10 active:scale-95">↻ Reset</button>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
         {FILTERS.map((f:any)=>(
           <button key={f.id} onClick={()=>setActiveFilter(f.id)}
-            className={`shrink-0 flex flex-col items-center gap-1 ${activeFilter===f.id?"opacity-100":"opacity-75"}`}>
+            className={`shrink-0 flex flex-col items-center gap-1 active:scale-95 ${activeFilter===f.id?"opacity-100":"opacity-70"}`}>
             <div className="w-16 h-16 rounded-lg overflow-hidden border-2"
                  style={{borderColor:activeFilter===f.id?"#ec4899":"rgba(255,255,255,0.15)"}}>
-              {slides[0] && (
-                <img src={slides[Math.min(activeSlide,slides.length-1)].imageUrl} className="w-full h-full object-cover"
-                     style={{filter:filterCssFor(f.id)}} alt=""/>
+              {previewSrc && (
+                <img src={previewSrc} className="w-full h-full object-cover" style={{filter:f.css}} alt=""/>
               )}
             </div>
             <span className="text-[9px] text-white/80 whitespace-nowrap font-semibold">{f.label}</span>
@@ -467,25 +558,26 @@ function FilterTab({slides,activeSlide,activeFilter,setActiveFilter,FILTERS,filt
 }
 
 function AdjustTab({brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,vignetteAmt,setVignetteAmt,resetAdjust}:any){
+  const rows = [
+    {label:"☀️ Kecerahan",v:brightness,set:setBrightness,min:-50,max:50},
+    {label:"◐ Kontras",v:contrast,set:setContrast,min:-50,max:50},
+    {label:"🎨 Saturasi",v:saturation,set:setSaturation,min:-50,max:80},
+    {label:"✨ Pertajam",v:sharpen,set:setSharpen,min:0,max:50},
+    {label:"🌑 Vignette",v:vignetteAmt,set:setVignetteAmt,min:0,max:100},
+  ];
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs font-bold text-white/80">☀️ Sesuaikan</div>
-        <button onClick={resetAdjust} className="text-[10px] px-2 py-1 rounded bg-white/10">↻ Reset</button>
+        <button onClick={resetAdjust} className="text-[10px] px-2 py-1 rounded bg-white/10 active:scale-95">↻ Reset</button>
       </div>
-      {[
-        {label:"☀️ Kecerahan",v:brightness,set:setBrightness,min:-50,max:50},
-        {label:"◐ Kontras",v:contrast,set:setContrast,min:-50,max:50},
-        {label:"🎨 Saturasi",v:saturation,set:setSaturation,min:-50,max:80},
-        {label:"✨ Pertajam",v:sharpen,set:setSharpen,min:0,max:50},
-        {label:"🌑 Vignette",v:vignetteAmt,set:setVignetteAmt,min:0,max:100},
-      ].map((s:any,i)=>(
+      {rows.map((s:any,i)=>(
         <label key={i} className="block">
           <div className="flex justify-between text-[11px] mb-1">
-            <span>{s.label}</span><span className="text-white/50 font-mono">{s.v>0?"+":""}{s.v}</span>
+            <span>{s.label}</span><span className="text-white/50 font-mono tabular-nums">{s.v>0?"+":""}{s.v}</span>
           </div>
           <input type="range" min={s.min} max={s.max} step={1} value={s.v}
-                 onChange={(e:any)=>s.set(Number(e.target.value))} className="w-full accent-pink-500"/>
+                 onChange={e=>s.set(Number(e.target.value))} className="w-full accent-pink-500"/>
         </label>
       ))}
     </div>
@@ -495,7 +587,7 @@ function AdjustTab({brightness,setBrightness,contrast,setContrast,saturation,set
 function EffectTab({transition,setTransition,showTitle,setShowTitle,showLyrics,setShowLyrics}:any){
   return (
     <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">✨ Efek / Transisi</div>
+      <div className="text-xs font-bold text-white/80">✨ Efek</div>
       <div>
         <div className="text-[11px] mb-1 text-white/70">Transisi antar slide</div>
         <div className="grid grid-cols-3 gap-1.5">
@@ -505,45 +597,46 @@ function EffectTab({transition,setTransition,showTitle,setShowTitle,showLyrics,s
           ))}
         </div>
       </div>
-      <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/30 border border-white/10">
-        <div>
-          <div className="text-xs font-semibold">🏷️ Judul di video</div>
-          <div className="text-[10px] text-white/50">Overlay judul dengan glow</div>
-        </div>
-        <div className={`toggle ${showTitle?"on":""}`} onClick={()=>setShowTitle(!showTitle)}/>
-      </div>
-      <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/30 border border-white/10">
-        <div>
-          <div className="text-xs font-semibold">🎤 Karaoke lirik</div>
-          <div className="text-[10px] text-white/50">Highlight kata per kata</div>
-        </div>
-        <div className={`toggle ${showLyrics?"on":""}`} onClick={()=>setShowLyrics(!showLyrics)}/>
-      </div>
+      <Toggle label="🏷️ Judul di video" desc="Overlay judul dengan glow" val={showTitle} set={setShowTitle}/>
+      <Toggle label="🎤 Karaoke lirik" desc="Highlight kata per kata" val={showLyrics} set={setShowLyrics}/>
     </div>
   );
 }
 
 function SpeedTab({videoSpeed,setVideoSpeed,curSlideDur}:any){
+  const speeds=[0.5,0.75,1,1.25,1.5,1.75,2];
   return (
     <div className="space-y-3">
       <div className="text-xs font-bold text-white/80">⚡ Kecepatan Video</div>
       <label className="block">
-        <div className="flex justify-between text-[11px] mb-1"><span>Speed</span><b>{videoSpeed.toFixed(2)}x</b></div>
+        <div className="flex justify-between text-[11px] mb-1"><span>Speed</span><b className="text-pink-300">{videoSpeed.toFixed(2)}x</b></div>
         <input type="range" min={0.5} max={2} step={0.25} value={videoSpeed}
-               onChange={(e:any)=>setVideoSpeed(Number(e.target.value))} className="w-full accent-pink-500"/>
+               onChange={e=>setVideoSpeed(Number(e.target.value))} className="w-full accent-pink-500"/>
       </label>
       <div className="grid grid-cols-4 gap-1.5">
-        {[0.5,0.75,1,1.25,1.5,1.75,2].map((s:number)=>(
+        {speeds.map((s:number)=>(
           <button key={s} onClick={()=>setVideoSpeed(s)}
             className={`q-tile !text-[10px] ${Math.abs(videoSpeed-s)<0.01?"active":""}`}>{s}x</button>
         ))}
       </div>
-      <div className="text-[10px] text-white/50">Durasi efektif per slide: <b>{curSlideDur.toFixed(2)}s</b></div>
+      <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">Durasi per slide: <b className="text-white/80">{curSlideDur.toFixed(2)}s</b></div>
     </div>
   );
 }
 
-// ===== Export / Render Panel (Step 6) =====
+function Toggle({label,desc,val,set}:{label:string;desc:string;val:boolean;set:(v:boolean)=>void}){
+  return (
+    <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/30 border border-white/10 gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-semibold">{label}</div>
+        <div className="text-[10px] text-white/50">{desc}</div>
+      </div>
+      <div className={`toggle ${val?"on":""}`} onClick={()=>set(!val)}/>
+    </div>
+  );
+}
+
+// ============ EXPORT PANEL (Step 6) ============
 type ExportPanelProps = {
   slides: any[]; isMobile: boolean;
   selectedTitle?: {text:string; keyword:string}; niche: string;
@@ -565,11 +658,11 @@ export function ExportPanel(p: ExportPanelProps) {
   const rendering = loading==="render";
   return (
     <section className="mt-0">
-      <div className="bg-black rounded-2xl overflow-hidden border border-white/10 -mx-1 sm:mx-0">
+      <div className={"relative bg-black rounded-2xl overflow-hidden border border-white/10 -mx-1 sm:mx-0"}>
         <div className="flex items-center gap-2 p-2 bg-gradient-to-b from-white/5 to-transparent border-b border-white/10">
           <button onClick={onBack} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/10 text-lg">←</button>
           <div className="flex-1 text-center">
-            <div className="text-sm font-black">📤 Ekspor Video</div>
+            <div className="text-sm font-black text-white">📤 Ekspor Video</div>
             <div className="text-[10px] text-white/50 truncate">{selectedTitle?.text || niche}</div>
           </div>
           <div className="w-10"/>
@@ -577,7 +670,7 @@ export function ExportPanel(p: ExportPanelProps) {
 
         <div className="p-4 space-y-4">
           <div className="flex justify-center">
-            <div className="relative w-full max-w-[320px] rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl"
+            <div className="relative w-full max-w-[360px] rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl"
                  style={{aspectRatio:"16/9"}}>
               {videoUrl ? (
                 <video controls src={videoUrl} className="w-full h-full bg-black" autoPlay loop playsInline/>
@@ -588,7 +681,7 @@ export function ExportPanel(p: ExportPanelProps) {
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center gap-2 p-3">
                   <Spinner/>
                   <div className="text-white text-xs font-bold text-center">{stageText || "Rendering..."}</div>
-                  <div className="w-full max-w-[200px] progress-track">
+                  <div className="w-full max-w-[220px] progress-track">
                     <div className="progress-fill" style={{width:`${Math.round(progress*100)}%`}}/>
                   </div>
                   <div className="text-white/70 text-[11px] font-mono">{Math.round(progress*100)}% {renderETA && `· ETA ${renderETA}`}</div>
@@ -598,7 +691,7 @@ export function ExportPanel(p: ExportPanelProps) {
           </div>
 
           <div>
-            <div className="text-xs font-bold mb-2">⚡ Pilih Kualitas</div>
+            <div className="text-xs font-bold mb-2 text-white/80">⚡ Pilih Kualitas</div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {QUALITY_OPTIONS.map(q=>(
                 <button key={q.id} onClick={()=>setQuality(q.id as any)}
@@ -609,8 +702,8 @@ export function ExportPanel(p: ExportPanelProps) {
                 </button>
               ))}
             </div>
-            <div className="text-[10px] text-white/50 mt-1">
-              💡 HP: <b>Cepat (480p)</b> — render 3-5× realtime. YouTube: <b>Seimbang (720p)</b> atau <b>Tinggi (1080p)</b>.
+            <div className="text-[10px] text-white/50 mt-1.5">
+              💡 HP: <b>Cepat (480p)</b> — render 3-5× realtime. YouTube: <b>Seimbang (720p)</b> / <b>Tinggi (1080p)</b>.
             </div>
           </div>
 
@@ -639,7 +732,7 @@ export function ExportPanel(p: ExportPanelProps) {
 
           {meta && videoUrl && (
             <div className="space-y-2 pt-2 border-t border-white/10">
-              <div className="text-sm font-black flex items-center gap-2">📋 Metadata YouTube</div>
+              <div className="text-sm font-black flex items-center gap-2 text-white">📋 Metadata YouTube</div>
               <MetaRow label="🏷️ Judul High-CTR" value={meta.titleHighCTR} onCopy={()=>onCopy("t",meta.titleHighCTR)} copied={copiedField==="t"}/>
               <MetaRow label="📝 Deskripsi" value={meta.description} onCopy={()=>onCopy("d",meta.description)} copied={copiedField==="d"} multiline/>
               <MetaRow label="#️⃣ Tags" value={meta.tags.join(", ")} onCopy={()=>onCopy("tag",meta.tags.join(", "))} copied={copiedField==="tag"}/>
