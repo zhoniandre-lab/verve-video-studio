@@ -3,43 +3,52 @@ import { chat } from "@/lib/hcnsec";
 
 export const dynamic = "force-dynamic";
 
-const PROLOGUE = `Kamu penulis skenario video musik. Tugasmu buat storyboard untuk video musik.
+const PROLOGUE = `Kamu adalah sutradara video musik sinematik. Buat storyboard untuk video musik:
 
-JUDUL CERITA: {{TITLE}}
+JUDUL: {{TITLE}}
 KATA KUNCI: {{KW}}
 NICHE: {{NICHE}}
 JUMLAH ADEGAN: {{N}}
 
-TULIS OUTPUT SESUAI FORMAT DI BAWAH INI, TEPAT, TANPA CATATAN TAMBAHAN, TANPA BACKTICKS, TANPA KODE, TANPA TANDA KURUNG KURAWAL:
+TULIS OUTPUT TEPAT SESUAI FORMAT DI BAWAH INI. JANGAN tambahkan apapun sebelum/sesudah.
+JANGAN PERNAH gunakan tanda kurung kurawal { } atau kurung siku [ ].
+JANGAN gunakan JSON.
+JANGAN gunakan tanda kutip ganda " di dalam teks (pakai tanda kutip tunggal ' saja).
 
 MULAI-FORMAT
 STYLE_VISUAL: cinematic
-COLOR: #c98872
+COLOR: #hexwarna
 TITLE: {{TITLE}}
 SCENE_START
 SCENE_NUMBER: 1
-DESKRIPSI: deskripsi detail adegan
-LIRIK: satu baris lirik
-MOOD: sad
-VISUAL_EN: visual prompt english
+DESKRIPSI: deskripsi detail adegan dalam Bahasa Indonesia (aksi tokoh, setting, emosi wajah, prop)
+LIRIK: SATU baris lirik pendek (5-10 kata) sesuai emosi adegan, natural, Bahasa Indonesia, tanpa tanda kutip
+MOOD: satu kata emosi (misal: sedih, haru, marah, rindu, bahagia, tenang)
+VISUAL_EN: detailed English visual prompt: [shot type] [subject+action] [environment] [lighting] [color tone] — contoh: extreme close-up of a wrinkled elderly mother's hand holding an old photo, tears visible, warm sunset light through window, dust particles in air, shallow depth of field, warm sepia tones, cinematic
 SCENE_END
 AKHIR-FORMAT
 
-Aturan:
-- JANGAN gunakan tanda kutip ganda " di dalam teks
-- Setiap scene BERBEDA (beda komposisi, setting, pencahayaan)
-- Visual harus spesifik (close-up tangan keriput ibu memegang foto)
-- Jumlah scene TEPAT {{N}}
-- Mulai output tepat setelah MULAI-FORMAT, akhiri sebelum AKHIR-FORMAT`;
+Aturan penting:
+1. Jumlah scene TEPAT {{N}}.
+2. Setiap adegan BERBEDA: beda shot type (close-up, medium, wide, over-shoulder, dll), beda setting, beda momen emosi.
+3. DESKRIPSI: detail aksi dan emosi (misal: ibu memegang foto anaknya, air mata menetes di atas meja kayu tua).
+4. LIRIK: satu baris per adegan, mengalir seperti lagu, nyambung antar adegan.
+5. VISUAL_EN: WAJIB dalam Bahasa Inggris, 20-40 kata, sebutkan: shot type + subjek + aksi + lighting + lens/gear feel.
+6. COLOR: pilih warna hex yang cocok mood (ungu/pink untuk romantis, biru dingin untuk sedih, emas untuk harapan, merah untuk marah, hijau untuk islami).
+7. STYLE_VISUAL: satu kata: cinematic, anime, studio, fantasy, cyberpunk, pixar, oil, minimalist.
+
+Mulai output tepat di bawah MULAI-FORMAT dan akhiri sebelum AKHIR-FORMAT.`;
 
 async function tryGenerate(title: string, keyword: string, niche: string, n: number, attempt: number): Promise<any> {
   let sys = PROLOGUE
-    .replace(/\{\{TITLE\}\}/g, String(title||"").slice(0,80))
-    .replace(/\{\{KW\}\}/g, String(keyword||"-").slice(0,80))
-    .replace(/\{\{NICHE\}\}/g, String(niche||"-").slice(0,80))
+    .replace(/\{\{TITLE\}\}/g, String(title||"").slice(0,80).replace(/"/g,"'"))
+    .replace(/\{\{KW\}\}/g, String(keyword||"-").slice(0,80).replace(/"/g,"'"))
+    .replace(/\{\{NICHE\}\}/g, String(niche||"-").slice(0,80).replace(/"/g,"'"))
     .replace(/\{\{N\}\}/g, String(n));
-  if (attempt > 1) sys += "\n\nPERINGATAN: JANGAN PERNAH mengembalikan JSON, array, atau object. Gunakan FORMAT DI ATAS SAJA dengan SCENE_START/SCENE_END. TANDA { } [ ] DILARANG.";
-  const raw = await chat([{ role: "user", content: sys }]);
+  if (attempt > 1) {
+    sys += "\n\nPERINGATAN KHUSUS: JANGAN PERNAH mengembalikan JSON, array, object, atau kode apapun. Gunakan FORMAT DI ATAS SAJA. Tanda { } [ ] DILARANG sama sekali. Gunakan SCENE_START/SCENE_END marker.";
+  }
+  const raw = await chat([{ role: "user", content: sys }], undefined);
   return parseStoryboardText(raw, n);
 }
 
@@ -80,7 +89,7 @@ function parseStoryboardText(raw: string, expectedN: number): any {
     const mood = (getField(block,"MOOD").split(/[,\s.]+/)[0]||"calm").toLowerCase().slice(0,20);
     let visual = getField(block,"VISUAL_EN").slice(0,500);
     if (visual.length<10 && desc)
-      visual = `Cinematic shot, ${desc.slice(0,200)}, cinematic lighting, 8k, photorealistic`;
+      visual = `Cinematic shot, ${desc.slice(0,200)}, cinematic lighting, 8k, photorealistic, shallow depth of field`;
     if (!desc && !visual) continue;
     out.scenes.push({ scene:no, scene_desc:desc, lyric_line:lyric, visual_prompt:visual, mood });
   }

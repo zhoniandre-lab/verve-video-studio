@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import SpectrumVisualizer from "@/components/SpectrumVisualizer";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
 import type { Quality as RenderQuality, Transition } from "@/lib/recorder";
@@ -37,6 +37,17 @@ const IMAGE_STYLE_PRESETS = [
 ];
 const VOICES = ["alloy","echo","fable","onyx","nova","shimmer"];
 
+// SUNO/AI Music models (mirip kampunglagu/apiframe)
+const MUSIC_MODELS = [
+  { id: "suno-v5.5",   label: "Suno V5.5",  credit: "11 kredit", badge:"🔥 Terbaru" },
+  { id: "suno-v5",     label: "Suno V5",    credit: "11 kredit" },
+  { id: "suno-v4.5",   label: "Suno V4.5",  credit: "11 kredit" },
+  { id: "suno-v4",     label: "Suno V4",    credit: "11 kredit" },
+  { id: "suno-v3.5",   label: "Suno V3.5",  credit: "11 kredit" },
+];
+
+const STORAGE_KEY = "verve_project_v1";
+
 function useIsMobile() {
   const [m, setM] = useState(false);
   useEffect(() => {
@@ -48,6 +59,81 @@ function useIsMobile() {
   return m;
 }
 
+// ===== API Key Modal (mirip araz.biz.id) =====
+function ApiKeyModal({ open, onClose, onSave, currentKey }:{
+  open: boolean; onClose: ()=>void; onSave: (k:string)=>void; currentKey: string;
+}) {
+  const [text, setText] = useState(currentKey);
+  const [checking, setChecking] = useState(false);
+  const [credits, setCredits] = useState<string>("");
+  useEffect(()=>{ if (open) { setText(currentKey); setCredits(""); } }, [open, currentKey]);
+
+  async function cekKredit() {
+    if (!text.trim()) return;
+    setChecking(true); setCredits("");
+    try {
+      const r = await fetch("https://apiframe.ai/api/credit", {
+        headers: { "Authorization": `Bearer ${text.trim()}`, "apikey": text.trim() },
+      }).catch(()=>null);
+      if (!r || !r.ok) { setCredits("Tidak bisa cek (mungkin key belum aktif atau bukan apiframe.ai)."); }
+      else {
+        const d = await r.json().catch(()=>({}));
+        setCredits(`Kredit tersedia: ${d.credit ?? d.credits ?? d.balance ?? JSON.stringify(d).slice(0,80)}`);
+      }
+    } catch(e:any){ setCredits(`Error: ${e.message}`); }
+    setChecking(false);
+  }
+
+  if (!open) return null;
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box modal-enter" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🔑</span>
+            <div>
+              <h3 className="text-lg font-black">Setelan API Key Music</h3>
+              <p className="text-[11px] text-white/60">Untuk AI Music (Suno-style) unlimited</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-lg flex-shrink-0">×</button>
+        </div>
+
+        <ol className="text-xs sm:text-sm text-white/80 space-y-2 mb-4 list-decimal pl-5">
+          <li>Buka <a href="https://apiframe.ai/?ref=verve" target="_blank" rel="noreferrer"
+            className="text-cyan-300 underline font-bold">apiframe.ai</a> lalu daftar/login email.</li>
+          <li>Masuk ke dashboard, cari menu <b>API Key</b>, lalu <b>copy</b> key kamu.</li>
+          <li>Tempel key di bawah lalu klik <b>Tambah</b>. Key tersimpan di HP kamu saja (tidak dikirim ke server kami).</li>
+        </ol>
+
+        <label className="block mb-2">
+          <span className="lbl">API Key</span>
+          <input className="input" value={text} onChange={e=>setText(e.target.value)}
+                 placeholder="afk_xxxxx atau sk-..." autoFocus />
+        </label>
+
+        <div className="flex flex-wrap gap-2 mb-2">
+          <button className="btn btn-primary flex-1 sm:flex-none" onClick={()=>{ onSave(text.trim()); onClose(); }} disabled={!text.trim()}>
+            ✚ Tambah / Simpan
+          </button>
+          <button className="btn btn-ghost" onClick={cekKredit} disabled={checking || !text.trim()}>
+            {checking?<Spinner/>:"🔄"} Cek Kredit
+          </button>
+          {currentKey && (
+            <button className="btn btn-danger" onClick={()=>{ onSave(""); setText(""); setCredits(""); }}>🗑️ Hapus</button>
+          )}
+        </div>
+        {credits && <div className="text-[11px] text-cyan-200 bg-cyan-500/10 border border-cyan-400/30 rounded-lg p-2">{credits}</div>}
+
+        <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-white/40">
+          💡 Key disimpan di localStorage browser kamu, aman. Tanpa key kamu masih bisa coba free trial (kadang penuh).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Komponen halaman utama =====
 export default function Home() {
   const isMobile = useIsMobile();
   const [mode, setMode] = useState<Mode>("slideshow");
@@ -55,11 +141,11 @@ export default function Home() {
   const [loading, setLoading] = useState<string | null>(null);
   const [stageText, setStageText] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [quality, setQuality] = useState<RenderQuality>(isMobile ? "fast" : "balanced");
+  const [quality, setQuality] = useState<RenderQuality>("balanced");
 
   // Step 1
   const [niche, setNiche] = useState("");
-  const [nKeywords, setNKeywords] = useState(isMobile ? 3 : 5);
+  const [nKeywords, setNKeywords] = useState(5);
   const [keywordMode, setKeywordMode] = useState<"ai"|"manual">("ai");
   const [manualKeywords, setManualKeywords] = useState("");
   const [keywords, setKeywords] = useState<KeywordItem[]>([]);
@@ -71,9 +157,9 @@ export default function Home() {
 
   // Step 3
   const [imageSource, setImageSource] = useState<ImageSource>("ai");
-  const [imageStyle, setImageStyle] = useState("studio"); // default stabil
-  const [aspectRatio, setAspectRatio] = useState<"16:9"|"9:16"|"1:1">(isMobile ? "9:16" : "16:9");
-  const [nSlides, setNSlides] = useState(isMobile ? 3 : 4);
+  const [imageStyle, setImageStyle] = useState("studio");
+  const [aspectRatio, setAspectRatio] = useState<"16:9"|"9:16"|"1:1">("16:9");
+  const [nSlides, setNSlides] = useState(4);
   const [slides, setSlides] = useState<Slide[]>([]);
 
   // Step 4
@@ -83,11 +169,14 @@ export default function Home() {
   const [ttsUrl, setTtsUrl] = useState<string>("");
   const [musicUrl, setMusicUrl] = useState<string>("");
 
+  // Lyrics (karaoke per-slide) — React state, BUKAN window._lyrics
+  const [lyricLines, setLyricLines] = useState<string[]>([]);
+
   // Step 5
   const [vizStyle, setVizStyle] = useState<VizStyle>("luxury");
   const [vizColor, setVizColor] = useState("#ec4899");
   const [slideDuration, setSlideDuration] = useState(3);
-  const [transitionDur, setTransitionDur] = useState(isMobile ? 0.5 : 0.8);
+  const [transitionDur, setTransitionDur] = useState(0.8);
   const [transition, setTransition] = useState<Transition>("zoom");
   const [showTitle, setShowTitle] = useState(true);
   const [showLyrics, setShowLyrics] = useState(true);
@@ -95,11 +184,18 @@ export default function Home() {
   const [logoPosition, setLogoPosition] = useState<"center"|"corner"|"none">("center");
   const [storyboard, setStoryboard] = useState<any|null>(null);
   const [lyrics, setLyrics] = useState<any|null>(null);
-  const [sceneImages, setSceneImages] = useState<string[]>([]);
   const [aiMusicUrl, setAiMusicUrl] = useState<string>("");
   const [aiMusicStatus, setAiMusicStatus] = useState<string>("");
+
+  // Suno style panel
   const [musicGenre, setMusicGenre] = useState<string>("pop ballad");
   const [musicMood, setMusicMood] = useState<string>("menyentuh, emosional");
+  const [musicModel, setMusicModel] = useState<string>("suno-v5.5");
+  const [musicVocalType, setMusicVocalType] = useState<"vocal"|"instrumental">("vocal");
+  const [musicVocalGender, setMusicVocalGender] = useState<"auto"|"male"|"female">("auto");
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [sunoApiKey, setSunoApiKey] = useState<string>("");
+
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
   // Render
@@ -122,15 +218,84 @@ export default function Home() {
   const renderStartRef = useRef<number>(0);
   const selectedTitle = useMemo(() => titles.find(t=>t.id===selectedTitleId), [titles, selectedTitleId]);
 
-  // Set default quality/ratio HANYA saat pertama load (bukan saat resize) supaya pilihan user tidak hilang
+  // ===== INIT: load state dari sessionStorage + set default berdasarkan device (HANYA SEKALI) =====
   const didInit = useRef(false);
   useEffect(() => {
     if (didInit.current) return;
     didInit.current = true;
-    setQuality(isMobile ? "fast" : "balanced");
-    setAspectRatio(isMobile ? "9:16" : "16:9");
-    setNSlides(isMobile ? 3 : 4);
+
+    // Baca API key dari localStorage
+    try {
+      const k = localStorage.getItem("verve_suno_key");
+      if (k) setSunoApiKey(k);
+    } catch {}
+
+    // Default berdasarkan device saat pertama load
+    const mobileNow = isMobile;
+    setQuality(mobileNow ? "fast" : "balanced");
+    setAspectRatio(mobileNow ? "9:16" : "16:9");
+    setNSlides(mobileNow ? 3 : 4);
+    setNKeywords(mobileNow ? 3 : 5);
+    setTransitionDur(mobileNow ? 0.5 : 0.8);
+
+    // Coba restore draft dari sessionStorage (supaya tidak hilang saat refresh/rotasi)
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.niche) setNiche(d.niche);
+        if (d.keywordMode) setKeywordMode(d.keywordMode);
+        if (d.manualKeywords) setManualKeywords(d.manualKeywords);
+        if (d.nKeywords) setNKeywords(d.nKeywords);
+        if (Array.isArray(d.keywords)) setKeywords(d.keywords);
+        if (Array.isArray(d.titles)) setTitles(d.titles);
+        if (d.selectedTitleId) setSelectedTitleId(d.selectedTitleId);
+        if (d.imageStyle) setImageStyle(d.imageStyle);
+        if (d.aspectRatio) setAspectRatio(d.aspectRatio);
+        if (d.nSlides) setNSlides(d.nSlides);
+        if (d.audioMode) setAudioMode(d.audioMode);
+        if (d.ttsVoice) setTtsVoice(d.ttsVoice);
+        if (d.ttsText) setTtsText(d.ttsText);
+        if (d.vizStyle) setVizStyle(d.vizStyle);
+        if (d.vizColor) setVizColor(d.vizColor);
+        if (typeof d.slideDuration === "number") setSlideDuration(d.slideDuration);
+        if (typeof d.transitionDur === "number") setTransitionDur(d.transitionDur);
+        if (d.transition) setTransition(d.transition);
+        if (typeof d.showTitle === "boolean") setShowTitle(d.showTitle);
+        if (typeof d.showLyrics === "boolean") setShowLyrics(d.showLyrics);
+        if (d.musicGenre) setMusicGenre(d.musicGenre);
+        if (d.musicMood) setMusicMood(d.musicMood);
+        if (d.musicModel) setMusicModel(d.musicModel);
+        if (d.musicVocalType) setMusicVocalType(d.musicVocalType);
+        if (d.musicVocalGender) setMusicVocalGender(d.musicVocalGender);
+        if (d.storyboard) setStoryboard(d.storyboard);
+        // slides tidak di-restore (dataURL besar, bikin storage penuh)
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-save draft ke sessionStorage (setiap perubahan state penting — kecuali blob/dataURL besar)
+  useEffect(() => {
+    if (!didInit.current) return;
+    const t = setTimeout(() => {
+      try {
+        const snap = {
+          niche, keywordMode, manualKeywords, nKeywords, keywords: keywords.slice(0,30),
+          titles: titles.slice(0,50).map(t=>({id:t.id,keyword:t.keyword,text:t.text})), selectedTitleId,
+          imageStyle, aspectRatio, nSlides, audioMode, ttsVoice, ttsText,
+          vizStyle, vizColor, slideDuration, transitionDur, transition,
+          showTitle, showLyrics, musicGenre, musicMood, musicModel,
+          musicVocalType, musicVocalGender, storyboard,
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+      } catch {}
+    }, 500);
+    return () => clearTimeout(t);
+  }, [niche,keywordMode,manualKeywords,nKeywords,keywords,titles,selectedTitleId,
+      imageStyle,aspectRatio,nSlides,audioMode,ttsVoice,ttsText,
+      vizStyle,vizColor,slideDuration,transitionDur,transition,
+      showTitle,showLyrics,musicGenre,musicMood,musicModel,musicVocalType,musicVocalGender,storyboard]);
 
   function setErr(e: any) {
     const msg = e?.message || e?.error || String(e || "Terjadi kesalahan");
@@ -140,9 +305,10 @@ export default function Home() {
   async function callApi(path: string, body: any) {
     setLoading(path); setError("");
     try {
+      const headers: Record<string,string> = { "Content-Type":"application/json" };
+      if (sunoApiKey) headers["X-Suno-Key"] = sunoApiKey;
       const r = await fetch(`/api/hcnsec${path}`, {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(body),
+        method: "POST", headers, body: JSON.stringify(body),
       });
       let data: any = {};
       const txt = await r.text();
@@ -150,10 +316,20 @@ export default function Home() {
       catch { data = { error: `Server error ${r.status}: ${txt.slice(0,200)}` }; }
       if (!r.ok || data.error) {
         const msg = data.error || data.message || `Error ${r.status}`;
+        // Jika butuh API key, buka modal otomatis
+        if (data.status === "need_key" || r.status === 401) setShowApiKeyModal(true);
         throw new Error(msg);
       }
       return data;
     } finally { setLoading(null); }
+  }
+
+  function saveSunoKey(k: string) {
+    setSunoApiKey(k);
+    try {
+      if (k) localStorage.setItem("verve_suno_key", k);
+      else localStorage.removeItem("verve_suno_key");
+    } catch {}
   }
 
   // ===== Step 1 =====
@@ -161,7 +337,7 @@ export default function Home() {
     if (keywordMode === "manual") {
       const kws = manualKeywords.split(",").map(s=>s.trim()).filter(Boolean);
       if (!kws.length) return setErr("Keyword manual kosong");
-      setKeywords(kws.map((t,i)=>({id:`k${i}`,text:t})));
+      setKeywords(kws.map((t,i)=>({id:`k${i}_${Date.now()}`,text:t})));
     } else {
       if (!niche.trim()) return setErr("Niche tidak boleh kosong");
       const { keywords: kws } = await callApi("/keywords", { niche, n: nKeywords });
@@ -189,13 +365,17 @@ export default function Home() {
   async function doGenerateImages() {
     if (!selectedTitle) return setErr("Pilih judul dulu");
     setStageText(`Generate ${nSlides} gambar AI...`);
+    setLoading("/image");
     const raw: Slide[] = [];
     const errs: string[] = [];
     for (let i=0;i<nSlides;i++){
       setStageText(`Gambar ${i+1}/${nSlides} (AI generate)...`);
       try {
         const res = await fetch("/api/hcnsec/image", {
-          method:"POST", headers:{"Content-Type":"application/json"},
+          method:"POST", headers:{
+            "Content-Type":"application/json",
+            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey}:{}),
+          },
           body: JSON.stringify({
             title: selectedTitle.text, keyword: selectedTitle.keyword, niche, style: imageStyle,
           }),
@@ -214,8 +394,9 @@ export default function Home() {
       setErr(`Semua ${nSlides} gambar gagal.\n\nDetail:\n${errs.slice(0,4).join("\n")}\n\n💡 Coba: ganti style ke "Studio Photo", atau upload gambar sendiri.`);
     } else {
       setSlides(raw);
+      setLyricLines(raw.map(()=>""));
       setError("");
-      setStageText(`✅ ${raw.length}/${nSlides} gambar siap — total ${raw.length} slide`);
+      setStageText(`✅ ${raw.length}/${nSlides} gambar siap`);
     }
     setTimeout(()=>setStageText(""), 2500);
     setLoading(null);
@@ -230,12 +411,10 @@ export default function Home() {
         r.onload = () => {
           const img = new Image();
           img.onload = () => {
-            // Downscale on the fly untuk hemat
             const targetRatio = aspectRatio === "9:16" ? 9/16 : aspectRatio === "1:1" ? 1 : 16/9;
             const maxSide = 1280;
             const c = document.createElement("canvas");
             let w = img.naturalWidth, h = img.naturalHeight;
-            // object-cover crop
             const ir = w/h;
             let cw=w, ch=h;
             if (ir > targetRatio) cw = h*targetRatio; else ch = w/targetRatio;
@@ -253,6 +432,7 @@ export default function Home() {
       }))
     ).then(s=>{
       setSlides(cur=>[...cur,...s]);
+      setLyricLines(cur=>[...cur, ...s.map(()=>"")]);
       setStageText(`✅ ${s.length} gambar ditambahkan`);
       setTimeout(()=>setStageText(""),1500);
     });
@@ -294,40 +474,40 @@ export default function Home() {
     setStageText("Menyiapkan render engine...");
     setMeta(null);
     try {
-      // Tentukan audio (jika aiMusicUrl ada, pakai itu sebagai "music")
       let chosenMusic = musicUrl;
       if (aiMusicUrl) chosenMusic = aiMusicUrl;
-      const tmpMusic = musicUrl;
-      if (aiMusicUrl) (window as any).__musicOverride = aiMusicUrl;
       const parts: string[] = [];
       if ((audioMode==="tts"||audioMode==="both") && ttsUrl) parts.push(ttsUrl);
       if ((audioMode==="music"||audioMode==="both") && chosenMusic) parts.push(chosenMusic);
       if (audioMode==="aimusic" && aiMusicUrl) parts.push(aiMusicUrl);
       let audioUrl: string|null = null;
       if (parts.length === 1) audioUrl = parts[0];
-      else if (parts.length > 1) {
-        audioUrl = await mixAudioUrls(parts);
-      }
+      else if (parts.length > 1) audioUrl = await mixAudioUrls(parts);
 
-      // Lyrics array per-slide
-      const lyricsArr = slides.map((s:any, i:number) => s.lyric || storyboard?.scenes?.[i]?.lyric_line || "").filter(Boolean);
-      // Jika lyrics full tersedia, ambil bagi per-slide
-      let lyricLines: string[] = [];
+      // Lyrics: pakai lyricLines React state (jumlah harus sama dengan slides)
+      const finalLyrics: string[] = [];
       if (showLyrics) {
-        if (slides.some((s:any)=>s.lyric)) lyricLines = slides.map((s:any,i)=>s.lyric||"");
-        else if ((window as any)._lyrics?.length === slides.length) lyricLines = (window as any)._lyrics;
+        for (let i=0;i<slides.length;i++){
+          const s = slides[i] as any;
+          let line = "";
+          if (s.lyric) line = s.lyric;
+          else if (lyricLines[i]) line = lyricLines[i];
+          else if (storyboard?.scenes?.[i]?.lyric_line) line = storyboard.scenes[i].lyric_line;
+          finalLyrics.push(line);
+        }
       }
+      const hasLyrics = finalLyrics.some(x=>!!x);
 
       const blob = await renderSlideshow({
         images: slides.map(s=>s.imageUrl),
         audioUrl: audioUrl || undefined,
         slideDuration, transitionDuration: transitionDur,
         vizStyle, vizColor, title: showTitle ? (selectedTitle?.text || niche) : undefined,
-        lyrics: showLyrics && lyricLines.length===slides.length ? lyricLines : undefined,
+        lyrics: showLyrics && hasLyrics ? finalLyrics : undefined,
         logoUrl: logoDataUrl || undefined,
         logoPosition,
         quality, mobileOptimized: isMobile, ratio: aspectRatio, aspectRatio,
-        transition, showTitle, showLyrics: showLyrics && lyricLines.length===slides.length,
+        transition, showTitle, showLyrics: showLyrics && hasLyrics,
         onProgress: (p) => {
           setProgress(p);
           const elapsed = (Date.now()-renderStartRef.current)/1000;
@@ -380,39 +560,6 @@ export default function Home() {
     } catch(e){ return parts[0]; }
   }
 
-  async function mixAudio(): Promise<string|null> {
-    if (audioMode === "none") return null;
-    const parts: string[] = [];
-    if ((audioMode==="tts"||audioMode==="both") && ttsUrl) parts.push(ttsUrl);
-    if ((audioMode==="music"||audioMode==="both") && musicUrl) parts.push(musicUrl);
-    if (!parts.length) return null;
-    if (parts.length === 1) return parts[0];
-    try {
-      setStageText("Menggabungkan audio...");
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
-      const actx = new AC();
-      const bufs = await Promise.all(parts.map(u => fetch(u).then(r=>r.arrayBuffer()).then(b=>actx.decodeAudioData(b))));
-      const maxLen = Math.max(...bufs.map(b=>b.length));
-      const sr = bufs[0].sampleRate; const ch = bufs[0].numberOfChannels;
-      const out = actx.createBuffer(ch, maxLen, sr);
-      for (let c=0;c<ch;c++){
-        const od = out.getChannelData(c);
-        for (let bi=0;bi<bufs.length;bi++){
-          const b = bufs[bi];
-          const d = b.getChannelData(Math.min(c, b.numberOfChannels-1));
-          const vol = bi===1?0.22:1; // musik lebih pelan
-          for (let i=0;i<d.length;i++) od[i] = Math.max(-1, Math.min(1, od[i]+d[i]*vol));
-        }
-      }
-      const wav = bufferToWav(out);
-      actx.close();
-      return URL.createObjectURL(new Blob([wav], {type:"audio/wav"}));
-    } catch(e){
-      console.warn("Mix audio gagal:", e);
-      return parts[0];
-    }
-  }
-
   function downloadVideo() {
     if (!videoBlob) return;
     const safe = (meta?.titleHighCTR || selectedTitle?.text || "video")
@@ -452,7 +599,7 @@ Dibuat dengan Verve AI Video Studio`;
     a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 
-  // ===== STORY MODE (cerita → scenes → lirik) =====
+  // ===== STORY MODE =====
   async function doGenerateStoryboard() {
     if (!selectedTitle) return setErr("Pilih judul dulu");
     setStageText("Membuat storyboard emosional...");
@@ -469,12 +616,16 @@ Dibuat dengan Verve AI Video Studio`;
       };
       const vsl = String(sb.style_visual||"").toLowerCase();
       for (const k of Object.keys(styleMap)) if (vsl.includes(k)) { setImageStyle(styleMap[k]); break; }
-      // Auto-fill TTS text dari gabungan lirik per scene
       if (sb.scenes && Array.isArray(sb.scenes)) {
         const lirikFull = sb.scenes.map((s:any)=>s.lyric_line).filter(Boolean).join(". ");
         if (lirikFull) setTtsText(lirikFull);
+        // Setup lyric lines berdasarkan storyboard
+        const ll = sb.scenes.map((s:any)=>s.lyric_line||"");
+        setLyricLines(ll);
+        setNSlides(sb.scenes.length);
+        setShowLyrics(true);
       }
-      setStageText("✅ Storyboard + lirik siap! Lirik sudah terisi otomatis di Step 4.");
+      setStageText("✅ Storyboard + lirik siap! Lirik terisi otomatis di Step 4.");
       setTimeout(()=>setStageText(""), 3500);
     } catch(e:any){ setErr(e.message); setTimeout(()=>setStageText(""),2000); }
     setLoading(null);
@@ -486,36 +637,44 @@ Dibuat dengan Verve AI Video Studio`;
     setLoading("img-story");
     const newSlides: Slide[] = [];
     const errs: string[] = [];
-    const lyricLines: string[] = [];
+    const ll: string[] = [];
     for (let i=0;i<storyboard.scenes.length;i++){
       const sc = storyboard.scenes[i];
-      setStageText(`Adegan ${i+1}/${storyboard.scenes.length}: ${sc.scene_desc?.slice(0,40)}...`);
+      setStageText(`Adegan ${i+1}/${storyboard.scenes.length}: ${sc.scene_desc?.slice(0,35)}...`);
       try {
-        // Panggil image API dengan visual_prompt langsung
-        const styleObj = { suffix: sc.visual_prompt };
+        // Pakai _storyScene flag untuk prompt cinematic di server
         const res = await fetch("/api/hcnsec/image", {
-          method:"POST", headers:{"Content-Type":"application/json"},
+          method:"POST", headers:{
+            "Content-Type":"application/json",
+            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey}:{}),
+          },
           body: JSON.stringify({
-            title: sc.visual_prompt, keyword: "", niche: "", style: imageStyle, _rawPrompt: true,
+            style: imageStyle,
+            _storyScene: { visual_prompt: sc.visual_prompt, scene_desc: sc.scene_desc },
+            _mood: sc.mood,
+            _rawPrompt: true,
+            prompt: sc.visual_prompt,
           }),
         });
         let data;
         try { data = await res.json(); } catch { data={error:"bad json"}; }
         if (!res.ok || data.error) throw new Error(data.error||`HTTP ${res.status}`);
+        setStageText(`Adegan ${i+1} — crop ${aspectRatio}...`);
         const cropped = await cropImageToRatio(data.url, aspectRatio);
         newSlides.push({ id:`sb${i}_${Date.now()}`, imageUrl: cropped, lyric: sc.lyric_line });
-        lyricLines.push(sc.lyric_line||"");
+        ll.push(sc.lyric_line||"");
+        // kasih nafas ke UI
+        await new Promise(r=>setTimeout(r,50));
       } catch(e:any){
-        errs.push(`#${i+1} ${sc.scene_desc?.slice(0,30)||""}: ${(e.message||"gagal").slice(0,80)}`);
+        errs.push(`#${i+1} ${sc.scene_desc?.slice(0,25)||""}: ${(e.message||"gagal").slice(0,70)}`);
       }
     }
     if (newSlides.length) {
       setSlides(newSlides);
-      setSceneImages(newSlides.map(s=>s.imageUrl));
+      setLyricLines(ll);
       setShowLyrics(true);
       setError("");
       setStageText(`✅ ${newSlides.length}/${storyboard.scenes.length} adegan siap dengan lirik!`);
-      (window as any)._lyrics = lyricLines;
     } else {
       setErr(`Gagal generate gambar cerita:\n${errs.join("\n")}`);
     }
@@ -532,49 +691,60 @@ Dibuat dengan Verve AI Video Studio`;
         genre: musicGenre, mood: musicMood,
       });
       setLyrics(l);
-      setStageText("✅ Lirik siap! Kamu bisa kirim ke AI music.");
+      setStageText("✅ Lirik siap!");
     } catch(e:any){ setErr(e.message); }
     setTimeout(()=>setStageText(""),2500); setLoading(null);
   }
 
   async function doGenerateAIMusic() {
     if (!selectedTitle) return setErr("Pilih judul dulu");
-    setStageText("Meminta AI membuat lagu (bisa 30-60 detik)...");
-    setLoading("aimusic"); setAiMusicStatus("memulai...");
+    setStageText("Meminta AI membuat lagu (bisa 30-90 detik)...");
+    setLoading("aimusic"); setAiMusicStatus("memulai..."); setAiMusicUrl("");
     try {
       let prompt = lyrics?.style_prompt_suno || `${musicMood}, ${musicGenre}, indonesian`;
       const text = lyrics?.lyrics || `${selectedTitle.text} ${niche}`;
       const r = await fetch("/api/hcnsec/music", {
-        method:"POST", headers:{"Content-Type":"application/json"},
+        method:"POST", headers:{
+          "Content-Type":"application/json",
+          ...(sunoApiKey?{"X-Suno-Key":sunoApiKey}:{}),
+        },
         body: JSON.stringify({
           title: selectedTitle.text, prompt, lyrics: lyrics?.lyrics,
-          genre: musicGenre, tags: `${musicGenre}, ${musicMood}`, custom: !!lyrics?.lyrics,
+          genre: musicGenre, tags: `${musicGenre}, ${musicMood}`,
+          custom: !!lyrics?.lyrics,
+          model: musicModel,
+          instrumental: musicVocalType === "instrumental",
+          vocalGender: musicVocalGender,
         }),
       });
-      const data = await r.json();
-      if (!r.ok || data.error) throw new Error(data.error || `Error ${r.status}`);
-      // Poll
+      const txt = await r.text();
+      let data; try { data = JSON.parse(txt); } catch { data={error:`Bad response: ${txt.slice(0,120)}`}; }
+      if (!r.ok || data.error) {
+        if (data.status === "need_key" || r.status === 401) setShowApiKeyModal(true);
+        throw new Error(data.error || `Error ${r.status}`);
+      }
       if (data.audio_url) {
         setAiMusicUrl(data.audio_url);
         setAiMusicStatus("selesai");
         setStageText("✅ Lagu AI siap!");
       } else if (data.id) {
         setAiMusicStatus("memproses...");
-        // Poll setiap 5s, max 90s
-        for (let i=0;i<18;i++){
+        for (let i=0;i<24;i++){
           await new Promise(res=>setTimeout(res,5000));
-          const pr = await fetch(`/api/hcnsec/music?id=${data.id}`);
+          const pr = await fetch(`/api/hcnsec/music?id=${data.id}`, {
+            headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey} : {},
+          });
           const pd = await pr.json().catch(()=>({}));
-          setAiMusicStatus(`memproses... ${Math.round((i+1)/18*100)}%`);
+          setAiMusicStatus(`memproses... ${Math.round((i+1)/24*100)}%`);
           if (pd.audio_url) { setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai"); setStageText("✅ Lagu AI siap!"); break; }
           if (pd.status === "error" || pd.error) throw new Error(pd.error||"Gagal generate musik");
         }
-        if (!aiMusicUrl) setStageText("⏳ Coba lagi 1 menit ya, lagu masih diproses server.");
+        if (!aiMusicUrl) setStageText("⏳ Lagu masih diproses server. Coba play 1 menit lagi ya bro (refresh halaman).");
       } else {
-        setStageText("⚠️ AI music belum merespon audio. Coba pakai TTS narasi + upload musik saja untuk sekarang.");
+        setStageText("⚠️ AI music belum merespon. Coba lagi atau pakai upload musik file.");
       }
     } catch(e:any){
-      setErr(e.message || "AI music gagal. Set SUNO_API_KEY untuk fitur penuh.");
+      setErr(e.message || "AI music gagal. Set API Key untuk fitur penuh.");
       setAiMusicStatus("gagal");
     }
     setTimeout(()=>setStageText(""),3000); setLoading(null);
@@ -585,14 +755,12 @@ Dibuat dengan Verve AI Video Studio`;
     if (f.size>3*1024*1024) return setErr("Logo maks 3MB");
     const r = new FileReader();
     r.onload = () => {
-      // Downscale logo jadi 256x256
       const img = new Image();
       img.onload = () => {
         const c = document.createElement("canvas");
         const size=256;
         c.width=size; c.height=size;
         const cx=c.getContext("2d")!;
-        // Buat lingkaran
         cx.beginPath(); cx.arc(size/2,size/2,size/2,0,Math.PI*2); cx.closePath(); cx.clip();
         const ir = img.naturalWidth/img.naturalHeight;
         let dw=size,dh=size,dx=0,dy=0;
@@ -624,49 +792,50 @@ Dibuat dengan Verve AI Video Studio`;
     finally { setLoading(null); }
   }
 
+  function applyPreset(p:any) {
+    setNiche(p.niche); setManualKeywords(p.kw); setKeywordMode("manual");
+    setMusicGenre(p.genre); setMusicMood(p.mood); setSelectedPreset(p.id);
+  }
+
   return (
-    <main className="min-h-screen px-3 sm:px-4 py-4 sm:py-6 max-w-6xl mx-auto">
+    <main>
       <Header />
       <ModeTabs mode={mode} setMode={(m)=>{setMode(m); setStep(1); setError(""); setStageText(""); setMeta(null); setVideoUrl(""); setVideoBlob(null);}} />
 
       {error && (
-        <div className="mt-4 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-100 text-sm whitespace-pre-wrap break-words backdrop-blur">
+        <div className="mt-3 p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-red-100 text-sm whitespace-pre-wrap break-words backdrop-blur">
           ⚠️ {error}
         </div>
       )}
       {stageText && (
         <div className="mt-3 p-2.5 px-3 rounded-xl bg-purple-500/15 border border-purple-400/30 text-purple-100 text-sm flex items-center gap-2 backdrop-blur">
-          <Spinner /> <span className="truncate">{stageText}</span>
+          <Spinner /> <span className="truncate break-word">{stageText}</span>
         </div>
       )}
 
       {mode === "slideshow" ? (
         <div className="mt-4 lg:mt-6 grid lg:grid-cols-3 gap-4 sm:gap-6">
-          <div className="lg:col-span-2 card">
+          <div className="lg:col-span-2 card min-w-0">
             <StepBar step={step} />
 
             {step === 1 && (
               <section className="mt-4 space-y-4">
                 <h2 className="section-title">🎯 Step 1 · Ide & Keyword</h2>
 
-                {/* Preset templates */}
                 <div>
                   <span className="lbl">⚡ Template Cepat (klik untuk auto-fill)</span>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {[
-                      {id:"sedih",niche:"cerita menyentuh ibu & keluarga",kw:"ibu maafkan aku, penyesalan anak, rindu ibu, maafkan aku ibu, kasih ibu",ti:"cerita sedih",genre:"pop ballad",mood:"menyentuh, sedih, haru"},
-                      {id:"motivasi",niche:"motivasi & semangat hidup",kw:"bangkit dari gagal, jangan menyerah, motivasi kerja, semangat pagi, mulai lagi",ti:"motivasi sukses",genre:"cinematic epic",mood:"epic, membara, semangat"},
-                      {id:"cinta",niche:"cerita cinta & romantis",kw:"rindu dia, cinta pertama, kenangan pacar, setia menunggu, ldr",ti:"cerita cinta romantis",genre:"pop akustik",mood:"romantis, lembut, manis"},
-                      {id:"islamic",niche:"konten islami & dakwah",kw:"ustadz ceramah, hijrah, doa ibu, surga di telapak kaki ibu, jodoh",ti:"dakwah islami menyentuh",genre:"religi akustik",mood:"tenang, khusyuk, syahdu"},
-                      {id:"horror",niche:"cerita horor & misteri",kw:"hantu kampung, kisah seram malam jumat, penampakan nyata, cerita mistis",ti:"cerita horor",genre:"dark ambient",mood:"mencekam, tegang"},
-                      {id:"fyp",niche:"fyp Shorts/TikTok viral",kw:"fakta unik, wow fakta, kamu tidak tahu, trik rahasia, life hack",ti:"fakta unik fyp",genre:"trap edm",mood:"energetic, asik"},
+                      {id:"sedih",niche:"cerita menyentuh ibu & keluarga",kw:"ibu maafkan aku, penyesalan anak, rindu ibu, maafkan aku ibu, kasih ibu",ti:"Sedih Ibu",genre:"pop ballad",mood:"menyentuh, sedih, haru"},
+                      {id:"motivasi",niche:"motivasi & semangat hidup",kw:"bangkit dari gagal, jangan menyerah, motivasi kerja, semangat pagi, mulai lagi",ti:"Motivasi",genre:"cinematic epic",mood:"epic, membara, semangat"},
+                      {id:"cinta",niche:"cerita cinta & romantis",kw:"rindu dia, cinta pertama, kenangan pacar, setia menunggu, ldr",ti:"Romantis",genre:"pop akustik",mood:"romantis, lembut, manis"},
+                      {id:"islamic",niche:"konten islami & dakwah",kw:"ustadz ceramah, hijrah, doa ibu, surga di telapak kaki ibu, jodoh",ti:"Islami",genre:"religi akustik",mood:"tenang, khusyuk, syahdu"},
+                      {id:"horror",niche:"cerita horor & misteri",kw:"hantu kampung, kisah seram malam jumat, penampakan nyata, cerita mistis",ti:"Horor",genre:"dark ambient",mood:"mencekam, tegang"},
+                      {id:"fyp",niche:"fyp Shorts/TikTok viral",kw:"fakta unik, wow fakta, kamu tidak tahu, trik rahasia, life hack",ti:"FYP Viral",genre:"trap edm",mood:"energetic, asik"},
                     ].map(p=>(
-                      <button key={p.id} onClick={()=>{
-                        setNiche(p.niche); setManualKeywords(p.kw); setKeywordMode("manual");
-                        setMusicGenre(p.genre); setMusicMood(p.mood); setSelectedPreset(p.id);
-                      }} className={`style-card text-center ${selectedPreset===p.id?"active":""}`}>
+                      <button key={p.id} onClick={()=>applyPreset(p)} className={`style-card text-center ${selectedPreset===p.id?"active":""}`}>
                         <div className="text-sm font-bold">{p.ti}</div>
-                        <div className="text-[10px] text-white/50">{p.genre}</div>
+                        <div className="text-[10px] text-white/50 truncate">{p.genre}</div>
                       </button>
                     ))}
                   </div>
@@ -675,17 +844,17 @@ Dibuat dengan Verve AI Video Studio`;
                 <label className="block">
                   <span className="lbl">Niche / topik channel</span>
                   <input className="input" value={niche} onChange={e=>setNiche(e.target.value)}
-                         placeholder="Contoh: tips keuangan remaja, resep masakan simpel" />
+                         placeholder="Contoh: cerita menyentuh ibu, tips keuangan" />
                 </label>
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="lbl">Sumber keyword</span>
                     <select className="select" value={keywordMode} onChange={e=>setKeywordMode(e.target.value as any)}>
                       <option value="ai">🤖 AI (otomatis)</option>
                       <option value="manual">✍️ Manual</option>
                     </select>
                   </label>
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="lbl">Jumlah keyword</span>
                     <input type="number" className="input" value={nKeywords} min={1} max={isMobile?5:10}
                            onChange={e=>setNKeywords(Number(e.target.value))} />
@@ -695,20 +864,22 @@ Dibuat dengan Verve AI Video Studio`;
                   <label className="block">
                     <span className="lbl">Keyword (pisah koma)</span>
                     <input className="input" value={manualKeywords} onChange={e=>setManualKeywords(e.target.value)}
-                           placeholder="tidur nyenyak, belajar cepat, fokus kerja" />
+                           placeholder="rindu ibu, maafkan ibu, kasih ibu" />
                   </label>
                 )}
-                <button className="btn btn-primary w-full sm:w-auto" onClick={doGenerateKeywords} disabled={!!loading}>
-                  {loading==="/keywords" ? <Spinner/> : "🔑"} Generate Keyword
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn btn-primary" onClick={doGenerateKeywords} disabled={!!loading}>
+                    {loading==="/keywords" ? <Spinner/> : "🔑"} Generate Keyword
+                  </button>
+                </div>
                 {keywords.length > 0 && (
                   <div>
                     <div className="text-xs text-white/60 mb-2">Keyword ({keywords.length}) — tap × untuk hapus:</div>
                     <div className="flex flex-wrap gap-2">
                       {keywords.map(k => (
                         <span key={k.id} className="chip">
-                          {k.text}
-                          <button className="ml-1 text-red-300/80 hover:text-red-400"
+                          <span className="truncate max-w-[50vw]">{k.text}</span>
+                          <button className="ml-1 text-red-300/80 hover:text-red-400 text-base leading-none"
                             onClick={()=>setKeywords(keywords.filter(x=>x.id!==k.id))}>×</button>
                         </span>
                       ))}
@@ -733,7 +904,7 @@ Dibuat dengan Verve AI Video Studio`;
                   {loading==="/titles" ? <Spinner/> : "📝"} Generate Judul
                 </button>
                 {titles.length>0 && (
-                  <div className="space-y-2 max-h-80 overflow-auto pr-1">
+                  <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
                     {titles.map(t=>(
                       <label key={t.id}
                         className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer transition ${
@@ -742,16 +913,16 @@ Dibuat dengan Verve AI Video Studio`;
                             : "bg-white/5 border-white/10 hover:bg-white/8"
                         }`}>
                         <input type="radio" name="title" checked={selectedTitleId===t.id}
-                               onChange={()=>setSelectedTitleId(t.id)} className="mt-1.5 accent-pink-500"/>
+                               onChange={()=>setSelectedTitleId(t.id)} className="mt-1.5 accent-pink-500 flex-shrink-0"/>
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm sm:text-base leading-snug">{t.text}</div>
-                          <div className="text-xs text-white/50 mt-0.5">#{t.keyword}</div>
+                          <div className="font-semibold text-sm leading-snug break-word">{t.text}</div>
+                          <div className="text-xs text-white/50 mt-0.5 truncate">#{t.keyword}</div>
                         </div>
                       </label>
                     ))}
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost" onClick={()=>setStep(1)}>← Kembali</button>
                   {selectedTitleId && <button className="btn btn-primary" onClick={()=>setStep(3)}>Lanjut ke Gambar →</button>}
                 </div>
@@ -762,13 +933,13 @@ Dibuat dengan Verve AI Video Studio`;
               <section className="mt-4 space-y-4">
                 <h2 className="section-title">🖼️ Step 3 · Gambar Slide</h2>
 
-                {/* STORY / CERITA MODE */}
+                {/* STORY MODE */}
                 <div className="p-3 rounded-xl bg-gradient-to-br from-purple-600/15 to-pink-600/15 border border-purple-400/30">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg">🎬</span>
-                    <div className="flex-1">
-                      <div className="text-sm font-bold">Mode Cerita (Storyboard AI)</div>
-                      <div className="text-[11px] text-white/60">Buat alur cerita, adegan, dan lirik PER SLIDE otomatis dari judul. Hasil gambar akan sesuai emosi cerita!</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold">Mode Cerita (Storyboard AI) 🔥</div>
+                      <div className="text-[11px] text-white/60">Buat alur cerita, adegan sinematik, dan lirik PER SLIDE otomatis. Gambar di-generate sesuai emosi dan komposisi adegan!</div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -783,13 +954,15 @@ Dibuat dengan Verve AI Video Studio`;
                   </div>
                   {storyboard && (
                     <details className="mt-2 text-xs">
-                      <summary className="cursor-pointer text-white/70">Lihat {storyboard.scenes?.length||0} adegan + lirik ↓</summary>
+                      <summary className="cursor-pointer text-white/70 py-1">
+                        👁 Lihat {storyboard.scenes?.length||0} adegan + lirik
+                      </summary>
                       <div className="mt-2 space-y-1.5 max-h-60 overflow-auto pr-1">
                         {storyboard.scenes?.map((s:any,i:number)=>(
                           <div key={i} className="p-2 rounded-lg bg-black/30 border border-white/5">
                             <div className="font-bold text-[11px] text-pink-300">Adegan {s.scene} · {s.mood}</div>
-                            <div className="text-[11px] text-white/80">{s.scene_desc}</div>
-                            <div className="text-[11px] italic text-cyan-200 mt-0.5">♪ {s.lyric_line}</div>
+                            <div className="text-[11px] text-white/80 break-word">{s.scene_desc}</div>
+                            <div className="text-[11px] italic text-cyan-200 mt-0.5 break-word">♪ {s.lyric_line}</div>
                           </div>
                         ))}
                       </div>
@@ -798,7 +971,7 @@ Dibuat dengan Verve AI Video Studio`;
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="lbl">Sumber</span>
                     <select className="select" value={imageSource} onChange={e=>setImageSource(e.target.value as any)}>
                       <option value="ai">🤖 AI</option>
@@ -806,12 +979,12 @@ Dibuat dengan Verve AI Video Studio`;
                       <option value="both">🔄 Campur</option>
                     </select>
                   </label>
-                  <label className="block">
+                  <label className="block min-w-0">
                     <span className="lbl">Jumlah slide</span>
                     <input type="number" className="input" value={nSlides} min={1} max={isMobile?6:12}
                            onChange={e=>setNSlides(Number(e.target.value))} />
                   </label>
-                  <label className="block">
+                  <label className="block min-w-0 col-span-2 sm:col-span-1">
                     <span className="lbl">Rasio / Platform</span>
                     <select className="select" value={aspectRatio} onChange={e=>setAspectRatio(e.target.value as any)}>
                       {ASPECT_RATIOS.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
@@ -826,7 +999,7 @@ Dibuat dengan Verve AI Video Studio`;
                       <button key={s.id} type="button" onClick={()=>setImageStyle(s.id)}
                         className={`style-card ${imageStyle===s.id?"active":""}`}>
                         <div className="text-sm font-bold">{s.label}</div>
-                        <div className="text-[10px] text-white/60 mt-0.5">{s.desc}</div>
+                        <div className="text-[10px] text-white/60 mt-0.5 truncate">{s.desc}</div>
                       </button>
                     ))}
                   </div>
@@ -846,24 +1019,31 @@ Dibuat dengan Verve AI Video Studio`;
                     </label>
                   )}
                   {slides.length>0 && (
-                    <button className="btn btn-danger text-xs" onClick={()=>setSlides([])}>🗑️ Reset</button>
+                    <button className="btn btn-danger text-xs" onClick={()=>{setSlides([]); setLyricLines([]);}}>🗑️ Reset</button>
                   )}
                 </div>
 
                 {slides.length>0 && (
-                  <div className={`grid gap-2 ${aspectRatio==="9:16"?"grid-cols-4 sm:grid-cols-6":aspectRatio==="1:1"?"grid-cols-3 sm:grid-cols-5":"grid-cols-3 sm:grid-cols-4"}`}>
+                  <div className={`img-grid grid gap-2 ${aspectRatio==="9:16"?"grid-cols-3 sm:grid-cols-5":aspectRatio==="1:1"?"grid-cols-3 sm:grid-cols-5":"grid-cols-2 sm:grid-cols-4"}`}>
                     {slides.map((s,i)=>(
-                      <div key={s.id} className="relative group rounded-lg overflow-hidden border border-white/10">
-                        <img src={s.imageUrl} className="w-full h-full object-cover aspect-video" alt={`slide ${i+1}`}
+                      <div key={s.id} className="relative rounded-lg overflow-hidden border border-white/10 group">
+                        <img src={s.imageUrl} className="w-full h-full object-cover block"
+                             alt={`slide ${i+1}`} loading="lazy"
                              style={aspectRatio==="9:16"?{aspectRatio:"9/16"}:aspectRatio==="1:1"?{aspectRatio:"1/1"}:{aspectRatio:"16/9"}}/>
-                        <button onClick={()=>setSlides(slides.filter(x=>x.id!==s.id))}
-                                className="absolute top-1 right-1 bg-black/70 rounded-full w-6 h-6 text-red-300 text-sm leading-none flex items-center justify-center">×</button>
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[10px] text-center text-white py-0.5">{i+1}</div>
+                        <button onClick={()=>{
+                          setSlides(slides.filter(x=>x.id!==s.id));
+                          setLyricLines(prev => prev.filter((_,idx)=>idx!==i));
+                        }}
+                          className="absolute top-1 right-1 bg-black/70 rounded-full w-7 h-7 text-red-300 text-base leading-none flex items-center justify-center">×</button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] text-center text-white py-0.5">{i+1}</div>
+                        {(s.lyric || lyricLines[i]) && (
+                          <div className="absolute top-1 left-1 bg-pink-500/80 text-[9px] px-1.5 py-0.5 rounded text-white font-bold">♪</div>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost" onClick={()=>setStep(2)}>← Kembali</button>
                   {slides.length>0 && <button className="btn btn-primary" onClick={()=>setStep(4)}>Lanjut ke Audio →</button>}
                 </div>
@@ -875,32 +1055,74 @@ Dibuat dengan Verve AI Video Studio`;
                 <h2 className="section-title">🎵 Step 4 · Audio</h2>
                 <div>
                   <span className="lbl">Mode audio</span>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    {([["tts","🔊 TTS AI"],["music","🎵 Musik File"],["both","🎶 TTS+Musik"],["aimusic","🎼 AI Music (NEW)"],["none","🔇 Mute"]] as const).map(([v,l])=>(
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {([["tts","🔊 TTS AI"],["music","🎵 Musik File"],["both","🎶 TTS+Musik"],["aimusic","🎼 AI Music"],["none","🔇 Mute"]] as const).map(([v,l])=>(
                       <button key={v} onClick={()=>setAudioMode(v as AudioMode)}
-                        className={`btn ${audioMode===v?"btn-primary":"btn-ghost"}`}>{l}</button>
+                        className={`btn ${audioMode===v?"btn-primary":"btn-ghost"} text-xs sm:text-sm`}>{l}</button>
                     ))}
                   </div>
                 </div>
-                {/* AI MUSIC PANEL */}
+
+                {/* AI MUSIC PANEL dengan kolom style */}
                 {(audioMode==="aimusic"||audioMode==="both") && (
                   <div className="space-y-3 p-3 rounded-xl bg-gradient-to-br from-purple-600/15 to-pink-600/15 border border-purple-400/30">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg">🎼</span>
-                      <span className="text-sm font-bold">AI Music Generator</span>
-                      <span className="text-[10px] text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full">Beta</span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🎼</span>
+                        <span className="text-sm font-bold">AI Music Generator</span>
+                        <span className="text-[10px] text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full">Beta</span>
+                      </div>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>setShowApiKeyModal(true)}>
+                        🔑 {sunoApiKey ? "API Key tersimpan ✓" : "Set API Key"}
+                      </button>
                     </div>
-                    <p className="text-[11px] text-white/60">Buat lagu lengkap dengan vokal otomatis dari judul/lirik. Gratis terbatas; set env <code className="text-cyan-300">SUNO_API_KEY</code> di Vercel untuk kuota penuh.</p>
+
+                    {!sunoApiKey && (
+                      <div className="text-[11px] p-2 rounded-lg bg-yellow-500/10 border border-yellow-400/30 text-yellow-100">
+                        💡 Gratis terbatas. Klik <b>🔑 Set API Key</b> untuk daftar di apiframe.ai (login email) & dapatkan kuota musik unlimited.
+                      </div>
+                    )}
+
+                    {/* KOLOM STYLE SUNO (mirip kampunglagu) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <label className="block">
+                        <span className="lbl">Model AI</span>
+                        <select className="select text-sm py-2" value={musicModel} onChange={e=>setMusicModel(e.target.value)}>
+                          {MUSIC_MODELS.map(m=>(
+                            <option key={m.id} value={m.id}>{m.label} · {m.credit}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="lbl">Tipe</span>
+                        <div className="grid grid-cols-2 gap-1">
+                          <button type="button" onClick={()=>setMusicVocalType("vocal")}
+                            className={`btn btn-sm ${musicVocalType==="vocal"?"btn-primary":"btn-ghost"}`}>🎤 Vokal</button>
+                          <button type="button" onClick={()=>setMusicVocalType("instrumental")}
+                            className={`btn btn-sm ${musicVocalType==="instrumental"?"btn-primary":"btn-ghost"}`}>🎹 Instrumen</button>
+                        </div>
+                      </label>
+                      <label className="block">
+                        <span className="lbl">Gender Vokal</span>
+                        <select className="select text-sm py-2" value={musicVocalGender} onChange={e=>setMusicVocalGender(e.target.value as any)} disabled={musicVocalType==="instrumental"}>
+                          <option value="auto">🔀 Auto</option>
+                          <option value="male">♂ Male (Pria)</option>
+                          <option value="female">♀ Female (Wanita)</option>
+                        </select>
+                      </label>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <label className="block">
                         <span className="lbl">Genre</span>
-                        <input className="input py-1.5 text-sm" value={musicGenre} onChange={e=>setMusicGenre(e.target.value)} placeholder="pop ballad"/>
+                        <input className="input py-2 text-sm" value={musicGenre} onChange={e=>setMusicGenre(e.target.value)} placeholder="pop ballad"/>
                       </label>
                       <label className="block">
                         <span className="lbl">Mood</span>
-                        <input className="input py-1.5 text-sm" value={musicMood} onChange={e=>setMusicMood(e.target.value)} placeholder="menyentuh"/>
+                        <input className="input py-2 text-sm" value={musicMood} onChange={e=>setMusicMood(e.target.value)} placeholder="menyentuh"/>
                       </label>
                     </div>
+
                     <div className="flex flex-wrap gap-2">
                       <button className="btn btn-ghost text-xs py-2" onClick={doGenerateLyrics} disabled={!!loading}>
                         {loading==="lyrics"?<Spinner/>:"✍️"} Buat Lirik Dulu
@@ -909,17 +1131,14 @@ Dibuat dengan Verve AI Video Studio`;
                         {loading==="aimusic"?<Spinner/>:"🎼"} Generate Lagu
                       </button>
                     </div>
-                    {aiMusicStatus && <div className="text-[11px] text-white/60">Status: {aiMusicStatus}</div>}
+                    {aiMusicStatus && <div className="text-[11px] text-white/60 break-word">Status: {aiMusicStatus}</div>}
                     {aiMusicUrl && <audio controls src={aiMusicUrl} className="w-full"/>}
                     {lyrics && (
                       <details className="text-xs">
-                        <summary className="cursor-pointer text-white/70">Lihat lirik yang digenerate ↓</summary>
+                        <summary className="cursor-pointer text-white/70 py-1">Lihat lirik yang digenerate ↓</summary>
                         <pre className="mt-2 p-2 rounded-lg bg-black/40 text-[10px] whitespace-pre-wrap text-white/80 max-h-40 overflow-auto">{lyrics.lyrics}</pre>
                       </details>
                     )}
-                    <div className="text-[10px] text-white/40">
-                      💡 Tips: Kalau gratis habis / gagal, kamu tetap bisa upload musik file mp3 sendiri seperti biasa.
-                    </div>
                   </div>
                 )}
 
@@ -927,10 +1146,10 @@ Dibuat dengan Verve AI Video Studio`;
                   <div className="space-y-3 p-3 rounded-xl bg-black/30 border border-white/10">
                     <div className="flex items-center gap-2 flex-wrap">
                       <label className="text-xs text-white/70 font-semibold">Voice:</label>
-                      <select className="select w-32 text-sm py-1.5" value={ttsVoice} onChange={e=>setTtsVoice(e.target.value)}>
+                      <select className="select w-auto text-sm py-1.5" value={ttsVoice} onChange={e=>setTtsVoice(e.target.value)}>
                         {VOICES.map(v=><option key={v} value={v}>{v}</option>)}
                       </select>
-                      <button className="btn btn-ghost text-xs py-1.5" onClick={doAutoScript} disabled={!!loading}>✍️ Auto Script AI</button>
+                      <button className="btn btn-ghost btn-sm" onClick={doAutoScript} disabled={!!loading}>✍️ Auto Script AI</button>
                     </div>
                     <textarea className="textarea text-sm" rows={isMobile?4:5} value={ttsText}
                       onChange={e=>setTtsText(e.target.value)}
@@ -949,7 +1168,7 @@ Dibuat dengan Verve AI Video Studio`;
                     {musicUrl && <audio controls src={musicUrl} className="w-full" />}
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost" onClick={()=>setStep(3)}>← Kembali</button>
                   <button className="btn btn-primary" onClick={()=>setStep(5)}>Lanjut ke Render →</button>
                 </div>
@@ -960,15 +1179,15 @@ Dibuat dengan Verve AI Video Studio`;
               <section className="mt-4 space-y-4">
                 <h2 className="section-title">🌈 Step 5 · Visualizer & Render</h2>
 
-                {/* LOGO CUSTOM */}
+                {/* LOGO */}
                 <div className="p-3 rounded-xl bg-black/30 border border-white/10 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-bold flex items-center gap-2">🖼️ Logo/Channel Brand</div>
-                      <div className="text-[11px] text-white/50">Upload logo channel-mu; akan muncul di tengah spectrum atau pojok video</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold flex items-center gap-2">🖼️ Logo/Channel</div>
+                      <div className="text-[11px] text-white/50 break-word">Upload logo channel; muncul di tengah spectrum atau pojok video</div>
                     </div>
                     {logoDataUrl && (
-                      <img src={logoDataUrl} className="w-10 h-10 rounded-full border-2 border-white/30" alt="logo"/>
+                      <img src={logoDataUrl} className="w-10 h-10 rounded-full border-2 border-white/30 flex-shrink-0" alt="logo"/>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2 items-center">
@@ -978,23 +1197,23 @@ Dibuat dengan Verve AI Video Studio`;
                     </label>
                     {logoDataUrl && (
                       <>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 flex-wrap">
                           {([["center","🎯 Tengah"],["corner","📍 Pojok"],["none","❌ Sembunyi"]] as const).map(([v,l])=>(
                             <button key={v} onClick={()=>setLogoPosition(v)}
-                              className={`btn text-xs py-1.5 px-2 ${logoPosition===v?"btn-primary":"btn-ghost"}`}>{l}</button>
+                              className={`btn btn-sm ${logoPosition===v?"btn-primary":"btn-ghost"}`}>{l}</button>
                           ))}
                         </div>
-                        <button className="btn btn-danger text-xs py-1.5" onClick={()=>setLogoDataUrl("")}>🗑️</button>
+                        <button className="btn btn-danger btn-sm" onClick={()=>setLogoDataUrl("")}>🗑️</button>
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* KARAOKE LYRICS */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-black/30 border border-white/10">
-                  <div>
+                {/* KARAOKE */}
+                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-black/30 border border-white/10">
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold flex items-center gap-2">🎤 Karaoke Lirik</div>
-                    <div className="text-[11px] text-white/50">Tampilkan baris lirik per-slide dengan gaya karaoke (outline text, glow)</div>
+                    <div className="text-[11px] text-white/50 break-word">Tampilkan baris lirik per-slide dengan gaya karaoke (outline glow)</div>
                   </div>
                   <div className={`toggle ${showLyrics?"on":""}`} onClick={()=>setShowLyrics(v=>!v)}/>
                 </div>
@@ -1006,23 +1225,23 @@ Dibuat dengan Verve AI Video Studio`;
                     {QUALITY_OPTIONS.map(q=>(
                       <button key={q.id} onClick={()=>setQuality(q.id as RenderQuality)}
                         className={`q-tile ${quality===q.id?"active":""}`}>
-                        <div className="text-sm font-bold">{q.label}</div>
-                        <div className="text-[10px] text-white/60 mt-0.5">{q.res} · {q.fps}fps · {q.bitrate}</div>
+                        <div className="text-xs sm:text-sm font-bold">{q.label}</div>
+                        <div className="text-[10px] text-white/60 mt-0.5">{q.res} · {q.fps}fps</div>
                         {q.tag && <div className="text-[9px] text-pink-300 mt-0.5">{q.tag}</div>}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Spectrum style */}
+                {/* Spectrum */}
                 <div>
-                  <span className="lbl">🎨 Style spectrum visualizer</span>
+                  <span className="lbl">🎨 Style spectrum</span>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {VIZ_STYLES.filter((v,i,a)=>a.findIndex(x=>x.id===v.id)===i).map(s=>(
                       <button key={s.id} onClick={()=>setVizStyle(s.id)}
                         className={`style-card ${vizStyle===s.id?"active":""}`}>
-                        <div className="text-sm font-bold">{s.emoji} {s.label}</div>
-                        <div className="text-[10px] text-white/60 mt-0.5">{s.desc}</div>
+                        <div className="text-xs sm:text-sm font-bold truncate">{s.emoji} {s.label}</div>
+                        <div className="text-[10px] text-white/60 mt-0.5 truncate">{s.desc}</div>
                       </button>
                     ))}
                   </div>
@@ -1034,11 +1253,11 @@ Dibuat dengan Verve AI Video Studio`;
                   <div className="flex gap-2 flex-wrap items-center">
                     {COLOR_PRESETS.map(c=>(
                       <button key={c.hex} onClick={()=>setVizColor(c.hex)} title={c.name}
-                        className={`w-9 h-9 rounded-full border-2 transition ${vizColor===c.hex?"border-white scale-110":"border-white/20"}`}
+                        className={`color-swatch ${vizColor===c.hex?"active":""}`}
                         style={{background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
                     ))}
                     <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)}
-                           className="w-9 h-9 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
+                           className="w-10 h-10 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
                   </div>
                 </div>
 
@@ -1050,7 +1269,7 @@ Dibuat dengan Verve AI Video Studio`;
                            onChange={e=>setSlideDuration(Number(e.target.value))}/>
                   </label>
                   <label className="block">
-                    <span className="lbl">Durasi transisi: <b>{transitionDur.toFixed(2)}s</b></span>
+                    <span className="lbl">Transisi: <b>{transitionDur.toFixed(2)}s</b></span>
                     <input type="range" min={0} max={2} step={0.1} value={transitionDur}
                            onChange={e=>setTransitionDur(Number(e.target.value))}/>
                   </label>
@@ -1063,17 +1282,16 @@ Dibuat dengan Verve AI Video Studio`;
                     {TRANSITION_STYLES.map(t=>(
                       <button key={t.id} onClick={()=>setTransition(t.id as Transition)}
                         className={`q-tile ${transition===t.id?"active":""}`}>
-                        <div className="text-xs font-bold">{t.emoji} {t.label}</div>
+                        <div className="text-xs font-bold truncate">{t.emoji} {t.label}</div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Toggle show title */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-black/30 border border-white/10">
-                  <div>
+                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-black/30 border border-white/10">
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold">📝 Tampilkan judul di video</div>
-                    <div className="text-xs text-white/50">Judul akan muncul overlay dengan animasi glow</div>
+                    <div className="text-xs text-white/50 break-word">Judul overlay dengan animasi glow</div>
                   </div>
                   <div className={`toggle ${showTitle?"on":""}`} onClick={()=>setShowTitle(v=>!v)}/>
                 </div>
@@ -1099,10 +1317,10 @@ Dibuat dengan Verve AI Video Studio`;
             )}
           </div>
 
-          <aside className="card lg:sticky lg:top-4 self-start">
+          <aside className="card lg:sticky lg:top-4 self-start min-w-0">
             <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">👁️ Preview Live</h3>
-            <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black"
-                 style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"100%":"280px", margin:"0 auto"}:aspectRatio==="1:1"?{aspectRatio:"1/1"}:{aspectRatio:"16/9"}}>
+            <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
+                 style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"100%":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"100%":"320px"}:{aspectRatio:"16/9"}}>
               {slides[0] ? (
                 <img src={slides[0].imageUrl} className="w-full h-full object-cover" alt="preview"/>
               ) : (
@@ -1118,15 +1336,17 @@ Dibuat dengan Verve AI Video Studio`;
                 width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
                 height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
               />
-              <div className="absolute bottom-2 left-2 right-2 text-white text-center text-xs sm:text-sm font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,1)] truncate px-2"
+              <div className="absolute bottom-2 left-2 right-2 text-white text-center text-xs sm:text-sm font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,1)] px-2 break-word"
                    style={{textShadow:`0 0 12px ${vizColor}`}}>
                 {showTitle ? (selectedTitle?.text || niche || "Judul video di sini") : ""}
               </div>
             </div>
-            <audio ref={previewAudioRef} controls className="w-full mt-2"
-                   src={ttsUrl || musicUrl || undefined}/>
-            <p className="text-[10px] sm:text-xs text-white/50 mt-2">
-              🔥 Spectrum live bergerak mengikuti suara kamu. Render pakai engine WebCodecs super-cepat (5–10× realtime).
+            <div className="mt-2">
+              <audio ref={previewAudioRef} controls className="w-full"
+                     src={ttsUrl || (audioMode==="aimusic"?aiMusicUrl:musicUrl) || undefined}/>
+            </div>
+            <p className="text-[10px] sm:text-xs text-white/50 mt-2 break-word">
+              🔥 Spectrum live bergerak mengikuti suara. Render pakai engine WebCodecs super-cepat (5–10× realtime).
             </p>
             {videoUrl && (
               <div className="mt-3">
@@ -1142,12 +1362,12 @@ Dibuat dengan Verve AI Video Studio`;
           </aside>
 
           {videoUrl && meta && (
-            <div className="lg:col-span-3 card mt-2">
-              <h2 className="text-lg sm:text-xl font-black mb-1 flex items-center gap-2">
+            <div className="lg:col-span-3 card mt-2 min-w-0">
+              <h2 className="text-lg sm:text-xl font-black mb-1 flex items-center gap-2 break-word">
                 📋 YouTube Metadata (siap copy-paste)
               </h2>
-              <p className="text-xs text-white/60 mb-4">
-                Tinggal SALIN & tempel ke YouTube. Semua sudah dioptimasi AI untuk CTR tinggi 🔥
+              <p className="text-xs text-white/60 mb-4 break-word">
+                Tinggal SALIN & tempel ke YouTube. Semua dioptimasi AI untuk CTR tinggi 🔥
               </p>
               <MetaRow label="🏷️ Judul High-CTR" value={meta.titleHighCTR} onCopy={()=>copyField("title",meta.titleHighCTR)} copied={copiedField==="title"}/>
               {meta.titleAlternatives.length>0 && (
@@ -1155,9 +1375,9 @@ Dibuat dengan Verve AI Video Studio`;
                   <div className="text-xs text-white/70 mb-1">🔄 Judul alternatif:</div>
                   {meta.titleAlternatives.map((t,i)=>(
                     <div key={i} className="flex items-center gap-2 mb-1">
-                      <div className="flex-1 text-sm bg-black/30 rounded-lg p-2 truncate">{t}</div>
+                      <div className="flex-1 text-sm bg-black/30 rounded-lg p-2 truncate min-w-0">{t}</div>
                       <button onClick={()=>copyField(`alt${i}`,t)}
-                        className={`btn text-xs py-1.5 ${copiedField===`alt${i}`?"bg-green-600":"btn-ghost"}`}>
+                        className={`btn btn-sm ${copiedField===`alt${i}`?"bg-green-600":"btn-ghost"}`}>
                         {copiedField===`alt${i}`?"✓":"SALIN"}
                       </button>
                     </div>
@@ -1173,24 +1393,24 @@ Dibuat dengan Verve AI Video Studio`;
         </div>
       ) : (
         <div className="mt-4 lg:mt-6 grid lg:grid-cols-3 gap-4 sm:gap-6">
-          <div className="lg:col-span-2 card space-y-3">
+          <div className="lg:col-span-2 card space-y-3 min-w-0">
             <h2 className="section-title">🎬 Text-to-Video AI</h2>
-            <div className="text-xs sm:text-sm p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-200">
-              💡 Fitur ini tergantung model video di akun hcnsec kamu. Kalau 404, artinya model video belum aktif — pakai <b>Slideshow + Spectrum</b> yang 100% jalan & jauh lebih cepat.
+            <div className="text-xs sm:text-sm p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-200 break-word">
+              💡 Fitur ini tergantung model video. Kalau 404, artinya model belum aktif — pakai <b>Slideshow + Spectrum</b> yang 100% jalan & jauh lebih cepat.
             </div>
             <label className="block">
               <span className="lbl">Prompt (detailkan, Bahasa Inggris lebih bagus)</span>
               <textarea className="textarea" rows={isMobile?4:5} value={t2vPrompt}
                 onChange={e=>setT2vPrompt(e.target.value)}
-                placeholder="Cth: Cinematic slow motion of a lonely wolf walking in a snowy forest at golden hour, 4k, moody, epic orchestral feel"/>
+                placeholder="Cth: Cinematic slow motion of a lonely wolf walking in a snowy forest at golden hour, 4k, moody"/>
             </label>
             <div className="grid grid-cols-2 gap-3">
-              <label className="block">
+              <label className="block min-w-0">
                 <span className="lbl">Durasi {isMobile?"(max 5s di HP)":""}</span>
                 <input type="number" className="input" min={2} max={isMobile?5:10} value={t2vDuration}
                        onChange={e=>setT2vDuration(Number(e.target.value))}/>
               </label>
-              <label className="block">
+              <label className="block min-w-0">
                 <span className="lbl">Rasio</span>
                 <select className="select" value={aspectRatio} onChange={e=>setAspectRatio(e.target.value as any)}>
                   {ASPECT_RATIOS.map(r=><option key={r.id} value={r.id}>{r.label}</option>)}
@@ -1198,7 +1418,7 @@ Dibuat dengan Verve AI Video Studio`;
               </label>
             </div>
             <label className="block">
-              <span className="lbl">Gambar awal (opsional, image-to-video)</span>
+              <span className="lbl">Gambar awal (opsional)</span>
               <input type="url" className="input" value={t2vImageUrl} onChange={e=>setT2vImageUrl(e.target.value)}
                      placeholder="https://..."/>
             </label>
@@ -1214,19 +1434,19 @@ Dibuat dengan Verve AI Video Studio`;
                     <a className="btn btn-primary" href={t2vResult.video_url} target="_blank" rel="noreferrer" download>💾 Download</a>
                   </>
                 ) : (
-                  <div className="text-yellow-300 text-xs sm:text-sm">
+                  <div className="text-yellow-300 text-xs sm:text-sm break-word">
                     {t2vResult.error || "Video masih diproses / model tidak tersedia."}
                   </div>
                 )}
               </div>
             )}
           </div>
-          <aside className="card self-start">
+          <aside className="card self-start min-w-0">
             <h3 className="font-bold mb-2 text-sm sm:text-base">💡 Tips prompt profesional</h3>
-            <ul className="text-xs sm:text-sm space-y-1.5 text-white/70 list-disc pl-4">
+            <ul className="text-xs sm:text-sm space-y-1.5 text-white/70 list-disc pl-4 break-word">
               <li>Pakai <b>Bahasa Inggris</b> hasilnya lebih bagus</li>
               <li>Sebut <b>shot type</b>: close-up, wide, aerial drone</li>
-              <li>Sebut <b>motion</b>: slow pan, zoom in, waves crashing</li>
+              <li>Sebut <b>motion</b>: slow pan, zoom in</li>
               <li>Sebut <b>lighting</b>: golden hour, neon, volumetric fog</li>
               <li>Akhiri dengan <b>"4k, cinematic, smooth motion"</b></li>
             </ul>
@@ -1235,24 +1455,31 @@ Dibuat dengan Verve AI Video Studio`;
       )}
 
       <Footer />
+
+      <ApiKeyModal
+        open={showApiKeyModal}
+        onClose={()=>setShowApiKeyModal(false)}
+        onSave={saveSunoKey}
+        currentKey={sunoApiKey}
+      />
     </main>
   );
 }
 
 function MetaRow({label,value,onCopy,copied,multiline}:{label:string;value:string;onCopy:()=>void;copied:boolean;multiline?:boolean;}) {
   return (
-    <div className="mb-3">
+    <div className="mb-3 min-w-0">
       <div className="flex items-center justify-between mb-1 gap-2">
-        <div className="text-xs sm:text-sm text-white/70 font-semibold">{label}</div>
+        <div className="text-xs sm:text-sm text-white/70 font-semibold truncate">{label}</div>
         <button onClick={onCopy}
-          className={`btn text-xs py-1.5 px-3 ${copied?"bg-green-600 text-white":"btn-ghost"}`}>
+          className={`btn btn-sm ${copied?"bg-green-600 text-white":"btn-ghost"}`}>
           {copied?"✓ Tersalin":"SALIN"}
         </button>
       </div>
       {multiline ? (
-        <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 whitespace-pre-wrap leading-relaxed">{value}</div>
+        <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 whitespace-pre-wrap leading-relaxed break-word">{value}</div>
       ) : (
-        <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 truncate">{value}</div>
+        <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 break-all">{value}</div>
       )}
     </div>
   );
@@ -1260,13 +1487,13 @@ function MetaRow({label,value,onCopy,copied,multiline}:{label:string;value:strin
 
 function Header() {
   return (
-    <header className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+    <header className="flex items-center justify-between gap-2 min-w-0">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
         <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl hero-icon flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">
           🎞️
         </div>
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-3xl font-black tracking-tight truncate leading-none">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg sm:text-3xl font-black tracking-tight leading-none truncate">
             Verve <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">AI Video Studio</span>
           </h1>
           <p className="text-[10px] sm:text-xs text-white/50 mt-1 truncate">
@@ -1280,7 +1507,7 @@ function Header() {
 
 function ModeTabs({mode,setMode}:{mode:Mode;setMode:(m:Mode)=>void}) {
   return (
-    <div className="mt-4 tabs w-fit">
+    <div className="mt-4 tabs w-fit max-w-full">
       <button onClick={()=>setMode("slideshow")} className={`tab ${mode==="slideshow"?"active":""}`}>🎞️ Slideshow</button>
       <button onClick={()=>setMode("t2v")} className={`tab ${mode==="t2v"?"active":""}`}>🎬 Text→Video</button>
     </div>
@@ -1295,10 +1522,10 @@ function StepBar({step}:{step:number}) {
         const n = i+1;
         const active = n===step, done = n<step;
         return (
-          <div key={n} className="flex items-center gap-1.5 sm:gap-2 min-w-max flex-shrink-0">
+          <div key={n} className="flex items-center gap-1 sm:gap-2 min-w-max flex-shrink-0">
             <div className={`step-dot ${active?"active":""} ${done?"done":""}`}>{done?"✓":n}</div>
             <div className={`text-[11px] sm:text-sm whitespace-nowrap ${active?"text-white font-bold":"text-white/60"}`}>{l}</div>
-            {n<labels.length && <div className={`w-4 sm:w-8 h-0.5 ${done?"bg-green-500":"bg-white/15"}`}/>}
+            {n<labels.length && <div className={`w-4 sm:w-8 h-0.5 flex-shrink-0 ${done?"bg-green-500":"bg-white/15"}`}/>}
           </div>
         );
       })}
@@ -1314,8 +1541,8 @@ function ProjectMeta({title,niche,slides,quality,ratio,viz}:{title?:string;niche
   const qLabel = QUALITY_OPTIONS.find(q=>q.id===quality);
   return (
     <div className="mt-3 p-3 rounded-xl bg-black/30 border border-white/10 text-[10px] sm:text-xs text-white/60 space-y-1">
-      <div className="flex justify-between"><span className="text-white/70">Niche</span><span className="truncate ml-2 text-right">{niche||"—"}</span></div>
-      <div className="flex justify-between"><span className="text-white/70">Judul</span><span className="truncate ml-2 text-right max-w-[60%]">{title||"—"}</span></div>
+      <div className="flex justify-between gap-2"><span className="text-white/70 flex-shrink-0">Niche</span><span className="truncate ml-2 text-right break-word">{niche||"—"}</span></div>
+      <div className="flex justify-between gap-2"><span className="text-white/70 flex-shrink-0">Judul</span><span className="truncate ml-2 text-right break-all">{title||"—"}</span></div>
       <div className="flex justify-between"><span className="text-white/70">Slide</span><span>{slides}</span></div>
       <div className="flex justify-between"><span className="text-white/70">Rasio</span><span>{ratio}</span></div>
       <div className="flex justify-between"><span className="text-white/70">Kualitas</span><span>{qLabel?.res} {qLabel?.fps}fps</span></div>

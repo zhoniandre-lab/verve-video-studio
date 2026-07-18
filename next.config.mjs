@@ -6,7 +6,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig = {
   reactStrictMode: false,
-  eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
   turbopack: { root: __dirname },
   images: {
