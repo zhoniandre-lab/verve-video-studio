@@ -1,44 +1,109 @@
 import { NextResponse } from "next/server";
 import { chat } from "@/lib/hcnsec";
-import { safeParseJSON } from "@/lib/json-util";
 
 /**
  * Buat storyboard/adegan PER SLIDE.
- * Mengembalikan JSON dengan scenes array.
- * Ada retry jika parse gagal.
+ * Format: marker-based (TIDAK JSON), anti-parse-error.
  */
 export const dynamic = "force-dynamic";
 
 async function tryGenerate(title: string, keyword: string, niche: string, n: number, attempt: number): Promise<any> {
-  const hint = attempt > 1
-    ? "\n\nPERINGATAN: Output kamu HARUS JSON murni tanpa teks apapun. JANGAN tambah koma di akhir array. JANGAN gunakan tanda kutip di dalam string kecuali dengan escape (\\')."
+  const extra = attempt > 1
+    ? "\n\nPERATURAN TAMBAHAN (WAJIB):\n- JANGAN gunakan tanda kutip ganda di dalam lirik atau deskripsi (cukup kutip satu atau tidak sama sekali)\n- Jumlah scene HARUS TEPAT " + n + " buah\n- Jangan tambahkan catatan apapun di luar format, ini untuk diproses program."
     : "";
   const sys =
-`Kamu adalah sutradara video klip musik & AI prompt engineer handal.
-Tugas: buat storyboard untuk video musik bertema "${title}" (keyword: ${keyword||"-"}, niche: ${niche||"-"}) dengan ${n} adegan slide.
+`Kamu sutradara video klip. Buat storyboard untuk video bertema "${title}" (keyword: ${keyword||"-"}, niche: ${niche||"-"}) dengan ${n} adegan.
 
-IKUTI ATURAN INI KETAT:
-1. Tiap adegan adalah KELANJUTAN CERITA yang emosional & mengalir (pembukaan → konflik → puncak → penutup).
-2. Adegan harus SPESIFIK, tidak generik. Contoh tema "Ibu maafkan aku": bukan hanya "wanita sedih" tapi "close-up tangan keriput ibu mengusap foto tua anaknya di atas meja makan, lampu gantung kuning temaram".
-3. visual_prompt WAJIB:
-   - BAHASA INGGRIS, 25-45 kata
-   - Sebut shot type (close-up / medium shot / wide shot / aerial), subjek, ekspresi, setting, pencahayaan (warm golden hour, moody blue, dll), warna dominan, lensa/camera (35mm film, shallow depth of field, cinematic lighting, 8k, photorealistic)
-   - JANGAN ada "no text", "no watermark" dll.
-   - SETIAP adegan VISUAL BERBEDA (komposisi/setting/pencahayaan berbeda)
-4. lyric_line: 1 baris lirik BAHASA INDONESIA, 5-10 kata, menyentuh, sesuai emosi adegan. TIDAK BOLEH SAMA dengan slide lain.
-5. mood: 1 kata emosi (sad, warm, hopeful, epic, calm, tense, dramatic, peaceful, melancholic, joyful).
-6. color_grade: HEX warna yang cocok dengan mood keseluruhan (e.g. #c98872 untuk sepia/sedih, #5b8fd1 untuk biru dingin, #f4c77a untuk hangat senja).
-7. style_visual: SATU kata yang PALING cocok: cinematic | anime | studio | fantasy | cyberpunk | pixar | oil | minimalist
+PENTING: Output HANYA dalam FORMAT DI BAWAH INI, teks polos tanpa penjelasan tambahan, tanpa markdown, tanpa JSON, tanpa code block:
 
-Output HANYA JSON VALID (bukan fenced code block, bukan teks lain):
-{"title":"...","style_visual":"...","color_grade":"#...","scenes":[{"scene":1,"scene_desc":"...","lyric_line":"...","visual_prompt":"...","mood":"..."}]}
-${hint}`;
+===STYLE_VISUAL===
+(satu kata: cinematic/anime/studio/fantasy/cyberpunk/pixar/oil/minimalist)
+===COLOR===
+(hex warna tema, cth: #c98872)
+===TITLE===
+(judul singkat)
+===SCENE===
+nomor: 1
+deskripsi: (2-3 kalimat apa yang terjadi di adegan, jelas, emosional, spesifik, JANGAN pakai tanda kutip ganda di dalam teks)
+lirik: (satu baris lirik bahasa indonesia 5-9 kata, menyentuh, sesuai adegan, TANPA kutip ganda)
+mood: (satu kata emosi: sad/warm/hopeful/epic/calm/tense/dramatic/peaceful/melancholic/joyful)
+prompt_en: (visual prompt BAHASA INGGRIS 25-40 kata: sebut shot type, subjek, ekspresi, setting, lighting, warna, cinematic 8k photorealistic — TANPA tanda kutip ganda di dalam)
+===SCENE===
+nomor: 2
+deskripsi: ...
+...dst sampai scene ${n}
+${extra}`;
+
   const raw = await chat([{ role: "user", content: sys }]);
-  const parsed = safeParseJSON(raw);
-  if (!parsed || !parsed.scenes || !Array.isArray(parsed.scenes)) {
-    throw new Error("JSON tidak valid: " + raw.slice(-200));
+  return parseStoryboard(raw, n);
+}
+
+function parseStoryboard(raw: string, expectedN: number): any {
+  // Bersihkan code fence jika ada
+  let s = raw.replace(/```[a-z]*/gi, "").replace(/```/g, "").trim();
+
+  const result: any = {
+    title: "",
+    style_visual: "cinematic",
+    color_grade: "#a855f7",
+    scenes: [] as any[],
+  };
+
+  // Ambil style_visual
+  const sv = s.match(/===STYLE_VISUAL===\s*\n([\s\S]*?)(?=\n===|$)/);
+  if (sv) {
+    const v = sv[1].trim().split("\n")[0].trim().toLowerCase().replace(/[^a-z]/g, "");
+    if (v) result.style_visual = v;
   }
-  return parsed;
+  const col = s.match(/===COLOR===\s*\n([\s\S]*?)(?=\n===|$)/);
+  if (col) {
+    const v = col[1].trim().split("\n")[0].trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) result.color_grade = v;
+  }
+  const tt = s.match(/===TITLE===\s*\n([\s\S]*?)(?=\n===|$)/);
+  if (tt) {
+    result.title = tt[1].trim().split("\n")[0].trim().slice(0, 100);
+  }
+
+  // Split per scene
+  const sceneBlocks = s.split(/===SCENE===/g).slice(1);
+  for (const block of sceneBlocks) {
+    const get = (key: string) => {
+      const re = new RegExp(`${key}\\s*:\\s*([^\\n]*(?:\\n(?![a-z_]+:)[^\\n]*)*)`, "i");
+      const m = block.match(re);
+      return m ? m[1].trim().replace(/\n+/g," ").replace(/\s+/g," ").replace(/"/g,"'") : "";
+    };
+    const no = parseInt(get("nomor")) || result.scenes.length + 1;
+    const desc = get("deskripsi").slice(0, 300);
+    const lyric = get("lirik").slice(0, 120);
+    const mood = get("mood").split(/[,\s.]+/)[0].toLowerCase().slice(0,20);
+    const visual = get("prompt_en").slice(0, 500);
+    if (!desc && !visual) continue;
+    result.scenes.push({
+      scene: no,
+      scene_desc: desc,
+      lyric_line: lyric,
+      visual_prompt: visual,
+      mood: mood || "calm",
+    });
+  }
+  if (result.scenes.length === 0) throw new Error("Gagal memparsing adegan. Coba lagi.");
+
+  // Normalisasi jumlah scene
+  while (result.scenes.length < expectedN) {
+    const last = result.scenes[result.scenes.length-1];
+    result.scenes.push({
+      scene: result.scenes.length+1,
+      scene_desc: last.scene_desc,
+      lyric_line: last.lyric_line,
+      visual_prompt: last.visual_prompt,
+      mood: last.mood,
+    });
+  }
+  if (result.scenes.length > expectedN) result.scenes = result.scenes.slice(0, expectedN);
+  // Re-number
+  result.scenes.forEach((sc:any,i:number)=>{sc.scene=i+1;});
+  return result;
 }
 
 export async function POST(req: Request) {
@@ -51,34 +116,16 @@ export async function POST(req: Request) {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const parsed = await tryGenerate(title, keyword || "", niche || "", n, attempt);
-        // Normalisasi scene count
-        if (parsed.scenes.length > n) parsed.scenes = parsed.scenes.slice(0, n);
-        while (parsed.scenes.length < n) {
-          const last = parsed.scenes[parsed.scenes.length - 1];
-          parsed.scenes.push({
-            scene: parsed.scenes.length + 1,
-            scene_desc: last.scene_desc,
-            lyric_line: last.lyric_line,
-            visual_prompt: last.visual_prompt,
-            mood: last.mood,
-          });
-        }
-        parsed.scenes = parsed.scenes.map((s: any, i: number) => ({
-          scene: i + 1,
-          scene_desc: String(s.scene_desc || "").slice(0, 200),
-          lyric_line: String(s.lyric_line || "").slice(0, 100),
-          visual_prompt: String(s.visual_prompt || "").slice(0, 400),
-          mood: String(s.mood || "calm").slice(0, 30),
-        }));
-        parsed.title = String(parsed.title || title);
-        parsed.style_visual = String(parsed.style_visual || "cinematic").toLowerCase().replace(/[^a-z]/g, "");
-        if (!/^#[0-9a-f]{6}$/i.test(parsed.color_grade || "")) parsed.color_grade = "#a855f7";
+        if (!parsed.scenes || parsed.scenes.length < n/2) throw new Error("Scene kurang dari separuh target");
         return NextResponse.json(parsed);
       } catch (e: any) {
         lastErr = e;
       }
     }
-    return NextResponse.json({ error: `Storyboard gagal: ${lastErr?.message || "coba lagi"}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Storyboard gagal setelah 3x percobaan: ${lastErr?.message || ""}` },
+      { status: 500 }
+    );
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Gagal buat storyboard" }, { status: 500 });
   }
