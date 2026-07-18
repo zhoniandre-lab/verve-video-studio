@@ -637,9 +637,9 @@ export default function Home() {
       let chosenMusic = musicUrl;
       if (aiMusicUrl) chosenMusic = aiMusicUrl;
       const parts: string[] = [];
-      if ((audioMode==="tts"||audioMode==="both") && ttsUrl) parts.push(ttsUrl);
-      if ((audioMode==="music"||audioMode==="both") && chosenMusic) parts.push(chosenMusic);
-      if (audioMode==="aimusic" && aiMusicUrl) parts.push(aiMusicUrl);
+      if ((audioMode==="tts"||audioMode==="both") && ttsUrl) parts.push(proxifyAudioUrl(ttsUrl));
+      if ((audioMode==="music"||audioMode==="both") && chosenMusic) parts.push(proxifyAudioUrl(chosenMusic));
+      if (audioMode==="aimusic" && aiMusicUrl) parts.push(proxifyAudioUrl(aiMusicUrl));
       let audioUrl: string|null = null;
       if (parts.length === 1) audioUrl = parts[0];
       else if (parts.length > 1) audioUrl = await mixAudioUrls(parts);
@@ -951,7 +951,8 @@ Dibuat dengan Verve AI Video Studio`;
         setAiMusicStatus("selesai");
         setAiMusicPolling(false);
         setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${data.provider||sunoProvider})`);
-        setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
+        if (audioMode !== "aimusic") setAudioMode("aimusic");
+        setStageText(`✅ Lagu "${title.slice(0,30)}" siap & otomatis dipakai untuk render!`);
       } else if (data.id) {
         setAiMusicTaskId(data.id);
         setAiMusicStatus("antri...");
@@ -987,7 +988,8 @@ Dibuat dengan Verve AI Video Studio`;
                 setAiMusicUrl(audioUrl); setAiMusicStatus("selesai");
                 setAiMusicPolling(false);
                 setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${pd.provider||sunoProvider})`);
-                setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
+                if (audioMode !== "aimusic") setAudioMode("aimusic");
+                setStageText(`✅ Lagu "${title.slice(0,30)}" siap & otomatis dipakai untuk render!`);
                 done = true;
                 break;
               }
@@ -1046,7 +1048,8 @@ Dibuat dengan Verve AI Video Studio`;
         setAiMusicPolling(false);
         const title = musicGeneratedFrom || musicTitle;
         setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${pd.provider||sunoProvider})`);
-        setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
+        if (audioMode !== "aimusic") setAudioMode("aimusic");
+        setStageText(`✅ Lagu "${title.slice(0,30)}" siap & otomatis dipakai untuk render!`);
         setTimeout(()=>setStageText(""),4000);
         return;
       }
@@ -1555,8 +1558,8 @@ Dibuat dengan Verve AI Video Studio`;
                     {aiMusicUrl && (
                       <div className="bg-black/30 rounded-lg p-2 border border-white/10">
                         <div className="text-[11px] text-green-300 mb-1 font-bold">✅ Lagu siap — {musicGeneratedFrom || musicTitle}</div>
-                        <audio controls src={aiMusicUrl} className="w-full"/>
-                        <a href={aiMusicUrl} download={`${musicGeneratedFrom||"verve-song"}.mp3`}
+                        <audio controls src={proxifyAudioUrl(aiMusicUrl)} className="w-full"/>
+                        <a href={proxifyAudioUrl(aiMusicUrl)} download={`${musicGeneratedFrom||"verve-song"}.mp3`}
                           className="block text-center mt-2 text-[11px] text-purple-200 underline">⬇️ Download MP3</a>
                       </div>
                     )}
@@ -1782,7 +1785,7 @@ Dibuat dengan Verve AI Video Studio`;
             </div>
             <div className="mt-2">
               <audio ref={previewAudioRef} controls className="w-full"
-                     src={ttsUrl || (audioMode==="aimusic"?aiMusicUrl:musicUrl) || undefined}/>
+                     src={proxifyAudioUrl(ttsUrl || (audioMode==="aimusic"?aiMusicUrl:musicUrl) || "") || undefined}/>
             </div>
             <p className="text-[10px] sm:text-xs text-white/50 mt-2 break-word">
               🔥 Spectrum live bergerak mengikuti suara. Render pakai engine WebCodecs super-cepat (5–10× realtime).
@@ -2004,6 +2007,21 @@ function formatTime(s:number): string {
   if (s<60) return `${s}d`;
   const m = Math.floor(s/60), sec = s%60;
   return `${m}m${sec>0?` ${sec}d`:""}`;
+}
+
+// Proxikan URL audio eksternal lewat server biar lolos CORS (khusus Kie/Suno CDN)
+function proxifyAudioUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("/")) return url;
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    const butuhProxy =
+      h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe") ||
+      h.includes("sunor") || h.includes("aimusic") || h.includes("r2.dev") ||
+      h.includes("cdn2") || h.includes("cdn.");
+    if (!butuhProxy) return url;
+    return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
+  } catch { return url; }
 }
 
 function bufferToWav(buf: AudioBuffer): ArrayBuffer {

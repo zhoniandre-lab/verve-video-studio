@@ -80,20 +80,35 @@ function easeInOut(t:number){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
 
 async function decodeAudio(url: string, onStage?:(s:string)=>void) {
   onStage?.("Decoding audio...");
-  const r = await fetch(url);
-  const buf = await r.arrayBuffer();
-  const AC = (window.AudioContext || (window as any).webkitAudioContext);
-  const actx = new AC();
-  const audioBuf = await actx.decodeAudioData(buf.slice(0));
-  const ch0 = audioBuf.getChannelData(0);
-  let data = ch0;
-  if (audioBuf.numberOfChannels > 1) {
-    const ch1 = audioBuf.getChannelData(1);
-    data = new Float32Array(ch0.length);
-    for (let i=0;i<ch0.length;i++) data[i] = (ch0[i]+ch1[i])*0.5;
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(()=>ac.abort(), 120_000);
+    const r = await fetch(url, { signal: ac.signal, cache: "no-store" });
+    clearTimeout(t);
+    if (!r.ok) throw new Error(`Gagal ambil audio (HTTP ${r.status}). Coba render ulang ya bro.`);
+    const buf = await r.arrayBuffer();
+    const AC = (window.AudioContext || (window as any).webkitAudioContext);
+    const actx = new AC();
+    let audioBuf: AudioBuffer;
+    try {
+      audioBuf = await actx.decodeAudioData(buf.slice(0));
+    } catch(de:any) {
+      actx.close();
+      throw new Error("Audio tidak bisa diputar (format corrupt/CORS). Coba generate ulang lagu atau pakai file upload ya bro.");
+    }
+    const ch0 = audioBuf.getChannelData(0);
+    let data = ch0;
+    if (audioBuf.numberOfChannels > 1) {
+      const ch1 = audioBuf.getChannelData(1);
+      data = new Float32Array(ch0.length);
+      for (let i=0;i<ch0.length;i++) data[i] = (ch0[i]+ch1[i])*0.5;
+    }
+    actx.close();
+    return { data, sampleRate: audioBuf.sampleRate, channels: audioBuf.numberOfChannels, duration: audioBuf.duration };
+  } catch(e:any) {
+    if (e?.name === "AbortError") throw new Error("Ambil audio timeout. Cek koneksi lalu render ulang.");
+    throw e;
   }
-  actx.close();
-  return { data, sampleRate: audioBuf.sampleRate, channels: audioBuf.numberOfChannels, duration: audioBuf.duration };
 }
 
 async function prepareImages(sources: string[], W:number, H:number, onStage?:(s:string)=>void): Promise<HTMLCanvasElement[]> {
