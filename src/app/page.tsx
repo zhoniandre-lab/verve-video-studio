@@ -326,13 +326,43 @@ export default function Home() {
   const [previewDuration, setPreviewDuration] = useState(0);
   const [previewMuted, setPreviewMuted] = useState(false);
   const renderStartRef = useRef<number>(0);
+  const [draftList, setDraftList] = useState<Array<{id:string;title:string;slides:number;updatedAt:number;thumb?:string;step?:number}>>([]);
+  const [showDraftPicker, setShowDraftPicker] = useState(false);
+  const [currentDraftId, setCurrentDraftId] = useState<string>("");
   const selectedTitle = useMemo(() => titles.find(t=>t.id===selectedTitleId), [titles, selectedTitleId]);
+
+  // ===== DRAFT HISTORY helpers (didefinisikan di atas biar bisa dipakai JSX) =====
+  const DRAFTS_KEY = "verve_drafts_v1";
+  const MAX_DRAFTS = 12;
+  const loadDraftsList = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(DRAFTS_KEY);
+      if (!raw) { setDraftList([]); return; }
+      const arr = JSON.parse(raw);
+      const meta = (Array.isArray(arr)?arr:[]).map((d:any)=>({
+        id:d.id, title:d.title||"Draft", slides:Array.isArray(d.slides)?d.slides.length:0,
+        updatedAt:d.updatedAt||0, thumb:d.thumb||"", step:d.step||1
+      }));
+      setDraftList(meta);
+    } catch { setDraftList([]); }
+  }, []);
+  // Note: full build/apply/save functions didefinisikan setelah state lain lengkap
+  const buildDraftSnapshotRef = useRef<(title?:string)=>any>(()=>null);
+  const applyDraftRef = useRef<(d:any)=>void>(()=>{});
+  const saveDraftManuallyRef = useRef<(title?:string)=>void>(()=>{});
+  const deleteDraftRef = useRef<(id:string)=>void>(()=>{});
+  const startNewDraftRef = useRef<()=>void>(()=>{});
+  const loadDraftRef = useRef<(id:string)=>void>(()=>{});
+  const stopPreviewRef = useRef<()=>void>(()=>{});
 
   // ===== INIT: load state dari sessionStorage + set default berdasarkan device (HANYA SEKALI) =====
   const didInit = useRef(false);
   useEffect(() => {
     if (didInit.current) return;
     didInit.current = true;
+
+    // Load daftar draft history
+    loadDraftsList();
 
     // Baca API key + provider dari localStorage
     try {
@@ -514,6 +544,26 @@ export default function Home() {
   }, [step,niche,selectedTitleId,aspectRatio,slides,audioMode,vizStyle,vizColor,
       slideDuration,transitionDur,showTitle,showLyrics,musicGenre,musicModel,
       musicTitle,musicStylePrompt,aiMusicUrl,lyricLines]);
+
+  // Auto-save ke DRAFTS HISTORY (multi-slot) tiap 30 detik + saat pindah step (TIDAK overwrite kalau user tes fitur baru)
+  useEffect(()=>{
+    if (!didInit.current) return;
+    if (!slides.length) return; // jangan save project kosong
+    const doAuto = () => {
+      try {
+        const snap = buildDraftSnapshot();
+        if (!currentDraftId) setCurrentDraftId(snap.id);
+        const list = [snap, ...draftList.filter(x=>x.id!==snap.id)].slice(0,MAX_DRAFTS);
+        localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
+        setDraftList(list);
+      } catch {}
+    };
+    // Auto-save pertama kali masuk step 5/selesai generate
+    const t = setTimeout(doAuto, 2000);
+    const itv = setInterval(doAuto, 30000);
+    return ()=>{clearTimeout(t);clearInterval(itv);};
+  // eslint-disable-next-line
+  }, [step, slides.length, aiMusicUrl]);
 
   function setErr(e: any) {
     const msg = e?.message || e?.error || String(e || "Terjadi kesalahan");
@@ -1139,6 +1189,125 @@ Dibuat dengan Verve AI Video Studio`;
     setAiMusicPolling(false);
   }
 
+  // ===== DRAFT HISTORY (multi-slot, tersimpan permanen di localStorage) =====
+  function buildDraftSnapshot(title?:string): any {
+    const compactSlides = slides.slice(0,12).map(s=>{
+      if (!s.imageUrl || !s.imageUrl.startsWith("data:")) return s;
+      if (s.imageUrl.length > 400_000) return { ...s, imageUrl:"", _big:true };
+      return s;
+    });
+    return {
+      v:1,
+      id: currentDraftId || `d${Date.now()}`,
+      title: (title||selectedTitle?.text||niche||"Draft tanpa judul").slice(0,80),
+      updatedAt: Date.now(),
+      step, niche, keywordMode, manualKeywords,
+      keywords: keywords.slice(0,20),
+      titles: titles.slice(0,20).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
+      selectedTitleId, imageSource, imageStyle, aspectRatio, nSlides,
+      audioMode, ttsVoice, ttsText,
+      vizStyle, vizColor, slideDuration, transitionDur, transition,
+      showTitle, showLyrics, logoPosition,
+      musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
+      musicTitle: musicTitle.slice(0,80), musicStylePrompt: musicStylePrompt.slice(0,500),
+      aiMusicUrl, musicGeneratedFrom,
+      storyboard,
+      slides: compactSlides,
+      lyricLines: lyricLines.slice(0,12),
+      thumb: slides[0]?.imageUrl?.startsWith("data:")?slides[0].imageUrl.slice(0,10000):"",
+    };
+  }
+  function applyDraft(d:any) {
+    if (!d) return;
+    stopPreview();
+    if (typeof d.step === "number") setStep(d.step);
+    if (d.niche) setNiche(d.niche);
+    if (d.keywordMode) setKeywordMode(d.keywordMode);
+    if (typeof d.manualKeywords==="string") setManualKeywords(d.manualKeywords);
+    if (d.nKeywords) setNKeywords(d.nKeywords);
+    if (Array.isArray(d.keywords)) setKeywords(d.keywords);
+    if (Array.isArray(d.titles)) setTitles(d.titles);
+    if (d.selectedTitleId) setSelectedTitleId(d.selectedTitleId);
+    if (d.imageSource) setImageSource(d.imageSource);
+    if (d.imageStyle) setImageStyle(d.imageStyle);
+    if (d.aspectRatio) setAspectRatio(d.aspectRatio);
+    if (d.nSlides) setNSlides(d.nSlides);
+    if (d.audioMode) setAudioMode(d.audioMode);
+    if (d.ttsVoice) setTtsVoice(d.ttsVoice);
+    if (typeof d.ttsText==="string") setTtsText(d.ttsText);
+    if (d.vizStyle) setVizStyle(d.vizStyle);
+    if (d.vizColor) setVizColor(d.vizColor);
+    if (typeof d.slideDuration==="number") setSlideDuration(d.slideDuration);
+    if (typeof d.transitionDur==="number") setTransitionDur(d.transitionDur);
+    if (d.transition) setTransition(d.transition as Transition);
+    if (typeof d.showTitle==="boolean") setShowTitle(d.showTitle);
+    if (typeof d.showLyrics==="boolean") setShowLyrics(d.showLyrics);
+    if (d.logoPosition) setLogoPosition(d.logoPosition);
+    if (d.musicGenre) setMusicGenre(d.musicGenre);
+    if (d.musicMood) setMusicMood(d.musicMood);
+    if (d.musicModel) setMusicModel(d.musicModel);
+    if (d.musicVocalType) setMusicVocalType(d.musicVocalType);
+    if (d.musicVocalGender) setMusicVocalGender(d.musicVocalGender);
+    if (typeof d.musicTitle==="string") setMusicTitle(d.musicTitle);
+    if (typeof d.musicStylePrompt==="string") setMusicStylePrompt(d.musicStylePrompt);
+    if (d.aiMusicUrl) { setAiMusicUrl(d.aiMusicUrl); setSunoCredits("✅ Lagu AI tersimpan"); setMusicGeneratedFrom(d.musicGeneratedFrom||""); }
+    if (d.storyboard) setStoryboard(d.storyboard);
+    if (Array.isArray(d.slides) && d.slides.length) setSlides(d.slides);
+    if (Array.isArray(d.lyricLines)) setLyricLines(d.lyricLines);
+    setCurrentDraftId(d.id);
+  }
+  function saveDraftManually(title?:string) {
+    try {
+      const snap = buildDraftSnapshot(title);
+      if (!currentDraftId) setCurrentDraftId(snap.id);
+      const list = [snap, ...draftList.filter(x=>x.id!==snap.id)].slice(0,MAX_DRAFTS);
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
+      setDraftList(list);
+      setStageText(`💾 Draft tersimpan: "${snap.title}"`);
+      setTimeout(()=>setStageText(""),2500);
+    } catch(e:any) {
+      setErr("Draft gagal disimpan: "+(e?.message||"quota penuh"));
+    }
+  }
+  function deleteDraft(id:string) {
+    const list = draftList.filter(x=>x.id!==id);
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
+    setDraftList(list);
+  }
+  function startNewDraft() {
+    stopPreview();
+    // Reset state project baru (API key TIDAK direset)
+    setStep(1); setNiche(""); setKeywords([]); setTitles([]); setSelectedTitleId("");
+    setSlides([]); setLyricLines([]); setStoryboard(null); setTtsText(""); setTtsUrl("");
+    setAiMusicUrl(""); setAiMusicStatus(""); setAiMusicTaskId(""); setMusicTitle("");
+    setMusicLyrics(""); setMusicStylePrompt(""); setMusicGeneratedFrom(""); setSunoCredits("");
+    setVideoUrl(""); setVideoBlob(null); setMeta(null);
+    setCurrentDraftId("");
+    setShowDraftPicker(false);
+    setStageText("✨ Project baru dimulai");
+    setTimeout(()=>setStageText(""),2000);
+  }
+  function loadDraft(id:string) {
+    try {
+      const raw = localStorage.getItem(DRAFTS_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      const full = (Array.isArray(arr)?arr:[]).find((x:any)=>x.id===id);
+      if (!full) { setErr("Draft tidak ditemukan (mungkin terhapus)"); return; }
+      applyDraft(full);
+      setShowDraftPicker(false);
+      setStageText(`📂 Draft dibuka: "${full.title}"`);
+      setTimeout(()=>setStageText(""),2500);
+    } catch(e:any){ setErr("Gagal buka draft: "+e.message); }
+  }
+
+  // Binding refs supaya fungsi bisa dipakai dari JSX (declaration order work around)
+  buildDraftSnapshotRef.current = buildDraftSnapshot;
+  applyDraftRef.current = applyDraft;
+  saveDraftManuallyRef.current = saveDraftManually;
+  deleteDraftRef.current = deleteDraft;
+  startNewDraftRef.current = startNewDraft;
+  loadDraftRef.current = loadDraft;
+
   function handleLogoUpload(f: File|undefined) {
     if (!f) return;
     if (f.size>3*1024*1024) return setErr("Logo maks 3MB");
@@ -1191,6 +1360,7 @@ Dibuat dengan Verve AI Video Studio`;
     }
     setPreviewPlaying(false);
   }
+  stopPreviewRef.current = stopPreview;
   function seekPreview(t: number) {
     const audEl = previewAudioRef.current;
     if (audEl && isFinite(audEl.duration)) {
@@ -1411,7 +1581,23 @@ Dibuat dengan Verve AI Video Studio`;
 
   return (
     <main>
-      <Header />
+      <header className="flex items-center justify-between gap-2 min-w-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl hero-icon flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">🎞️</div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-3xl font-black tracking-tight leading-none truncate">
+              Verve <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">AI Video Studio</span>
+            </h1>
+            <p className="text-[10px] sm:text-xs text-white/50 mt-1 truncate">
+              Keyword → Judul → Gambar → Spectrum → Video · Super Cepat ⚡
+            </p>
+          </div>
+        </div>
+        <button onClick={()=>{loadDraftsList();setShowDraftPicker(true);}}
+                className="shrink-0 flex items-center gap-1 text-[11px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15">
+          📂 <span className="hidden sm:inline">Draft</span>{draftList.length>0?<span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-pink-500/70 text-white text-[9px] font-bold">{draftList.length}</span>:null}
+        </button>
+      </header>
       <ModeTabs mode={mode} setMode={(m)=>{setMode(m); setStep(1); setError(""); setStageText(""); setMeta(null); setVideoUrl(""); setVideoBlob(null);}} />
 
       {error && (
@@ -2029,6 +2215,9 @@ Dibuat dengan Verve AI Video Studio`;
                   <button className="btn" onClick={togglePreview} disabled={loading==="render"||slides.length===0}>
                     {previewPlaying?"⏹ Stop Preview":"▶️ Preview Video"}
                   </button>
+                  <button className="btn btn-ghost" onClick={()=>saveDraftManually()} disabled={loading==="render"||slides.length===0}>
+                    💾 Simpan
+                  </button>
                   <button className="btn btn-primary glow" onClick={doRender} disabled={loading==="render"}>
                     {loading==="render"?<Spinner/>:"🎬"} Render Video Sekarang
                   </button>
@@ -2282,6 +2471,54 @@ Dibuat dengan Verve AI Video Studio`;
         currentKey={sunoApiKey}
         currentProvider={sunoProvider}
       />
+
+      {/* DRAFT PICKER MODAL */}
+      {showDraftPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/70 backdrop-blur-sm" onClick={()=>setShowDraftPicker(false)}>
+          <div className="w-full max-w-md bg-gradient-to-b from-[#1a0b2e] to-[#0a0418] rounded-2xl border border-purple-500/30 shadow-2xl max-h-[85vh] flex flex-col" onClick={e=>e.stopPropagation()}>
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-base font-black flex items-center gap-2">📂 Draft Tersimpan</h3>
+              <button onClick={()=>setShowDraftPicker(false)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-lg">×</button>
+            </div>
+            <div className="p-3 space-y-2 overflow-y-auto">
+              <button onClick={startNewDraft} className="w-full p-3 rounded-xl border-2 border-dashed border-pink-400/40 hover:border-pink-400 hover:bg-pink-500/10 text-pink-200 text-sm font-bold flex items-center justify-center gap-2">
+                ➕ Mulai Project Baru
+              </button>
+              <button onClick={()=>saveDraftManually()} className="w-full p-3 rounded-xl bg-purple-500/20 hover:bg-purple-500/40 border border-purple-400/30 text-purple-100 text-sm font-bold flex items-center justify-center gap-2">
+                💾 Simpan Project Sekarang
+              </button>
+              <div className="text-[10px] text-white/50 pt-2">
+                💡 Auto-save 30 detik. Max {MAX_DRAFTS} draft. Draft lama tidak akan tertimpa saat test update baru.
+              </div>
+              <div className="pt-2 border-t border-white/10 space-y-2">
+                {draftList.length===0 ? (
+                  <div className="text-center text-white/40 text-xs py-8">Belum ada draft tersimpan.</div>
+                ) : draftList.map(d=>(
+                  <div key={d.id} className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center gap-2">
+                    <div className="w-12 h-12 rounded-lg bg-purple-900/50 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                      {d.thumb && d.thumb.length>100 ? (
+                        <img src={d.thumb} className="w-full h-full object-cover" alt=""/>
+                      ) : (
+                        <span className="text-lg">🎞️</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate">{d.title}</div>
+                      <div className="text-[10px] text-white/50 flex gap-2 flex-wrap">
+                        <span>🖼️ {d.slides||0} slide</span>
+                        <span>• Step {d.step||1}/5</span>
+                        <span>• {new Date(d.updatedAt).toLocaleDateString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+                      </div>
+                    </div>
+                    <button onClick={()=>loadDraft(d.id)} className="shrink-0 px-3 py-1.5 rounded-lg bg-pink-500/80 hover:bg-pink-500 text-white text-[11px] font-bold">Buka</button>
+                    <button onClick={()=>{if(confirm("Hapus draft ini?"))deleteDraft(d.id);}} className="shrink-0 w-8 h-8 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-200 text-sm">🗑️</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -2302,26 +2539,6 @@ function MetaRow({label,value,onCopy,copied,multiline}:{label:string;value:strin
         <div className="text-xs sm:text-sm bg-black/40 rounded-lg p-3 border border-white/10 break-all">{value}</div>
       )}
     </div>
-  );
-}
-
-function Header() {
-  return (
-    <header className="flex items-center justify-between gap-2 min-w-0">
-      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl hero-icon flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">
-          🎞️
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-lg sm:text-3xl font-black tracking-tight leading-none truncate">
-            Verve <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">AI Video Studio</span>
-          </h1>
-          <p className="text-[10px] sm:text-xs text-white/50 mt-1 truncate">
-            Keyword → Judul → Gambar → Spectrum → Video · Super Cepat ⚡
-          </p>
-        </div>
-      </div>
-    </header>
   );
 }
 
