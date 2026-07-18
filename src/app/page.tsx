@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import SpectrumVisualizer from "@/components/SpectrumVisualizer";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
-import type { Quality as RenderQuality, Transition } from "@/lib/recorder";
+import type { Quality as RenderQuality, Transition, CaptionStyle } from "@/lib/recorder";
 import { cropImageToRatio, copyToClipboard } from "@/lib/imgutils";
 import {
   VIZ_STYLES, TRANSITION_STYLES, QUALITY_OPTIONS, ASPECT_RATIOS,
@@ -180,6 +180,7 @@ export default function Home() {
   const [transition, setTransition] = useState<Transition>("zoom");
   const [showTitle, setShowTitle] = useState(true);
   const [showLyrics, setShowLyrics] = useState(true);
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("capcut");
   const [logoDataUrl, setLogoDataUrl] = useState<string>("");
   const [logoPosition, setLogoPosition] = useState<"center"|"corner"|"none">("center");
   const [storyboard, setStoryboard] = useState<any|null>(null);
@@ -551,6 +552,7 @@ export default function Home() {
         logoPosition,
         quality, mobileOptimized: isMobile, ratio: aspectRatio, aspectRatio,
         transition, showTitle, showLyrics: showLyrics && hasLyrics,
+        captionStyle: showLyrics ? captionStyle : "none",
         onProgress: (p) => {
           setProgress(p);
           const elapsed = (Date.now()-renderStartRef.current)/1000;
@@ -1260,6 +1262,24 @@ Dibuat dengan Verve AI Video Studio`;
                   </div>
                   <div className={`toggle ${showLyrics?"on":""}`} onClick={()=>setShowLyrics(v=>!v)}/>
                 </div>
+
+                {showLyrics && (
+                  <div>
+                    <span className="lbl">💬 Gaya keterangan/caption (CapCut-style)</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        {id:"capcut", label:"🟡 CapCut Pop", desc:"Kata menyala kuning"},
+                        {id:"neon", label:"💫 Neon", desc:"Highlight progresif"},
+                      ].map(s=>(
+                        <button key={s.id} onClick={()=>setCaptionStyle(s.id as CaptionStyle)}
+                          className={`style-card ${captionStyle===s.id?"active":""}`}>
+                          <div className="text-xs sm:text-sm font-bold">{s.label}</div>
+                          <div className="text-[10px] text-white/60 mt-0.5">{s.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Quality */}
                 <div>
