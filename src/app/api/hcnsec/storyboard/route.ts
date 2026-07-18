@@ -1,132 +1,113 @@
 import { NextResponse } from "next/server";
 import { chat } from "@/lib/hcnsec";
 
-/**
- * Buat storyboard/adegan PER SLIDE.
- * Format: marker-based (TIDAK JSON), anti-parse-error.
- */
 export const dynamic = "force-dynamic";
 
+const PROLOGUE = `Kamu penulis skenario video musik. Tugasmu buat storyboard untuk video musik.
+
+JUDUL CERITA: {{TITLE}}
+KATA KUNCI: {{KW}}
+NICHE: {{NICHE}}
+JUMLAH ADEGAN: {{N}}
+
+TULIS OUTPUT SESUAI FORMAT DI BAWAH INI, TEPAT, TANPA CATATAN TAMBAHAN, TANPA BACKTICKS, TANPA KODE, TANPA TANDA KURUNG KURAWAL:
+
+MULAI-FORMAT
+STYLE_VISUAL: cinematic
+COLOR: #c98872
+TITLE: {{TITLE}}
+SCENE_START
+SCENE_NUMBER: 1
+DESKRIPSI: deskripsi detail adegan
+LIRIK: satu baris lirik
+MOOD: sad
+VISUAL_EN: visual prompt english
+SCENE_END
+AKHIR-FORMAT
+
+Aturan:
+- JANGAN gunakan tanda kutip ganda " di dalam teks
+- Setiap scene BERBEDA (beda komposisi, setting, pencahayaan)
+- Visual harus spesifik (close-up tangan keriput ibu memegang foto)
+- Jumlah scene TEPAT {{N}}
+- Mulai output tepat setelah MULAI-FORMAT, akhiri sebelum AKHIR-FORMAT`;
+
 async function tryGenerate(title: string, keyword: string, niche: string, n: number, attempt: number): Promise<any> {
-  const extra = attempt > 1
-    ? "\n\nPERATURAN TAMBAHAN (WAJIB):\n- JANGAN gunakan tanda kutip ganda di dalam lirik atau deskripsi (cukup kutip satu atau tidak sama sekali)\n- Jumlah scene HARUS TEPAT " + n + " buah\n- Jangan tambahkan catatan apapun di luar format, ini untuk diproses program."
-    : "";
-  const sys =
-`Kamu sutradara video klip. Buat storyboard untuk video bertema "${title}" (keyword: ${keyword||"-"}, niche: ${niche||"-"}) dengan ${n} adegan.
-
-PENTING: Output HANYA dalam FORMAT DI BAWAH INI, teks polos tanpa penjelasan tambahan, tanpa markdown, tanpa JSON, tanpa code block:
-
-===STYLE_VISUAL===
-(satu kata: cinematic/anime/studio/fantasy/cyberpunk/pixar/oil/minimalist)
-===COLOR===
-(hex warna tema, cth: #c98872)
-===TITLE===
-(judul singkat)
-===SCENE===
-nomor: 1
-deskripsi: (2-3 kalimat apa yang terjadi di adegan, jelas, emosional, spesifik, JANGAN pakai tanda kutip ganda di dalam teks)
-lirik: (satu baris lirik bahasa indonesia 5-9 kata, menyentuh, sesuai adegan, TANPA kutip ganda)
-mood: (satu kata emosi: sad/warm/hopeful/epic/calm/tense/dramatic/peaceful/melancholic/joyful)
-prompt_en: (visual prompt BAHASA INGGRIS 25-40 kata: sebut shot type, subjek, ekspresi, setting, lighting, warna, cinematic 8k photorealistic — TANPA tanda kutip ganda di dalam)
-===SCENE===
-nomor: 2
-deskripsi: ...
-...dst sampai scene ${n}
-${extra}`;
-
+  let sys = PROLOGUE
+    .replace(/\{\{TITLE\}\}/g, String(title||"").slice(0,80))
+    .replace(/\{\{KW\}\}/g, String(keyword||"-").slice(0,80))
+    .replace(/\{\{NICHE\}\}/g, String(niche||"-").slice(0,80))
+    .replace(/\{\{N\}\}/g, String(n));
+  if (attempt > 1) sys += "\n\nPERINGATAN: JANGAN PERNAH mengembalikan JSON, array, atau object. Gunakan FORMAT DI ATAS SAJA dengan SCENE_START/SCENE_END. TANDA { } [ ] DILARANG.";
   const raw = await chat([{ role: "user", content: sys }]);
-  return parseStoryboard(raw, n);
+  return parseStoryboardText(raw, n);
 }
 
-function parseStoryboard(raw: string, expectedN: number): any {
-  // Bersihkan code fence jika ada
-  let s = raw.replace(/```[a-z]*/gi, "").replace(/```/g, "").trim();
+function extract(raw: string): string {
+  let s = String(raw||"").replace(/```[a-z]*/gi,"").replace(/```/g,"");
+  const i1 = s.indexOf("MULAI-FORMAT");
+  const i2 = s.lastIndexOf("AKHIR-FORMAT");
+  if (i1>=0 && i2>i1) s = s.slice(i1+12, i2);
+  else if (i1>=0) s = s.slice(i1+12);
+  return s;
+}
 
-  const result: any = {
-    title: "",
-    style_visual: "cinematic",
-    color_grade: "#a855f7",
-    scenes: [] as any[],
-  };
+function getField(block: string, key: string): string {
+  const re = new RegExp(`${key}\\s*:\\s*([^\\n]*(?:\\n(?![A-Z_]+(?:_START|:))[^\\n]*)*)`, "i");
+  const m = block.match(re);
+  if (!m) return "";
+  return m[1].replace(/"/g, "'").replace(/\s+/g," ").trim();
+}
 
-  // Ambil style_visual
-  const sv = s.match(/===STYLE_VISUAL===\s*\n([\s\S]*?)(?=\n===|$)/);
-  if (sv) {
-    const v = sv[1].trim().split("\n")[0].trim().toLowerCase().replace(/[^a-z]/g, "");
-    if (v) result.style_visual = v;
+function parseStoryboardText(raw: string, expectedN: number): any {
+  const body = extract(raw);
+  const out: any = { title:"", style_visual:"cinematic", color_grade:"#a855f7", scenes:[] as any[] };
+  const styleMatch = body.match(/STYLE_VISUAL\s*:\s*([^\n]+)/i);
+  if (styleMatch) {
+    const v = styleMatch[1].trim().toLowerCase().replace(/[^a-z]/g,"");
+    if (v) out.style_visual = v;
   }
-  const col = s.match(/===COLOR===\s*\n([\s\S]*?)(?=\n===|$)/);
-  if (col) {
-    const v = col[1].trim().split("\n")[0].trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(v)) result.color_grade = v;
-  }
-  const tt = s.match(/===TITLE===\s*\n([\s\S]*?)(?=\n===|$)/);
-  if (tt) {
-    result.title = tt[1].trim().split("\n")[0].trim().slice(0, 100);
-  }
-
-  // Split per scene
-  const sceneBlocks = s.split(/===SCENE===/g).slice(1);
-  for (const block of sceneBlocks) {
-    const get = (key: string) => {
-      const re = new RegExp(`${key}\\s*:\\s*([^\\n]*(?:\\n(?![a-z_]+:)[^\\n]*)*)`, "i");
-      const m = block.match(re);
-      return m ? m[1].trim().replace(/\n+/g," ").replace(/\s+/g," ").replace(/"/g,"'") : "";
-    };
-    const no = parseInt(get("nomor")) || result.scenes.length + 1;
-    const desc = get("deskripsi").slice(0, 300);
-    const lyric = get("lirik").slice(0, 120);
-    const mood = get("mood").split(/[,\s.]+/)[0].toLowerCase().slice(0,20);
-    const visual = get("prompt_en").slice(0, 500);
+  const colMatch = body.match(/COLOR\s*:\s*(#[0-9a-fA-F]{6})/);
+  if (colMatch) out.color_grade = colMatch[1];
+  const titleMatch = body.match(/TITLE\s*:\s*([^\n]+)/i);
+  if (titleMatch) out.title = titleMatch[1].trim().slice(0,100);
+  const blocks = body.split(/SCENE_START/i).slice(1);
+  for (const blk of blocks) {
+    const block = blk.split(/SCENE_END/i)[0];
+    const no = parseInt(getField(block,"SCENE_NUMBER")) || out.scenes.length+1;
+    const desc = getField(block,"DESKRIPPSI").slice(0,300);
+    const lyric = getField(block,"LIRIK").slice(0,120);
+    const mood = (getField(block,"MOOD").split(/[,\s.]+/)[0]||"calm").toLowerCase().slice(0,20);
+    let visual = getField(block,"VISUAL_EN").slice(0,500);
+    if (visual.length<10 && desc)
+      visual = `Cinematic shot, ${desc.slice(0,200)}, cinematic lighting, 8k, photorealistic`;
     if (!desc && !visual) continue;
-    result.scenes.push({
-      scene: no,
-      scene_desc: desc,
-      lyric_line: lyric,
-      visual_prompt: visual,
-      mood: mood || "calm",
-    });
+    out.scenes.push({ scene:no, scene_desc:desc, lyric_line:lyric, visual_prompt:visual, mood });
   }
-  if (result.scenes.length === 0) throw new Error("Gagal memparsing adegan. Coba lagi.");
-
-  // Normalisasi jumlah scene
-  while (result.scenes.length < expectedN) {
-    const last = result.scenes[result.scenes.length-1];
-    result.scenes.push({
-      scene: result.scenes.length+1,
-      scene_desc: last.scene_desc,
-      lyric_line: last.lyric_line,
-      visual_prompt: last.visual_prompt,
-      mood: last.mood,
-    });
+  if (out.scenes.length===0) throw new Error("Tidak bisa parse adegan, coba lagi.");
+  while (out.scenes.length < expectedN) {
+    out.scenes.push({...out.scenes[out.scenes.length-1], scene: out.scenes.length+1});
   }
-  if (result.scenes.length > expectedN) result.scenes = result.scenes.slice(0, expectedN);
-  // Re-number
-  result.scenes.forEach((sc:any,i:number)=>{sc.scene=i+1;});
-  return result;
+  if (out.scenes.length > expectedN) out.scenes = out.scenes.slice(0,expectedN);
+  out.scenes.forEach((s:any,i:number)=>{s.scene=i+1;});
+  return out;
 }
 
 export async function POST(req: Request) {
   try {
     const { title, keyword, niche, slides } = await req.json();
     if (!title) return NextResponse.json({ error: "Judul kosong" }, { status: 400 });
-    const n = Math.max(2, Math.min(12, Number(slides) || 4));
-
+    const n = Math.max(2, Math.min(12, Number(slides)||4));
     let lastErr: any = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt=1; attempt<=3; attempt++){
       try {
-        const parsed = await tryGenerate(title, keyword || "", niche || "", n, attempt);
-        if (!parsed.scenes || parsed.scenes.length < n/2) throw new Error("Scene kurang dari separuh target");
+        const parsed = await tryGenerate(title, keyword||"", niche||"", n, attempt);
+        if (!parsed.scenes || parsed.scenes.length < Math.max(1, n-1)) throw new Error("scene kurang");
         return NextResponse.json(parsed);
-      } catch (e: any) {
-        lastErr = e;
-      }
+      } catch(e:any){ lastErr = e; }
     }
-    return NextResponse.json(
-      { error: `Storyboard gagal setelah 3x percobaan: ${lastErr?.message || ""}` },
-      { status: 500 }
-    );
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Gagal buat storyboard" }, { status: 500 });
+    return NextResponse.json({ error:`Storyboard gagal: ${lastErr?.message||"coba lagi"}` },{status:500});
+  } catch(e:any){
+    return NextResponse.json({ error:e.message||"Gagal buat storyboard" },{status:500});
   }
 }

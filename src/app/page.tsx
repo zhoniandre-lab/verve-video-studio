@@ -137,7 +137,10 @@ export default function Home() {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify(body),
       });
-      const data = await r.json();
+      let data: any = {};
+      const txt = await r.text();
+      try { data = txt ? JSON.parse(txt) : {}; }
+      catch { data = { error: `Server error ${r.status}: ${txt.slice(0,200)}` }; }
       if (!r.ok || data.error) {
         const msg = data.error || data.message || `Error ${r.status}`;
         throw new Error(msg);
