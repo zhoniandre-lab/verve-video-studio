@@ -278,6 +278,8 @@ export default function Home() {
   const [lyrics, setLyrics] = useState<any|null>(null);
   const [aiMusicUrl, setAiMusicUrl] = useState<string>("");
   const [aiMusicStatus, setAiMusicStatus] = useState<string>("");
+  const [aiMusicTaskId, setAiMusicTaskId] = useState<string>(""); // simpan taskId buat re-cek manual
+  const [aiMusicPolling, setAiMusicPolling] = useState<boolean>(false);
 
   // Suno style panel — mirip Kampung Music (Title + Lyrics + Deskripsi Utama terpisah)
   const [musicTitle, setMusicTitle] = useState<string>("");
@@ -892,6 +894,7 @@ Dibuat dengan Verve AI Video Studio`;
 
     setStageText(`Meminta AI membuat lagu "${title.slice(0,40)}"... (12 kredit ${sunoProvider})`);
     setLoading("aimusic"); setAiMusicStatus("memulai..."); setAiMusicUrl("");
+    setAiMusicTaskId(""); setAiMusicPolling(true);
     setError("");
     setMusicGeneratedFrom(title);
     try {
@@ -946,16 +949,23 @@ Dibuat dengan Verve AI Video Studio`;
       if (data.audio_url) {
         setAiMusicUrl(data.audio_url);
         setAiMusicStatus("selesai");
+        setAiMusicPolling(false);
         setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${data.provider||sunoProvider})`);
         setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
       } else if (data.id) {
-        setAiMusicStatus("memproses...");
+        setAiMusicTaskId(data.id);
+        setAiMusicStatus("antri...");
+        const pollStart = Date.now();
+        const MAX_POLL_MS = 8 * 60 * 1000; // 8 menit — V5.5 kadang 5-6 menit
+        const pollInterval = 4000; // 4 detik per cek (lebih ramah)
         let done = false;
-        for (let i=0;i<60;i++){
-          await new Promise(res=>setTimeout(res,3000));
+        let i = 0;
+        while (Date.now() - pollStart < MAX_POLL_MS) {
+          i++;
+          await new Promise(res=>setTimeout(res,pollInterval));
           try {
             const ac = new AbortController();
-            const t2 = setTimeout(()=>ac.abort(), 20000);
+            const t2 = setTimeout(()=>ac.abort(), 25000);
             const pr = await fetch(`/api/hcnsec/music?id=${data.id}`, {
               headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider} : {},
               signal: ac.signal, cache:"no-store",
@@ -963,32 +973,96 @@ Dibuat dengan Verve AI Video Studio`;
             clearTimeout(t2);
             if (pr.ok) {
               const pd = await pr.json().catch(()=>({}));
-              setAiMusicStatus(`memproses... ${Math.round((i+1)/60*100)}%`);
-              if (pd.audio_url) {
-                setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai");
+              const elapsed = Math.round((Date.now()-pollStart)/1000);
+              const pct = Math.min(99, Math.round(elapsed/(MAX_POLL_MS/1000)*100));
+              // Status text lebih informatif
+              let st = pd.status || "";
+              if (st === "pending") setAiMusicStatus(`antri... ${pct}% (${elapsed}s)`);
+              else if (st === "TEXT_SUCCESS") setAiMusicStatus(`lirik ready, generate audio... ${pct}%`);
+              else if (st === "FIRST_SUCCESS" && !pd.audio_url) setAiMusicStatus(`track 1 ready, menit track 2... ${pct}%`);
+              else setAiMusicStatus(`memproses... ${pct}% (${elapsed}s)`);
+              // Terima audio_url dari response manapun
+              const audioUrl = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
+              if (audioUrl) {
+                setAiMusicUrl(audioUrl); setAiMusicStatus("selesai");
+                setAiMusicPolling(false);
                 setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${pd.provider||sunoProvider})`);
                 setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
                 done = true;
                 break;
               }
-              if (pd.status === "error" || pd.error) throw new Error(pd.error||"Gagal generate musik");
+              if (pd.status === "error" || pd.error) {
+                // Kalau error tapi masih ada waktu, jangan throw — coba lagi
+                if (Date.now() - pollStart < 60000) continue;
+                throw new Error(pd.error||"Gagal generate musik");
+              }
             } else {
-              setAiMusicStatus(`wait... ${Math.round((i+1)/60*100)}%`);
+              const elapsed = Math.round((Date.now()-pollStart)/1000);
+              setAiMusicStatus(`wait server... (${elapsed}s)`);
             }
           } catch(pollErr:any) {
-            // retry di iterasi berikutnya
-            setAiMusicStatus(`jaringan retry ${Math.round((i+1)/60*100)}%`);
+            // retry di iterasi berikutnya (jangan lempar error, jangan break loop)
+            setAiMusicStatus(`jaringan retry...`);
           }
         }
-        if (!done) setStageText("⏳ Lagu masih diproses server. Klik CREATE lagi nanti untuk cek status (tidak pakai kredit tambahan).");
+        if (!done) {
+          setAiMusicStatus("masih diproses server — tap 🔄 Cek Status di bawah (gratis, tanpa kredit)");
+          setAiMusicPolling(false);
+          setStageText("⏳ Lagu masih diolah Kie.ai. Klik tombol 🔄 Cek Status sebentar lagi ya bro (TIDAK pakai kredit).");
+        }
       } else {
+        setAiMusicPolling(false);
         setStageText("⚠️ AI music belum merespon. Coba lagi ya bro.");
       }
     } catch(e:any){
       setErr(e.message || "AI music gagal.");
       setAiMusicStatus("gagal");
+      setAiMusicPolling(false);
     }
-    setTimeout(()=>setStageText(""),4000); setLoading(null);
+    setTimeout(()=>setStageText(""),6000); setLoading(null);
+  }
+
+  // Re-check status taskId yang sudah dibuat (TIDAK pakai kredit baru)
+  async function doCheckAiMusicStatus() {
+    const id = aiMusicTaskId;
+    if (!id) return setErr("Belum ada taskId buat dicek. Coba CREATE dulu ya bro.");
+    setError("");
+    setAiMusicPolling(true);
+    setAiMusicStatus("mengecek...");
+    try {
+      const ac = new AbortController();
+      const t = setTimeout(()=>ac.abort(), 25000);
+      const pr = await fetch(`/api/hcnsec/music?id=${id}`, {
+        headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider} : {},
+        signal: ac.signal, cache:"no-store",
+      });
+      clearTimeout(t);
+      if (!pr.ok) throw new Error(`Server error ${pr.status}. Coba sebentar lagi ya.`);
+      const pd = await pr.json().catch(()=>({}));
+      const audioUrl = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
+      if (audioUrl) {
+        setAiMusicUrl(audioUrl);
+        setAiMusicStatus("selesai");
+        setAiMusicPolling(false);
+        const title = musicGeneratedFrom || musicTitle;
+        setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${pd.provider||sunoProvider})`);
+        setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
+        setTimeout(()=>setStageText(""),4000);
+        return;
+      }
+      if (pd.status === "error" || pd.error) {
+        setAiMusicStatus("gagal");
+        setAiMusicPolling(false);
+        setErr(pd.error || "Gagal generate musik. Coba CREATE ulang ya bro.");
+        return;
+      }
+      // Masih pending
+      setAiMusicStatus(`masih diproses (${pd.status||"pending"}) — cek lagi 30-60 detik ya bro`);
+    } catch(e:any){
+      setErr(e.message || "Gagal cek status. Coba lagi.");
+      setAiMusicStatus("cek status gagal");
+    }
+    setAiMusicPolling(false);
   }
 
   function handleLogoUpload(f: File|undefined) {
@@ -1463,14 +1537,27 @@ Dibuat dengan Verve AI Video Studio`;
                       <button className="btn btn-ghost text-xs py-2.5" onClick={()=>{
                         setMusicTitle(selectedTitle?.text||""); setMusicLyrics(""); setMusicStylePrompt("");
                         setAiMusicUrl(""); setAiMusicStatus(""); setSunoCredits("");
+                        setAiMusicTaskId(""); setAiMusicPolling(false);
                       }}>Clear</button>
                     </div>
 
-                    {aiMusicStatus && <div className="text-[11px] text-white/60 break-word">Status: {aiMusicStatus}</div>}
+                    {aiMusicStatus && (
+                      <div className="flex items-start gap-2 justify-between">
+                        <div className="text-[11px] text-white/70 break-word flex-1">Status: {aiMusicStatus}</div>
+                        {aiMusicTaskId && !aiMusicUrl && !aiMusicPolling && (
+                          <button onClick={doCheckAiMusicStatus}
+                            className="shrink-0 text-[11px] px-2.5 py-1.5 rounded-lg bg-purple-500/30 hover:bg-purple-500/50 text-purple-100 border border-purple-400/30 whitespace-nowrap">
+                            🔄 Cek Status
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {aiMusicUrl && (
                       <div className="bg-black/30 rounded-lg p-2 border border-white/10">
                         <div className="text-[11px] text-green-300 mb-1 font-bold">✅ Lagu siap — {musicGeneratedFrom || musicTitle}</div>
                         <audio controls src={aiMusicUrl} className="w-full"/>
+                        <a href={aiMusicUrl} download={`${musicGeneratedFrom||"verve-song"}.mp3`}
+                          className="block text-center mt-2 text-[11px] text-purple-200 underline">⬇️ Download MP3</a>
                       </div>
                     )}
                   </div>
