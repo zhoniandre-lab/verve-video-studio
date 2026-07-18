@@ -346,18 +346,19 @@ export default function Home() {
     setNKeywords(mobileNow ? 3 : 5);
     setTransitionDur(mobileNow ? 0.5 : 0.8);
 
-    // Coba restore draft dari sessionStorage (supaya tidak hilang saat refresh/rotasi/toggle desktop site)
+    // === PERSISTEN DRAFT (localStorage) — backup kalau sessionStorage hilang (tab tertutup/HP mati) ===
+    const LS_KEY = "verve_draft_v1";
     let restoredSlides: Slide[] = [];
     let restoredLyrics: string[] = [];
     let restoredLogo = "";
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const d = JSON.parse(raw);
-        if (typeof d.step === "number") setStep(d.step);
+    let restoredFrom: "session"|"local"|null = null;
+    let restoredStep = 1;
+    const applyDraft = (d:any, src:"session"|"local") => {
+      try {
+        if (typeof d.step === "number") { setStep(d.step); restoredStep = d.step; }
         if (d.niche) setNiche(d.niche);
         if (d.keywordMode) setKeywordMode(d.keywordMode);
-        if (d.manualKeywords) setManualKeywords(d.manualKeywords);
+        if (typeof d.manualKeywords==="string") setManualKeywords(d.manualKeywords);
         if (d.nKeywords) setNKeywords(d.nKeywords);
         if (Array.isArray(d.keywords)) setKeywords(d.keywords);
         if (Array.isArray(d.titles)) setTitles(d.titles);
@@ -368,7 +369,7 @@ export default function Home() {
         if (d.nSlides) setNSlides(d.nSlides);
         if (d.audioMode) setAudioMode(d.audioMode);
         if (d.ttsVoice) setTtsVoice(d.ttsVoice);
-        if (d.ttsText) setTtsText(d.ttsText);
+        if (typeof d.ttsText==="string") setTtsText(d.ttsText);
         if (d.vizStyle) setVizStyle(d.vizStyle);
         if (d.vizColor) setVizColor(d.vizColor);
         if (typeof d.slideDuration === "number") setSlideDuration(d.slideDuration);
@@ -381,72 +382,135 @@ export default function Home() {
         if (d.musicModel) setMusicModel(d.musicModel);
         if (d.musicVocalType) setMusicVocalType(d.musicVocalType);
         if (d.musicVocalGender) setMusicVocalGender(d.musicVocalGender);
+        if (typeof d.musicEra==="string") setMusicEra(d.musicEra);
+        if (typeof d.musicTempo==="string") setMusicTempo(d.musicTempo);
+        if (typeof d.musicInstruments==="string") setMusicInstruments(d.musicInstruments);
+        // === AI MUSIC fields (ini yang paling bikin nyesel ilang!) ===
+        if (typeof d.musicTitle==="string") setMusicTitle(d.musicTitle);
+        if (typeof d.musicLyrics==="string") setMusicLyrics(d.musicLyrics);
+        if (typeof d.musicStylePrompt==="string") setMusicStylePrompt(d.musicStylePrompt);
+        if (d.aiMusicUrl) { setAiMusicUrl(d.aiMusicUrl); setSunoCredits(d.sunoCredits||"✅ Lagu AI tersimpan"); setMusicGeneratedFrom(d.musicGeneratedFrom||""); }
         if (d.logoPosition) setLogoPosition(d.logoPosition);
         if (d.storyboard) setStoryboard(d.storyboard);
-        // Restore slides (sudah di-downscale jadi 1280px jadi relatif kecil untuk sessionStorage ~5MB max)
+        // Restore slides
         if (Array.isArray(d.slides) && d.slides.length && d.slides[0]?.imageUrl) {
           restoredSlides = d.slides.slice(0,12);
           restoredLyrics = Array.isArray(d.lyricLines) && d.lyricLines.length === restoredSlides.length
             ? d.lyricLines : restoredSlides.map((s:any)=>s.lyric||"");
+          restoredFrom = src;
         }
         if (d.logoDataUrl) restoredLogo = d.logoDataUrl;
-      }
+      } catch(e) { console.warn("restore draft gagal:",e); }
+    };
+
+    // Prioritas: sessionStorage (paling baru) → localStorage (backup)
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) applyDraft(JSON.parse(raw), "session");
     } catch {}
-    // Restore slides/logo di microtask supaya tidak blocking render awal
+    try {
+      const rawL = localStorage.getItem(LS_KEY);
+      if (!restoredSlides.length && rawL) applyDraft(JSON.parse(rawL), "local");
+    } catch {}
+
+    // Banner restore
     if (restoredSlides.length) {
       setTimeout(()=>{
         setSlides(restoredSlides);
         setLyricLines(restoredLyrics);
         if (restoredLogo) setLogoDataUrl(restoredLogo);
-        setStageText(`💾 Draft tersimpan otomatis — ${restoredSlides.length} slide dipulihkan`);
-        setTimeout(()=>setStageText(""), 2500);
+        setStageText(`💾 Draft dipulihkan (${restoredFrom==="local"?"tersimpan permanen":"session"}) — ${restoredSlides.length} slide • step ${restoredStep}`);
+        setTimeout(()=>setStageText(""), 4000);
       }, 30);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-save draft ke sessionStorage (setiap perubahan state penting)
+  // Auto-save draft ke sessionStorage (cepat, tiap 700ms) + localStorage (backup permanen, tiap 5s)
   useEffect(() => {
     if (!didInit.current) return;
-    const t = setTimeout(() => {
+    const buildSnap = () => {
+      const compactSlides = slides.map(s=>{
+        if (!s.imageUrl || !s.imageUrl.startsWith("data:")) return s;
+        if (s.imageUrl.length > 600_000) return { ...s, _tooBig: true, imageUrl:"" }; // buang dataURL besar di localStorage
+        return s;
+      });
+      const anyTooBig = compactSlides.some((s:any)=>s._tooBig);
+      return {
+        v: 3, savedAt: Date.now(),
+        step, niche, keywordMode, manualKeywords, nKeywords,
+        keywords: keywords.slice(0,30),
+        titles: titles.slice(0,50).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
+        selectedTitleId, imageSource, imageStyle, aspectRatio, nSlides,
+        audioMode, ttsVoice, ttsText,
+        vizStyle, vizColor, slideDuration, transitionDur, transition,
+        showTitle, showLyrics, logoPosition, logoDataUrl: logoDataUrl.slice(0,150_000),
+        musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
+        musicEra, musicTempo, musicInstruments,
+        musicTitle: musicTitle.slice(0,80),
+        musicStylePrompt: musicStylePrompt.slice(0,1000),
+        // lyrics tidak disimpan (bisa besar, bikin quota penuh)
+        aiMusicUrl, musicGeneratedFrom, sunoCredits,
+        storyboard,
+        slides: anyTooBig ? [] : compactSlides,
+        lyricLines: anyTooBig ? [] : lyricLines.slice(0,12),
+      };
+    };
+    const saveSession = () => {
       try {
-        // Jangan simpan dataURL gambar yang besar (lebih dari ~800KB per slide) untuk hindari quota
-        const compactSlides = slides.map(s=>{
+        // Session: simpan versi penuh (dataURL lebih longgar)
+        const full = slides.map(s=>{
           if (!s.imageUrl || !s.imageUrl.startsWith("data:")) return s;
-          // data:image/jpeg;base64,...  → cek panjang
-          if (s.imageUrl.length > 800_000) return { ...s, _tooBig: true };
+          if (s.imageUrl.length > 800_000) return { ...s, _tooBig: true, imageUrl:"" };
           return s;
         });
-        const anyTooBig = compactSlides.some((s:any)=>s._tooBig);
-        const snap = {
-          v: 2, savedAt: Date.now(),
-          step, niche, keywordMode, manualKeywords, nKeywords,
-          keywords: keywords.slice(0,30),
-          titles: titles.slice(0,50).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
-          selectedTitleId, imageSource, imageStyle, aspectRatio, nSlides,
-          audioMode, ttsVoice, ttsText,
-          vizStyle, vizColor, slideDuration, transitionDur, transition,
-          showTitle, showLyrics, logoPosition, logoDataUrl: logoDataUrl.slice(0,200_000),
-          musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
-          storyboard,
-          slides: anyTooBig ? [] : compactSlides,
-          lyricLines: anyTooBig ? [] : lyricLines.slice(0,12),
-        };
-        try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snap)); }
-        catch(e:any) {
-          // Quota exceeded — coba tanpa slides
-          try {
-            sessionStorage.setItem(STORAGE_KEY, JSON.stringify({...snap, slides:[], lyricLines:[], logoDataUrl:""}));
-          } catch {}
-        }
-      } catch {}
-    }, 700);
-    return () => clearTimeout(t);
+        const big = full.some((s:any)=>s._tooBig);
+        const fullSnap = { ...buildSnap(), slides: big?[]:full, lyricLines: big?[]:lyricLines.slice(0,12) };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(fullSnap));
+      } catch { try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify({...buildSnap(),slides:[],lyricLines:[],logoDataUrl:""})); } catch {} }
+    };
+    const t1 = setTimeout(saveSession, 700);
+    return () => clearTimeout(t1);
   }, [step, niche,keywordMode,manualKeywords,nKeywords,keywords,titles,selectedTitleId,
       imageSource,imageStyle,aspectRatio,nSlides,slides,audioMode,ttsVoice,ttsText,
       vizStyle,vizColor,slideDuration,transitionDur,transition,
       showTitle,showLyrics,logoDataUrl,logoPosition,musicGenre,musicMood,musicModel,
-      musicVocalType,musicVocalGender,storyboard,lyricLines]);
+      musicVocalType,musicVocalGender,musicEra,musicTempo,musicInstruments,
+      musicTitle,musicStylePrompt,aiMusicUrl,musicGeneratedFrom,sunoCredits,
+      storyboard,lyricLines]);
+
+  // Backup permanen ke localStorage (throttle 5 detik) — tetap ada walau browser ditutup/HP mati
+  useEffect(() => {
+    if (!didInit.current) return;
+    const t = setTimeout(() => {
+      try {
+        const compactSlides = slides.map(s=>{
+          if (!s.imageUrl || !s.imageUrl.startsWith("data:")) return s;
+          if (s.imageUrl.length > 600_000) return { ...s, _tooBig:true, imageUrl:"" };
+          return s;
+        });
+        const big = compactSlides.some((s:any)=>s._tooBig);
+        const snap = {
+          v:3, savedAt:Date.now(),
+          step, niche, keywordMode, manualKeywords, nKeywords,
+          keywords: keywords.slice(0,20),
+          titles: titles.slice(0,20).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
+          selectedTitleId, aspectRatio, nSlides,
+          audioMode, vizStyle, vizColor, slideDuration, transitionDur, transition,
+          showTitle, showLyrics, logoPosition,
+          musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
+          musicTitle: musicTitle.slice(0,80), musicStylePrompt: musicStylePrompt.slice(0,500),
+          aiMusicUrl, musicGeneratedFrom,
+          slides: big?[]:compactSlides,
+          lyricLines: big?[]:lyricLines.slice(0,12),
+        };
+        localStorage.setItem("verve_draft_v1", JSON.stringify(snap));
+      } catch {}
+    }, 5000);
+    return ()=>clearTimeout(t);
+  }, [step,niche,selectedTitleId,aspectRatio,slides,audioMode,vizStyle,vizColor,
+      slideDuration,transitionDur,showTitle,showLyrics,musicGenre,musicModel,
+      musicTitle,musicStylePrompt,aiMusicUrl,lyricLines]);
 
   function setErr(e: any) {
     const msg = e?.message || e?.error || String(e || "Terjadi kesalahan");
