@@ -452,10 +452,24 @@ export default function Home() {
         setSlides(restoredSlides);
         setLyricLines(restoredLyrics);
         if (restoredLogo) setLogoDataUrl(restoredLogo);
-        setStageText(`💾 Draft dipulihkan (${restoredFrom==="local"?"tersimpan permanen":"session"}) — ${restoredSlides.length} slide • step ${restoredStep}`);
+        setStageText("💾 Session dipulihkan — "+restoredSlides.length+" slide • step "+restoredStep);
         setTimeout(()=>setStageText(""), 4000);
       }, 30);
     }
+    // Auto-show Draft Picker saat pertama kali buka app (jika ada draft tersimpan & user baru)
+    setTimeout(()=>{
+      try {
+        const raw = localStorage.getItem(DRAFTS_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        const hasDrafts = Array.isArray(arr) && arr.length>0;
+        const alreadySeen = localStorage.getItem("verve_seen_welcome")==="1";
+        if (hasDrafts && !alreadySeen && !restoredSlides.length) {
+          loadDraftsList();
+          setShowDraftPicker(true);
+          localStorage.setItem("verve_seen_welcome","1");
+        }
+      } catch {}
+    }, 600);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1262,7 +1276,7 @@ Dibuat dengan Verve AI Video Studio`;
       if (!currentDraftId) setCurrentDraftId(snap.id);
       const list = [snap, ...draftList.filter(x=>x.id!==snap.id)].slice(0,MAX_DRAFTS);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
-      setDraftList(list);
+      setDraftList(list.map((d:any)=>({id:d.id,title:d.title,slides:Array.isArray(d.slides)?d.slides.length:0,updatedAt:d.updatedAt,thumb:d.thumb||"",step:d.step||1})));
       setStageText(`💾 Draft tersimpan: "${snap.title}"`);
       setTimeout(()=>setStageText(""),2500);
     } catch(e:any) {
