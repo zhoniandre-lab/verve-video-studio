@@ -122,8 +122,15 @@ export default function Home() {
   const renderStartRef = useRef<number>(0);
   const selectedTitle = useMemo(() => titles.find(t=>t.id===selectedTitleId), [titles, selectedTitleId]);
 
-  useEffect(() => { setQuality(isMobile ? "fast" : "balanced"); }, [isMobile]);
-  useEffect(() => { setAspectRatio(isMobile ? "9:16" : "16:9"); }, [isMobile]);
+  // Set default quality/ratio HANYA saat pertama load (bukan saat resize) supaya pilihan user tidak hilang
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    setQuality(isMobile ? "fast" : "balanced");
+    setAspectRatio(isMobile ? "9:16" : "16:9");
+    setNSlides(isMobile ? 3 : 4);
+  }, []);
 
   function setErr(e: any) {
     const msg = e?.message || e?.error || String(e || "Terjadi kesalahan");
@@ -456,16 +463,21 @@ Dibuat dengan Verve AI Video Studio`;
       });
       setStoryboard(sb);
       if (sb.color_grade) setVizColor(sb.color_grade);
-      // Auto-apply style
       const styleMap: Record<string,string> = {
         cinematic:"cinematic", anime:"anime", studio:"studio", fantasy:"epic",
         cyberpunk:"cyberpunk", pixar:"3d", "3d":"3d", oil:"oil", minimalist:"minimalist", retro:"cinematic",
       };
-      const vsl = (sb.style_visual||"").toLowerCase();
+      const vsl = String(sb.style_visual||"").toLowerCase();
       for (const k of Object.keys(styleMap)) if (vsl.includes(k)) { setImageStyle(styleMap[k]); break; }
-      setStageText("✅ Storyboard siap! Klik 'Generate Gambar dari Cerita' untuk membuat gambar per adegan.");
-    } catch(e:any){ setErr(e.message); }
-    setTimeout(()=>setStageText(""),3000); setLoading(null);
+      // Auto-fill TTS text dari gabungan lirik per scene
+      if (sb.scenes && Array.isArray(sb.scenes)) {
+        const lirikFull = sb.scenes.map((s:any)=>s.lyric_line).filter(Boolean).join(". ");
+        if (lirikFull) setTtsText(lirikFull);
+      }
+      setStageText("✅ Storyboard + lirik siap! Lirik sudah terisi otomatis di Step 4.");
+      setTimeout(()=>setStageText(""), 3500);
+    } catch(e:any){ setErr(e.message); setTimeout(()=>setStageText(""),2000); }
+    setLoading(null);
   }
 
   async function doGenerateImagesFromStory() {

@@ -50,6 +50,20 @@ body::before {
 }
 main { position: relative; z-index: 1; }
 
+/* Mobile responsive tweaks */
+@media (max-width: 640px) {
+  .card { border-radius: 1rem; padding: 0.9rem; }
+  .section-title { font-size: 1.05rem; }
+  .btn { padding: 0.55rem 0.85rem; font-size: 0.8rem; min-height: 42px; }
+  .style-card { padding: 0.55rem; }
+  .style-card .text-sm { font-size: 0.75rem; }
+  .style-card .text-\[10px\] { font-size: 9px; }
+  .q-tile { padding: 0.5rem 0.25rem; }
+  .lbl { font-size: 0.7rem; }
+  input, select, textarea { font-size: 16px !important; } /* cegah iOS zoom */
+  .step-dot { width: 30px; height: 30px; font-size: 0.75rem; }
+}
+
 /* Glass card */
 .card {
   background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
