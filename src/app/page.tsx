@@ -14,7 +14,7 @@ type Mode = "slideshow" | "t2v";
 
 interface KeywordItem { id: string; text: string; }
 interface TitleItem { id: string; keyword: string; text: string; }
-interface Slide { id: string; imageUrl: string; }
+interface Slide { id: string; imageUrl: string; lyric?: string; }
 
 const COLOR_PRESETS = [
   { hex:"#ec4899", name:"Pink" },
@@ -90,6 +90,17 @@ export default function Home() {
   const [transitionDur, setTransitionDur] = useState(isMobile ? 0.5 : 0.8);
   const [transition, setTransition] = useState<Transition>("zoom");
   const [showTitle, setShowTitle] = useState(true);
+  const [showLyrics, setShowLyrics] = useState(true);
+  const [logoDataUrl, setLogoDataUrl] = useState<string>("");
+  const [logoPosition, setLogoPosition] = useState<"center"|"corner"|"none">("center");
+  const [storyboard, setStoryboard] = useState<any|null>(null);
+  const [lyrics, setLyrics] = useState<any|null>(null);
+  const [sceneImages, setSceneImages] = useState<string[]>([]);
+  const [aiMusicUrl, setAiMusicUrl] = useState<string>("");
+  const [aiMusicStatus, setAiMusicStatus] = useState<string>("");
+  const [musicGenre, setMusicGenre] = useState<string>("pop ballad");
+  const [musicMood, setMusicMood] = useState<string>("menyentuh, emosional");
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
 
   // Render
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
@@ -273,14 +284,41 @@ export default function Home() {
     setStageText("Menyiapkan render engine...");
     setMeta(null);
     try {
-      const audioUrl = await mixAudio();
+      // Tentukan audio (jika aiMusicUrl ada, pakai itu sebagai "music")
+      let chosenMusic = musicUrl;
+      if (aiMusicUrl) chosenMusic = aiMusicUrl;
+      const tmpMusic = musicUrl;
+      if (aiMusicUrl) (window as any).__musicOverride = aiMusicUrl;
+      const parts: string[] = [];
+      if ((audioMode==="tts"||audioMode==="both") && ttsUrl) parts.push(ttsUrl);
+      if ((audioMode==="music"||audioMode==="both") && chosenMusic) parts.push(chosenMusic);
+      if (audioMode==="aimusic" && aiMusicUrl) parts.push(aiMusicUrl);
+      let audioUrl: string|null = null;
+      if (parts.length === 1) audioUrl = parts[0];
+      else if (parts.length > 1) {
+        audioUrl = await mixAudioUrls(parts);
+      }
+
+      // Lyrics array per-slide
+      const lyricsArr = slides.map((s:any, i:number) => s.lyric || storyboard?.scenes?.[i]?.lyric_line || "").filter(Boolean);
+      // Jika lyrics full tersedia, ambil bagi per-slide
+      let lyricLines: string[] = [];
+      if (showLyrics) {
+        if (slides.some((s:any)=>s.lyric)) lyricLines = slides.map((s:any,i)=>s.lyric||"");
+        else if ((window as any)._lyrics?.length === slides.length) lyricLines = (window as any)._lyrics;
+      }
+
       const blob = await renderSlideshow({
         images: slides.map(s=>s.imageUrl),
         audioUrl: audioUrl || undefined,
         slideDuration, transitionDuration: transitionDur,
         vizStyle, vizColor, title: showTitle ? (selectedTitle?.text || niche) : undefined,
+        lyrics: showLyrics && lyricLines.length===slides.length ? lyricLines : undefined,
+        logoUrl: logoDataUrl || undefined,
+        logoPosition,
         quality, mobileOptimized: isMobile, ratio: aspectRatio, aspectRatio,
-        transition, onProgress: (p) => {
+        transition, showTitle, showLyrics: showLyrics && lyricLines.length===slides.length,
+        onProgress: (p) => {
           setProgress(p);
           const elapsed = (Date.now()-renderStartRef.current)/1000;
           if (p > 0.02) {
@@ -290,7 +328,6 @@ export default function Home() {
           if (p>0.05 && p<0.98) setStageText(`Rendering ${Math.round(p*100)}% • sisa ~${formatTime(Math.max(0,(elapsed/p*(1-p))))}`);
         },
         onStage: (s)=>setStageText(s),
-        showTitle,
       });
       setVideoBlob(blob);
       const u = URL.createObjectURL(blob);
@@ -308,6 +345,29 @@ export default function Home() {
     } catch(e:any){
       setErr(e.message || "Render gagal");
     } finally { setLoading(null); }
+  }
+
+  async function mixAudioUrls(parts: string[]): Promise<string|null> {
+    try {
+      setStageText("Menggabungkan audio...");
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      const actx = new AC();
+      const bufs = await Promise.all(parts.map(u => fetch(u).then(r=>r.arrayBuffer()).then(b=>actx.decodeAudioData(b.slice(0)))));
+      const maxLen = Math.max(...bufs.map(b=>b.length));
+      const sr = bufs[0].sampleRate; const ch = bufs[0].numberOfChannels;
+      const out = actx.createBuffer(ch, maxLen, sr);
+      for (let c=0;c<ch;c++){
+        const od = out.getChannelData(c);
+        for (let bi=0;bi<bufs.length;bi++){
+          const b = bufs[bi];
+          const d = b.getChannelData(Math.min(c, b.numberOfChannels-1));
+          const vol = bi>=1 ? 0.25 : 1;
+          for (let i=0;i<d.length;i++) od[i] = Math.max(-1,Math.min(1,od[i]+d[i]*vol));
+        }
+      }
+      const wav = bufferToWav(out); actx.close();
+      return URL.createObjectURL(new Blob([wav],{type:"audio/wav"}));
+    } catch(e){ return parts[0]; }
   }
 
   async function mixAudio(): Promise<string|null> {
@@ -382,6 +442,155 @@ Dibuat dengan Verve AI Video Studio`;
     a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 
+  // ===== STORY MODE (cerita → scenes → lirik) =====
+  async function doGenerateStoryboard() {
+    if (!selectedTitle) return setErr("Pilih judul dulu");
+    setStageText("Membuat storyboard emosional...");
+    setLoading("storyboard");
+    try {
+      const sb = await callApi("/storyboard", {
+        title: selectedTitle.text, keyword: selectedTitle.keyword, niche, slides: nSlides,
+      });
+      setStoryboard(sb);
+      if (sb.color_grade) setVizColor(sb.color_grade);
+      // Auto-apply style
+      const styleMap: Record<string,string> = {
+        cinematic:"cinematic", anime:"anime", studio:"studio", fantasy:"epic",
+        cyberpunk:"cyberpunk", pixar:"3d", "3d":"3d", oil:"oil", minimalist:"minimalist", retro:"cinematic",
+      };
+      const vsl = (sb.style_visual||"").toLowerCase();
+      for (const k of Object.keys(styleMap)) if (vsl.includes(k)) { setImageStyle(styleMap[k]); break; }
+      setStageText("✅ Storyboard siap! Klik 'Generate Gambar dari Cerita' untuk membuat gambar per adegan.");
+    } catch(e:any){ setErr(e.message); }
+    setTimeout(()=>setStageText(""),3000); setLoading(null);
+  }
+
+  async function doGenerateImagesFromStory() {
+    if (!storyboard?.scenes?.length) return setErr("Buat storyboard dulu");
+    setStageText(`Generate ${storyboard.scenes.length} gambar sesuai cerita...`);
+    setLoading("img-story");
+    const newSlides: Slide[] = [];
+    const errs: string[] = [];
+    const lyricLines: string[] = [];
+    for (let i=0;i<storyboard.scenes.length;i++){
+      const sc = storyboard.scenes[i];
+      setStageText(`Adegan ${i+1}/${storyboard.scenes.length}: ${sc.scene_desc?.slice(0,40)}...`);
+      try {
+        // Panggil image API dengan visual_prompt langsung
+        const styleObj = { suffix: sc.visual_prompt };
+        const res = await fetch("/api/hcnsec/image", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            title: sc.visual_prompt, keyword: "", niche: "", style: imageStyle, _rawPrompt: true,
+          }),
+        });
+        let data;
+        try { data = await res.json(); } catch { data={error:"bad json"}; }
+        if (!res.ok || data.error) throw new Error(data.error||`HTTP ${res.status}`);
+        const cropped = await cropImageToRatio(data.url, aspectRatio);
+        newSlides.push({ id:`sb${i}_${Date.now()}`, imageUrl: cropped, lyric: sc.lyric_line });
+        lyricLines.push(sc.lyric_line||"");
+      } catch(e:any){
+        errs.push(`#${i+1} ${sc.scene_desc?.slice(0,30)||""}: ${(e.message||"gagal").slice(0,80)}`);
+      }
+    }
+    if (newSlides.length) {
+      setSlides(newSlides);
+      setSceneImages(newSlides.map(s=>s.imageUrl));
+      setShowLyrics(true);
+      setError("");
+      setStageText(`✅ ${newSlides.length}/${storyboard.scenes.length} adegan siap dengan lirik!`);
+      (window as any)._lyrics = lyricLines;
+    } else {
+      setErr(`Gagal generate gambar cerita:\n${errs.join("\n")}`);
+    }
+    setTimeout(()=>setStageText(""),3000); setLoading(null);
+  }
+
+  async function doGenerateLyrics() {
+    if (!selectedTitle) return setErr("Pilih judul dulu");
+    setStageText("Menulis lirik lagu lengkap...");
+    setLoading("lyrics");
+    try {
+      const l = await callApi("/lyrics", {
+        title: selectedTitle.text, keyword: selectedTitle.keyword, niche,
+        genre: musicGenre, mood: musicMood,
+      });
+      setLyrics(l);
+      setStageText("✅ Lirik siap! Kamu bisa kirim ke AI music.");
+    } catch(e:any){ setErr(e.message); }
+    setTimeout(()=>setStageText(""),2500); setLoading(null);
+  }
+
+  async function doGenerateAIMusic() {
+    if (!selectedTitle) return setErr("Pilih judul dulu");
+    setStageText("Meminta AI membuat lagu (bisa 30-60 detik)...");
+    setLoading("aimusic"); setAiMusicStatus("memulai...");
+    try {
+      let prompt = lyrics?.style_prompt_suno || `${musicMood}, ${musicGenre}, indonesian`;
+      const text = lyrics?.lyrics || `${selectedTitle.text} ${niche}`;
+      const r = await fetch("/api/hcnsec/music", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          title: selectedTitle.text, prompt, lyrics: lyrics?.lyrics,
+          genre: musicGenre, tags: `${musicGenre}, ${musicMood}`, custom: !!lyrics?.lyrics,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || `Error ${r.status}`);
+      // Poll
+      if (data.audio_url) {
+        setAiMusicUrl(data.audio_url);
+        setAiMusicStatus("selesai");
+        setStageText("✅ Lagu AI siap!");
+      } else if (data.id) {
+        setAiMusicStatus("memproses...");
+        // Poll setiap 5s, max 90s
+        for (let i=0;i<18;i++){
+          await new Promise(res=>setTimeout(res,5000));
+          const pr = await fetch(`/api/hcnsec/music?id=${data.id}`);
+          const pd = await pr.json().catch(()=>({}));
+          setAiMusicStatus(`memproses... ${Math.round((i+1)/18*100)}%`);
+          if (pd.audio_url) { setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai"); setStageText("✅ Lagu AI siap!"); break; }
+          if (pd.status === "error" || pd.error) throw new Error(pd.error||"Gagal generate musik");
+        }
+        if (!aiMusicUrl) setStageText("⏳ Coba lagi 1 menit ya, lagu masih diproses server.");
+      } else {
+        setStageText("⚠️ AI music belum merespon audio. Coba pakai TTS narasi + upload musik saja untuk sekarang.");
+      }
+    } catch(e:any){
+      setErr(e.message || "AI music gagal. Set SUNO_API_KEY untuk fitur penuh.");
+      setAiMusicStatus("gagal");
+    }
+    setTimeout(()=>setStageText(""),3000); setLoading(null);
+  }
+
+  function handleLogoUpload(f: File|undefined) {
+    if (!f) return;
+    if (f.size>3*1024*1024) return setErr("Logo maks 3MB");
+    const r = new FileReader();
+    r.onload = () => {
+      // Downscale logo jadi 256x256
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        const size=256;
+        c.width=size; c.height=size;
+        const cx=c.getContext("2d")!;
+        // Buat lingkaran
+        cx.beginPath(); cx.arc(size/2,size/2,size/2,0,Math.PI*2); cx.closePath(); cx.clip();
+        const ir = img.naturalWidth/img.naturalHeight;
+        let dw=size,dh=size,dx=0,dy=0;
+        if (ir>1) { dw=size*ir; dx=(size-dw)/2; } else { dh=size/ir; dy=(size-dh)/2; }
+        cx.fillStyle="#000"; cx.fillRect(0,0,size,size);
+        cx.drawImage(img,dx,dy,dw,dh);
+        setLogoDataUrl(c.toDataURL("image/png"));
+      };
+      img.src = r.result as string;
+    };
+    r.readAsDataURL(f);
+  }
+
   // ===== T2V =====
   async function doT2V() {
     if (!t2vPrompt.trim()) return setErr("Prompt kosong");
@@ -424,6 +633,30 @@ Dibuat dengan Verve AI Video Studio`;
             {step === 1 && (
               <section className="mt-4 space-y-4">
                 <h2 className="section-title">🎯 Step 1 · Ide & Keyword</h2>
+
+                {/* Preset templates */}
+                <div>
+                  <span className="lbl">⚡ Template Cepat (klik untuk auto-fill)</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {[
+                      {id:"sedih",niche:"cerita menyentuh ibu & keluarga",kw:"ibu maafkan aku, penyesalan anak, rindu ibu, maafkan aku ibu, kasih ibu",ti:"cerita sedih",genre:"pop ballad",mood:"menyentuh, sedih, haru"},
+                      {id:"motivasi",niche:"motivasi & semangat hidup",kw:"bangkit dari gagal, jangan menyerah, motivasi kerja, semangat pagi, mulai lagi",ti:"motivasi sukses",genre:"cinematic epic",mood:"epic, membara, semangat"},
+                      {id:"cinta",niche:"cerita cinta & romantis",kw:"rindu dia, cinta pertama, kenangan pacar, setia menunggu, ldr",ti:"cerita cinta romantis",genre:"pop akustik",mood:"romantis, lembut, manis"},
+                      {id:"islamic",niche:"konten islami & dakwah",kw:"ustadz ceramah, hijrah, doa ibu, surga di telapak kaki ibu, jodoh",ti:"dakwah islami menyentuh",genre:"religi akustik",mood:"tenang, khusyuk, syahdu"},
+                      {id:"horror",niche:"cerita horor & misteri",kw:"hantu kampung, kisah seram malam jumat, penampakan nyata, cerita mistis",ti:"cerita horor",genre:"dark ambient",mood:"mencekam, tegang"},
+                      {id:"fyp",niche:"fyp Shorts/TikTok viral",kw:"fakta unik, wow fakta, kamu tidak tahu, trik rahasia, life hack",ti:"fakta unik fyp",genre:"trap edm",mood:"energetic, asik"},
+                    ].map(p=>(
+                      <button key={p.id} onClick={()=>{
+                        setNiche(p.niche); setManualKeywords(p.kw); setKeywordMode("manual");
+                        setMusicGenre(p.genre); setMusicMood(p.mood); setSelectedPreset(p.id);
+                      }} className={`style-card text-center ${selectedPreset===p.id?"active":""}`}>
+                        <div className="text-sm font-bold">{p.ti}</div>
+                        <div className="text-[10px] text-white/50">{p.genre}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <label className="block">
                   <span className="lbl">Niche / topik channel</span>
                   <input className="input" value={niche} onChange={e=>setNiche(e.target.value)}
@@ -514,6 +747,41 @@ Dibuat dengan Verve AI Video Studio`;
               <section className="mt-4 space-y-4">
                 <h2 className="section-title">🖼️ Step 3 · Gambar Slide</h2>
 
+                {/* STORY / CERITA MODE */}
+                <div className="p-3 rounded-xl bg-gradient-to-br from-purple-600/15 to-pink-600/15 border border-purple-400/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">🎬</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-bold">Mode Cerita (Storyboard AI)</div>
+                      <div className="text-[11px] text-white/60">Buat alur cerita, adegan, dan lirik PER SLIDE otomatis dari judul. Hasil gambar akan sesuai emosi cerita!</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="btn btn-primary text-xs py-2" onClick={doGenerateStoryboard} disabled={!!loading || !selectedTitle}>
+                      {loading==="storyboard"?<Spinner/>:"✨"} Buat Storyboard + Lirik
+                    </button>
+                    {storyboard && (
+                      <button className="btn btn-ok text-xs py-2" onClick={doGenerateImagesFromStory} disabled={!!loading}>
+                        {loading==="img-story"?<Spinner/>:"🎨"} Generate Gambar per Adegan
+                      </button>
+                    )}
+                  </div>
+                  {storyboard && (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer text-white/70">Lihat {storyboard.scenes?.length||0} adegan + lirik ↓</summary>
+                      <div className="mt-2 space-y-1.5 max-h-60 overflow-auto pr-1">
+                        {storyboard.scenes?.map((s:any,i:number)=>(
+                          <div key={i} className="p-2 rounded-lg bg-black/30 border border-white/5">
+                            <div className="font-bold text-[11px] text-pink-300">Adegan {s.scene} · {s.mood}</div>
+                            <div className="text-[11px] text-white/80">{s.scene_desc}</div>
+                            <div className="text-[11px] italic text-cyan-200 mt-0.5">♪ {s.lyric_line}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <label className="block">
                     <span className="lbl">Sumber</span>
@@ -592,13 +860,54 @@ Dibuat dengan Verve AI Video Studio`;
                 <h2 className="section-title">🎵 Step 4 · Audio</h2>
                 <div>
                   <span className="lbl">Mode audio</span>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {([["tts","🔊 TTS AI"],["music","🎵 Musik"],["both","🎶 Keduanya"],["none","🔇 Tanpa Audio"]] as const).map(([v,l])=>(
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    {([["tts","🔊 TTS AI"],["music","🎵 Musik File"],["both","🎶 TTS+Musik"],["aimusic","🎼 AI Music (NEW)"],["none","🔇 Mute"]] as const).map(([v,l])=>(
                       <button key={v} onClick={()=>setAudioMode(v as AudioMode)}
                         className={`btn ${audioMode===v?"btn-primary":"btn-ghost"}`}>{l}</button>
                     ))}
                   </div>
                 </div>
+                {/* AI MUSIC PANEL */}
+                {(audioMode==="aimusic"||audioMode==="both") && (
+                  <div className="space-y-3 p-3 rounded-xl bg-gradient-to-br from-purple-600/15 to-pink-600/15 border border-purple-400/30">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg">🎼</span>
+                      <span className="text-sm font-bold">AI Music Generator</span>
+                      <span className="text-[10px] text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full">Beta</span>
+                    </div>
+                    <p className="text-[11px] text-white/60">Buat lagu lengkap dengan vokal otomatis dari judul/lirik. Gratis terbatas; set env <code className="text-cyan-300">SUNO_API_KEY</code> di Vercel untuk kuota penuh.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="lbl">Genre</span>
+                        <input className="input py-1.5 text-sm" value={musicGenre} onChange={e=>setMusicGenre(e.target.value)} placeholder="pop ballad"/>
+                      </label>
+                      <label className="block">
+                        <span className="lbl">Mood</span>
+                        <input className="input py-1.5 text-sm" value={musicMood} onChange={e=>setMusicMood(e.target.value)} placeholder="menyentuh"/>
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn btn-ghost text-xs py-2" onClick={doGenerateLyrics} disabled={!!loading}>
+                        {loading==="lyrics"?<Spinner/>:"✍️"} Buat Lirik Dulu
+                      </button>
+                      <button className="btn btn-primary text-xs py-2" onClick={doGenerateAIMusic} disabled={!!loading}>
+                        {loading==="aimusic"?<Spinner/>:"🎼"} Generate Lagu
+                      </button>
+                    </div>
+                    {aiMusicStatus && <div className="text-[11px] text-white/60">Status: {aiMusicStatus}</div>}
+                    {aiMusicUrl && <audio controls src={aiMusicUrl} className="w-full"/>}
+                    {lyrics && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-white/70">Lihat lirik yang digenerate ↓</summary>
+                        <pre className="mt-2 p-2 rounded-lg bg-black/40 text-[10px] whitespace-pre-wrap text-white/80 max-h-40 overflow-auto">{lyrics.lyrics}</pre>
+                      </details>
+                    )}
+                    <div className="text-[10px] text-white/40">
+                      💡 Tips: Kalau gratis habis / gagal, kamu tetap bisa upload musik file mp3 sendiri seperti biasa.
+                    </div>
+                  </div>
+                )}
+
                 {(audioMode==="tts"||audioMode==="both") && (
                   <div className="space-y-3 p-3 rounded-xl bg-black/30 border border-white/10">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -635,6 +944,45 @@ Dibuat dengan Verve AI Video Studio`;
             {step === 5 && (
               <section className="mt-4 space-y-4">
                 <h2 className="section-title">🌈 Step 5 · Visualizer & Render</h2>
+
+                {/* LOGO CUSTOM */}
+                <div className="p-3 rounded-xl bg-black/30 border border-white/10 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-bold flex items-center gap-2">🖼️ Logo/Channel Brand</div>
+                      <div className="text-[11px] text-white/50">Upload logo channel-mu; akan muncul di tengah spectrum atau pojok video</div>
+                    </div>
+                    {logoDataUrl && (
+                      <img src={logoDataUrl} className="w-10 h-10 rounded-full border-2 border-white/30" alt="logo"/>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <label className="btn btn-ghost text-xs py-1.5 cursor-pointer">
+                      📁 Upload Logo
+                      <input type="file" accept="image/*" hidden onChange={e=>handleLogoUpload(e.target.files?.[0])}/>
+                    </label>
+                    {logoDataUrl && (
+                      <>
+                        <div className="flex gap-1">
+                          {([["center","🎯 Tengah"],["corner","📍 Pojok"],["none","❌ Sembunyi"]] as const).map(([v,l])=>(
+                            <button key={v} onClick={()=>setLogoPosition(v)}
+                              className={`btn text-xs py-1.5 px-2 ${logoPosition===v?"btn-primary":"btn-ghost"}`}>{l}</button>
+                          ))}
+                        </div>
+                        <button className="btn btn-danger text-xs py-1.5" onClick={()=>setLogoDataUrl("")}>🗑️</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* KARAOKE LYRICS */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-black/30 border border-white/10">
+                  <div>
+                    <div className="text-sm font-semibold flex items-center gap-2">🎤 Karaoke Lirik</div>
+                    <div className="text-[11px] text-white/50">Tampilkan baris lirik per-slide dengan gaya karaoke (outline text, glow)</div>
+                  </div>
+                  <div className={`toggle ${showLyrics?"on":""}`} onClick={()=>setShowLyrics(v=>!v)}/>
+                </div>
 
                 {/* Quality */}
                 <div>
@@ -751,6 +1099,7 @@ Dibuat dengan Verve AI Video Studio`;
                 audioEl={previewAudioRef.current || undefined}
                 style={vizStyle}
                 color={vizColor}
+                logoUrl={logoDataUrl || undefined}
                 width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
                 height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
               />

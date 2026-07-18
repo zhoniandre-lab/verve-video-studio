@@ -13,6 +13,8 @@ interface Props {
   height?: number;
   /** optional logo/text di tengah */
   logo?: string;
+  /** URL gambar logo untuk ditampilkan di tengah */
+  logoUrl?: string;
 }
 
 /**
@@ -32,6 +34,7 @@ export default function SpectrumVisualizer({
   width = 1280,
   height = 720,
   logo,
+  logoUrl,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
@@ -40,6 +43,16 @@ export default function SpectrumVisualizer({
   const sourceRef = useRef<MediaStreamAudioSourceNode | MediaElementAudioSourceNode | null>(null);
   const particlesRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; a: number; hue: number }[]>([]);
   const sparklesRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string }[]>([]);
+  const logoImgRef = useRef<HTMLImageElement | null>(null);
+
+  // Load logo image
+  useEffect(() => {
+    if (!logoUrl) { logoImgRef.current = null; return; }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => { logoImgRef.current = img; };
+    img.src = logoUrl;
+  }, [logoUrl]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -141,7 +154,7 @@ export default function SpectrumVisualizer({
       const nTreb = treb / 255;
       const nAvg = avg / 255;
 
-      if (style === "luxury") drawLuxury(ctx, freqArray, timeArray, nBass, nMid, nTreb, nAvg, t, width, height, color, logo);
+      if (style === "luxury") drawLuxury(ctx, freqArray, timeArray, nBass, nMid, nTreb, nAvg, t, width, height, color, logo, logoImgRef.current);
       else if (style === "bars") drawBars(ctx, freqArray, nBass, width, height, color);
       else if (style === "circle" || style === "ncs") drawCircle(ctx, freqArray, nBass, t, width, height, color);
       else if (style === "particles") drawParticlesMode(ctx, freqArray, nBass, t, width, height, color);
@@ -250,7 +263,7 @@ export default function SpectrumVisualizer({
     freq: Uint8Array<ArrayBuffer>,
     timeArr: Uint8Array<ArrayBuffer>,
     bass: number, mid: number, treb: number, avg: number,
-    t: number, W: number, H: number, c: string, textLogo?: string,
+    t: number, W: number, H: number, c: string, textLogo?: string, logoImg?: HTMLImageElement|null,
   ) {
     // 1. Animated moving gradient background (subtle)
     const bg = ctx.createRadialGradient(W/2 + Math.sin(t*0.3)*200, H*0.3 + Math.cos(t*0.4)*100, 50, W/2, H/2, Math.max(W,H));
@@ -344,8 +357,14 @@ export default function SpectrumVisualizer({
 
     ctx.shadowBlur = 0;
 
-    // Logo text
-    if (textLogo) {
+    // Logo gambar atau text
+    if (logoImg) {
+      const size = logoR*1.6;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx,cy,size/2,0,Math.PI*2); ctx.clip();
+      ctx.drawImage(logoImg, cx-size/2, cy-size/2, size, size);
+      ctx.restore();
+    } else if (textLogo) {
       ctx.fillStyle = "#fff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";

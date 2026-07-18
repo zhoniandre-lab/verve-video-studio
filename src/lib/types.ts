@@ -11,10 +11,34 @@ export type VizStyle =
   | "dubstep"       // Middle gravity bars
   | "tunnel";       // 3D tunnel
 
-export type AudioMode = "tts" | "music" | "both" | "none";
-export type ImageSource = "ai" | "upload" | "both";
+export type AudioMode = "tts" | "music" | "both" | "none" | "aimusic";
+export type ImageSource = "ai" | "upload" | "both" | "storyboard";
 
-export interface Slide { id: string; imageUrl: string; caption?: string; }
+export interface Slide { id: string; imageUrl: string; caption?: string; lyric?: string; }
+
+export interface StoryScene {
+  scene: number;
+  scene_desc: string;
+  lyric_line: string;
+  visual_prompt: string;
+  mood: string;
+  imageUrl?: string;
+}
+export interface Storyboard {
+  title?: string;
+  style_visual?: string;
+  color_grade?: string;
+  scenes: StoryScene[];
+}
+
+export interface Lyrics {
+  title?: string;
+  genre?: string;
+  mood?: string;
+  tags?: string[];
+  style_prompt_suno?: string;
+  lyrics?: string;
+}
 
 export interface VideoProject {
   id?: string;

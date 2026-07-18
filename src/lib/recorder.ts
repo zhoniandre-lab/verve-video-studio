@@ -23,12 +23,16 @@ export interface RenderOptions {
   vizStyle: VizStyle;
   vizColor: string;
   title?: string;
+  lyrics?: string[];          // array baris lirik (1 per slide, untuk karaoke)
+  logoUrl?: string;           // URL / data URL logo custom
+  logoPosition?: "center" | "corner" | "none"; // posisi logo
   quality: Quality;
   mobileOptimized?: boolean;
   ratio?: "16:9" | "9:16" | "1:1";
   aspectRatio?: "16:9" | "9:16" | "1:1";
   transition?: Transition;
   showTitle?: boolean;
+  showLyrics?: boolean;
   beatSync?: boolean;
   onProgress?: (p: number) => void;
   onStage?: (s: string) => void;
@@ -216,6 +220,10 @@ interface DrawState {
   _canvas: HTMLCanvasElement;
   _transition: Transition;
   showTitle?: boolean;
+  showLyrics?: boolean;
+  logoImg?: HTMLImageElement | HTMLCanvasElement | null;
+  logoPos?: "center"|"corner"|"none";
+  lyrics?: string[];
 }
 
 function drawFrame(s: DrawState) {
@@ -310,6 +318,60 @@ function drawFrame(s: DrawState) {
     ctx.restore();
   }
 
+  // Karaoke lyric line (sesuai slide aktif)
+  if (s.showLyrics && s.lyrics && s.lyrics[s.slideIdx]) {
+    const line = s.lyrics[s.slideIdx];
+    ctx.save();
+    // Tempat di tengah-bawah, di atas bar spectrum
+    const fontSize = Math.max(24, Math.floor(H*0.055));
+    ctx.font = `900 ${fontSize}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const ly = H*0.55;
+    const maxW = W*0.85;
+    // Wrap text sederhana (1-2 baris)
+    const words = line.split(" ");
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      const test = cur ? cur+" "+w : w;
+      if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; }
+      else cur = test;
+    }
+    if (cur) lines.push(cur);
+    const lineH = fontSize*1.3;
+    const startY = ly - (lines.length-1)*lineH/2;
+    lines.forEach((ln, i) => {
+      // Text stroke (outline) agar baca di semua background
+      ctx.lineWidth = Math.max(4, fontSize/10);
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.lineJoin = "round";
+      ctx.strokeText(ln, W/2, startY + i*lineH, maxW);
+      ctx.fillStyle = "#fff";
+      ctx.shadowColor = rgba(s.rgb,1);
+      ctx.shadowBlur = 18;
+      ctx.fillText(ln, W/2, startY + i*lineH, maxW);
+    });
+    // Fade-in lyric saat mulai slide
+    ctx.restore();
+  }
+
+  // Logo pojok (untuk semua style)
+  if (s.logoImg && s.logoPos === "corner") {
+    ctx.save();
+    const size = Math.min(W,H) * 0.08;
+    const pad = size*0.4;
+    const lx = pad, ly = pad;
+    // Lingkaran gelap di belakang logo agar kontras
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2+pad*0.3, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.clip();
+    ctx.drawImage(s.logoImg, lx, ly, size, size);
+    ctx.restore();
+    ctx.restore();
+  }
+
   // Progress bar tipis di bawah
   ctx.fillStyle = "rgba(255,255,255,0.12)";
   ctx.fillRect(0, H-3, W, 3);
@@ -379,11 +441,19 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
       cg.addColorStop(1, rgba(rgb,0.1));
       ctx.fillStyle = cg;
       ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
-      // Center icon
+      // Logo custom atau icon default
       ctx.fillStyle = "#fff";
-      ctx.font = `${r}px sans-serif`;
-      ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillText("♪",0,2);
+      if (s.logoImg && (s.logoPos === "center" || !s.logoPos)) {
+        const logoSize = r*1.5;
+        ctx.save();
+        ctx.beginPath(); ctx.arc(0,0,logoSize/2,0,Math.PI*2); ctx.clip();
+        ctx.drawImage(s.logoImg, -logoSize/2, -logoSize/2, logoSize, logoSize);
+        ctx.restore();
+      } else {
+        ctx.font = `${r}px sans-serif`;
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText("♪",0,2);
+      }
       ctx.restore();
 
       // Sparkles on beat
@@ -607,6 +677,12 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   // Pre-scale images
   const imgs = await prepareImages(images, rW, rH, onStage);
 
+  // Load logo custom
+  let logoImg: HTMLImageElement | null = null;
+  if (opts.logoUrl && opts.logoPosition !== "none") {
+    try { logoImg = await loadImage(opts.logoUrl); } catch(e){ logoImg = null; }
+  }
+
   // Audio
   let audio: { data: Float32Array; sampleRate:number; duration:number } | null = null;
   if (audioUrl) {
@@ -636,12 +712,18 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   if (Mp4Muxer && supportsWebCodecs()) {
     return renderWebCodecs({canvas, ctx, imgs, audio, fps, totalFrames, totalDur, slideDur, transDur,
       prof, rgb, vizStyle, vizColor, title, transition: transition||"zoom",
-      smooth, bassRef, particles, onProgress, onStage, Mp4Muxer} as any);
+      smooth, bassRef, particles, onProgress, onStage, Mp4Muxer,
+      logoImg, logoPos: opts.logoPosition||"center",
+      lyrics: opts.lyrics, showLyrics: !!opts.showLyrics && !!opts.lyrics?.length,
+      showTitle: opts.showTitle} as any);
   }
   // Fallback MediaRecorder (slower, realtime)
   onStage?.("WebCodecs tidak tersedia, pakai MediaRecorder (realtime)...");
   return renderMediaRecorder({canvas, imgs, audio, fps, totalDur, slideDur, transDur,
-    prof, rgb, vizStyle, vizColor, title, transition: transition||"zoom", smooth, bassRef, particles, onProgress, onStage} as any);
+    prof, rgb, vizStyle, vizColor, title, transition: transition||"zoom", smooth, bassRef, particles, onProgress, onStage,
+    logoImg, logoPos: opts.logoPosition||"center",
+    lyrics: opts.lyrics, showLyrics: !!opts.showLyrics && !!opts.lyrics?.length,
+    showTitle: opts.showTitle} as any);
 }
 
 interface RenderBase {
@@ -661,7 +743,7 @@ interface RenderBase {
 }
 
 async function renderWebCodecs(b: any) {
-  const { canvas, imgs, audio, fps, totalFrames, totalDur, slideDur, transDur, prof, rgb, vizStyle, vizColor, title, transition, smooth, bassRef, particles, onProgress, onStage, Mp4Muxer } = b;
+  const { canvas, imgs, audio, fps, totalFrames, totalDur, slideDur, transDur, prof, rgb, vizStyle, vizColor, title, transition, smooth, bassRef, particles, onProgress, onStage, Mp4Muxer, logoImg, logoPos, lyrics, showLyrics, showTitle } = b;
   onStage?.("Encoding video (cepat)...");
 
   // Muxer
@@ -740,7 +822,8 @@ async function renderWebCodecs(b: any) {
       W:canvas.width, H:canvas.height, bars, bass:bassRef.level, beat:bassRef.beat,
       rgb, color:vizColor, style:vizStyle, imgs, profile:prof, title, particles,
       phase: t*0.5,
-      _canvas: canvas, _transition: transition, showTitle: !!title,
+      _canvas: canvas, _transition: transition, showTitle: showTitle !== false, showLyrics,
+      logoImg, logoPos, lyrics,
     } as any);
 
     const vf = new (window as any).VideoFrame(canvas, { timestamp: Math.floor(t*1e6), duration: Math.floor(1e6/fps) });
@@ -765,7 +848,7 @@ async function renderWebCodecs(b: any) {
 }
 
 async function renderMediaRecorder(b: any) {
-  const { canvas, imgs, audio, fps, totalDur, slideDur, transDur, prof, rgb, vizStyle, vizColor, title, transition, smooth, bassRef, particles, onProgress, onStage } = b;
+  const { canvas, imgs, audio, fps, totalDur, slideDur, transDur, prof, rgb, vizStyle, vizColor, title, transition, smooth, bassRef, particles, onProgress, onStage, logoImg, logoPos, lyrics, showLyrics, showTitle } = b;
   // Fallback: pakai captureStream + MediaRecorder dengan seek per frame
   const stream: MediaStream = (canvas as any).captureStream(fps);
   let audioDest: MediaStreamAudioDestinationNode | null = null;
@@ -814,7 +897,8 @@ async function renderMediaRecorder(b: any) {
       time:t, fps, totalDur, slideIdx, slideT, transT, isTransition:inTrans, nextIdx,
       W:canvas.width, H:canvas.height, bars, bass:bassRef.level, beat:bassRef.beat,
       rgb, color:vizColor, style:vizStyle, imgs, profile:prof, title, particles,
-      phase:t*0.5, _canvas:canvas, _transition:transition, showTitle:!!title,
+      phase:t*0.5, _canvas:canvas, _transition:transition, showTitle: showTitle !== false, showLyrics,
+      logoImg, logoPos, lyrics,
     } as any);
     onProgress?.(t/totalDur);
     if (elapsed < totalDur + 0.2) requestAnimationFrame(tick);
