@@ -325,6 +325,15 @@ export default function Home() {
   const [previewCurrent, setPreviewCurrent] = useState(0);
   const [previewDuration, setPreviewDuration] = useState(0);
   const [previewMuted, setPreviewMuted] = useState(false);
+  // ===== CapCut-style editor state =====
+  const [editorTab, setEditorTab] = useState<"main"|"filter"|"adjust"|"sticker"|"text"|"audio"|"spectrum">("main");
+  const [activeFilter, setActiveFilter] = useState<string>("none");
+  const [brightness, setBrightness] = useState(0);   // -100..100
+  const [contrast, setContrast] = useState(0);
+  const [saturation, setSaturation] = useState(0);
+  const [sharpen, setSharpen] = useState(0);
+  const [vignetteAmt, setVignetteAmt] = useState(50);
+  const [spectrumSticker, setSpectrumSticker] = useState<string>("bars-bottom"); // bars-bottom / wave-center / disc / none
   const renderStartRef = useRef<number>(0);
   const [draftList, setDraftList] = useState<Array<{id:string;title:string;slides:number;updatedAt:number;thumb?:string;step?:number}>>([]);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
@@ -1374,6 +1383,27 @@ Dibuat dengan Verve AI Video Studio`;
     }
     setPreviewPlaying(false);
   }
+  function getFilterString(f?:string): string {
+    const bright = 1 + brightness/100;
+    const contr = 1 + contrast/100;
+    const sat = 1 + saturation/100;
+    const sharp = sharpen>0 ? `blur(${0}px) contrast(${1+sharpen/300})` : "";
+    // Filter preset
+    let preset = "";
+    const fp = f || activeFilter;
+    if (fp === "cinematic") preset = "contrast(1.18) saturate(0.85) brightness(0.95)";
+    else if (fp === "vivid") preset = "saturate(1.4) contrast(1.12) brightness(1.05)";
+    else if (fp === "warm") preset = "sepia(0.18) saturate(1.15) brightness(1.02)";
+    else if (fp === "cool") preset = "hue-rotate(-10deg) saturate(1.1) brightness(1.02)";
+    else if (fp === "bw") preset = "grayscale(1) contrast(1.1)";
+    else if (fp === "vintage") preset = "sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)";
+    else if (fp === "dreamy") preset = "brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)";
+    else if (fp === "cinema4k") preset = "contrast(1.22) saturate(0.95) brightness(0.92)";
+    return [preset, `brightness(${bright}) contrast(${contr}) saturate(${sat})`, sharp].filter(Boolean).join(" ");
+  }
+  function resetAdjust() {
+    setBrightness(0); setContrast(0); setSaturation(0); setSharpen(0); setVignetteAmt(50); setActiveFilter("none");
+  }
   stopPreviewRef.current = stopPreview;
   function seekPreview(t: number) {
     const audEl = previewAudioRef.current;
@@ -1449,17 +1479,20 @@ Dibuat dengan Verve AI Video Studio`;
       slideIdx = Math.min(slideIdx, imgs.length-1);
       const slideT = Math.min(1, localT/sd);
 
-      // Gambar background (slide) dengan transisi
+      // Gambar background (slide) dengan transisi + filter CapCut
       ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+      // Canvas filter: brightness, contrast, saturation, preset
+      const cFilter = getFilterString();
       const drawImg = (img:HTMLImageElement, alpha=1, zoom=1, ox=0, oy=0)=>{
         if (!img.naturalWidth) { ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H); return; }
         const ir = img.naturalWidth/img.naturalHeight, cr = W/H;
         let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;
         if (ir>cr) { sh=img.naturalHeight; sw=sh*cr; sx=(img.naturalWidth-sw)/2; }
         else { sw=img.naturalWidth; sh=sw/cr; sy=(img.naturalHeight-sh)/2; }
-        ctx.save(); ctx.globalAlpha = alpha;
-        // Ken Burns: slight zoom
-        const z = zoom; const zs = z*(ir>cr?sh:sw);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.filter = cFilter;
+        const z = zoom;
         ctx.translate(W/2+ox,H/2+oy); ctx.scale(z,z); ctx.translate(-W/2-ox,-H/2-oy);
         ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
         ctx.restore();
@@ -1468,13 +1501,13 @@ Dibuat dengan Verve AI Video Studio`;
       const zb = 1 + slideT*0.04;
       drawImg(imgs[slideIdx], 1, zb);
       if (inTrans && imgs[nextIdx]) {
-        // Fade transition simple untuk preview
         const nextZ = 1 + (1-transT)*0.04;
         drawImg(imgs[nextIdx], transT, nextZ);
       }
-      // Vignette
-      const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.7);
-      vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.55)");
+      // Vignette adjustable
+      const vStrength = vignetteAmt/100*0.8;
+      const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
+      vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
       ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 
       // Spectrum ringkas (pakai analyser live, atau fake sine kalo ga ada audio)
@@ -2086,8 +2119,8 @@ Dibuat dengan Verve AI Video Studio`;
             )}
 
             {step === 5 && (
-              <section className="mt-4 space-y-4">
-                <h2 className="section-title">🌈 Step 5 · Visualizer & Render</h2>
+              <section className="mt-4 space-y-3">
+                <h2 className="section-title">🎬 Step 5 · Studio Edit (ala CapCut)</h2>
 
                 {/* LOGO */}
                 <div className="p-3 rounded-xl bg-black/30 border border-white/10 space-y-2">
@@ -2247,6 +2280,198 @@ Dibuat dengan Verve AI Video Studio`;
                     </div>
                   </div>
                 )}
+
+                {/* ===== CAPCUT BOTTOM TOOLBAR + PANEL ===== */}
+                <div className="rounded-xl bg-black/50 border border-white/10 overflow-hidden">
+                  <div className="flex items-center justify-between gap-1 p-2 overflow-x-auto">
+                    {[
+                      {id:"filter", icon:"🎨", label:"Filter"},
+                      {id:"adjust", icon:"☀️", label:"Sesuaikan"},
+                      {id:"sticker", icon:"🎧", label:"Stiker"},
+                      {id:"text", icon:"💬", label:"Teks"},
+                      {id:"spectrum", icon:"📊", label:"Spectrum"},
+                      {id:"audio", icon:"🎵", label:"Audio"},
+                    ].map(t=>(
+                      <button key={t.id} onClick={()=>setEditorTab(editorTab===t.id?"main":t.id as any)}
+                              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg shrink-0 min-w-[56px] text-[10px] ${editorTab===t.id?"bg-pink-500/30 border border-pink-400/40":"bg-white/5 border border-transparent"}`}>
+                        <span className="text-lg">{t.icon}</span>
+                        <span className="text-white/80">{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* PANEL FILTER */}
+                  {editorTab==="filter" && (
+                    <div className="p-3 border-t border-white/10 space-y-2">
+                      <div className="text-xs font-bold mb-1">🎨 Filter Video (8 preset)</div>
+                      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+                        {[
+                          {id:"none", label:"❌ Original"},
+                          {id:"cinematic", label:"🎬 Cinematic"},
+                          {id:"vivid", label:"🌈 Vivid"},
+                          {id:"warm", label:"🔥 Warm"},
+                          {id:"cool", label:"❄️ Cool"},
+                          {id:"bw", label:"⚫ Hitam Putih"},
+                          {id:"vintage", label:"📼 Vintage"},
+                          {id:"dreamy", label:"💫 Dreamy"},
+                          {id:"cinema4k", label:"💎 4K Cinema"},
+                        ].map(f=>{
+                          const fstr = f.id==="none"?"none":
+                            f.id==="cinematic"?"contrast(1.18) saturate(0.85) brightness(0.95)":
+                            f.id==="vivid"?"saturate(1.4) contrast(1.12) brightness(1.05)":
+                            f.id==="warm"?"sepia(0.18) saturate(1.15) brightness(1.02)":
+                            f.id==="cool"?"hue-rotate(-10deg) saturate(1.1) brightness(1.02)":
+                            f.id==="bw"?"grayscale(1) contrast(1.1)":
+                            f.id==="vintage"?"sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)":
+                            f.id==="dreamy"?"brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)":
+                            "contrast(1.22) saturate(0.95) brightness(0.92)";
+                          return (
+                            <button key={f.id} onClick={()=>setActiveFilter(f.id)}
+                                    className={`shrink-0 flex flex-col items-center gap-1 ${activeFilter===f.id?"opacity-100":"opacity-70"}`}>
+                              <div className="w-14 h-14 rounded-lg overflow-hidden border-2"
+                                   style={{borderColor:activeFilter===f.id?"#ec4899":"rgba(255,255,255,0.1)"}}>
+                                {slides[0] ? (
+                                  <img src={slides[0].imageUrl} className="w-full h-full object-cover" style={{filter:fstr}} alt=""/>
+                                ) : <div className="w-full h-full bg-gray-800"/>}
+                              </div>
+                              <span className="text-[9px] text-white/80 whitespace-nowrap">{f.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PANEL SESUAIKAN */}
+                  {editorTab==="adjust" && (
+                    <div className="p-3 border-t border-white/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-bold">☀️ Sesuaikan (Kecerahan/Kontras/dll)</div>
+                        <button onClick={resetAdjust} className="text-[10px] px-2 py-1 rounded bg-white/10">↻ Reset</button>
+                      </div>
+                      {[
+                        {label:"☀️ Kecerahan", v:brightness, set:setBrightness, min:-50, max:50},
+                        {label:"◐ Kontras", v:contrast, set:setContrast, min:-50, max:50},
+                        {label:"🎨 Saturasi", v:saturation, set:setSaturation, min:-50, max:80},
+                        {label:"✨ Pertajam", v:sharpen, set:setSharpen, min:0, max:50},
+                        {label:"🌑 Vignette", v:vignetteAmt, set:setVignetteAmt, min:0, max:100},
+                      ].map((s,i)=>(
+                        <label key={i} className="block">
+                          <div className="flex justify-between text-[11px] mb-1">
+                            <span>{s.label}</span><span className="text-white/50 font-mono">{s.v>0?"+":""}{s.v}</span>
+                          </div>
+                          <input type="range" min={s.min} max={s.max} step={1} value={s.v}
+                                 onChange={e=>s.set(Number(e.target.value))} className="w-full"/>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* PANEL STIKER SPECTRUM */}
+                  {editorTab==="sticker" && (
+                    <div className="p-3 border-t border-white/10 space-y-2">
+                      <div className="text-xs font-bold mb-1">🎧 Stiker Spectrum (audio visualizer overlay)</div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          {id:"none", icon:"❌", label:"None"},
+                          {id:"bars-bottom", icon:"📊", label:"Bars Bawah"},
+                          {id:"wave-center", icon:"〰️", label:"Wave Tengah"},
+                          {id:"wave-bottom", icon:"📶", label:"Wave Bawah"},
+                          {id:"bars-top", icon:"📈", label:"Bars Atas"},
+                          {id:"circle", icon:"⭕", label:"Circle"},
+                          {id:"disc", icon:"💿", label:"Disc Putar"},
+                          {id:"diamond", icon:"💎", label:"Diamond"},
+                        ].map(s=>(
+                          <button key={s.id} onClick={()=>setSpectrumSticker(s.id)}
+                                  className={`p-2 rounded-lg border text-center ${spectrumSticker===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
+                            <div className="text-xl">{s.icon}</div>
+                            <div className="text-[9px] text-white/70 mt-0.5">{s.label}</div>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-white/50 pt-1">💡 Spectrum center besar bisa pakai logo channelmu.</p>
+                    </div>
+                  )}
+
+                  {/* PANEL TEKS */}
+                  {editorTab==="text" && (
+                    <div className="p-3 border-t border-white/10 space-y-2">
+                      <div className="text-xs font-bold mb-1">💬 Teks / Keterangan</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <button onClick={()=>setShowTitle(v=>!v)} className={`q-tile ${showTitle?"active":""}`}>
+                          <div className="text-xs font-bold">🏷️ Judul</div>
+                          <div className="text-[10px] text-white/60">{showTitle?"ON":"OFF"}</div>
+                        </button>
+                        <button onClick={()=>setShowLyrics(v=>!v)} className={`q-tile ${showLyrics?"active":""}`}>
+                          <div className="text-xs font-bold">🎤 Karaoke</div>
+                          <div className="text-[10px] text-white/60">{showLyrics?"ON":"OFF"}</div>
+                        </button>
+                      </div>
+                      <div className="text-[10px] text-white/60 pt-1">Gaya caption:</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          {id:"capcut", label:"🟡 CapCut Pop", desc:"Kata kuning"},
+                          {id:"neon", label:"💫 Neon", desc:"Highlight"},
+                          {id:"boldwhite", label:"⚪ Bold Putih", desc:"Garis outline"},
+                          {id:"gradient", label:"🌈 Gradient", desc:"Warna gradasi"},
+                        ].map(s=>(
+                          <button key={s.id} onClick={()=>setCaptionStyle(s.id as CaptionStyle)}
+                                  className={`style-card ${captionStyle===s.id?"active":""}`}>
+                            <div className="text-[11px] font-bold">{s.label}</div>
+                            <div className="text-[9px] text-white/60">{s.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PANEL SPECTRUM (warna+style) */}
+                  {editorTab==="spectrum" && (
+                    <div className="p-3 border-t border-white/10 space-y-2">
+                      <div className="text-xs font-bold mb-1">📊 Style Spectrum Utama</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {VIZ_STYLES.filter((v,i,a)=>a.findIndex(x=>x.id===v.id)===i).map(s=>(
+                          <button key={s.id} onClick={()=>setVizStyle(s.id)}
+                                  className={`p-2 rounded-lg border text-center text-[10px] ${vizStyle===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
+                            <div className="text-base">{s.emoji}</div>
+                            <div className="text-white/80 truncate">{s.label}</div>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="text-xs font-bold mt-2">🎨 Warna tema</div>
+                      <div className="flex gap-2 flex-wrap items-center">
+                        {COLOR_PRESETS.map(c=>(
+                          <button key={c.hex} onClick={()=>setVizColor(c.hex)}
+                                  className={`color-swatch ${vizColor===c.hex?"active":""}`}
+                                  style={{width:32,height:32,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
+                        ))}
+                        <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)} className="w-9 h-9 rounded-full bg-transparent border-0 p-0"/>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PANEL AUDIO quick */}
+                  {editorTab==="audio" && (
+                    <div className="p-3 border-t border-white/10 space-y-2">
+                      <div className="text-xs font-bold mb-1">🎵 Audio — Source</div>
+                      <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+                        {[
+                          {id:"tts",l:"🗣️ TTS"},{id:"music",l:"🎵 Musik"},{id:"aimusic",l:"🤖 AI"},{id:"both",l:"🔀 Campur"}
+                        ].map(m=>(
+                          <button key={m.id} onClick={()=>setAudioMode(m.id as AudioMode)}
+                                  className={`py-2 rounded-lg border ${audioMode===m.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>{m.l}</button>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[11px]">🔊 Volume/Preview mute</span>
+                        <button onClick={()=>setPreviewMuted(m=>!m)}
+                                className={`px-3 py-1 rounded-full text-[10px] ${previewMuted?"bg-red-500/30 border border-red-400":"bg-white/10 border border-white/10"}`}>
+                          {previewMuted?"🔇 Mute":"🔊 Bunyi"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </section>
             )}
           </div>

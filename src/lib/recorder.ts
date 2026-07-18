@@ -16,7 +16,7 @@ import type { VizStyle } from "./types";
 
 export type Quality = "fast" | "balanced" | "high" | "max";
 export type Transition = "zoom" | "fade" | "slide" | "blur" | "glitch" | "none";
-export type CaptionStyle = "capcut" | "pop" | "neon" | "karaoke" | "none";
+export type CaptionStyle = "capcut" | "pop" | "neon" | "karaoke" | "boldwhite" | "gradient" | "none";
 
 export interface RenderOptions {
   images: string[];
@@ -483,9 +483,45 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
     ctx.font = `700 ${Math.floor(fontSize*0.7)}px system-ui,sans-serif`;
     ctx.fillText(prev, W/2, baseY-fontSize*1.4, W*0.9);
   }
-  // Karaoke style (fill kiri→kanan)
-  else if (style==="karaoke") {
-    // (ditangani oleh legacy lyrics renderer)
+  // Bold White style (CapCut klasik: putih + outline hitam tebal, aktif sedikit lebih besar)
+  else if (style==="boldwhite" || style==="pop" || style==="karaoke") {
+    const fontSize = Math.max(28, Math.floor(H*0.055));
+    ctx.font = `900 ${fontSize}px system-ui,sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    // Tampilkan 2 baris (sebelum+aktif+sesudah)
+    const around = s.captions.slice(Math.max(0,activeIdx-1), Math.min(s.captions.length, activeIdx+2));
+    around.forEach((w,wi)=>{
+      const isActive = Math.max(0,activeIdx-1)+wi === activeIdx;
+      ctx.save();
+      ctx.lineWidth = Math.max(5, fontSize/7);
+      ctx.strokeStyle = "rgba(0,0,0,0.95)";
+      ctx.lineJoin = "round";
+      ctx.globalAlpha = isActive?1:0.6;
+      const y = baseY - (activeIdx - (Math.max(0,activeIdx-1)+wi))*fontSize*1.15;
+      if (isActive) {
+        ctx.fillStyle="#fff"; ctx.shadowColor="rgba(0,0,0,0.6)"; ctx.shadowBlur=6;
+      } else { ctx.fillStyle="rgba(255,255,255,0.9)"; ctx.shadowBlur=0; }
+      // Tampilkan per-kata dalam baris aktif
+      const cap = s.captions||[];
+      const lineWords = cap.filter(x=>x.line===w.line);
+      const text = lineWords.length ? lineWords.map(x=>x.text).join(" ") : w.text;
+      ctx.strokeText(text, W/2, y, W*0.9);
+      ctx.fillText(text, W/2, y, W*0.9);
+      ctx.restore();
+    });
+  }
+  // Gradient (CapCut gradient pink-cyan)
+  else if (style==="gradient") {
+    const fontSize = Math.max(28, Math.floor(H*0.055));
+    ctx.font = `900 ${fontSize}px system-ui,sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.lineWidth=Math.max(5,fontSize/7); ctx.strokeStyle="rgba(0,0,0,0.9)"; ctx.lineJoin="round";
+    const cur = s.captions[activeIdx];
+    const grad = ctx.createLinearGradient(W/2-200,baseY,W/2+200,baseY);
+    grad.addColorStop(0,"#ec4899"); grad.addColorStop(0.5,"#a855f7"); grad.addColorStop(1,"#22d3ee");
+    ctx.strokeText(cur.text, W/2, baseY, W*0.9);
+    ctx.fillStyle=grad; ctx.shadowBlur=18; ctx.shadowColor="rgba(168,85,247,0.7)";
+    ctx.fillText(cur.text, W/2, baseY, W*0.9);
   }
   ctx.restore();
 }
