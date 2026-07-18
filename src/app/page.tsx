@@ -322,6 +322,9 @@ export default function Home() {
   const previewRafRef = useRef<number|null>(null);
   const previewAudioBufRef = useRef<{data:Float32Array;sampleRate:number}|null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewCurrent, setPreviewCurrent] = useState(0);
+  const [previewDuration, setPreviewDuration] = useState(0);
+  const [previewMuted, setPreviewMuted] = useState(false);
   const renderStartRef = useRef<number>(0);
   const selectedTitle = useMemo(() => titles.find(t=>t.id===selectedTitleId), [titles, selectedTitleId]);
 
@@ -1181,8 +1184,19 @@ Dibuat dengan Verve AI Video Studio`;
   // ===== PREVIEW VIDEO (slide transisi + lirik overlay + spectrum) — render live sebelum klik Render =====
   function stopPreview() {
     if (previewRafRef.current) { cancelAnimationFrame(previewRafRef.current); previewRafRef.current = null; }
-    if (previewAudioRef.current && !previewAudioRef.current.paused) previewAudioRef.current.pause();
+    const audEl = previewAudioRef.current;
+    if (audEl) {
+      if (!audEl.paused) audEl.pause();
+      if ((audEl as any)._cleanup) { (audEl as any)._cleanup(); (audEl as any)._cleanup = null; }
+    }
     setPreviewPlaying(false);
+  }
+  function seekPreview(t: number) {
+    const audEl = previewAudioRef.current;
+    if (audEl && isFinite(audEl.duration)) {
+      audEl.currentTime = Math.max(0, Math.min(audEl.duration, t));
+    }
+    setPreviewCurrent(t);
   }
   async function togglePreview() {
     const canvas = previewCanvasRef.current;
@@ -1198,8 +1212,22 @@ Dibuat dengan Verve AI Video Studio`;
     );
     const audEl = previewAudioRef.current;
     if (audEl) {
+      audEl.muted = previewMuted;
       audEl.src = previewSrc;
       audEl.currentTime = 0;
+      // Event listener untuk timeupdate & loadedmetadata (seek bar)
+      const onLoaded = () => { setPreviewDuration(audEl.duration||0); };
+      const onTime = () => { setPreviewCurrent(audEl.currentTime); };
+      const onEnded = () => { stopPreview(); setPreviewCurrent(0); };
+      audEl.addEventListener("loadedmetadata", onLoaded);
+      audEl.addEventListener("timeupdate", onTime);
+      audEl.addEventListener("ended", onEnded);
+      // Bersihkan listener saat stop
+      (audEl as any)._cleanup = () => {
+        audEl.removeEventListener("loadedmetadata", onLoaded);
+        audEl.removeEventListener("timeupdate", onTime);
+        audEl.removeEventListener("ended", onEnded);
+      };
     }
 
     // Load canvas & images
@@ -2033,9 +2061,10 @@ Dibuat dengan Verve AI Video Studio`;
             <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
               {step===5 && previewPlaying ? (
+                // Canvas resolusi sedang untuk preview smooth (480p)
                 <canvas ref={previewCanvasRef}
-                  width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
-                  height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
+                  width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
+                  height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
                   className="w-full h-full"/>
               ) : slides[0] ? (
                 <img src={slides[0].imageUrl} className="w-full h-full object-cover" alt="preview"/>
@@ -2061,17 +2090,82 @@ Dibuat dengan Verve AI Video Studio`;
               {step===5 && slides.length>0 && !previewPlaying && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white/90 text-[10px] border border-white/10">
-                    Tap ▶️ Preview Video di atas buat lihat hasil sebelum render
+                    ▶️ Tap Play di bawah buat preview
                   </div>
                 </div>
               )}
+              {/* Indikator slide aktif saat preview */}
+              {step===5 && previewPlaying && slides.length>1 && (
+                <div className="absolute top-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-white text-[10px] border border-white/10">
+                  🖼️ {Math.min(slides.length, Math.floor(previewCurrent/(Math.max(1,slideDuration)+Math.min(slideDuration*0.6,isMobile?0.5:0.8)))+1)}/{slides.length}
+                </div>
+              )}
             </div>
-            <div className="mt-2">
-              <audio ref={previewAudioRef} controls className="w-full"
-                     src={proxifyAudioUrl(ttsUrl || (audioMode==="aimusic"?aiMusicUrl:musicUrl) || "") || undefined}/>
-            </div>
+
+            {/* === CAPCUT-STYLE PREVIEW CONTROLS (Step 5) === */}
+            {step===5 && slides.length>0 && (
+              <div className="mt-2 rounded-xl bg-black/40 border border-white/10 p-2 space-y-2">
+                {/* Timeline slider */}
+                <input
+                  type="range"
+                  min={0}
+                  max={previewDuration || Math.max(slides.length*slideDuration, 1)}
+                  step={0.1}
+                  value={previewCurrent}
+                  disabled={!previewPlaying && !previewDuration}
+                  onChange={e=>seekPreview(Number(e.target.value))}
+                  className="w-full accent-pink-500 h-1"
+                />
+                <div className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-1">
+                    <button onClick={togglePreview}
+                            className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white text-lg shadow-lg active:scale-95">
+                      {previewPlaying ? "⏸" : "▶️"}
+                    </button>
+                    <button onClick={()=>setPreviewMuted(m=>{
+                      const nm = !m;
+                      if (previewAudioRef.current) previewAudioRef.current.muted = nm;
+                      return nm;
+                    })} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm">
+                      {previewMuted ? "🔇" : "🔊"}
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-white/80 font-mono">
+                    {formatDur(previewCurrent)} / {formatDur(previewDuration)}
+                  </div>
+                </div>
+
+                {/* Quick edit chip (langsung ubah setting tanpa keluar dari preview) */}
+                <div className="text-[10px] text-white/50 pt-1 border-t border-white/10">
+                  ⚡ Quick edit (live):
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  <button onClick={()=>setSlideDuration(sd=>Math.max(1.5, sd-0.5))} className="btn btn-sm btn-ghost">⏩ -0.5s</button>
+                  <button onClick={()=>setSlideDuration(sd=>Math.min(8, sd+0.5))} className="btn btn-sm btn-ghost">⏪ +0.5s</button>
+                  <button onClick={()=>setShowLyrics(v=>!v)} className={`btn btn-sm ${showLyrics?"btn-primary":"btn-ghost"}`}>🎤 Lirik</button>
+                  <button onClick={()=>setShowTitle(v=>!v)} className={`btn btn-sm ${showTitle?"btn-primary":"btn-ghost"}`}>🏷️ Judul</button>
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  {TRANSITION_STYLES.slice(0,4).map(t=>(
+                    <button key={t.id} onClick={()=>setTransition(t.id as Transition)}
+                            className={`btn btn-sm ${transition===t.id?"btn-primary":"btn-ghost"}`}>{t.emoji} {t.label}</button>
+                  ))}
+                </div>
+                <div className="flex gap-1 flex-wrap items-center">
+                  <span className="text-[10px] text-white/50 mr-1">Warna:</span>
+                  {COLOR_PRESETS.slice(0,5).map(c=>(
+                    <button key={c.hex} onClick={()=>setVizColor(c.hex)} title={c.name}
+                            className={`color-swatch ${vizColor===c.hex?"active":""}`}
+                            style={{width:24,height:24,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <audio ref={previewAudioRef} preload="metadata" className="hidden"
+                   src={proxifyAudioUrl((audioMode==="aimusic"&&aiMusicUrl)?aiMusicUrl:(audioMode==="tts"&&ttsUrl)?ttsUrl:(audioMode==="music"&&musicUrl)?musicUrl:(audioMode==="both"&&(musicUrl||aiMusicUrl))?(aiMusicUrl||musicUrl):"")||undefined}/>
             <p className="text-[10px] sm:text-xs text-white/50 mt-2 break-word">
-              🔥 Spectrum live bergerak mengikuti suara. Render pakai engine WebCodecs super-cepat (5–10× realtime).
+              🔥 Tap ▶️ buat PREVIEW full video + musik + lirik + transisi SEBELUM render. Semua setting di bawah (warna, transisi, durasi, lirik) bisa diubah live. Render pakai engine WebCodecs super-cepat.
             </p>
             {videoUrl && (
               <div className="mt-3">
@@ -2290,6 +2384,11 @@ function formatTime(s:number): string {
   if (s<60) return `${s}d`;
   const m = Math.floor(s/60), sec = s%60;
   return `${m}m${sec>0?` ${sec}d`:""}`;
+}
+function formatDur(s:number): string {
+  if (!isFinite(s)||s<0) s=0;
+  const m=Math.floor(s/60), sec=Math.floor(s%60);
+  return `${m}:${sec.toString().padStart(2,"0")}`;
 }
 
 // Proxikan URL audio eksternal lewat server biar lolos CORS (khusus Kie/Suno CDN)
