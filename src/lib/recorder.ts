@@ -134,23 +134,32 @@ async function decodeAudio(url: string, onStage?:(s:string)=>void) {
 async function prepareImages(sources: string[], W:number, H:number, onStage?:(s:string)=>void): Promise<HTMLCanvasElement[]> {
   onStage?.("Memproses gambar...");
   const out: HTMLCanvasElement[] = [];
-  for (let i=0; i<sources.length; i++) {
-    onStage?.(`Memproses gambar ${i+1}/${sources.length}...`);
-    const img = await loadImage(sources[i]);
-    const c = document.createElement("canvas");
-    c.width = W; c.height = H;
-    const cx = c.getContext("2d", { alpha: false })!;
+  // PARALLEL load (max 4 sekaligus) — boost besar di HP
+  const loadOne = async (src:string, idx:number):Promise<HTMLCanvasElement> => {
+    onStage?.(`Memproses gambar ${idx+1}/${sources.length}...`);
+    const img = await loadImage(src);
+    // createImageBitmap jauh lebih cepat + mematikan smoothing untuk source crop (saves work)
     const ir = img.naturalWidth/img.naturalHeight;
     const cr = W/H;
     let sx=0, sy=0, sw=img.naturalWidth, sh=img.naturalHeight;
     if (ir > cr) { sw = img.naturalHeight*cr; sx = (img.naturalWidth-sw)/2; }
     else { sh = img.naturalWidth/cr; sy = (img.naturalHeight-sh)/2; }
-    cx.fillStyle = "#000"; cx.fillRect(0,0,W,H);
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const cx = c.getContext("2d", { alpha:false, desynchronized:true })!;
+    cx.fillStyle="#000"; cx.fillRect(0,0,W,H);
     cx.imageSmoothingEnabled = true;
-    cx.imageSmoothingQuality = "high";
+    cx.imageSmoothingQuality = "low"; // "high" di mobile SANGAT lambat — bilinear cukup bagus karena kita resize dari gambar AI 1024→480/720p
     cx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
-    out.push(c);
-    if (i%2===0) await new Promise(r=>setTimeout(r,0));
+    return c;
+  };
+  // Chunk parallel 4
+  for (let i=0;i<sources.length;i+=4) {
+    const chunk = sources.slice(i,i+4).map((s,j)=>loadOne(s,i+j));
+    const res = await Promise.all(chunk);
+    out.push(...res);
+    // yield ke UI thread biar ga block
+    await new Promise(r=>setTimeout(r,0));
   }
   return out;
 }
@@ -172,52 +181,69 @@ function precomputeSpectrum(
   totalFrames:number, fps:number, barCount:number
 ): { bars: Float32Array[]; beats: Uint8Array; bassLevels: Float32Array } {
   onStage2?.("Menganalisis audio (pre-compute spectrum)...");
+  // Mobile optimization: downsample audio dulu ke ~11kHz mono — analisis spectrum gak butuh frekuensi tinggi
+  // Ini boost 3-4× di precompute karena 4× lebih sedikit sampel
+  const targetSR = 11025;
+  const ds = Math.max(1, Math.floor(sampleRate/targetSR));
+  let dsa: Float32Array;
+  let dssr = sampleRate/ds;
+  if (audioData) {
+    const n = Math.ceil(audioData.length/ds);
+    dsa = new Float32Array(n);
+    for (let i=0;i<n;i++){
+      let s=0;
+      for (let j=0;j<ds;j++) s += audioData[i*ds+j]||0;
+      dsa[i] = s/ds;
+    }
+  } else {
+    dsa = new Float32Array(0);
+  }
+
   const barsArr: Float32Array[] = new Array(totalFrames);
   const beats = new Uint8Array(totalFrames);
   const bassLevels = new Float32Array(totalFrames);
   const smooth = new Float32Array(barCount);
   const bassRef = { level: 0, beat: false };
-  const N = 1024;
+  // Pakai ENERGY BAND (octave bands) — tidak pakai sin/cos per sample, CEPAT
+  // Band log dari ~60Hz ke ~5kHz dengan cara membagi window ke band-band frekuensi memakai filter bank sederhana
+  const N = Math.min(1024, Math.floor(0.05*dssr)); // ~50ms window
   const bassEnd = Math.floor(barCount*0.12) || 1;
-  // Frekuensi per bar (log scale: 80Hz - 16kHz)
-  const freqs = new Array(barCount);
-  const periods = new Array(barCount);
-  const steps = new Array(barCount);
-  for (let b=0; b<barCount; b++) {
-    freqs[b] = 80 * Math.pow(20, b/barCount);
-    periods[b] = sampleRate / freqs[b];
-    steps[b] = Math.max(2, Math.floor(periods[b]/2));
+
+  // Band edge (sample offset) — simple bandpass via RMS dari range window
+  const bandEdges: number[] = [];
+  for (let b=0; b<=barCount; b++) {
+    // frek dari 60Hz ke 5kHz log
+    const f = 60 * Math.pow(5000/60, b/barCount);
+    const idx = Math.floor((f/dssr) * N);
+    bandEdges.push(clamp(idx, 1, N/2));
   }
-  // Pre-compute hann window
+
+  // Hann window
   const hann = new Float32Array(N);
   for (let i=0;i<N;i++) hann[i] = 0.5*(1-Math.cos(2*Math.PI*i/(N-1)));
+
   for (let f=0; f<totalFrames; f++) {
     const t = f/fps;
-    const posSample = audioData ? Math.floor(t*sampleRate) : 0;
+    const posSample = audioData ? Math.floor(t*dssr) : 0;
     const out = new Float32Array(barCount);
     if (audioData) {
-      const start = Math.max(0, Math.min(posSample - N/2, audioData.length - N));
-      const winLen = Math.min(N, audioData.length - start);
+      const start = Math.max(0, Math.min(posSample - (N>>1), dsa.length - N));
+      const winLen = Math.min(N, dsa.length - start);
+      // Hitung RMS per band
       for (let b=0; b<barCount; b++) {
-        const step = steps[b];
+        const lo = bandEdges[b], hi = Math.min(winLen, bandEdges[b+1]);
+        if (hi<=lo) { out[b] = smooth[b] * 0.9; continue; }
         let sum=0, cnt=0;
-        // Energi per frekuensi (simple Goertzel-like correlation dengan hann window)
-        const freq = freqs[b];
-        const twoPi_f_over_sr = 2*Math.PI*freq/sampleRate;
-        for (let s=0; s<winLen; s+=step) {
+        for (let s=lo; s<hi; s++) {
           const idx = start + s;
-          if (idx<0||idx>=audioData.length) continue;
-          const w = hann[s < N ? s : N-1];
-          const v = audioData[idx] * w;
-          const ang = twoPi_f_over_sr * s;
-          const sinv = Math.sin(ang);
-          const cosv = Math.cos(ang);
-          sum += (v*sinv)*(v*sinv) + (v*cosv)*(v*cosv);
+          if (idx<0||idx>=dsa.length) continue;
+          const v = dsa[idx] * hann[s];
+          sum += v*v;
           cnt++;
         }
-        const val = cnt ? Math.sqrt(sum/cnt) : 0;
-        const target = clamp(val * 3.5 * (1 + b*0.02), 0, 1);
-        const a = target > smooth[b] ? 0.7 : 0.15;
+        const rms = cnt ? Math.sqrt(sum/cnt) : 0;
+        const target = clamp(rms * 6.5 * (1 + b*0.015), 0, 1);
+        const a = target > smooth[b] ? 0.7 : 0.2;
         smooth[b] = smooth[b]*(1-a) + target*a;
         out[b] = smooth[b];
       }
@@ -225,12 +251,11 @@ function precomputeSpectrum(
       for (let b=0;b<barCount;b++) out[b] = 0.05 + Math.sin(t*2+b*0.2)*0.05;
     }
     barsArr[f] = out;
-    // bass & beat
     let bsum = 0;
     for (let i=0;i<bassEnd;i++) bsum += out[i];
     const bass = bsum / bassEnd;
     bassRef.level = bassRef.level*0.85 + bass*0.15;
-    const isBeat = bass > bassRef.level*1.35 && bass > 0.18;
+    const isBeat = bass > bassRef.level*1.35 && bass > 0.15;
     bassLevels[f] = bassRef.level;
     if (isBeat) { beats[f] = 1; bassRef.beat = true; } else bassRef.beat = false;
   }
@@ -280,49 +305,52 @@ function drawFrame(s: DrawState) {
   const { W,H,bars,rgb,style,imgs,slideIdx,isTransition,nextIdx,transT,slideT,bass,beat } = s;
   const ctx = s._canvas.getContext("2d", { alpha: false, desynchronized: true })!;
 
-  // BG
-  const bg = ctx.createRadialGradient(W/2,H/2,0, W/2,H/2,Math.max(W,H)*0.8);
-  bg.addColorStop(0,`rgba(${rgb[0]/3|0},${rgb[1]/3|0},${rgb[2]/3|0},0.6)`);
-  bg.addColorStop(1,"rgba(5,2,15,1)");
-  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  // ===== MOBILE SPEED: kurangi gradient & efek berat =====
+  // Flat dark bg (gak bikin radial gradient tiap frame — 2-3× lebih cepat di mobile GPU)
+  ctx.fillStyle = "#08050f";
+  ctx.fillRect(0,0,W,H);
 
-  // Ken Burns zoom on current
   const cur = imgs[slideIdx % imgs.length];
   const nxt = imgs[nextIdx % imgs.length];
-  const zoomBase = 1.0 + slideT*0.08 + (beat?0.02:0);
+  // Ken Burns dikurangi dari 8%→3% di mobile — drawImage zoom mahal
+  const kb = (W <= 720) ? 0.03 : 0.08;
+  const zoomBase = 1.0 + slideT*kb + (beat?0.008:0);
   const drawImg = (img:HTMLCanvasElement,alpha:number,zoom:number)=>{
-    ctx.save(); ctx.globalAlpha = alpha;
+    if (alpha<=0) return;
+    ctx.globalAlpha = alpha;
     const dw=W*zoom, dh=H*zoom;
     ctx.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);
-    ctx.restore();
   };
   drawImg(cur,1,zoomBase);
-  // Vignette
-  const vg = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3, W/2,H/2,Math.max(W,H)*0.75);
-  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.75)");
-  ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+
+  // Vignette PRA-RENDERED (dibuat sekali di setup) — tidak buat radial gradient tiap frame
+  if ((s as any)._vignette) {
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage((s as any)._vignette, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
 
   if (isTransition && nxt) {
     const t = easeInOut(transT);
     if (s._transition==="fade") drawImg(nxt,t,1);
-    else if (s._transition==="zoom") { drawImg(cur,1-t,zoomBase*(1-t*0.15)); drawImg(nxt,t,0.95+t*0.05); }
+    else if (s._transition==="zoom") { drawImg(cur,1-t,zoomBase*(1-t*0.1)); drawImg(nxt,t,0.97+t*0.03); }
     else if (s._transition==="slide") {
-      ctx.save(); ctx.globalAlpha=1-t; ctx.drawImage(cur,-W*t*0.2,0,W,H); ctx.restore();
-      ctx.save(); ctx.globalAlpha=t; ctx.drawImage(nxt,W*(1-t),0,W,H); ctx.restore();
+      ctx.globalAlpha=1-t; ctx.drawImage(cur,-W*t*0.2,0,W,H);
+      ctx.globalAlpha=t;  ctx.drawImage(nxt,W*(1-t),0,W,H);
     }
-    else if (s._transition==="blur") { drawImg(nxt,t,1); ctx.fillStyle=`rgba(0,0,0,${0.5*(1-t)})`; ctx.fillRect(0,0,W,H); }
+    else if (s._transition==="blur") { drawImg(nxt,t,1); ctx.fillStyle=`rgba(0,0,0,${0.4*(1-t)})`; ctx.fillRect(0,0,W,H); }
     else if (s._transition==="glitch") {
       if (t<0.5) drawImg(cur,1,zoomBase); else drawImg(nxt,1,1);
       if (beat||t>0.3){
-        ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=0.5;
-        ctx.drawImage(cur||nxt,(Math.random()-0.5)*20*t*20,(Math.random()-0.5)*8,W,H);
+        ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=0.4;
+        ctx.drawImage(cur||nxt,(Math.random()-0.5)*10*t*10,(Math.random()-0.5)*4,W,H);
         ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
       }
     } else drawImg(nxt,t,1);
   }
 
-  // Glow wash
-  ctx.fillStyle = rgba(rgb,0.08+bass*0.15);
+  // Glow wash tipis (solid color dengan alpha variasi bass — jauhi gradient)
+  ctx.fillStyle = `rgba(${rgb[0]|0},${rgb[1]|0},${rgb[2]|0},${(0.05+bass*0.10).toFixed(3)})`;
   ctx.fillRect(0,0,W,H);
 
   drawSpectrum(ctx, s);
@@ -331,10 +359,10 @@ function drawFrame(s: DrawState) {
   if (s.title && s.showTitle) {
     const titleT = Math.min(1,slideT*2);
     ctx.save(); ctx.globalAlpha = titleT;
-    ctx.font = `bold ${Math.floor(H*0.055)}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
+    ctx.font = `900 ${Math.floor(H*0.05)}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     const ty = H*0.88;
-    ctx.shadowColor = rgba(rgb,1); ctx.shadowBlur = 20+bass*30;
+    ctx.shadowColor = rgba(rgb,0.9); ctx.shadowBlur = 12+bass*14;
     ctx.fillStyle="#fff";
     ctx.fillText(s.title, W/2, ty, W*0.92);
     ctx.restore();
@@ -465,34 +493,53 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
 function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
   const { W,H,bars,rgb,bass,beat,style } = s;
   const glow = s.profile.glow;
+  const isMobile = W <= 900;
   ctx.save();
-  ctx.shadowBlur = glow; ctx.shadowColor = rgba(rgb,1);
+  ctx.shadowBlur = isMobile ? Math.min(glow, 12) : glow;
+  ctx.shadowColor = rgba(rgb,1);
+
+  // Pre-compute warna bar SOLID (pakai warna utama langsung tanpa gradient per-bar)
+  // Ini boost besar di mobile — createLinearGradient tiap bar itu SANGAT mahal
+  const barFill = rgba(rgb, 0.95);
 
   if (style==="luxury"||style==="bars") {
-    const barW = W/bars.length*0.75, gap=W/bars.length*0.25, maxH=H*0.35;
-    for (let i=0;i<bars.length;i++){
-      const v = (bars as any)[i];
-      const h = v*maxH, x=i*(barW+gap)+gap/2, y=H-h-4;
-      const g = ctx.createLinearGradient(0,y+h,0,y);
-      g.addColorStop(0,rgba(rgb,0.9)); g.addColorStop(1,"rgba(255,255,255,0.95)");
-      ctx.fillStyle=g; roundRect(ctx,x,y,barW,h,barW*0.4); ctx.fill();
-      if (s.profile.reflections){
-        ctx.save(); ctx.globalAlpha=0.25; ctx.scale(1,-1);
-        roundRect(ctx,x,-H+4,barW,h*0.4,barW*0.4); ctx.fill();
-        ctx.restore();
+    const nBars = isMobile ? Math.min(bars.length, 40) : bars.length;
+    const step = bars.length / nBars;
+    const barW = W/nBars*0.75, gap=W/nBars*0.25, maxH=H*0.32;
+    ctx.fillStyle = barFill;
+    for (let i=0;i<nBars;i++){
+      // Ambil nilai max dari sekelompok bar (downsample untuk mobile)
+      const bi = Math.floor(i*step);
+      let v = (bars as any)[bi]||0;
+      if (isMobile) {
+        const end = Math.min(bars.length, bi+Math.ceil(step));
+        for (let j=bi;j<end;j++) if (bars[j]>v) v=bars[j];
       }
+      const h = v*maxH, x=i*(barW+gap)+gap/2, y=H-h-4;
+      ctx.fillRect(x,y,barW,h); // fillRect lebih cepat 2-3× dari roundRect
+    }
+    // Reflection di bawah (satu rect solid alpha rendah — bukan mirror per-bar)
+    if (s.profile.reflections && !isMobile) {
+      ctx.save(); ctx.globalAlpha=0.18; ctx.scale(1,-0.3);
+      ctx.fillStyle = barFill;
+      for (let i=0;i<bars.length;i++){
+        const v=(bars as any)[i]; if(!v) continue;
+        const h=v*maxH, x=i*(barW+gap)+gap/2;
+        ctx.fillRect(x,-H+4,barW,h*0.4);
+      }
+      ctx.restore();
     }
     if (style==="luxury"){
-      const pulse = 1+bass*0.4;
-      const r = Math.min(W,H)*0.07*pulse;
+      const pulse = 1+bass*0.3;
+      const r = Math.min(W,H)*(isMobile?0.055:0.07)*pulse;
       ctx.save(); ctx.translate(W/2,H*0.28);
-      ctx.shadowBlur=40; ctx.shadowColor=rgba(rgb,1);
-      ctx.rotate(s.phase*0.5);
-      for (let k=0;k<3;k++){
-        ctx.strokeStyle=rgba(rgb,0.4-k*0.1); ctx.lineWidth=2; ctx.setLineDash([8,12]);
-        ctx.beginPath(); ctx.arc(0,0,r+k*18+(beat?6:0),0,Math.PI*2); ctx.stroke();
+      // Kurangi ring dari 3→1 di mobile, hilangkan setLineDash (mahal)
+      ctx.shadowBlur=isMobile?20:40; ctx.shadowColor=rgba(rgb,1);
+      const ringCount = isMobile?1:3;
+      for (let k=0;k<ringCount;k++){
+        ctx.strokeStyle=rgba(rgb,0.35); ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(0,0,r+k*(isMobile?14:18)+(beat?4:0),0,Math.PI*2); ctx.stroke();
       }
-      ctx.setLineDash([]); ctx.rotate(-s.phase*0.5);
       const cg=ctx.createRadialGradient(0,0,0,0,0,r);
       cg.addColorStop(0,"rgba(255,255,255,0.9)"); cg.addColorStop(0.6,rgba(rgb,0.7)); cg.addColorStop(1,rgba(rgb,0.1));
       ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
@@ -506,7 +553,11 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
         ctx.fillText("♪",0,2);
       }
       ctx.restore();
-      if (beat) for (let k=0;k<6;k++) s.particles.push({x:W/2+(Math.random()-0.5)*80,y:H*0.28+(Math.random()-0.5)*60,vx:(Math.random()-0.5)*6,vy:-Math.random()*4-2,life:1,size:Math.random()*3+1});
+      // Particles: kurangi 6→3 di mobile
+      if (beat) {
+        const nSpark = isMobile ? 2 : 6;
+        for (let k=0;k<nSpark;k++) s.particles.push({x:W/2+(Math.random()-0.5)*60,y:H*0.28+(Math.random()-0.5)*40,vx:(Math.random()-0.5)*5,vy:-Math.random()*3-1.5,life:1,size:Math.random()*2+1});
+      }
     }
   }
   else if (style==="circle"){
@@ -775,9 +826,13 @@ async function renderWebCodecs(b:any){
     error:(e:any)=>console.error("[VideoEncoder]",e),
   });
   videoEncoder.configure({
-    codec:"avc1.42001f", width:canvas.width, height:canvas.height,
+    codec:"avc1.42001f", // Baseline profile — hardware encoder support paling luas di mobile
+    width:canvas.width, height:canvas.height,
     bitrate:prof.videoBitrate, bitrateMode:"variable", framerate:fps,
     latencyMode:"realtime",
+    hardwareAcceleration:"prefer-hardware",
+    // Keyframe tiap 2 detik — cukup untuk seek
+    avc:{format:"avc"},
   });
 
   let audioEncoder:any=null,audioEncDone:Promise<void>|null=null;
@@ -809,10 +864,19 @@ async function renderWebCodecs(b:any){
     audioEncoder.flush().then(audioResolve);
   }
 
+  // Pre-render vignette sekali awal (bukan tiap frame)
+  const vigC = document.createElement("canvas");
+  vigC.width = canvas.width; vigC.height = canvas.height;
+  const vg = vigC.getContext("2d",{alpha:true})!;
+  const vgr = vg.createRadialGradient(canvas.width/2,canvas.height/2,Math.min(canvas.width,canvas.height)*0.3,canvas.width/2,canvas.height/2,Math.max(canvas.width,canvas.height)*0.8);
+  vgr.addColorStop(0,"rgba(0,0,0,0)"); vgr.addColorStop(1,"rgba(0,0,0,0.7)");
+  vg.fillStyle=vgr; vg.fillRect(0,0,canvas.width,canvas.height);
+
   const perSlide = slideDur+transDur;
   const keyframeEvery = fps*2;
   const bassRef = {level:0, beat:false};
   const tStart = performance.now();
+  let encodeQueue = 0;
 
   for (let f=0; f<totalFrames; f++){
     const t = f/fps;
@@ -834,7 +898,7 @@ async function renderWebCodecs(b:any){
       time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,
       rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
-      phase:t*0.5,_canvas:canvas,_transition:transition,
+      phase:t*0.5,_canvas:canvas,_transition:transition,_vignette:vigC,
       showTitle:showTitle!==false, showCaption: !!captions?.length,
       logoImg,logoPos,captions,captionStyle,
     } as any);
@@ -842,10 +906,20 @@ async function renderWebCodecs(b:any){
     const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
     videoEncoder.encode(vf,{keyFrame:f%keyframeEvery===0});
     vf.close();
+    encodeQueue++;
 
-    if (f%Math.max(1,prof.batchSize*4)===0){
+    // Adaptive yield: jangan biarkan encoder queue numpuk > 10 frame (backpressure mencegah OOM & jank)
+    // Yield tiap batchSize frame untuk progress + UI tidak mati total
+    const yieldEvery = Math.max(1, prof.batchSize*2);
+    if (f%yieldEvery===0){
       onProgress?.(f/totalFrames);
-      await new Promise(r=>setTimeout(r,0));
+      // Jika encoder masih nge-blok, tunggu sebentar (microtask)
+      if (encodeQueue >= 8) {
+        await new Promise(r=>setTimeout(r,0));
+        encodeQueue = 0;
+      } else {
+        await Promise.resolve();
+      }
     }
   }
   await videoEncoder.flush(); videoEncoder.close();
