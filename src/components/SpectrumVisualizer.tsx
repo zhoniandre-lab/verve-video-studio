@@ -1,49 +1,53 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-type Style = "bars" | "circle" | "particles";
+type Style = "bars" | "circle" | "particles" | "luxury";
 
 interface Props {
   audioEl?: HTMLAudioElement | null;
-  audioStream?: MediaStream; // untuk render live
+  audioStream?: MediaStream;
   style?: Style;
   color?: string;
-  /** dipakai kalau audioEl null (idle animasi) */
   animateIdle?: boolean;
   width?: number;
   height?: number;
+  /** optional logo/text di tengah */
+  logo?: string;
 }
 
 /**
- * Audio spectrum visualizer keren dengan 3 mode, memakai Web Audio API + Canvas.
- * - Bars     : bar vertikal naik/turun ikut beat (mirip YouTube music channels)
- * - Circle   : waveform radial berdenyut (ala trap/nation)
- * - Particles: partikel menari ikut frekuensi + lingkaran spectrum
+ * Audio spectrum visualizer dengan 4 mode mewah:
+ * - bars     : Trap Nation classic bars + mirror reflection + bass pulse glow
+ * - circle   : Circular radial spectrum + center glow
+ * - particles: Particle dots di atas spectrum ring
+ * - luxury   : PREMIUM — Trap Nation / NCS style: bars + mirror + glow + vignette +
+ *             center logo pulse ikut beat + floating sparkles + moving gradient background
  */
 export default function SpectrumVisualizer({
   audioEl,
   audioStream,
-  style = "bars",
+  style = "luxury",
   color = "#ec4899",
   animateIdle = true,
   width = 1280,
   height = 720,
+  logo,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | MediaElementAudioSourceNode | null>(null);
-  const particlesRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; a: number }[]>([]);
+  const particlesRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; a: number; hue: number }[]>([]);
+  const sparklesRef = useRef<{ x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string }[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
 
-    // Setup audio if present
-    let dataArray: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(0));
     let freqArray: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(0));
+    let timeArray: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(0));
     const cleanupFns: (() => void)[] = [];
 
     const setupAudio = () => {
@@ -56,12 +60,11 @@ export default function SpectrumVisualizer({
         const ctxA = audioCtxRef.current!;
         if (!analyserRef.current) {
           const a = ctxA.createAnalyser();
-          a.fftSize = 512;
-          a.smoothingTimeConstant = 0.8;
+          a.fftSize = style === "luxury" ? 512 : 256;
+          a.smoothingTimeConstant = 0.82;
           analyserRef.current = a;
         }
         const analyser = analyserRef.current;
-
         if (audioEl && !sourceRef.current) {
           const src = ctxA.createMediaElementSource(audioEl);
           src.connect(analyser);
@@ -72,31 +75,29 @@ export default function SpectrumVisualizer({
           src.connect(analyser);
           sourceRef.current = src;
         }
-
-        dataArray = new Uint8Array(analyser.fftSize) as Uint8Array<ArrayBuffer>;
-        freqArray = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
-
-        const resume = () => {
-          if (ctxA.state === "suspended") ctxA.resume();
-        };
+        freqArray = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+        timeArray = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+        const resume = () => { if (ctxA.state === "suspended") ctxA.resume(); };
         audioEl?.addEventListener("play", resume);
         cleanupFns.push(() => audioEl?.removeEventListener("play", resume));
       } catch (e) {
-        console.warn("Audio setup error:", e);
+        console.warn("Audio setup:", e);
       }
     };
     setupAudio();
 
     // init particles
-    if (style === "particles" && particlesRef.current.length === 0) {
-      for (let i = 0; i < 120; i++) {
+    if (particlesRef.current.length === 0) {
+      const n = style === "luxury" ? 120 : 90;
+      for (let i = 0; i < n; i++) {
         particlesRef.current.push({
           x: Math.random() * width,
           y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 1.2,
-          vy: (Math.random() - 0.5) * 1.2,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: (Math.random() - 0.5) * 0.8,
           r: Math.random() * 2 + 0.6,
           a: Math.random() * 0.5 + 0.2,
+          hue: Math.random() * 360,
         });
       }
     }
@@ -105,200 +106,55 @@ export default function SpectrumVisualizer({
     const render = () => {
       t += 0.02;
       ctx.clearRect(0, 0, width, height);
-      // transparent bg (supaya bisa di-composite di atas video)
-      ctx.fillStyle = "rgba(0,0,0,0)";
-      ctx.fillRect(0, 0, width, height);
 
-      let bass = 0, mid = 0, treb = 0;
+      let bass = 0, mid = 0, treb = 0, avg = 0;
       if (analyserRef.current) {
         const a = analyserRef.current;
-        a.getByteTimeDomainData(dataArray);
         a.getByteFrequencyData(freqArray);
-        // bands
+        a.getByteTimeDomainData(timeArray);
         const len = freqArray.length;
         const bassEnd = Math.floor(len * 0.08);
         const midEnd = Math.floor(len * 0.35);
         for (let i = 0; i < bassEnd; i++) bass += freqArray[i];
         for (let i = bassEnd; i < midEnd; i++) mid += freqArray[i];
         for (let i = midEnd; i < len; i++) treb += freqArray[i];
+        for (let i = 0; i < len; i++) avg += freqArray[i];
         bass /= bassEnd || 1;
         mid /= (midEnd - bassEnd) || 1;
         treb /= (len - midEnd) || 1;
+        avg /= len;
       } else if (animateIdle) {
-        // fake spectrum dari noise halus
         bass = 90 + Math.sin(t * 1.7) * 30 + Math.sin(t * 4.3) * 15;
         mid = 80 + Math.sin(t * 2.3 + 1) * 30 + Math.cos(t * 5.1) * 10;
         treb = 70 + Math.sin(t * 3.9 + 2) * 28;
-        freqArray = new Uint8Array(256) as Uint8Array<ArrayBuffer>;
+        avg = (bass + mid + treb) / 3;
+        freqArray = new Uint8Array(new ArrayBuffer(256));
         const fa = freqArray;
         for (let i = 0; i < 256; i++) {
           fa[i] = Math.max(0, Math.min(255,
-            60 + Math.sin(t * 2 + i * 0.1) * 40 + Math.sin(t * 6 + i * 0.25) * 25 + (Math.random() - 0.5) * 20));
+            60 + Math.sin(t * 2 + i * 0.12) * 45 + Math.sin(t * 5.5 + i * 0.25) * 25 + (Math.random() - 0.5) * 15));
         }
       }
 
-      const normBass = bass / 255;
-      const normMid = mid / 255;
-      const normTreb = treb / 255;
+      const nBass = bass / 255;
+      const nMid = mid / 255;
+      const nTreb = treb / 255;
+      const nAvg = avg / 255;
 
-      // gradient helper
-      const grad = ctx.createLinearGradient(0, height, 0, 0);
-      grad.addColorStop(0, color);
-      grad.addColorStop(0.5, "#a855f7");
-      grad.addColorStop(1, "#22d3ee");
-
-      if (style === "bars") {
-        const bars = 64;
-        const bw = (width * 0.9) / bars;
-        const step = Math.floor(freqArray.length / bars);
-        const baseY = height - 20;
-        // mirror reflect
-        ctx.save();
-        ctx.globalAlpha = 0.25;
-        ctx.translate(0, baseY + 10);
-        ctx.scale(1, -0.4);
-        for (let i = 0; i < bars; i++) {
-          const v = freqArray[i * step] / 255;
-          const h = 40 + v * (height * 0.45);
-          const x = width * 0.05 + i * bw;
-          ctx.fillStyle = grad;
-          roundRect(ctx, x + 2, 0, bw - 4, h, 4);
-          ctx.fill();
-        }
-        ctx.restore();
-
-        // bars atas
-        ctx.shadowBlur = 18;
-        ctx.shadowColor = color;
-        for (let i = 0; i < bars; i++) {
-          const v = freqArray[i * step] / 255;
-          const h = 40 + v * (height * 0.45);
-          const x = width * 0.05 + i * bw;
-          ctx.fillStyle = grad;
-          roundRect(ctx, x + 2, baseY - h, bw - 4, h, 4);
-          ctx.fill();
-        }
-        ctx.shadowBlur = 0;
-
-        // bass pulse at center
-        ctx.beginPath();
-        ctx.arc(width / 2, height - 40, 12 + normBass * 28, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.5 + normBass * 0.5;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      } else if (style === "circle") {
-        const cx = width / 2, cy = height / 2;
-        const rBase = 140 + normBass * 80;
-        const bars = 128;
-        ctx.shadowBlur = 25;
-        ctx.shadowColor = color;
-        ctx.lineWidth = 3;
-        for (let i = 0; i < bars; i++) {
-          const v = freqArray[i % freqArray.length] / 255;
-          const a = (i / bars) * Math.PI * 2 - Math.PI / 2;
-          const r1 = rBase;
-          const r2 = rBase + 30 + v * 180;
-          const x1 = cx + Math.cos(a) * r1;
-          const y1 = cy + Math.sin(a) * r1;
-          const x2 = cx + Math.cos(a) * r2;
-          const y2 = cy + Math.sin(a) * r2;
-          const gr = ctx.createLinearGradient(x1, y1, x2, y2);
-          gr.addColorStop(0, "#22d3ee");
-          gr.addColorStop(0.5, color);
-          gr.addColorStop(1, "#f59e0b");
-          ctx.strokeStyle = gr;
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
-        }
-        // center glow
-        const glowR = 80 + normBass * 60;
-        const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-        rg.addColorStop(0, "rgba(255,255,255,0.9)");
-        rg.addColorStop(0.3, hexA(color, 0.6));
-        rg.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = rg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      } else if (style === "particles") {
-        // particles
-        const ps = particlesRef.current;
-        for (const p of ps) {
-          // influence dari freq
-          const freqI = Math.floor(((p.x + p.y) % width) / width * freqArray.length);
-          const f = (freqArray[freqI] || 80) / 255;
-          p.vx += (Math.random() - 0.5) * (0.2 + f);
-          p.vy += (Math.random() - 0.5) * (0.2 + f) - 0.02;
-          p.vx *= 0.97;
-          p.vy *= 0.97;
-          p.x += p.vx;
-          p.y += p.vy;
-          if (p.x < 0) p.x = width;
-          if (p.x > width) p.x = 0;
-          if (p.y < 0) p.y = height;
-          if (p.y > height) p.y = 0;
-          ctx.fillStyle = hexA(color, p.a);
-          ctx.shadowBlur = 12;
-          ctx.shadowColor = color;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r + f * 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.shadowBlur = 0;
-        // lingkaran spectrum
-        const cx = width / 2, cy = height / 2;
-        const rBase = 200 + normBass * 100;
-        ctx.lineWidth = 2;
-        for (let i = 0; i < 180; i++) {
-          const v = freqArray[i % freqArray.length] / 255;
-          const a = (i / 180) * Math.PI * 2;
-          const r = rBase + v * 80;
-          const x = cx + Math.cos(a) * r;
-          const y = cy + Math.sin(a) * r;
-          ctx.fillStyle = hexA(color, 0.6);
-          ctx.beginPath();
-          ctx.arc(x, y, 1 + v * 2.2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        // waveform ring
-        ctx.strokeStyle = hexA(color, 0.8);
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        const wr = 120;
-        if (dataArray.length) {
-          for (let i = 0; i < dataArray.length; i++) {
-            const v = (dataArray[i] - 128) / 128;
-            const a = (i / dataArray.length) * Math.PI * 2;
-            const r = wr + v * 30;
-            const x = cx + Math.cos(a) * r;
-            const y = cy + Math.sin(a) * r;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.closePath();
-          ctx.stroke();
-        }
-        // flash jika bass tinggi
-        if (normBass > 0.6) {
-          ctx.fillStyle = hexA("#ffffff", (normBass - 0.6) * 0.15);
-          ctx.fillRect(0, 0, width, height);
-        }
-      }
+      if (style === "luxury") drawLuxury(ctx, freqArray, timeArray, nBass, nMid, nTreb, nAvg, t, width, height, color, logo);
+      else if (style === "bars") drawBars(ctx, freqArray, nBass, width, height, color);
+      else if (style === "circle") drawCircle(ctx, freqArray, nBass, t, width, height, color);
+      else if (style === "particles") drawParticlesMode(ctx, freqArray, nBass, t, width, height, color);
 
       rafRef.current = requestAnimationFrame(render);
     };
-
     rafRef.current = requestAnimationFrame(render);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       cleanupFns.forEach((f) => f());
     };
-  }, [audioEl, audioStream, style, color, width, height, animateIdle]);
+  }, [audioEl, audioStream, style, color, width, height, animateIdle, logo]);
 
   return (
     <canvas
@@ -309,6 +165,276 @@ export default function SpectrumVisualizer({
       style={{ position: "absolute", inset: 0 }}
     />
   );
+
+  // =========== DRAW FUNCTIONS ===========
+
+  function drawBars(ctx: CanvasRenderingContext2D, freq: Uint8Array<ArrayBuffer>, bass: number, W: number, H: number, c: string) {
+    const bars = 64;
+    const bw = (W * 0.92) / bars;
+    const step = Math.max(1, Math.floor(freq.length / bars));
+    const baseY = H - 20;
+    const grad = barGrad(ctx, c, W, H);
+    // reflection
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.translate(0, baseY + 4);
+    ctx.scale(1, -0.4);
+    for (let i = 0; i < bars; i++) {
+      const v = freq[i * step] / 255;
+      roundRect(ctx, W * 0.04 + i * bw + 2, 0, bw - 4, 40 + v * H * 0.4, 3);
+      ctx.fillStyle = grad; ctx.fill();
+    }
+    ctx.restore();
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = c;
+    for (let i = 0; i < bars; i++) {
+      const v = freq[i * step] / 255;
+      const h = 40 + v * H * 0.4;
+      roundRect(ctx, W * 0.04 + i * bw + 2, baseY - h, bw - 4, h, 3);
+      ctx.fillStyle = grad; ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    // bass circle
+    ctx.beginPath();
+    ctx.arc(W/2, H - 40, 12 + bass * 28, 0, Math.PI*2);
+    ctx.fillStyle = c; ctx.globalAlpha = 0.5 + bass*0.5; ctx.fill(); ctx.globalAlpha=1;
+  }
+
+  function drawCircle(ctx: CanvasRenderingContext2D, freq: Uint8Array<ArrayBuffer>, bass: number, t: number, W: number, H: number, c: string) {
+    const cx=W/2, cy=H/2, rBase=140+bass*80, bars=128;
+    ctx.shadowBlur=25; ctx.shadowColor=c; ctx.lineWidth=3;
+    for (let i=0;i<bars;i++){
+      const v=freq[i%freq.length]/255;
+      const a=(i/bars)*Math.PI*2 - Math.PI/2 + t*0.2;
+      const r2=rBase+30+v*170;
+      ctx.strokeStyle=c;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(a)*rBase,cy+Math.sin(a)*rBase);
+      ctx.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2);
+      ctx.stroke();
+    }
+    const glowR=80+bass*60;
+    const rg=ctx.createRadialGradient(cx,cy,0,cx,cy,glowR);
+    rg.addColorStop(0,"rgba(255,255,255,0.9)");
+    rg.addColorStop(0.3,hexA(c,0.6));
+    rg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(cx,cy,glowR,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  function drawParticlesMode(ctx: CanvasRenderingContext2D, freq: Uint8Array<ArrayBuffer>, bass: number, t: number, W: number, H: number, c: string) {
+    const ps=particlesRef.current;
+    for(const p of ps){
+      const fi=Math.floor(((p.x+p.y)%W)/W*freq.length);
+      const f=(freq[fi]||80)/255;
+      p.vx+=(Math.random()-0.5)*(0.2+f); p.vy+=(Math.random()-0.5)*(0.2+f)-0.02;
+      p.vx*=0.97; p.vy*=0.97; p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
+      ctx.fillStyle=hexA(c,p.a); ctx.shadowBlur=12; ctx.shadowColor=c;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r+f*2,0,Math.PI*2); ctx.fill();
+    }
+    ctx.shadowBlur=0;
+    const cx=W/2, cy=H/2, rBase=200+bass*100;
+    for(let i=0;i<180;i++){
+      const v=freq[i%freq.length]/255;
+      const a=(i/180)*Math.PI*2+t*0.3;
+      ctx.fillStyle=hexA(c,0.6);
+      ctx.beginPath(); ctx.arc(cx+Math.cos(a)*(rBase+v*80),cy+Math.sin(a)*(rBase+v*80),1+v*2,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  // ===== LUXURY (Trap Nation / NCS style) =====
+  function drawLuxury(
+    ctx: CanvasRenderingContext2D,
+    freq: Uint8Array<ArrayBuffer>,
+    timeArr: Uint8Array<ArrayBuffer>,
+    bass: number, mid: number, treb: number, avg: number,
+    t: number, W: number, H: number, c: string, textLogo?: string,
+  ) {
+    // 1. Animated moving gradient background (subtle)
+    const bg = ctx.createRadialGradient(W/2 + Math.sin(t*0.3)*200, H*0.3 + Math.cos(t*0.4)*100, 50, W/2, H/2, Math.max(W,H));
+    bg.addColorStop(0, hexA(c, 0.08 + bass*0.12));
+    bg.addColorStop(0.5, "rgba(0,0,0,0)");
+    bg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,W,H);
+
+    // 2. Bars (bottom) with gradient + glow
+    const bars = 72;
+    const bw = (W * 0.92) / bars;
+    const step = Math.max(1, Math.floor(freq.length / bars));
+    const baseY = H - 10;
+    const grad = ctx.createLinearGradient(0, H, 0, 0);
+    grad.addColorStop(0, c);
+    grad.addColorStop(0.5, "#a855f7");
+    grad.addColorStop(1, "#22d3ee");
+
+    // Reflection (mirror bawah — flipped transparan)
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.translate(0, baseY);
+    ctx.scale(1, -0.5);
+    for (let i = 0; i < bars; i++) {
+      const v = freq[i * step] / 255;
+      const h = 30 + v * H * 0.35;
+      const x = W * 0.04 + i * bw;
+      ctx.fillStyle = grad;
+      roundRect(ctx, x + 1.5, 0, bw - 3, h, 3);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Bars utama (naik ke atas)
+    ctx.save();
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = c;
+    for (let i = 0; i < bars; i++) {
+      const v = freq[i * step] / 255;
+      const h = 30 + v * H * 0.42;
+      const x = W * 0.04 + i * bw;
+      ctx.fillStyle = grad;
+      roundRect(ctx, x + 1.5, baseY - h, bw - 3, h, 3);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 3. Vignette (gelap di pinggir)
+    const vig = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.35, W/2, H/2, Math.max(W,H)*0.75);
+    vig.addColorStop(0,"rgba(0,0,0,0)");
+    vig.addColorStop(1,"rgba(0,0,0,0.75)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(0,0,W,H);
+
+    // 4. Center pulsing logo (lingkaran glow ikut bass) + di dalamnya opsional text
+    const cx = W/2;
+    const cy = H*0.42;
+    const logoR = Math.min(W,H) * (0.13 + bass*0.05);
+    const lg = ctx.createRadialGradient(cx, cy, 0, cx, cy, logoR*2.4);
+    lg.addColorStop(0, hexA("#ffffff", 0.95));
+    lg.addColorStop(0.15, hexA(c, 0.85));
+    lg.addColorStop(0.4, hexA(c, 0.3));
+    lg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, logoR*2.4, 0, Math.PI*2);
+    ctx.fill();
+
+    // Inner ring ikut beat
+    ctx.strokeStyle = hexA("#ffffff", 0.9);
+    ctx.lineWidth = 3 + bass*3;
+    ctx.shadowBlur = 30;
+    ctx.shadowColor = c;
+    ctx.beginPath();
+    ctx.arc(cx, cy, logoR*(0.9 + bass*0.15), 0, Math.PI*2);
+    ctx.stroke();
+
+    // Outer rotating ring
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t*0.4);
+    ctx.strokeStyle = hexA(c, 0.4);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 8]);
+    ctx.beginPath();
+    ctx.arc(0, 0, logoR*1.6, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    ctx.shadowBlur = 0;
+
+    // Logo text
+    if (textLogo) {
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const fs = Math.min(logoR*0.35, 56);
+      ctx.font = `900 ${fs}px system-ui, sans-serif`;
+      ctx.shadowColor = "#000";
+      ctx.shadowBlur = 10;
+      const words = textLogo.split(" ");
+      const line1 = words.slice(0, Math.ceil(words.length/2)).join(" ");
+      const line2 = words.slice(Math.ceil(words.length/2)).join(" ");
+      if (line2) {
+        ctx.fillText(line1, cx, cy - fs*0.55);
+        ctx.fillText(line2, cx, cy + fs*0.55);
+      } else {
+        ctx.fillText(line1, cx, cy);
+      }
+      ctx.shadowBlur = 0;
+    } else {
+      // default logo icon
+      ctx.fillStyle = "#fff";
+      ctx.font = `900 ${logoR*0.7}px system-ui, sans-serif`;
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText("♪", cx, cy);
+    }
+
+    // 5. Sparkles (muncul saat bass tinggi)
+    if (sparklesRef.current.length < 80 && bass > 0.5) {
+      for (let i=0;i<3;i++){
+        const ang = Math.random()*Math.PI*2;
+        const speed = 1 + Math.random()*3;
+        sparklesRef.current.push({
+          x: cx + Math.cos(ang)*logoR*1.3,
+          y: cy + Math.sin(ang)*logoR*1.3,
+          vx: Math.cos(ang)*speed,
+          vy: Math.sin(ang)*speed,
+          life: 0,
+          maxLife: 40 + Math.random()*30,
+          color: Math.random()<0.5?c:"#ffffff",
+        });
+      }
+    }
+    for (let i=sparklesRef.current.length-1;i>=0;i--){
+      const s = sparklesRef.current[i];
+      s.x += s.vx; s.y += s.vy;
+      s.vx *= 0.98; s.vy *= 0.98;
+      s.life++;
+      const alpha = 1 - s.life/s.maxLife;
+      ctx.fillStyle = hexA(s.color, alpha);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 1.5 + alpha*2, 0, Math.PI*2);
+      ctx.fill();
+      if (s.life >= s.maxLife) sparklesRef.current.splice(i,1);
+    }
+
+    // 6. Subtle floating particles background (mengambang ikut musik)
+    for(const p of particlesRef.current){
+      const fi = Math.floor(((p.x+p.y)%W)/W*freq.length);
+      const f = (freq[fi]||80)/255;
+      p.vx += (Math.random()-0.5)*(0.1+f*0.4);
+      p.vy += (Math.random()-0.5)*(0.1+f*0.4)-0.01;
+      p.vx*=0.98; p.vy*=0.98;
+      p.x += p.vx; p.y += p.vy;
+      if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
+      ctx.fillStyle = hexA(c, p.a * (0.4 + avg*0.6));
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = c;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r + f*1.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // 7. Waveform di sekeliling logo
+    ctx.strokeStyle = hexA("#ffffff", 0.35);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const wr = logoR*2;
+    if (timeArr.length) {
+      for (let i = 0; i < timeArr.length; i++) {
+        const v = (timeArr[i] - 128)/128;
+        const a = (i/timeArr.length)*Math.PI*2 - Math.PI/2 + t*0.1;
+        const r = wr + v*12;
+        const x = cx + Math.cos(a)*r;
+        const y = cy + Math.sin(a)*r;
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -320,12 +446,18 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
-
+function barGrad(ctx: CanvasRenderingContext2D, c: string, _W: number, H: number) {
+  const g = ctx.createLinearGradient(0, H, 0, 0);
+  g.addColorStop(0, c);
+  g.addColorStop(0.5, "#a855f7");
+  g.addColorStop(1, "#22d3ee");
+  return g;
+}
 function hexA(hex: string, a: number) {
   const c = hex.replace("#", "");
-  const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
+  const f = c.length === 3 ? c.split("").map((x) => x+x).join("") : c;
+  const r = parseInt(f.slice(0,2),16);
+  const g = parseInt(f.slice(2,4),16);
+  const b = parseInt(f.slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
 }

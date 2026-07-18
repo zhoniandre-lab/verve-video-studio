@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpectrumVisualizer from "@/components/SpectrumVisualizer";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
-import type { VizStyle, AudioMode, ImageSource } from "@/lib/types";
+import type { VizStyle as VizStyleType, AudioMode, ImageSource } from "@/lib/types";
 
 type Mode = "slideshow" | "t2v";
 type Quality = "fast" | "balanced" | "high";
@@ -68,7 +68,7 @@ export default function Home() {
   const [musicUrl, setMusicUrl] = useState<string>("");
 
   // Step 5
-  const [vizStyle, setVizStyle] = useState<VizStyle>("bars");
+  const [vizStyle, setVizStyle] = useState<VizStyleType>("luxury");
   const [vizColor, setVizColor] = useState("#ec4899");
   const [slideDuration, setSlideDuration] = useState(3);
   const [transition, setTransition] = useState<"fade" | "zoom" | "none">("zoom");
@@ -151,28 +151,40 @@ export default function Home() {
     if (!selectedTitle) return setErr("Pilih judul dulu");
     setStageText(`Generate ${nSlides} gambar AI...`);
     const newSlides: Slide[] = [];
+    const errs: string[] = [];
     for (let i = 0; i < nSlides; i++) {
       setStageText(`Gambar ${i + 1}/${nSlides}...`);
       try {
-        const { url } = await callApi("/image", {
-          title: selectedTitle.text,
-          keyword: selectedTitle.keyword,
-          niche,
-          style: imageStyle,
-          size: imageSize,
+        const res = await fetch("/api/hcnsec/image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: selectedTitle.text,
+            keyword: selectedTitle.keyword,
+            niche,
+            style: imageStyle,
+            size: imageSize,
+          }),
         });
-        newSlides.push({ id: `s${i}_${Date.now()}`, imageUrl: url });
-      } catch (e) {
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || `Error ${res.status}`);
+        }
+        newSlides.push({ id: `s${i}_${Date.now()}_${i}`, imageUrl: data.url });
+      } catch (e: any) {
         console.error(e);
-        // tetap lanjut ke gambar selanjutnya
+        errs.push(`#${i+1}: ${e.message?.slice(0,120) || "gagal"}`);
       }
     }
     if (!newSlides.length) {
-      setErr("Semua gambar gagal di-generate. Coba lagi atau cek saldo API.");
+      setErr(`Semua ${nSlides} gambar gagal di-generate.\n\nPenyebab kemungkinan:\n• Saldo di api.hcnsec.cn habis\n• Model "${"step-image-edit-2"}" tidak support text-to-image (mungkin model edit, butuh gambar awal)\n• Koneksi HP tidak stabil\n\nDetail error:\n${errs.slice(0,3).join("\n")}\n\n💡 Solusi: coba upload gambar sendiri dulu, atau hubungi saya untuk ganti model gambar.`);
     } else {
+      if (errs.length) setStageText(`Berhasil ${newSlides.length}/${nSlides} gambar (${errs.length} gagal). Lanjut...`);
       setSlides(newSlides);
+      setError("");
     }
     setStageText("");
+    setLoading(null);
   }
 
   function handleUploadImages(files: FileList | null) {
@@ -573,11 +585,11 @@ export default function Home() {
                 <div className="grid sm:grid-cols-2 gap-3">
                   <label className="block">
                     <div className="text-xs sm:text-sm text-white/70 mb-1">Style spectrum</div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([["bars","📊 Bars"],["circle","💫 Circle"],["particles","✨ Particles"]] as const).map(([v,l])=>(
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {([["luxury","🔥 LUXURY (Trap Nation)"],["bars","📊 Classic Bars"],["circle","💫 Circle Wave"],["particles","✨ Particles"]] as const).map(([v,l])=>(
                         <button key={v}
-                          className={`btn text-xs sm:text-sm ${vizStyle===v?"btn-primary":"btn-ghost"}`}
-                          onClick={()=>setVizStyle(v as VizStyle)}>{l}</button>
+                          className={`btn text-xs sm:text-sm ${vizStyle===v?"btn-primary":"btn-ghost"} ${v==="luxury"?"glow":""}`}
+                          onClick={()=>setVizStyle(v as VizStyleType)}>{l}</button>
                       ))}
                     </div>
                   </label>

@@ -1,4 +1,4 @@
-export type VizStyle = "bars" | "circle" | "particles";
+export type VizStyle = "bars" | "circle" | "particles" | "luxury";
 
 export type AudioMode = "tts" | "music" | "both" | "none";
 
