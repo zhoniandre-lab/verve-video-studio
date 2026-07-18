@@ -1,4 +1,5 @@
 import {
+  FAST_CHAT_MODELS,
   CHAT_MODELS,
   DEFAULT_CHAT_MODEL,
   DEFAULT_IMAGE_MODEL,
@@ -64,33 +65,50 @@ async function retry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 800): Prom
 }
 
 // ============== CHAT ==============
+// Coba model cepat satu-persatu dengan timeout pendek, auto-fallback jika lambat/error
 export async function chat(messages: { role: string; content: string }[], model?: string) {
-  const data: any = await retry(() => postJson("/chat/completions", {
-    model: model || DEFAULT_CHAT_MODEL, messages, temperature: 0.85,
-  }));
-  return (data.choices?.[0]?.message?.content || "").trim();
+  const errors: string[] = [];
+  const models = model ? [model, ...FAST_CHAT_MODELS.filter(m => m !== model)] : FAST_CHAT_MODELS;
+  const timeouts = [20, 25, 30, 40]; // timeout per model, makin lama untuk model cadangan
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i];
+    const to = timeouts[Math.min(i, timeouts.length - 1)];
+    try {
+      const data: any = await postJson("/chat/completions", {
+        model: m,
+        messages,
+        temperature: 0.9,
+        max_tokens: 400,   // batasi output agar jawaban pendek & cepat
+        stream: false,
+      }, to);
+      const out = (data.choices?.[0]?.message?.content || "").trim();
+      if (out && out.length > 2) return out;
+    } catch (e: any) {
+      errors.push(`${m}: ${e.message?.slice(0,60)}`);
+      // Auth/Quota error jangan coba model lain
+      if (e.status === 401) throw new ApiError("API Key salah / invalid.", 401);
+      if (e.status === 402) throw new ApiError("Saldo API habis, top up di api.hcnsec.cn.", 402);
+      continue; // coba model berikutnya
+    }
+  }
+  throw new ApiError(`Semua model chat gagal/timeout:\n${errors.slice(0,4).join("\n")}`, 504);
 }
 
 export async function generateKeywords(niche: string, n = 5, model?: string) {
-  const sys = "Kamu ahli SEO & content creator YouTube Shorts/TikTok. " +
-    `Buat ${n} keyword/topik video menarik & banyak dicari untuk niche user. ` +
-    "Output HANYA 1 per baris, tanpa nomor/penjelasan.";
-  return (await chat([{role:"system",content:sys},{role:"user",content:niche}], model))
+  const sys = `List ${n} YouTube/TikTok SEO keywords (Bahasa Indonesia) untuk: ${niche}. Hanya 1 per baris, tanpa nomor, pendek.`;
+  return (await chat([{role:"user",content:sys}], model))
     .split("\n").map((l:string)=>l.replace(/^[-•*0-9.)\s"]+|["\s]+$/g,"").trim()).filter(Boolean).slice(0,n);
 }
 
 export async function generateTitles(keyword: string, niche: string, n = 3, model?: string) {
-  const sys = "Copywriter YouTube Shorts Indonesia. " +
-    `Buat ${n} judul pendek (maks 8 kata) untuk keyword "${keyword}", niche "${niche}". ` +
-    "Clickbait tapi jujur, bisa pakai angka/emo. Output 1 per baris tanpa nomor.";
-  return (await chat([{role:"system",content:sys},{role:"user",content:keyword}], model))
+  const sys = `Buat ${n} judul YouTube Shorts (maks 8 kata, Bahasa Indonesia) untuk keyword "${keyword}" (niche: ${niche}). 1 per baris, tanpa nomor. Judul clickbait-pendek.`;
+  return (await chat([{role:"user",content:sys}], model))
     .split("\n").map((l:string)=>l.replace(/^[-•*0-9.)\s"]+|["\s]+$/g,"").trim()).filter(Boolean).slice(0,n);
 }
 
 export async function generateScript(title: string, keyword: string, slides: number, model?: string) {
-  const sys = `Narasi singkat Bahasa Indonesia untuk video "${title}" (keyword: ${keyword}), ` +
-    `${slides} baris (1 baris=1 slide). Gaya host YouTube Shorts santai. Total pendek.`;
-  return (await chat([{role:"system",content:sys},{role:"user",content:title}], model))
+  const sys = `Narasi video singkat "${title}" (keyword: ${keyword}), ${slides} baris (1 baris=1 slide). Bahasa Indonesia santai, tiap baris 1 kalimat pendek.`;
+  return (await chat([{role:"user",content:sys}], model))
     .split("\n").map((l:string)=>l.replace(/^[-•*0-9.)\s"]+/,"").trim()).filter(Boolean).slice(0,slides);
 }
 
@@ -188,16 +206,9 @@ export async function generateImage(prompt: string, styleSuffix?: string, size =
 }
 
 export async function enhancePrompt(basePrompt: string, style = "cinematic"): Promise<string> {
-  const sys = "Kamu adalah prompt engineer ahli AI gambar. " +
-    "Ubah prompt user menjadi prompt English yang SANGAT detail untuk AI gambar, tambahkan detail visual: " +
-    "shot type, lighting (golden hour, studio, volumetric, neon), komposisi (rule of thirds, centered), " +
-    "color palette, mood, detail tekstur, kualitas (8k, hyperdetailed, sharp focus). " +
-    "Prompt harus padat 1 kalimat panjang, tanpa enter. Output HANYA prompt.";
-  const p = await chat([
-    { role: "system", content: sys },
-    { role: "user", content: `Style: ${style}. Prompt dasar: ${basePrompt}` }
-  ]);
-  return p;
+  // Prompt pendek agar cepat
+  const user = `Buat prompt gambar English detail untuk tema "${basePrompt}" style ${style}. Tambah lighting & composition. Hanya 1 kalimat pendek.`;
+  return (await chat([{ role: "user", content: user }]));
 }
 
 // ============== TTS ==============
