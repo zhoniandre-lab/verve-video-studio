@@ -1140,7 +1140,6 @@ Dibuat dengan Verve AI Video Studio`;
 
     // Load canvas & images
     const ctx = canvas.getContext("2d")!;
-    const prof = QUALITY_OPTIONS.find(q=>q.id===quality);
     const W = canvas.width, H = canvas.height;
     // Load slides ke HTMLImageElement
     const imgs: HTMLImageElement[] = [];
@@ -1286,14 +1285,16 @@ Dibuat dengan Verve AI Video Studio`;
       try {
         if (!actx) {
           const AC = (window as any).AudioContext||(window as any).webkitAudioContext;
-          actx = new AC();
-          analyser = actx.createAnalyser();
-          analyser.fftSize=256;
-          const src = actx.createMediaElementSource(audEl);
-          src.connect(analyser); analyser.connect(actx.destination);
-          freq = new Uint8Array(analyser.frequencyBinCount);
+          const ctxA: AudioContext = new AC();
+          actx = ctxA;
+          const an = ctxA.createAnalyser();
+          an.fftSize=256;
+          analyser = an;
+          const src = ctxA.createMediaElementSource(audEl);
+          src.connect(an); an.connect(ctxA.destination);
+          freq = new Uint8Array(an.frequencyBinCount);
         }
-        if (actx.state==="suspended") actx.resume();
+        if (actx && actx.state==="suspended") actx.resume();
         await audEl.play().catch(()=>{});
         audEl.onended = ()=>stopPreview();
       } catch(e) {}
