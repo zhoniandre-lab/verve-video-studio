@@ -1,6 +1,5 @@
 {
   "functions": {
     "src/app/api/**/*.ts": { "maxDuration": 300 }
-  },
-  "buildCommand": "npm install --legacy-peer-deps && NEXT_ESLINT=0 npx next build"
+  }
 }
