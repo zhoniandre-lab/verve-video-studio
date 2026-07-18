@@ -60,13 +60,13 @@ function useIsMobile() {
 }
 
 // ===== API Key Modal (mirip araz.biz.id) — multi-provider =====
-type Provider = "apiframe" | "kie" | "sunor";
+type Provider = "kie" | "apiframe" | "sunor";
 const PROVIDERS: { id:Provider; name:string; url:string; note:string; free:string; prefix?:string }[] = [
   { id:"kie",      name:"🥇 Kie.ai",       url:"https://kie.ai?ref=verve",
-    note:"Bisa diakses dari Indonesia (Cloudflare longgar), 5.000 kredit GRATIS daftar, support Suno V3.5–V5.5 🔥",
-    free:"5.000 kredit (~±40 lagu) tanpa kartu", prefix:"kie-" },
+    note:"Bisa diakses dari Indonesia (Cloudflare longgar), 5.000 kredit GRATIS daftar, support Suno V3.5–V5.5 🔥 (DIREKOMENDASIKAN)",
+    free:"5.000 kredit (~±40 lagu) tanpa kartu", prefix:"kie- / hex murni" },
   { id:"apiframe", name:"apiframe.ai",     url:"https://apiframe.ai/?ref=verve",
-    note:"300 kredit/bulan GRATIS — tapi kadang diblok Cloudflare dari IP Indo. Solusi: pakai VPN/Mode Desktop/HP beda, atau pilih Kie.ai.",
+    note:"300 kredit/bulan GRATIS — tapi sering diblok Cloudflare dari IP Indo. Kalau diblok pindah ke Kie.ai.",
     free:"300 kredit/bulan (~27 lagu)", prefix:"afk_" },
   { id:"sunor",    name:"Sunor.cc",        url:"https://sunor.cc/?ref=verve",
     note:"Alternatif cadangan, 25 kredit satu kali saat daftar.",
@@ -75,24 +75,34 @@ const PROVIDERS: { id:Provider; name:string; url:string; note:string; free:strin
 
 function detectProvider(key: string): Provider {
   const k = key.trim().toLowerCase();
+  if (!k) return "kie";
   if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
   if (k.startsWith("snr") || k.startsWith("sunor")) return "sunor";
+  if (k.startsWith("afk") || k.startsWith("af_")) return "apiframe";
+  // hex 24+ char tanpa prefix = kie (karena Kie memberikan key hex murni)
+  if (/^[a-f0-9]{24,}$/i.test(k)) return "kie";
   return "apiframe";
 }
 function creditUrl(p: Provider) {
-  if (p === "kie") return "https://api.kie.ai/v1/credits";
+  if (p === "kie") return "https://api.kie.ai/api/v1/credits";
   if (p === "sunor") return "https://api.sunor.cc/v1/credits";
   return "https://apiframe.ai/api/credit";
 }
 
-function ApiKeyModal({ open, onClose, onSave, currentKey }:{
-  open: boolean; onClose: ()=>void; onSave: (k:string)=>void; currentKey: string;
+function ApiKeyModal({ open, onClose, onSave, currentKey, currentProvider }:{
+  open: boolean;
+  onClose: ()=>void;
+  onSave: (k:string, p:Provider)=>void;
+  currentKey: string;
+  currentProvider: Provider;
 }) {
   const [text, setText] = useState(currentKey);
-  const [provider, setProvider] = useState<Provider>(detectProvider(currentKey));
+  const [provider, setProvider] = useState<Provider>(currentProvider || detectProvider(currentKey));
   const [checking, setChecking] = useState(false);
   const [credits, setCredits] = useState<string>("");
-  useEffect(()=>{ if (open) { setText(currentKey); setProvider(detectProvider(currentKey)); setCredits(""); } }, [open, currentKey]);
+  useEffect(()=>{
+    if (open) { setText(currentKey); setProvider(currentProvider || detectProvider(currentKey)); setCredits(""); }
+  }, [open, currentKey, currentProvider]);
 
   async function cekKredit() {
     if (!text.trim()) return;
@@ -100,27 +110,15 @@ function ApiKeyModal({ open, onClose, onSave, currentKey }:{
     const key = text.trim();
     const prov = detectProvider(key);
     try {
-      const endpoints = prov === "kie"
-        ? [creditUrl(prov), "https://api.kie.ai/api/v1/credits"]
-        : prov === "sunor"
-          ? [creditUrl(prov), "https://api.sunor.cc/api/credits"]
-          : [creditUrl(prov)];
-      let ok = false;
-      for (const u of endpoints) {
-        const r = await fetch(u, {
-          headers: {
-            "Authorization": `Bearer ${key}`,
-            "apikey": key,
-            "x-api-key": key,
-          },
-        }).catch(()=>null);
-        if (r && r.ok) {
-          const d = await r.json().catch(()=>({}));
-          setCredits(`✅ Kredit tersedia: ${d.credit ?? d.credits ?? d.balance ?? d.points ?? d.remaining ?? JSON.stringify(d).slice(0,80)}`);
-          ok = true; break;
-        }
+      const r = await fetch(creditUrl(prov), {
+        headers: { "Authorization": `Bearer ${key}`, "apikey": key, "x-api-key": key },
+      }).catch(()=>null);
+      if (r && r.ok) {
+        const d = await r.json().catch(()=>({}));
+        setCredits(`✅ Kredit tersedia: ${d.credit ?? d.credits ?? d.balance ?? d.points ?? d.remaining ?? JSON.stringify(d).slice(0,80)}`);
+      } else {
+        setCredits(`ℹ️ Cek kredit otomatis gak tersedia untuk provider ${prov}, tapi bukan berarti key salah bro — langsung klik Generate Lagu aja, kalo berhasil berarti key valid.`);
       }
-      if (!ok) setCredits("⚠️ Tidak bisa cek otomatis (mungkin key belum aktif, IP diblok, atau bukan key "+prov+"). Coba generate lagu langsung, kalo berhasil berarti key valid.");
     } catch(e:any){ setCredits(`Error: ${e.message}`); }
     setChecking(false);
   }
@@ -163,7 +161,7 @@ function ApiKeyModal({ open, onClose, onSave, currentKey }:{
           </div>
           <div className="text-white/70">{curProv.note}</div>
           <div className="text-green-300">🎁 {curProv.free}</div>
-          {curProv.prefix && <div className="text-yellow-300">🔑 Awalan key biasanya: <code className="bg-black/40 px-1 rounded">{curProv.prefix}…</code></div>}
+          {curProv.prefix && <div className="text-yellow-300">🔑 Awalan key: <code className="bg-black/40 px-1 rounded">{curProv.prefix}</code></div>}
         </div>
 
         <ol className="text-xs sm:text-sm text-white/80 space-y-1.5 mb-3 list-decimal pl-5">
@@ -174,25 +172,25 @@ function ApiKeyModal({ open, onClose, onSave, currentKey }:{
 
         {provider === "apiframe" && (
           <div className="text-[11px] p-2 rounded-lg bg-orange-500/10 border border-orange-400/30 text-orange-100 mb-3">
-            ⚠️ <b>apiframe.ai diblok Cloudflare di HP kamu (sama kayak screenshot)?</b> Solusi: (1) coba nyalakan VPN ke SG/MY, (2) buka lewat <b>Mode Desktop</b> Chrome, atau (3) <b>pilih Kie.ai</b> di tab atas — bisa akses normal tanpa VPN ✅
+            ⚠️ <b>apiframe.ai diblok Cloudflare di HP kamu?</b> Pindah ke tab <b>🥇 Kie.ai</b> — bisa akses normal TANPA VPN ✅
           </div>
         )}
 
         <label className="block mb-2">
           <span className="lbl">API Key ({curProv.name})</span>
           <input className="input" value={text} onChange={e=>{ setText(e.target.value); setProvider(detectProvider(e.target.value)); }}
-                 placeholder={`${curProv.prefix||"sk-"}xxxxxxxx...`} autoFocus />
+                 placeholder="tempel key di sini..." autoFocus />
         </label>
 
         <div className="flex flex-wrap gap-2 mb-2">
-          <button className="btn btn-primary flex-1 sm:flex-none" onClick={()=>{ onSave(text.trim()); onClose(); }} disabled={!text.trim()}>
+          <button className="btn btn-primary flex-1 sm:flex-none" onClick={()=>{ onSave(text.trim(), detectProvider(text.trim())); onClose(); }} disabled={!text.trim()}>
             ✚ Tambah / Simpan
           </button>
           <button className="btn btn-ghost" onClick={cekKredit} disabled={checking || !text.trim()}>
             {checking?<Spinner/>:"🔄"} Cek Kredit
           </button>
           {currentKey && (
-            <button className="btn btn-danger" onClick={()=>{ onSave(""); setText(""); setCredits(""); }}>🗑️ Hapus</button>
+            <button className="btn btn-danger" onClick={()=>{ onSave("", "kie"); setText(""); setCredits(""); }}>🗑️ Hapus</button>
           )}
         </div>
         {credits && <div className="text-[11px] text-cyan-200 bg-cyan-500/10 border border-cyan-400/30 rounded-lg p-2 break-word">{credits}</div>}
@@ -268,6 +266,7 @@ export default function Home() {
   const [musicVocalGender, setMusicVocalGender] = useState<"auto"|"male"|"female">("auto");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [sunoApiKey, setSunoApiKey] = useState<string>("");
+  const [sunoProvider, setSunoProvider] = useState<Provider>("kie");
 
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
@@ -297,10 +296,11 @@ export default function Home() {
     if (didInit.current) return;
     didInit.current = true;
 
-    // Baca API key dari localStorage
+    // Baca API key + provider dari localStorage
     try {
-      const k = localStorage.getItem("verve_suno_key");
-      if (k) setSunoApiKey(k);
+      const k = localStorage.getItem("verve_suno_key") || "";
+      const p = (localStorage.getItem("verve_suno_provider") as Provider) || detectProvider(k);
+      if (k) { setSunoApiKey(k); setSunoProvider(p); }
     } catch {}
 
     // Default berdasarkan device saat pertama load
@@ -422,7 +422,10 @@ export default function Home() {
     setLoading(path); setError("");
     try {
       const headers: Record<string,string> = { "Content-Type":"application/json" };
-      if (sunoApiKey) headers["X-Suno-Key"] = sunoApiKey;
+      if (sunoApiKey) {
+        headers["X-Suno-Key"] = sunoApiKey;
+        headers["X-Suno-Provider"] = sunoProvider;
+      }
       const r = await fetch(`/api/hcnsec${path}`, {
         method: "POST", headers, body: JSON.stringify(body),
       });
@@ -440,11 +443,17 @@ export default function Home() {
     } finally { setLoading(null); }
   }
 
-  function saveSunoKey(k: string) {
+  function saveSunoKey(k: string, p: Provider) {
     setSunoApiKey(k);
+    setSunoProvider(p);
     try {
-      if (k) localStorage.setItem("verve_suno_key", k);
-      else localStorage.removeItem("verve_suno_key");
+      if (k) {
+        localStorage.setItem("verve_suno_key", k);
+        localStorage.setItem("verve_suno_provider", p);
+      } else {
+        localStorage.removeItem("verve_suno_key");
+        localStorage.removeItem("verve_suno_provider");
+      }
     } catch {}
   }
 
@@ -490,7 +499,7 @@ export default function Home() {
         const res = await fetch("/api/hcnsec/image", {
           method:"POST", headers:{
             "Content-Type":"application/json",
-            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey}:{}),
+            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider}:{}),
           },
           body: JSON.stringify({
             title: selectedTitle.text, keyword: selectedTitle.keyword, niche, style: imageStyle,
@@ -763,7 +772,7 @@ Dibuat dengan Verve AI Video Studio`;
         const res = await fetch("/api/hcnsec/image", {
           method:"POST", headers:{
             "Content-Type":"application/json",
-            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey}:{}),
+            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider}:{}),
           },
           body: JSON.stringify({
             style: imageStyle,
@@ -823,7 +832,7 @@ Dibuat dengan Verve AI Video Studio`;
       const r = await fetch("/api/hcnsec/music", {
         method:"POST", headers:{
           "Content-Type":"application/json",
-          ...(sunoApiKey?{"X-Suno-Key":sunoApiKey}:{}),
+          ...(sunoApiKey?{"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider}:{}),
         },
         body: JSON.stringify({
           title: selectedTitle.text, prompt, lyrics: lyrics?.lyrics,
@@ -849,7 +858,7 @@ Dibuat dengan Verve AI Video Studio`;
         for (let i=0;i<24;i++){
           await new Promise(res=>setTimeout(res,5000));
           const pr = await fetch(`/api/hcnsec/music?id=${data.id}`, {
-            headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey} : {},
+            headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider} : {},
           });
           const pd = await pr.json().catch(()=>({}));
           setAiMusicStatus(`memproses... ${Math.round((i+1)/24*100)}%`);
@@ -1190,7 +1199,7 @@ Dibuat dengan Verve AI Video Studio`;
                         <span className="text-[10px] text-yellow-300 bg-yellow-500/10 px-2 py-0.5 rounded-full">Beta</span>
                       </div>
                       <button className="btn btn-ghost btn-sm" onClick={()=>setShowApiKeyModal(true)}>
-                        🔑 {sunoApiKey ? "API Key tersimpan ✓" : "Set API Key"}
+                        🔑 {sunoApiKey ? `${sunoApiKey ? (sunoProvider==="kie"?"Kie.ai":sunoProvider==="apiframe"?"apiframe.ai":"Sunor.cc") : ""} ✓` : "Set API Key"}
                       </button>
                     </div>
 
@@ -1598,6 +1607,7 @@ Dibuat dengan Verve AI Video Studio`;
         onClose={()=>setShowApiKeyModal(false)}
         onSave={saveSunoKey}
         currentKey={sunoApiKey}
+        currentProvider={sunoProvider}
       />
     </main>
   );
