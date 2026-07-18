@@ -247,16 +247,19 @@ export async function POST(req: Request) {
     let lastErr: any = null;
     for (const url of endpoints) {
       try {
+        const controller = new AbortController();
+        // Vercel serverless punya batas ~60s. Kasih timeout 55s biar masih sempat balas.
+        const timeout = setTimeout(()=>controller.abort(), 55000);
         const r = await fetch(url, {
           method: "POST", headers, body: JSON.stringify(body), cache: "no-store",
-          signal: AbortSignal.timeout(45000),
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
         const txt = await r.text().catch(()=>"");
         let data: any = {};
-        try { data = txt ? JSON.parse(txt) : {}; } catch { data = { error: `Non-JSON: ${txt.slice(0,200)}` }; }
+        try { data = txt ? JSON.parse(txt) : {}; } catch { data = { error: `Non-JSON (${r.status}): ${txt.slice(0,200)}` }; }
 
         if (!r.ok) {
-          // auth error?
           if (r.status === 401 || r.status === 403) {
             const msg = provider === "kie"
               ? `API Key Kie.ai invalid/expired. Cek key di dashboard kie.ai ya bro.`
@@ -271,6 +274,10 @@ export async function POST(req: Request) {
               status: "quota_error", provider,
             }, { status: 402 });
           }
+          if (r.status === 504 || r.status === 503 || r.status === 408) {
+            lastErr = `${PROVIDERS[provider].label} sedang sibuk (${r.status}), coba lagi...`;
+            continue;
+          }
           lastErr = `${url} → ${r.status}: ${txt.slice(0,200)}`;
           continue;
         }
@@ -282,7 +289,10 @@ export async function POST(req: Request) {
           return NextResponse.json(n);
         }
         lastErr = `Empty response from ${url}: ${txt.slice(0,200)}`;
-      } catch(e:any){ lastErr = `${e.message}`; }
+      } catch(e:any){
+        lastErr = `${PROVIDERS[provider].label} network: ${e?.message || e}`;
+        // retry endpoint berikutnya kalau abort/network
+      }
     }
 
     if (!key) {
@@ -308,7 +318,10 @@ export async function GET(req: Request) {
 
     for (const url of endpoints) {
       try {
-        const r = await fetch(url, { headers, cache: "no-store", signal: AbortSignal.timeout(20000) });
+        const controller = new AbortController();
+        const t = setTimeout(()=>controller.abort(), 15000);
+        const r = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
+        clearTimeout(t);
         if (!r.ok) continue;
         const txt = await r.text().catch(()=>"");
         let data: any = {};
@@ -316,7 +329,6 @@ export async function GET(req: Request) {
         const n = normalize(data, provider);
         n.provider = provider;
         if (n.audio_url || n.status === "error" || n.status === "completed") return NextResponse.json(n);
-        // kalau pending, return pending
         if (n.id) return NextResponse.json({ status: "pending", id: n.id, provider });
       } catch {}
     }

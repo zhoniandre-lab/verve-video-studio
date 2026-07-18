@@ -888,35 +888,55 @@ Dibuat dengan Verve AI Video Studio`;
 
     setStageText(`Meminta AI membuat lagu "${title.slice(0,40)}"... (12 kredit ${sunoProvider})`);
     setLoading("aimusic"); setAiMusicStatus("memulai..."); setAiMusicUrl("");
+    setError("");
     setMusicGeneratedFrom(title);
     try {
-      // Gunakan isi kolom persis seperti user lihat (mirip Kampung Music)
       const useCustom = lyr.length > 30 && musicVocalType !== "instrumental";
+      const payload = {
+        title: title.slice(0,80),
+        prompt: style,
+        lyrics: useCustom ? lyr : undefined,
+        genre: musicGenre,
+        tags: style,
+        custom: useCustom,
+        model: musicModel,
+        instrumental: musicVocalType === "instrumental",
+        vocalGender: musicVocalGender,
+        style_bits: { era: musicEra, instruments: musicInstruments, tempo: musicTempo },
+        _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
+      };
+      let r: Response;
+      try {
+        const ac = new AbortController();
+        const to = setTimeout(()=>ac.abort(), 120000); // 2 menit
+        r = await fetch("/api/hcnsec/music", {
+          method:"POST", headers:{
+            "Content-Type":"application/json",
+            ...(sunoApiKey?{"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider}:{}),
+          },
+          body: JSON.stringify(payload),
+          signal: ac.signal,
+          cache: "no-store",
+        });
+        clearTimeout(to);
+      } catch(netErr:any) {
+        throw new Error(
+          `⚠️ Gagal nyambung ke server (${netErr?.name==="AbortError"?"timeout":"jaringan"}).\n\n`+
+          `Solusi:\n`+
+          `• Klik CREATE lagi (kredit TIDAK kepotong kalau belum dapat id)\n`+
+          `• Kalo masih gagal 3x, refresh halaman lalu coba lagi\n`+
+          `• Pastikan koneksi stabil`
+        );
+      }
+      let txt = "";
+      try { txt = await r.text(); } catch { txt = ""; }
+      let data: any;
+      try { data = txt ? JSON.parse(txt) : {}; }
+      catch { data = { error: `Server balas format aneh (${r.status}). Coba CREATE lagi ya bro.` }; }
 
-      const r = await fetch("/api/hcnsec/music", {
-        method:"POST", headers:{
-          "Content-Type":"application/json",
-          ...(sunoApiKey?{"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider}:{}),
-        },
-        body: JSON.stringify({
-          title: title.slice(0,80),
-          prompt: style,
-          lyrics: useCustom ? lyr : undefined,
-          genre: musicGenre,
-          tags: style,
-          custom: useCustom,
-          model: musicModel,
-          instrumental: musicVocalType === "instrumental",
-          vocalGender: musicVocalGender,
-          style_bits: { era: musicEra, instruments: musicInstruments, tempo: musicTempo },
-          // kirim mentah supaya server Kie pakai body yang bener
-          _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
-        }),
-      });
-      const txt = await r.text();
-      let data; try { data = JSON.parse(txt); } catch { data={error:`Bad response: ${txt.slice(0,200)}`}; }
       if (!r.ok || data.error) {
         if (data.status === "need_key" || r.status === 401) setShowApiKeyModal(true);
+        if (r.status === 504) throw new Error("Server Vercel lagi cold-start bro 😅 Tunggu 30 detik lalu klik CREATE lagi — kredit gak kepotong.");
         throw new Error(data.error || `Error ${r.status}`);
       }
       if (data.audio_url) {
@@ -926,22 +946,37 @@ Dibuat dengan Verve AI Video Studio`;
         setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
       } else if (data.id) {
         setAiMusicStatus("memproses...");
-        for (let i=0;i<45;i++){
+        let done = false;
+        for (let i=0;i<60;i++){
           await new Promise(res=>setTimeout(res,3000));
-          const pr = await fetch(`/api/hcnsec/music?id=${data.id}`, {
-            headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider} : {},
-          });
-          const pd = await pr.json().catch(()=>({}));
-          setAiMusicStatus(`memproses... ${Math.round((i+1)/45*100)}%`);
-          if (pd.audio_url) {
-            setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai");
-            setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${pd.provider||sunoProvider})`);
-            setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
-            break;
+          try {
+            const ac = new AbortController();
+            const t2 = setTimeout(()=>ac.abort(), 20000);
+            const pr = await fetch(`/api/hcnsec/music?id=${data.id}`, {
+              headers: sunoApiKey ? {"X-Suno-Key":sunoApiKey,"X-Suno-Provider":sunoProvider} : {},
+              signal: ac.signal, cache:"no-store",
+            });
+            clearTimeout(t2);
+            if (pr.ok) {
+              const pd = await pr.json().catch(()=>({}));
+              setAiMusicStatus(`memproses... ${Math.round((i+1)/60*100)}%`);
+              if (pd.audio_url) {
+                setAiMusicUrl(pd.audio_url); setAiMusicStatus("selesai");
+                setSunoCredits(`✅ ${musicModel} · 12 kredit terpakai (${pd.provider||sunoProvider})`);
+                setStageText(`✅ Lagu "${title.slice(0,30)}" siap!`);
+                done = true;
+                break;
+              }
+              if (pd.status === "error" || pd.error) throw new Error(pd.error||"Gagal generate musik");
+            } else {
+              setAiMusicStatus(`wait... ${Math.round((i+1)/60*100)}%`);
+            }
+          } catch(pollErr:any) {
+            // retry di iterasi berikutnya
+            setAiMusicStatus(`jaringan retry ${Math.round((i+1)/60*100)}%`);
           }
-          if (pd.status === "error" || pd.error) throw new Error(pd.error||"Gagal generate musik");
         }
-        if (!aiMusicUrl) setStageText("⏳ Lagu masih diproses server. Tap Generate Lagi atau cek 1 menit lagi.");
+        if (!done) setStageText("⏳ Lagu masih diproses server. Klik CREATE lagi nanti untuk cek status (tidak pakai kredit tambahan).");
       } else {
         setStageText("⚠️ AI music belum merespon. Coba lagi ya bro.");
       }
@@ -949,7 +984,7 @@ Dibuat dengan Verve AI Video Studio`;
       setErr(e.message || "AI music gagal.");
       setAiMusicStatus("gagal");
     }
-    setTimeout(()=>setStageText(""),3000); setLoading(null);
+    setTimeout(()=>setStageText(""),4000); setLoading(null);
   }
 
   function handleLogoUpload(f: File|undefined) {
