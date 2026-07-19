@@ -218,15 +218,25 @@ const TEMPLATE_PRESETS = [
   { id: "energi", icon: "⚡", name: "Shorts Energi", desc: "9:16 · denyut · denyar beat · teks pop", cfg: { ratio: "9:16", transition: "glitch", transitionDur: 0.35, adj: { ...DEFAULT_ADJUST, vig: 40 }, effect: "pulse", caption: "pop" } },
   { id: "asmr", icon: "🌧️", name: "Suasana Hujan Santai", desc: "16:9 · hujan + kabut · fade lambat", cfg: { ratio: "16:9", transition: "dissolve", transitionDur: 1.2, adj: { ...DEFAULT_ADJUST, b: -8 }, effect: "hujan", caption: "boldwhite" } },
   { id: "cerita", icon: "📖", name: "Storytelling Narasi", desc: "16:9 · zoom pelan · caption standar", cfg: { ratio: "16:9", transition: "zoomin", transitionDur: 0.8, adj: { ...DEFAULT_ADJUST }, loop: "zoompelan", caption: "capcut" } },
+  { id: "motivasi", icon: "💬", name: "Quotes Motivasi", desc: "9:16 · dissolve lembut · caption neon", cfg: { ratio: "9:16", transition: "dissolve", transitionDur: 0.5, adj: { ...DEFAULT_ADJUST, c: 18, vig: 55 }, caption: "neon" } },
+  { id: "produk", icon: "🛍️", name: "Jualan Produk", desc: "1:1 · wipe kiri · warna pop · caption gradasi", cfg: { ratio: "1:1", transition: "wipe-l", transitionDur: 0.45, adj: { ...DEFAULT_ADJUST, s: 15, c: 10 }, caption: "gradient" } },
+  { id: "vlog", icon: "🚶", name: "Vlog Harian", desc: "16:9 · mix halus · caption putih tebal", cfg: { ratio: "16:9", transition: "dissolve", transitionDur: 0.5, adj: { ...DEFAULT_ADJUST, b: 4 }, loop: "zoompelan", caption: "boldwhite" } },
+  { id: "game", icon: "🎮", name: "Gaming Hype", desc: "9:16 · glitch cepat · caption pop", cfg: { ratio: "9:16", transition: "glitch", transitionDur: 0.3, adj: { ...DEFAULT_ADJUST, c: 12, s: 8 }, caption: "pop" } },
 ];
 function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => void }) {
+  const [cat, setCat] = useState("semua");
+  const CHIPS = [
+    { id: "semua", label: "Untuk kamu" }, { id: "9:16", label: "Reel/Shorts" },
+    { id: "16:9", label: "Cerita/Vlog" }, { id: "1:1", label: "Feed" },
+  ];
+  const list = TEMPLATE_PRESETS.filter(t => cat === "semua" || t.cfg.ratio === cat);
   return (
     <div className="v6-body">
       <div className="v6-pagehead"><h2>Template</h2><span style={{ fontSize: 11, opacity: .5 }}>resep siap pakai</span></div>
-      <div className="v6-chips"><button className="v6-chip on">Untuk kamu</button><button className="v6-chip">Reel/Shorts</button><button className="v6-chip">Musik</button><button className="v6-chip">Cerita</button></div>
+      <div className="v6-chips">{CHIPS.map(c => <button key={c.id} className={`v6-chip ${cat === c.id ? "on" : ""}`} onClick={() => setCat(c.id)}>{c.label}</button>)}</div>
       <div className="v6-proj-grid">
-        {TEMPLATE_PRESETS.map(t => (
-          <div className="v6-proj" key={t.id} onClick={() => gotoEditor(undefined, { newProject: Date.now(), preset: t.cfg } as any)}>
+        {list.map(t => (
+          <div className="v6-proj" key={t.id} onClick={() => gotoEditor(undefined, { newProject: Date.now(), preset: { ...t.cfg, name: t.name } } as any)}>
             <div className="th" style={{ background: "linear-gradient(145deg,#1c1c26,#101016)", fontSize: 42 }}>{t.icon}</div>
             <div className="inf">
               <div className="nm">{t.name}</div>
@@ -237,7 +247,7 @@ function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => 
       </div>
       <div className="v6-empty">
         <div className="big">🚧</div>
-        Galeri template komunitas <b>segera hadir</b> — kerangkanya sudah disiapkan.<br />Empat resep di atas langsung bisa dipakai: tap → proyek baru auto-terkonfigurasi.
+        Galeri template komunitas <b>segera hadir</b> — kerangkanya sudah disiapkan.<br />Delapan resep di atas langsung bisa dipakai: tap → proyek baru auto-terkonfigurasi.
       </div>
     </div>
   );
@@ -443,10 +453,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [ttsText, setTtsText] = useState("");
   const [voiceUrl, setVoiceUrl] = useState(""); // rekaman
   const [audMuted, setAudMuted] = useState(false);
+  const [musicVol, setMusicVol] = useState(1);        // 0..1.5
+  const [voiceVol, setVoiceVol] = useState(1);        // 0..1.5 (tts+rekaman)
+  const [musicFadeIn, setMusicFadeIn] = useState(0);  // detik
+  const [musicFadeOut, setMusicFadeOut] = useState(0); // detik
   /* ---------- gaya global ---------- */
   const [filterPreset, setFilterPreset] = useState("none");
   const [adj, setAdj] = useState<AdjustState>({ ...DEFAULT_ADJUST });
-  const [qualitySharp, setQualitySharp] = useState(false);
+  const [qualitySharp, setQualitySharp] = useState(() => { try { return !!JSON.parse(localStorage.getItem("verve_export_v1") || "{}").s; } catch { return false; } });
   const [presets, setPresets] = useState<{ id: string; name: string; filter: string; adj: AdjustState }[]>([]);
   /* ---------- caption ---------- */
   const [capWords, setCapWords] = useState<CapWord[]>([]);
@@ -479,9 +493,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   /* ---------- ekspor v6 ---------- */
   const [exTab, setExTab] = useState<"video" | "gif">("video");
-  const [exRes, setExRes] = useState(1080);
-  const [exFps, setExFps] = useState(30);
-  const [exMbps, setExMbps] = useState(10);
+  const [exRes, setExRes] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").r || 1080; } catch { return 1080; } });
+  const [exFps, setExFps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").f || 30; } catch { return 30; } });
+  const [exMbps, setExMbps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").m || 10; } catch { return 10; } });
+  // ingat pengaturan ekspor terakhir
+  useEffect(() => { try { localStorage.setItem("verve_export_v1", JSON.stringify({ r: exRes, f: exFps, m: exMbps, s: qualitySharp ? 1 : 0 })); } catch {} }, [exRes, exFps, exMbps, qualitySharp]);
   /* ---------- suno ---------- */
   const [sunoKey, setSunoKey] = useState("");
   const [sunoProv, setSunoProv] = useState("kie");
@@ -521,6 +537,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const capStyleRef = useRef(capStyle); useEffect(() => { capStyleRef.current = capStyle; }, [capStyle]);
   const ccRef = useRef({ ccSize, ccY }); useEffect(() => { ccRef.current = { ccSize, ccY }; }, [ccSize, ccY]);
   const pipRef = useRef(pipOn); useEffect(() => { pipRef.current = pipOn; }, [pipOn]);
+  const musicVolRef = useRef(musicVol); const voiceVolRef = useRef(voiceVol);
+  useEffect(() => { musicVolRef.current = musicVol; if (musicEl.current) musicEl.current.volume = Math.min(1, musicVol); }, [musicVol]);
+  useEffect(() => { voiceVolRef.current = voiceVol; voiceEls.current.forEach(a => { a.volume = Math.min(1, voiceVol); }); }, [voiceVol]);
   const audMutedRef = useRef(audMuted); useEffect(() => {
     audMutedRef.current = audMuted;
     if (musicEl.current) musicEl.current.muted = audMuted;
@@ -707,11 +726,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           } catch {}
         }
         musicEl.current.muted = audMutedRef.current;
+        musicEl.current.volume = Math.min(1, musicVolRef.current);
         master = musicEl.current;
       }
       [ttsUrl, voiceUrl].forEach(u => {
         if (!u) return;
         const a = new Audio(proxifyAudioUrl(u)); a.crossOrigin = "anonymous"; a.muted = audMutedRef.current;
+        a.volume = Math.min(1, voiceVolRef.current);
         voiceEls.current.push(a);
         if (!master) master = a;
       });
@@ -758,6 +779,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return { v: 6, id: draftId || uid("d"), title: projTitle.slice(0, 80), updatedAt: Date.now(),
       slides: compactSlides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor,
       musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", filterPreset, adj, qualitySharp,
+      musicVol, voiceVol, musicFadeIn, musicFadeOut,
       capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb: thumb, audMuted,
       mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal };
   }, [slides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor, musicUrl, musicName, ttsUrl, ttsText, filterPreset, adj, qualitySharp, capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb, draftId, projTitle, mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal, audMuted]);
@@ -772,6 +794,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setTtsUrl(d.ttsUrl || ""); setTtsText(d.ttsText || ""); setVoiceUrl(d.voiceUrl || "");
     setFilterPreset(d.filterPreset || "none"); setAdj({ ...DEFAULT_ADJUST, ...(d.adj || {}) });
     setQualitySharp(!!d.qualitySharp);
+    setMusicVol(d.musicVol ?? 1); setVoiceVol(d.voiceVol ?? 1);
+    setMusicFadeIn(d.musicFadeIn ?? 0); setMusicFadeOut(d.musicFadeOut ?? 0);
     setCapWords(d.capWords || []); setCapStyle(d.capStyle || "capcut");
     setCcTpl(d.ccTpl || "standar"); setCcSize(d.ccSize || 0.055); setCcY(d.ccY || 0.78);
     setNiche(d.niche || ""); setCoverThumb(d.coverThumb || "");
@@ -830,7 +854,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (c.transitionDur) setTransitionDur(c.transitionDur);
       if (c.adj) setAdj({ ...DEFAULT_ADJUST, ...c.adj });
       if (c.caption) setCapStyle(c.caption);
-      flash(`✨ Template "${c.caption || ""}" diterapkan — tambahkan media!`);
+      flash(`✨ Template "${c.name || c.caption || ""}" diterapkan — tambahkan media!`);
     }
     if (cmd?.applyAdjust) {
       setAdj({ b: 6, c: 14, s: 10, e: 4, tem: 2, hue: 0, fade: 0, vig: 30, grain: 0 });
@@ -1039,12 +1063,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     r.onload = () => { setMusicUrl(r.result as string); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash("🎵 Musik ditambahkan"); };
     r.readAsDataURL(f);
   }
-  async function mixAudioUrls(parts: string[]): Promise<string | null> {
+  async function mixAudioUrls(parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number }[]): Promise<string | null> {
     try {
       setStageText("Menggabungkan audio...");
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       const actx = new AC();
-      const bufs = await Promise.all(parts.map(u => fetch(u).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b.slice(0)))));
+      const bufs = await Promise.all(parts.map(p => fetch(p.url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b.slice(0)))));
       const maxLen = Math.max(...bufs.map(b => b.length));
       const sr = bufs[0].sampleRate; const ch = Math.min(2, bufs[0].numberOfChannels);
       const out = actx.createBuffer(ch, maxLen, sr);
@@ -1052,13 +1076,23 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const od = out.getChannelData(c);
         for (let bi = 0; bi < bufs.length; bi++) {
           const b = bufs[bi]; const d = b.getChannelData(Math.min(c, b.numberOfChannels - 1));
-          const vol = bi === 0 ? 0.32 : 1; // musik di-duck tipis
-          for (let i = 0; i < d.length; i++) od[i] = Math.max(-1, Math.min(1, od[i] + d[i] * vol));
+          const p = parts[bi]; const g = p.gain;
+          const fi = Math.max(0, p.fadeIn || 0), fo = Math.max(0, p.fadeOut || 0);
+          const durS = d.length / sr;
+          for (let i = 0; i < d.length; i++) {
+            let v = g;
+            if (fi > 0 || fo > 0) {
+              const t = i / sr;
+              if (fi > 0 && t < fi) v *= t / fi;
+              if (fo > 0 && t > durS - fo) v *= Math.max(0, (durS - t) / fo);
+            }
+            od[i] = Math.max(-1, Math.min(1, od[i] + d[i] * v));
+          }
         }
       }
       const wav = bufferToWav(out); actx.close();
       return URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
-    } catch { return parts[0] || null; }
+    } catch { return parts[0]?.url || null; }
   }
   async function doTTS(text: string, voice: string) {
     setLoading("tts"); setError("");
@@ -1343,13 +1377,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setStageText("Menyiapkan render...");
     try {
       await ensureFontsLoaded().catch(() => {});
-      const parts: string[] = [];
-      if (musicUrl) parts.push(proxifyAudioUrl(musicUrl));
-      if (ttsUrl) parts.push(proxifyAudioUrl(ttsUrl));
-      if (voiceUrl) parts.push(proxifyAudioUrl(voiceUrl));
+      const duck = (ttsUrl || voiceUrl) ? 0.4 : 1; // musik diturunkan tipis kalau ada suara
+      const parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number }[] = [];
+      if (musicUrl) parts.push({ url: proxifyAudioUrl(musicUrl), gain: musicVol * duck, fadeIn: musicFadeIn, fadeOut: musicFadeOut });
+      if (ttsUrl) parts.push({ url: proxifyAudioUrl(ttsUrl), gain: voiceVol });
+      if (voiceUrl) parts.push({ url: proxifyAudioUrl(voiceUrl), gain: voiceVol });
       let audioUrl: string | null = null;
-      if (parts.length === 1) audioUrl = parts[0];
-      else if (parts.length > 1) audioUrl = await mixAudioUrls(parts);
+      const single = parts.length === 1 ? parts[0] : null;
+      const singleClean = single && Math.abs(single.gain - 1) < 0.01 && !single.fadeIn && !single.fadeOut;
+      if (singleClean) audioUrl = single!.url;
+      else if (parts.length >= 1) audioUrl = await mixAudioUrls(parts);
 
       const orderedOpts: SlideOpt[] = slides.map(s => {
         const o = { ...(slideOptsById[s.id] || {}) } as SlideOpt;
@@ -1675,7 +1712,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
             estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText,
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
-            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); flash("🗑 Track audio dikosongkan"); },
+            musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
+            musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
+            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
@@ -1981,6 +2020,34 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
             </div>
           );
         })}
+        {(A.musicUrl || A.hasVoice) && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, opacity: .65, margin: "2px 2px 8px" }}>🔊 VOLUME & FADE</div>
+            {A.musicUrl ? (
+              <>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>🎵 Volume musik</span><b style={{ color: "var(--v6-teal)" }}>{Math.round(A.musicVol * 100)}%</b></div>
+                  <input type="range" min={0} max={1.5} step={0.05} value={A.musicVol} onChange={e => A.setMusicVol(Number(e.target.value))} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>🌊 Fade masuk musik</span><b>{A.musicFadeIn.toFixed(1)} detik</b></div>
+                  <input type="range" min={0} max={5} step={0.1} value={A.musicFadeIn} onChange={e => A.setMusicFadeIn(Number(e.target.value))} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>🌅 Fade keluar musik</span><b>{A.musicFadeOut.toFixed(1)} detik</b></div>
+                  <input type="range" min={0} max={5} step={0.1} value={A.musicFadeOut} onChange={e => A.setMusicFadeOut(Number(e.target.value))} />
+                </div>
+              </>
+            ) : null}
+            {A.hasVoice ? (
+              <div className="v6-slider-row">
+                <div className="lr"><span>🗣️ Volume narasi / rekaman</span><b style={{ color: "var(--v6-teal)" }}>{Math.round(A.voiceVol * 100)}%</b></div>
+                <input type="range" min={0} max={1.5} step={0.05} value={A.voiceVol} onChange={e => A.setVoiceVol(Number(e.target.value))} />
+              </div>
+            ) : null}
+            <div className="v6-note">💡 Perubahan volume langsung terdengar di pratinjau ▷ — fade otomatis diterapkan saat ekspor.</div>
+          </div>
+        )}
         <div className="v6-note">💡 Rekam suara asli, narasi AI, lagu AI (Suno) sampai musik upload — semua muncul di <b>track audio</b> dan bisa dimix otomatis saat ekspor. Tile 🏁 <b>Akhiran</b> ada di ujung track 1.</div>
       </div>
     </SheetShell>
