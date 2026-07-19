@@ -1,38 +1,57 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob, drawLiveSpectrum } from "@/lib/recorder";
-import type { Quality as RenderQuality, Transition, CaptionStyle } from "@/lib/recorder";
+import type { Quality as RenderQuality } from "@/lib/recorder";
 import { cropImageToRatio, copyToClipboard } from "@/lib/imgutils";
-import {
-  VIZ_STYLES, TRANSITION_STYLES, QUALITY_OPTIONS, ASPECT_RATIOS,
-} from "@/lib/types";
+import { VIZ_STYLES, QUALITY_OPTIONS, ASPECT_RATIOS } from "@/lib/types";
 import type { VizStyle, AudioMode, ImageSource } from "@/lib/types";
 import type { VideoMeta } from "@/lib/hcnsec";
 import { ExportPanel } from "./studio-editor";
+import {
+  TRANSITIONS, ANIM_IN, ANIM_OUT, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
+  TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ADJUST_DEFS,
+  DEFAULT_ADJUST, DEFAULT_TEXT, buildClipFilter, canonicalTrans, effDur,
+  buildTimeline, locate, paintClips, hexToRgbE,
+} from "@/lib/editing";
+import type { SlideOpt, ClipText, AdjustState, Timeline } from "@/lib/editing";
 
 /* =====================================================================
-   VERVE-CUT v4 — tampilan cloning gaya CapCut (mobile & desktop)
-   - Preview atas · transport · timeline multi-track · sheet alat · toolbar
-   - Seluruh fitur lama (Keyword→Judul→Gambar→Audio/Suno→Ekspor) ada di
-     sheet toolbar: ✨AI 🖼️Media 🎧Audio 🔤Teks 😀Stiker ✨Efek 🎛Filter
-     🎚Adjust ⚡Speed 🖼️Format 🚀Ekspor
-   - Semua implementasi orisinal (bukan aset CapCut).
+   VERVE-CUT v5 — editor ala CapCut (mobile-first, anti-kepotong)
+   - Timeline pro: tarik ujung klip (durasi), chip transisi antar-klip,
+     drag susun ulang, toolbar kontekstual
+   - Fitur: 20+ transisi · animasi masuk/keluar · efek overlay · filter
+     · adjust · teks kaya (font/warna/stroke/bg/animasi/template) · stiker
+     emoji drag-on-canvas · speed per-klip · undo/redo
+   - Semua fitur lama utuh: wizard ✨AI → Judul → Media → Audio/Suno →
+     Ekspor + metadata + draft. 100% implementasi orisinal.
    ===================================================================== */
 
-type ToolId = "ai"|"media"|"audio"|"teks"|"stiker"|"efek"|"filter"|"adjust"|"speed"|"format"|"ekspor";
-const TOOLS: { id: ToolId; icon: string; label: string }[] = [
-  { id:"ai",     icon:"✨", label:"AI" },
-  { id:"media",  icon:"🖼️", label:"Media" },
-  { id:"audio",  icon:"🎧", label:"Audio" },
-  { id:"teks",   icon:"🔤", label:"Teks" },
-  { id:"stiker", icon:"😀", label:"Stiker" },
-  { id:"efek",   icon:"🎚️", label:"Efek" },
-  { id:"filter", icon:"🎛️", label:"Filter" },
-  { id:"adjust", icon:"🎚️", label:"Adjust" },
-  { id:"speed",  icon:"⚡", label:"Speed" },
-  { id:"format", icon:"🖼️", label:"Format" },
-  { id:"ekspor", icon:"🚀", label:"Ekspor" },
+type ToolId = "ai"|"media"|"audio"|"lirik"|"teks"|"stiker"|"efek"|"filter"|"adjust"|"animasi"|"speed"|"transisi"|"format"|"ekspor";
+const GLOBAL_TOOLS: { id: ToolId; icon: string; label: string }[] = [
+  { id:"ai",      icon:"✨", label:"AI" },
+  { id:"media",   icon:"🖼️", label:"Media" },
+  { id:"audio",   icon:"🎧", label:"Audio" },
+  { id:"lirik",   icon:"🎤", label:"Lirik" },
+  { id:"teks",    icon:"🔤", label:"Teks" },
+  { id:"stiker",  icon:"😀", label:"Stiker" },
+  { id:"efek",    icon:"🎭", label:"Efek" },
+  { id:"filter",  icon:"🎨", label:"Filter" },
+  { id:"adjust",  icon:"🎛️", label:"Adjust" },
+  { id:"format",  icon:"🖼️", label:"Format" },
+  { id:"ekspor",  icon:"🚀", label:"Ekspor" },
 ];
+const CLIP_TOOLS = [
+  { id:"back",    icon:"⬅️", label:"Tutup" },
+  { id:"split",   icon:"✂️", label:"Potong" },
+  { id:"teks",    icon:"🔤", label:"Teks" },
+  { id:"stiker",  icon:"😀", label:"Stiker" },
+  { id:"animasi", icon:"🎬", label:"Animasi" },
+  { id:"efek",    icon:"🎭", label:"Efek" },
+  { id:"speed",   icon:"⚡", label:"Speed" },
+  { id:"transisi",icon:"🔀", label:"Transisi" },
+  { id:"dup",     icon:"📑", label:"Duplikat" },
+  { id:"del",     icon:"🗑️", label:"Hapus" },
+] as const;
 
 interface KeywordItem { id: string; text: string; }
 interface TitleItem { id: string; keyword: string; text: string; }
@@ -77,10 +96,11 @@ const STICKER_CHIPS = [
   ["wave-center","〰️","Wave Tengah"],["wave-bottom","🌊","Wave Bawah"],["circle","⭕","Circle"],
   ["bars-top","📈","Bars Atas"],["glow-ring","💫","Glow Ring"],["nowplaying","🎧","Now Playing"],
 ] as const;
-const FILTER_CHIPS = ["none","cinematic","vivid","warm","cool","bw","vintage","dreamy","senja"] as const;
 
 const STORAGE_KEY = "verve_project_v1";
 const SUNO_TASK_KEY = "verve_suno_task_v1";
+const DRAFTS_KEY = "verve_drafts_v1";
+const MAX_DRAFTS = 12;
 
 function useIsMobile() {
   const [m, setM] = useState(false);
@@ -228,6 +248,10 @@ export default function Home() {
   const [nSlides, setNSlides] = useState(4);
   const [slides, setSlides] = useState<Slide[]>([]);
 
+  // Per-klip editing (v5)
+  const [slideOptsById, setSlideOptsById] = useState<Record<string, SlideOpt>>({});
+  const [selId, setSelId] = useState<string>("");
+
   // Audio
   const [audioMode, setAudioMode] = useState<AudioMode>("tts");
   const [ttsVoice, setTtsVoice] = useState("alloy");
@@ -241,10 +265,10 @@ export default function Home() {
   const [vizColor, setVizColor] = useState("#ec4899");
   const [slideDuration, setSlideDuration] = useState(3);
   const [transitionDur, setTransitionDur] = useState(0.8);
-  const [transition, setTransition] = useState<Transition>("zoom");
+  const [transition, setTransition] = useState<string>("dissolve");
   const [showTitle, setShowTitle] = useState(true);
   const [showLyrics, setShowLyrics] = useState(true);
-  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("capcut");
+  const [captionStyle, setCaptionStyle] = useState<string>("capcut");
   const [logoDataUrl, setLogoDataUrl] = useState<string>("");
   const [logoPosition, setLogoPosition] = useState<"center"|"corner"|"none">("center");
   const [storyboard, setStoryboard] = useState<any|null>(null);
@@ -290,6 +314,11 @@ export default function Home() {
   const [meta, setMeta] = useState<VideoMeta|null>(null);
   const [copiedField, setCopiedField] = useState<string>("");
 
+  // Filter & Adjust (v5 konsolidasi)
+  const [filterPreset, setFilterPreset] = useState<string>("none");
+  const [adj, setAdj] = useState<AdjustState>({...DEFAULT_ADJUST});
+  const [spectrumSticker, setSpectrumSticker] = useState<string>("bars-bottom");
+
   // Preview
   const previewAudioRef = useRef<HTMLAudioElement|null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement|null>(null);
@@ -301,28 +330,110 @@ export default function Home() {
   const [previewCurrent, setPreviewCurrent] = useState(0);
   const [previewDuration, setPreviewDuration] = useState(0);
   const [previewMuted, setPreviewMuted] = useState(false);
+  const imgCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
-  // Editor cepat
-  const [activeFilter, setActiveFilter] = useState<string>("none");
-  const [brightness, setBrightness] = useState(0);
-  const [contrast, setContrast] = useState(0);
-  const [saturation, setSaturation] = useState(0);
-  const [sharpen, setSharpen] = useState(0);
-  const [vignetteAmt, setVignetteAmt] = useState(75);
-  const [videoSpeed, setVideoSpeed] = useState(1);
-  const [spectrumSticker, setSpectrumSticker] = useState<string>("bars-bottom");
-  const [textLayers, setTextLayers] = useState<any[]>([]);
   const renderStartRef = useRef<number>(0);
   const [draftList, setDraftList] = useState<Array<{id:string;title:string;slides:number;updatedAt:number;thumb?:string;step?:number}>>([]);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string>("");
   const selectedTitle = useMemo(() => titles.find(t=>t.id===selectedTitleId), [titles, selectedTitleId]);
 
+  // ===== UNDO / REDO =====
+  const histRef = useRef<{stk:string[]; i:number}>({stk:[], i:-1});
+  const [histVer, setHistVer] = useState(0);
+  const histLastRef = useRef<{t:number; key:string}>({t:0, key:""});
+  const pushHistory = useCallback((key = "") => {
+    const now = Date.now();
+    if (key && histLastRef.current.key === key && now - histLastRef.current.t < 700) return;
+    histLastRef.current = {t: now, key};
+    try {
+      const snap = JSON.stringify({s: slides.map(x=>({id:x.id, imageUrl:x.imageUrl, lyric:x.lyric})), o: slideOptsById, ll: lyricLines});
+      if (histRef.current.stk[histRef.current.i] === snap) return;
+      histRef.current.stk = histRef.current.stk.slice(0, histRef.current.i + 1);
+      histRef.current.stk.push(snap);
+      if (histRef.current.stk.length > 40) histRef.current.stk.shift();
+      histRef.current.i = histRef.current.stk.length - 1;
+      setHistVer(v=>v+1);
+    } catch {}
+  }, [slides, slideOptsById, lyricLines]);
+  const applyHistSnap = useCallback((snap: string) => {
+    try {
+      const d = JSON.parse(snap);
+      if (Array.isArray(d.s)) setSlides(d.s);
+      if (d.o && typeof d.o === "object") setSlideOptsById(d.o);
+      if (Array.isArray(d.ll)) setLyricLines(d.ll);
+      setSelId("");
+    } catch {}
+  }, []);
+  const undo = useCallback(() => {
+    const h = histRef.current;
+    if (h.i > 0) { h.i--; applyHistSnap(h.stk[h.i]); setHistVer(v=>v+1); }
+  }, [applyHistSnap]);
+  const redo = useCallback(() => {
+    const h = histRef.current;
+    if (h.i < h.stk.length - 1) { h.i++; applyHistSnap(h.stk[h.i]); setHistVer(v=>v+1); }
+  }, [applyHistSnap]);
+  const canUndo = histVer >= 0 && histRef.current.i > 0;
+  const canRedo = histRef.current.i >= 0 && histRef.current.i < histRef.current.stk.length - 1;
+
+  // ===== refs mirror (buat rAF loop & handler tanpa re-render) =====
+  const slidesRef = useRef(slides);             useEffect(()=>{ slidesRef.current = slides; }, [slides]);
+  const slideOptsRef = useRef(slideOptsById);   useEffect(()=>{ slideOptsRef.current = slideOptsById; }, [slideOptsById]);
+  const selIdRef = useRef(selId);               useEffect(()=>{ selIdRef.current = selId; }, [selId]);
+  const adjRef = useRef(adj);                   useEffect(()=>{ adjRef.current = adj; }, [adj]);
+  const transitionRef = useRef(transition);     useEffect(()=>{ transitionRef.current = transition; }, [transition]);
+  const isMobileRef = useRef(isMobile);         useEffect(()=>{ isMobileRef.current = isMobile; }, [isMobile]);
+  const vizStyleRef = useRef(vizStyle);         useEffect(()=>{ vizStyleRef.current = vizStyle; }, [vizStyle]);
+  const vizColorRef = useRef(vizColor);         useEffect(()=>{ vizColorRef.current = vizColor; }, [vizColor]);
+  const showTitleRef = useRef(showTitle);       useEffect(()=>{ showTitleRef.current = showTitle; }, [showTitle]);
+  const showLyricsRef = useRef(showLyrics);     useEffect(()=>{ showLyricsRef.current = showLyrics; }, [showLyrics]);
+  const lyricLinesRef = useRef(lyricLines);     useEffect(()=>{ lyricLinesRef.current = lyricLines; }, [lyricLines]);
+  const titleTextRef = useRef("");              useEffect(()=>{ titleTextRef.current = selectedTitle?.text || niche || ""; }, [selectedTitle, niche]);
+
+  const globalFilter = useMemo(()=> buildClipFilter(filterPreset, adj), [filterPreset, adj]);
+  const globalFilterRef = useRef("none");       useEffect(()=>{ globalFilterRef.current = globalFilter; }, [globalFilter]);
+
+  // ===== helper opt klip =====
+  const setOpt = useCallback((id: string, patch: Partial<SlideOpt>, histKey = "") => {
+    if (histKey) pushHistory(histKey); else pushHistory(`${id}:${Object.keys(patch).join(",")}`);
+    setSlideOptsById(cur => ({ ...cur, [id]: { ...(cur[id]||{}), ...patch } }));
+  }, [pushHistory]);
+  const setClipText = useCallback((id: string, text: ClipText|null) => setOpt(id, { text: text ?? undefined }, `${id}:text-set`), [setOpt]);
+  useEffect(() => { if (selId && !slides.some(s=>s.id===selId)) setSelId(""); }, [slides, selId]);
+  const selIndex = useMemo(()=> slides.findIndex(s=>s.id===selId), [slides, selId]);
+  const selOpt = selId ? slideOptsById[selId] : undefined;
+
+  // ===== TIMELINE per-klip =====
+  const timeline = useMemo<Timeline|null>(() => {
+    if (!slides.length) return null;
+    const durs = slides.map(s => effDur(slideOptsById[s.id], slideDuration));
+    const tdurs = slides.map((s, i) => {
+      if (i >= slides.length - 1) return 0;
+      const tid = canonicalTrans(slideOptsById[s.id]?.trans ?? transition);
+      if (tid === "none") return 0;
+      const td = slideOptsById[s.id]?.transDur ?? transitionDur;
+      return Math.min(Math.max(0.15, td), durs[i] * 0.9);
+    });
+    const tids = slides.map(s => canonicalTrans(slideOptsById[s.id]?.trans ?? transition));
+    return buildTimeline(durs, tdurs, tids);
+  }, [slides, slideOptsById, slideDuration, transitionDur, transition]);
+  const timelineRef = useRef<Timeline|null>(null);
+  useEffect(()=>{ timelineRef.current = timeline; }, [timeline]);
+  const clipsTotal = timeline?.total || 0;
+
   function openTool(t: ToolId) { setTool(cur => cur===t ? null : t); }
+  function openToolWithSel(t: ToolId) {
+    if (!selIdRef.current && slidesRef.current.length) {
+      const tl = timelineRef.current;
+      const L = tl ? locate(tl, Math.min(previewCurrent, Math.max(0, tl.total - 0.01))) : null;
+      const idx = L ? L.idx : 0;
+      const s = slidesRef.current[idx] || slidesRef.current[0];
+      if (s) setSelId(s.id);
+    }
+    setTool(t);
+  }
 
   // ===== DRAFTS =====
-  const DRAFTS_KEY = "verve_drafts_v1";
-  const MAX_DRAFTS = 12;
   const loadDraftsList = useCallback(() => {
     try {
       const raw = localStorage.getItem(DRAFTS_KEY);
@@ -354,7 +465,6 @@ export default function Home() {
     setNKeywords(mobileNow ? 3 : 5);
     setTransitionDur(mobileNow ? 0.5 : 0.8);
 
-    // Pulihkan task Suno yang tertunda (biar polling lanjut walau refresh)
     try {
       const tk = JSON.parse(localStorage.getItem(SUNO_TASK_KEY) || "null");
       if (tk?.id && Date.now()-tk.ts < 30*60*1000) {
@@ -392,6 +502,11 @@ export default function Home() {
         if (d.transition) setTransition(d.transition);
         if (typeof d.showTitle === "boolean") setShowTitle(d.showTitle);
         if (typeof d.showLyrics === "boolean") setShowLyrics(d.showLyrics);
+        if (d.captionStyle) setCaptionStyle(d.captionStyle);
+        if (d.spectrumSticker) setSpectrumSticker(d.spectrumSticker);
+        if (d.filterPreset) setFilterPreset(d.filterPreset);
+        if (d.adj && typeof d.adj === "object") setAdj({...DEFAULT_ADJUST, ...d.adj});
+        if (d.slideOptsById && typeof d.slideOptsById === "object") setSlideOptsById(d.slideOptsById);
         if (d.musicGenre) setMusicGenre(d.musicGenre);
         if (d.musicMood) setMusicMood(d.musicMood);
         if (d.musicModel) setMusicModel(d.musicModel);
@@ -452,12 +567,14 @@ export default function Home() {
       });
       const anyTooBig = compactSlides.some((s:any)=>s._tooBig);
       return {
-        v: 3, savedAt: Date.now(), step, niche, keywordMode, manualKeywords, nKeywords,
+        v: 4, savedAt: Date.now(), step, niche, keywordMode, manualKeywords, nKeywords,
         keywords: keywords.slice(0,30),
         titles: titles.slice(0,50).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
         selectedTitleId, imageSource, imageStyle, aspectRatio, nSlides,
         audioMode, ttsVoice, ttsText, vizStyle, vizColor, slideDuration, transitionDur, transition,
-        showTitle, showLyrics, logoPosition, logoDataUrl: logoDataUrl.slice(0,150_000),
+        showTitle, showLyrics, captionStyle, spectrumSticker, filterPreset, adj,
+        slideOptsById: anyTooBig ? {} : slideOptsById,
+        logoPosition, logoDataUrl: logoDataUrl.slice(0,150_000),
         musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
         musicEra, musicTempo, musicInstruments, musicTitle: musicTitle.slice(0,80),
         musicStylePrompt: musicStylePrompt.slice(0,1000),
@@ -468,21 +585,16 @@ export default function Home() {
     };
     const saveSession = () => {
       try {
-        const full = slides.map(s=>{
-          if (!s.imageUrl || !s.imageUrl.startsWith("data:")) return s;
-          if (s.imageUrl.length > 800_000) return { ...s, _tooBig: true, imageUrl:"" };
-          return s;
-        });
-        const big = full.some((s:any)=>s._tooBig);
-        const fullSnap = { ...buildSnap(), slides: big?[]:full, lyricLines: big?[]:lyricLines.slice(0,12) };
+        const fullSnap = buildSnap();
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(fullSnap));
-      } catch { try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify({...buildSnap(),slides:[],lyricLines:[],logoDataUrl:""})); } catch {} }
+      } catch { try { const b = buildSnap(); sessionStorage.setItem(STORAGE_KEY, JSON.stringify({...b,slides:[],lyricLines:[],slideOptsById:{},logoDataUrl:""})); } catch {} }
     };
     const t1 = setTimeout(saveSession, 700);
     return () => clearTimeout(t1);
   }, [step, niche,keywordMode,manualKeywords,nKeywords,keywords,titles,selectedTitleId,
       imageSource,imageStyle,aspectRatio,nSlides,slides,audioMode,ttsVoice,ttsText,
-      vizStyle,vizColor,slideDuration,transitionDur,transition,
+      vizStyle,vizColor,slideDuration,transitionDur,transition,captionStyle,spectrumSticker,
+      filterPreset,adj,slideOptsById,
       showTitle,showLyrics,logoDataUrl,logoPosition,musicGenre,musicMood,musicModel,
       musicVocalType,musicVocalGender,musicEra,musicTempo,musicInstruments,
       musicTitle,musicStylePrompt,aiMusicUrl,musicGeneratedFrom,sunoCredits,
@@ -499,10 +611,11 @@ export default function Home() {
           return s;
         });
         const big = compactSlides.some((s:any)=>s._tooBig);
-        const snap = { v:3, savedAt:Date.now(), step, niche, keywordMode, manualKeywords, nKeywords,
+        const snap = { v:4, savedAt:Date.now(), step, niche, keywordMode, manualKeywords, nKeywords,
           keywords: keywords.slice(0,20), titles: titles.slice(0,20).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
           selectedTitleId, aspectRatio, nSlides, audioMode, vizStyle, vizColor, slideDuration, transitionDur, transition,
-          showTitle, showLyrics, logoPosition, musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
+          showTitle, showLyrics, captionStyle, spectrumSticker, filterPreset, adj,
+          slideOptsById: big?{}:slideOptsById, logoPosition, musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
           musicTitle: musicTitle.slice(0,80), musicStylePrompt: musicStylePrompt.slice(0,500),
           aiMusicUrl, musicGeneratedFrom, slides: big?[]:compactSlides, lyricLines: big?[]:lyricLines.slice(0,12) };
         localStorage.setItem("verve_draft_v1", JSON.stringify(snap));
@@ -511,7 +624,7 @@ export default function Home() {
     return ()=>clearTimeout(t);
   }, [step,niche,selectedTitleId,aspectRatio,slides,audioMode,vizStyle,vizColor,
       slideDuration,transitionDur,showTitle,showLyrics,musicGenre,musicModel,
-      musicTitle,musicStylePrompt,aiMusicUrl,lyricLines]);
+      musicTitle,musicStylePrompt,aiMusicUrl,lyricLines,slideOptsById,adj,filterPreset]);
 
   // Auto-save DRAFTS HISTORY tiap 30 detik
   useEffect(()=>{
@@ -592,6 +705,7 @@ export default function Home() {
   // ===== Media =====
   async function doGenerateImages() {
     if (!selectedTitle) return setErr("Pilih judul dulu (tab ✨AI)");
+    pushHistory("genimg");
     setStageText(`Generate ${nSlides} gambar AI...`);
     setLoading("/image");
     const raw: Slide[] = []; const errs: string[] = [];
@@ -611,11 +725,12 @@ export default function Home() {
       } catch(e:any){ errs.push(`#${i+1}: ${(e.message||"gagal").slice(0,120)}`); }
     }
     if (!raw.length) setErr(`Semua ${nSlides} gambar gagal.\n${errs.slice(0,4).join("\n")}\n💡 Coba style "Studio", atau upload gambar sendiri.`);
-    else { setSlides(raw); setLyricLines(raw.map(()=>"")); setError(""); setStageText(`✅ ${raw.length}/${nSlides} gambar siap`); }
+    else { setSlides(raw); setLyricLines(raw.map(()=>"")); setSlideOptsById({}); setSelId(""); setError(""); setStageText(`✅ ${raw.length}/${nSlides} gambar siap`); }
     setTimeout(()=>setStageText(""), 2500); setLoading(null);
   }
   function handleUploadImages(files: FileList|null) {
     if (!files) return;
+    pushHistory("upload");
     setStageText("Memproses upload...");
     Promise.all(
       Array.from(files).slice(0,12).map(f => new Promise<Slide>((res)=>{
@@ -635,7 +750,7 @@ export default function Home() {
             const cx = c.getContext("2d")!;
             cx.fillStyle="#000"; cx.fillRect(0,0,outW,outH);
             cx.drawImage(img,(w-cw)/2,(h-ch)/2,cw,ch,0,0,outW,outH);
-            res({ id:`up_${f.name}_${Date.now()}`, imageUrl: c.toDataURL("image/jpeg", 0.88) });
+            res({ id:`up_${f.name}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, imageUrl: c.toDataURL("image/jpeg", 0.88) });
           };
           img.src = r.result as string;
         };
@@ -647,31 +762,56 @@ export default function Home() {
     });
   }
   function moveSlide(from:number, to:number){
+    if (from===to) return;
+    pushHistory(`move:${from}`);
     setSlides(cur=>{
-      if (from===to || from<0 || to<0 || from>=cur.length || to>=cur.length) return cur;
+      if (from<0 || to<0 || from>=cur.length || to>=cur.length) return cur;
       const arr=[...cur]; const [it]=arr.splice(from,1); arr.splice(to,0,it); return arr;
     });
     setLyricLines(cur=>{
-      if (from===to || from<0 || to<0 || from>=cur.length || to>=cur.length) return cur;
+      if (from<0 || to>=cur.length || from>=cur.length || to<0) return cur;
       const arr=[...cur]; const [it]=arr.splice(from,1); arr.splice(to,0,it); return arr;
     });
   }
   function duplicateSlide(id:string){
+    pushHistory(`dup:${id}`);
+    const i = slides.findIndex(s=>s.id===id); if (i<0) return;
+    const nid = `dup_${Date.now()}_${i}`;
     setSlides(cur=>{
-      const i = cur.findIndex(s=>s.id===id); if(i<0) return cur;
-      const cp:Slide = {...cur[i], id:`dup_${Date.now()}_${i}`};
-      const arr=[...cur]; arr.splice(i+1,0,cp); return arr;
+      const j = cur.findIndex(s=>s.id===id); if(j<0) return cur;
+      const cp:Slide = {...cur[j], id:nid};
+      const arr=[...cur]; arr.splice(j+1,0,cp); return arr;
     });
-    setLyricLines(cur=>{
-      const i = Math.max(0, slides.findIndex(s=>s.id===id));
-      const arr=[...cur]; arr.splice(i+1,0,arr[i]||""); return arr;
-    });
+    setSlideOptsById(cur=>{ const o = cur[id] ? {...cur[id]} : {}; const c2={...cur}; c2[nid]=o; return c2; });
+    setLyricLines(cur=>{ const arr=[...cur]; arr.splice(i+1,0,arr[i]||""); return arr; });
   }
   function removeSlide(id:string){
+    pushHistory(`del:${id}`);
     setSlides(cur=>{
       const i = cur.findIndex(s=>s.id===id);
       setLyricLines(ll=>ll.filter((_,idx)=>idx!==i));
       return cur.filter(s=>s.id!==id);
+    });
+    setSlideOptsById(cur=>{ const c2={...cur}; delete c2[id]; return c2; });
+  }
+  function splitSlide(id:string){
+    const i = slides.findIndex(s=>s.id===id); if (i<0) return;
+    pushHistory(`split:${id}`);
+    const base = slideOptsById[id] || {};
+    const d0 = base.dur ?? slideDuration;
+    const half1 = Math.max(0.4, d0/2), half2 = Math.max(0.4, d0-half1);
+    const nid = `sp_${Date.now()}_${i}`;
+    setSlides(cur=>{
+      const j = cur.findIndex(s=>s.id===id); if (j<0) return cur;
+      const arr=[...cur]; arr.splice(j+1,0,{...cur[j], id:nid}); return arr;
+    });
+    setLyricLines(cur=>{ const arr=[...cur]; arr.splice(i+1,0,""); return arr; });
+    setSlideOptsById(cur=>{
+      const c2 = {...cur};
+      c2[id] = {...(c2[id]||{}), dur:half1};
+      const out = {...(c2[id]||{})}; delete out.trans; delete out.transDur;
+      c2[nid] = {...out, dur:half2};
+      return c2;
     });
   }
 
@@ -723,25 +863,29 @@ export default function Home() {
         }
       }
       const hasLyrics = finalLyrics.some(x=>!!x);
-      const effSpeed = Math.max(0.25, Number(videoSpeed)||1);
-      const filterStr = getFilterString();
-      const vignetteStrength = Math.max(0, Math.min(1, (vignetteAmt/100)*0.8));
-      const finalTextLayers = (textLayers||[]).map((l:any)=>({ ...l, id: l.id?.replace(/^sel_/,"") })).filter((l:any)=>l.text && l.text.trim());
+      const orderedOpts: SlideOpt[] = slides.map(s=>{
+        const o = slideOptsById[s.id] || {};
+        const clean: SlideOpt = { ...o };
+        if (clean.text && !clean.text.txt?.trim()) delete clean.text;
+        return clean;
+      });
+      const gf = buildClipFilter(filterPreset, adj);
       const blob = await renderSlideshow({
         images: slides.map(s=>s.imageUrl),
         audioUrl: audioUrl || undefined,
-        slideDuration: slideDuration/effSpeed,
-        transitionDuration: transitionDur/effSpeed,
-        videoSpeed: effSpeed,
-        videoFilter: filterStr==="none" ? undefined : filterStr,
-        vignetteStrength, spectrumSticker: spectrumSticker || "bars-bottom",
-        textLayers: finalTextLayers.length ? finalTextLayers : undefined,
+        slideDuration,
+        transitionDuration: transitionDur,
+        slideOpts: orderedOpts,
+        videoFilter: gf==="none" ? undefined : gf,
+        vignetteStrength: Math.max(0, Math.min(1, (adj.vig/100)*0.8)),
+        grainAmt: adj.grain,
+        spectrumSticker: spectrumSticker || "bars-bottom",
         vizStyle, vizColor, title: showTitle ? (selectedTitle?.text || niche) : undefined,
         lyrics: showLyrics && hasLyrics ? finalLyrics : undefined,
         logoUrl: logoDataUrl || undefined, logoPosition,
         quality, mobileOptimized: isMobile, ratio: aspectRatio, aspectRatio,
-        transition, showTitle, showLyrics: showLyrics && hasLyrics,
-        captionStyle: showLyrics ? captionStyle : "none",
+        transition: transition as any, showTitle, showLyrics: showLyrics && hasLyrics,
+        captionStyle: (showLyrics ? captionStyle : "none") as any,
         onProgress: (p) => {
           setProgress(p);
           const elapsed = (Date.now()-renderStartRef.current)/1000;
@@ -826,6 +970,7 @@ export default function Home() {
   }
   async function doGenerateImagesFromStory() {
     if (!storyboard?.scenes?.length) return setErr("Buat storyboard dulu");
+    pushHistory("storyimg");
     setStageText(`Generate ${storyboard.scenes.length} gambar sesuai cerita...`); setLoading("img-story");
     const newSlides: Slide[] = []; const errs: string[] = []; const ll: string[] = [];
     for (let i=0;i<storyboard.scenes.length;i++){
@@ -846,7 +991,7 @@ export default function Home() {
         await new Promise(r=>setTimeout(r,50));
       } catch(e:any){ errs.push(`#${i+1}: ${(e.message||"gagal").slice(0,70)}`); }
     }
-    if (newSlides.length) { setSlides(newSlides); setLyricLines(ll); setShowLyrics(true); setError(""); setStageText(`✅ ${newSlides.length}/${storyboard.scenes.length} adegan siap!`); }
+    if (newSlides.length) { setSlides(newSlides); setSlideOptsById({}); setSelId(""); setLyricLines(ll); setShowLyrics(true); setError(""); setStageText(`✅ ${newSlides.length}/${storyboard.scenes.length} adegan siap!`); }
     else setErr(`Gagal generate gambar cerita:\n${errs.join("\n")}`);
     setTimeout(()=>setStageText(""),3000); setLoading(null);
   }
@@ -1034,13 +1179,14 @@ export default function Home() {
       return s;
     });
     return {
-      v:1, id: currentDraftId || `d${Date.now()}`,
+      v:2, id: currentDraftId || `d${Date.now()}`,
       title: (title||selectedTitle?.text||niche||"Draft tanpa judul").slice(0,80),
       updatedAt: Date.now(), step, niche, keywordMode, manualKeywords,
       keywords: keywords.slice(0,20), titles: titles.slice(0,20).map(t=>({id:t.id,keyword:t.keyword,text:t.text})),
       selectedTitleId, imageSource, imageStyle, aspectRatio, nSlides,
       audioMode, ttsVoice, ttsText, vizStyle, vizColor, slideDuration, transitionDur, transition,
-      showTitle, showLyrics, logoPosition, musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
+      showTitle, showLyrics, captionStyle, spectrumSticker, filterPreset, adj, slideOptsById,
+      logoPosition, musicGenre, musicMood, musicModel, musicVocalType, musicVocalGender,
       musicTitle: musicTitle.slice(0,80), musicStylePrompt: musicStylePrompt.slice(0,500),
       aiMusicUrl, musicGeneratedFrom, storyboard, slides: compactSlides, lyricLines: lyricLines.slice(0,12),
       thumb: slides[0]?.imageUrl?.startsWith("data:")?slides[0].imageUrl.slice(0,10000):"",
@@ -1068,9 +1214,14 @@ export default function Home() {
     if (d.vizColor) setVizColor(d.vizColor);
     if (typeof d.slideDuration==="number") setSlideDuration(d.slideDuration);
     if (typeof d.transitionDur==="number") setTransitionDur(d.transitionDur);
-    if (d.transition) setTransition(d.transition as Transition);
+    if (d.transition) setTransition(d.transition);
     if (typeof d.showTitle==="boolean") setShowTitle(d.showTitle);
     if (typeof d.showLyrics==="boolean") setShowLyrics(d.showLyrics);
+    if (d.captionStyle) setCaptionStyle(d.captionStyle);
+    if (d.spectrumSticker) setSpectrumSticker(d.spectrumSticker);
+    if (d.filterPreset) setFilterPreset(d.filterPreset);
+    if (d.adj && typeof d.adj==="object") setAdj({...DEFAULT_ADJUST, ...d.adj});
+    if (d.slideOptsById && typeof d.slideOptsById==="object") setSlideOptsById(d.slideOptsById);
     if (d.logoPosition) setLogoPosition(d.logoPosition);
     if (d.musicGenre) setMusicGenre(d.musicGenre);
     if (d.musicMood) setMusicMood(d.musicMood);
@@ -1083,6 +1234,7 @@ export default function Home() {
     if (d.storyboard) setStoryboard(d.storyboard);
     if (Array.isArray(d.slides) && d.slides.length) setSlides(d.slides);
     if (Array.isArray(d.lyricLines)) setLyricLines(d.lyricLines);
+    setSelId("");
     setCurrentDraftId(d.id);
   }
   function saveDraftManually(title?:string) {
@@ -1105,11 +1257,12 @@ export default function Home() {
     stopPreview();
     setStep(1); setTool(null);
     setNiche(""); setKeywords([]); setTitles([]); setSelectedTitleId("");
-    setSlides([]); setLyricLines([]); setStoryboard(null); setTtsText(""); setTtsUrl("");
+    setSlides([]); setSlideOptsById({}); setSelId(""); setLyricLines([]); setStoryboard(null); setTtsText(""); setTtsUrl("");
     setAiMusicUrl(""); setAiMusicStatus(""); setAiMusicTaskId(""); setMusicTitle("");
     setMusicLyrics(""); setMusicStylePrompt(""); setMusicGeneratedFrom(""); setSunoCredits("");
     setVideoUrl(""); setVideoBlob(null); setMeta(null);
     setCurrentDraftId(""); setShowDraftPicker(false); clearSunoTask();
+    histRef.current = {stk:[], i:-1}; setHistVer(v=>v+1);
     setStageText("✨ Project baru dimulai"); setTimeout(()=>setStageText(""),2000);
   }
   function loadDraft(id:string) {
@@ -1160,48 +1313,154 @@ export default function Home() {
     finally { setLoading(null); }
   }
 
-  // ===== Preview engine =====
+  // =====================================================================
+  //                        PREVIEW ENGINE v5
+  // =====================================================================
   function stopPreview() {
     if (previewRafRef.current) { cancelAnimationFrame(previewRafRef.current); previewRafRef.current = null; }
     const audEl = previewAudioRef.current;
     if (audEl) {
       try { if (!audEl.paused) audEl.pause(); } catch {}
-      try { audEl.currentTime = 0; } catch {}
       if ((audEl as any)._cleanup) { try { (audEl as any)._cleanup(); } catch {} (audEl as any)._cleanup = null; }
     }
-    setPreviewPlaying(false); setPreviewCurrent(0);
+    setPreviewPlaying(false);
   }
-  function getFilterString(f?:string): string {
-    let preset = "";
-    const fp = f || activeFilter;
-    if (fp === "cinematic") preset = "contrast(1.18) saturate(0.85) brightness(0.95)";
-    else if (fp === "vivid") preset = "saturate(1.4) contrast(1.12) brightness(1.05)";
-    else if (fp === "warm") preset = "sepia(0.18) saturate(1.15) brightness(1.02)";
-    else if (fp === "cool") preset = "hue-rotate(-10deg) saturate(1.1) brightness(1.02)";
-    else if (fp === "bw") preset = "grayscale(1) contrast(1.1)";
-    else if (fp === "vintage") preset = "sepia(0.35) contrast(0.95) brightness(0.95) saturate(0.85)";
-    else if (fp === "dreamy") preset = "brightness(1.1) contrast(0.92) saturate(1.15) blur(0.3px)";
-    else if (fp === "cinema4k") preset = "contrast(1.22) saturate(0.95) brightness(0.92)";
-    else if (fp === "8k") preset = "contrast(1.25) saturate(1.08) brightness(0.98)";
-    else if (fp === "clearll") preset = "contrast(1.08) saturate(1.12) brightness(1.02)";
-    else if (fp === "senja") preset = "sepia(0.25) saturate(1.2) brightness(1.0) hue-rotate(-10deg)";
-    const parts: string[] = [];
-    if (preset) parts.push(preset);
-    if (brightness) parts.push(`brightness(${(1+brightness/100).toFixed(3)})`);
-    if (contrast) parts.push(`contrast(${(1+contrast/100).toFixed(3)})`);
-    if (saturation) parts.push(`saturate(${(1+saturation/100).toFixed(3)})`);
-    if (sharpen>0) parts.push(`contrast(${(1+sharpen/300).toFixed(3)})`);
-    return parts.length ? parts.join(" ") : "none"; // ← anti-lag: "none" = tanpa filter pipeline
+
+  async function ensureImages(): Promise<void> {
+    const jobs: Promise<void>[] = [];
+    for (const s of slidesRef.current) {
+      if (imgCacheRef.current.has(s.id)) continue;
+      const im = new Image(); im.crossOrigin = "anonymous";
+      imgCacheRef.current.set(s.id, im);
+      jobs.push(new Promise<void>((res)=>{
+        im.onload = ()=>res(); im.onerror = ()=>res();
+        setTimeout(()=>res(), 4000);
+      }));
+      im.src = s.imageUrl;
+    }
+    // bersihkan cache yg sudah tidak dipakai
+    const ids = new Set(slidesRef.current.map(s=>s.id));
+    for (const k of [...imgCacheRef.current.keys()]) if (!ids.has(k)) imgCacheRef.current.delete(k);
+    await Promise.all(jobs);
   }
-  function resetAdjust() { setBrightness(0); setContrast(0); setSaturation(0); setSharpen(0); setVignetteAmt(75); setActiveFilter("none"); }
+
+  // Gambar satu frame scene pada waktu video tV (detik). spectrumData opsional.
+  function drawScene(tV: number, spec?: {bars:Float32Array|Uint8Array; bass:number; beat:boolean}) {
+    const canvas = previewCanvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d", {alpha:false, desynchronized:true} as any) as CanvasRenderingContext2D | null;
+    if (!ctx) return;
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = "#000"; ctx.fillRect(0,0,W,H);
+    const tl = timelineRef.current;
+    const slidesArr = slidesRef.current;
+    if (!tl || !slidesArr.length) return;
+    const t = Math.max(0, Math.min(tV, Math.max(0, tl.total - 0.001)));
+    const L = locate(tl, t);
+    const curSlide = slidesArr[L.idx];
+    const nxtSlide = slidesArr[L.nextIdx];
+    const curImg = curSlide ? imgCacheRef.current.get(curSlide.id) : undefined;
+    const nxtImg = nxtSlide ? imgCacheRef.current.get(nxtSlide.id) : undefined;
+    const optCur = curSlide ? (slideOptsRef.current[curSlide.id] || null) : null;
+    const optNxt = nxtSlide ? (slideOptsRef.current[nxtSlide.id] || null) : null;
+    const transId = canonicalTrans(optCur?.trans ?? transitionRef.current);
+    const clipDur = L.clipDur;
+    const clipT = Math.min(L.clipT, clipDur);
+    const slideT = clipDur > 0 ? clipT / clipDur : 0;
+    const beat = spec?.beat || false;
+    paintClips(ctx, W, H, curImg || null, nxtImg || null, {
+      clipT, clipDur, inTrans: L.inTrans, transT: L.transT, transId,
+      optCur, optNxt,
+      globalFilter: globalFilterRef.current,
+      absT: t, isMobile: isMobileRef.current, beat,
+      grain: adjRef.current.grain,
+      kbZoom: 1 + slideT * 0.035 + (beat ? 0.006 : 0),
+    });
+    // vignette global
+    const vStr = (adjRef.current.vig / 100) * 0.8;
+    if (vStr > 0.01) {
+      const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
+      vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStr.toFixed(3)})`);
+      ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+    }
+    // spectrum
+    if (spec && vizStyleRef.current !== "none") {
+      const rgbV = hexToRgbE(vizColorRef.current);
+      ctx.save();
+      try { drawLiveSpectrum(ctx,{ W,H,bars:spec.bars,bass:spec.bass,beat,style:vizStyleRef.current,rgb:rgbV,isMobile:isMobileRef.current,phase:t*0.5, barFill:`rgba(${rgbV[0]},${rgbV[1]},${rgbV[2]},0.95)` }); } catch(e){}
+      ctx.restore();
+    }
+    // judul
+    if (showTitleRef.current) {
+      const titleText = titleTextRef.current;
+      if (titleText) {
+        ctx.save();
+        ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
+        ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,-apple-system,sans-serif`;
+        ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10;
+        ctx.lineWidth=4; ctx.strokeStyle="rgba(0,0,0,0.85)"; ctx.lineJoin="round";
+        ctx.strokeText(titleText, W/2, H-50, W*0.9);
+        ctx.fillText(titleText, W/2, H-50, W*0.9);
+        ctx.restore();
+      }
+    }
+    // karaoke lirik (mengikuti klip aktif)
+    if (showLyricsRef.current) {
+      const line: string = (lyricLinesRef.current[L.idx] || (curSlide as any)?.lyric || "").trim();
+      if (line) {
+        const lt = Math.max(0, Math.min(1, slideT));
+        ctx.save();
+        const fs = Math.floor(H*0.055);
+        ctx.font=`900 ${fs}px system-ui,-apple-system,sans-serif`;
+        ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.lineJoin="round";
+        const words = line.split(/\s+/);
+        const maxW = W*0.88;
+        let curL="";
+        const rows:string[]=[];
+        words.forEach(w=>{
+          const t2 = curL ? curL+" "+w : w;
+          if (ctx.measureText(t2).width > maxW && curL) { rows.push(curL); curL=w; } else curL=t2;
+        });
+        if (curL) rows.push(curL);
+        const lh = fs*1.25;
+        const baseY = H*0.7;
+        const fadeMul = L.inTrans ? 1 - L.transT : 1;
+        ctx.globalAlpha = Math.max(0, fadeMul);
+        rows.forEach((row,ri)=>{
+          const y = baseY - (rows.length-1)*lh/2 + ri*lh;
+          const wds = row.split(/\s+/);
+          let totalW=0;
+          const widths=wds.map(w=>{const m=ctx.measureText(w).width; totalW+=m; return m;});
+          const sw=ctx.measureText(" ").width; totalW+=sw*(wds.length-1);
+          let x=W/2-totalW/2;
+          wds.forEach((w,wi)=>{
+            const isActive = (wi/Math.max(1,wds.length)) <= lt;
+            ctx.lineWidth=Math.max(5,fs/7); ctx.strokeStyle="rgba(0,0,0,0.9)";
+            ctx.strokeText(w, x+widths[wi]/2, y);
+            ctx.fillStyle = isActive ? "#fde047" : "#ffffff";
+            ctx.fillText(w, x+widths[wi]/2, y);
+            x+=widths[wi]+sw;
+          });
+        });
+        ctx.restore();
+      }
+    }
+  }
+
+  function idleSpectrum(t: number) {
+    const bars = new Float32Array(64);
+    for (let i=0;i<64;i++) bars[i] = Math.max(0.06, Math.min(1, 0.28 + Math.sin(t*2+i*0.2)*0.18 + Math.sin(t*5+i*0.3)*0.13));
+    return { bars, bass: 0.3 + Math.sin(t*2)*0.18, beat: Math.sin(t*2.5)>0.9 };
+  }
+
   function seekPreview(t: number) {
     const audEl = previewAudioRef.current;
     if (audEl && isFinite(audEl.duration)) audEl.currentTime = Math.max(0, Math.min(audEl.duration, t));
     setPreviewCurrent(t);
   }
+
   async function togglePreview() {
     const canvas = previewCanvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !slidesRef.current.length) return;
     if (previewPlaying) { stopPreview(); return; }
     const previewSrc = proxifyAudioUrl(
       (audioMode==="aimusic" && aiMusicUrl) ? aiMusicUrl :
@@ -1232,14 +1491,9 @@ export default function Home() {
         try { audEl.removeEventListener("canplay", onCanPlay); } catch {}
       };
     }
-    const ctx = canvas.getContext("2d")!;
-    const W = canvas.width, H = canvas.height;
-    const imgs: HTMLImageElement[] = [];
-    for (const s of slides) {
-      const im = new Image(); im.crossOrigin = "anonymous"; im.src = s.imageUrl;
-      try { await new Promise<void>((res)=>{ im.onload=()=>res(); im.onerror=()=>res(); setTimeout(()=>res(),4000); }); } catch {}
-      imgs.push(im);
-    }
+    setStageText("Menyiapkan preview...");
+    await ensureImages();
+    setStageText("");
     let analyserConnected = false;
     try {
       if (!previewActxRef.current) {
@@ -1257,61 +1511,25 @@ export default function Home() {
       if (previewAnalyserRef.current) analyserConnected = true;
     } catch (e: any) { analyserConnected = false; }
     const startT = performance.now();
+    const tStart = previewCurrent < (timelineRef.current?.total||1) ? previewCurrent : 0;
     setPreviewPlaying(true);
-    const effSpeed = Math.max(0.25, Number(videoSpeed)||1);
-    const cFilter = getFilterString();
-    const vStrength = (vignetteAmt/100)*0.8;
-    const lyricLinesValid = lyricLines.filter(x=>!!x && x.trim());
-    const showLyricsNow = showLyrics && lyricLinesValid.length>0;
+    const total = () => Math.max(timelineRef.current?.total || 0, audEl?.duration && isFinite(audEl.duration) ? audEl.duration : 0, 1);
     const draw = () => {
       previewRafRef.current = requestAnimationFrame(draw);
       const now = performance.now();
       let t = 0;
       if (audEl && !audEl.paused && audEl.duration && isFinite(audEl.duration)) {
-        t = (audEl.currentTime||0)*effSpeed;
-        if ((now - (draw as any)._lastUi || 0) > 150) { (draw as any)._lastUi = now; setPreviewCurrent(audEl.currentTime||0); }
+        t = audEl.currentTime || 0;
+        if ((now - (draw as any)._lastUi || 0) > 150) { (draw as any)._lastUi = now; setPreviewCurrent(t); }
       } else {
-        t = ((now - startT)/1000)*effSpeed;
-        if ((now - (draw as any)._lastUi || 0) > 150) { (draw as any)._lastUi = now; setPreviewCurrent(t/effSpeed); }
+        t = tStart + (now - startT)/1000;
+        if ((now - (draw as any)._lastUi || 0) > 150) { (draw as any)._lastUi = now; setPreviewCurrent(t); }
+        if (t >= (timelineRef.current?.total || 9999)) { stopPreview(); setPreviewCurrent(0); return; }
       }
-      const sd = Math.max(0.3, slideDuration/effSpeed);
-      const td = Math.min(sd*0.6, (isMobile?0.5:0.8)/effSpeed);
-      const perS = sd + td;
-      let slideIdx = Math.floor(t/perS);
-      let localT = t - slideIdx*perS;
-      let inTrans = localT >= sd && td>0;
-      let transT = inTrans ? Math.min(1,(localT-sd)/td) : 0;
-      let nextIdx = Math.min(slideIdx+1, imgs.length-1);
-      slideIdx = Math.min(slideIdx, imgs.length-1);
-      const slideT = Math.min(1, sd>0?localT/sd:0);
-      ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
-      const noFilter = cFilter==="none";
-      const drawImg = (img:HTMLImageElement, alpha=1, zoom=1)=>{
-        if (!img.naturalWidth) { ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H); return; }
-        const ir = img.naturalWidth/img.naturalHeight, cr = W/H;
-        let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;
-        if (ir>cr) { sh=img.naturalHeight; sw=sh*cr; sx=(img.naturalWidth-sw)/2; }
-        else { sw=img.naturalWidth; sh=sw/cr; sy=(img.naturalHeight-sh)/2; }
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        if (!noFilter) ctx.filter = cFilter;
-        ctx.translate(W/2,H/2); ctx.scale(zoom,zoom); ctx.translate(-W/2,-H/2);
-        ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
-        ctx.restore();
-      };
-      const zb = 1 + slideT*0.04;
-      drawImg(imgs[slideIdx], 1, zb);
-      if (inTrans && imgs[nextIdx]) drawImg(imgs[nextIdx], transT, 1 + (1-transT)*0.04);
-      if (vStrength>0.01){
-        const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
-        vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
-        ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
-      }
+      let spec: {bars:Float32Array|Uint8Array; bass:number; beat:boolean};
       const an = previewAnalyserRef.current;
-      const SPEC_BARS = 64;
-      let barData: Float32Array|Uint8Array = new Float32Array(SPEC_BARS);
-      let bass = 0, beat=false;
       if (analyserConnected && an) {
+        const SPEC_BARS = 64;
         const f8 = new Uint8Array(an.frequencyBinCount);
         an.getByteFrequencyData(f8);
         const out = new Float32Array(SPEC_BARS);
@@ -1321,80 +1539,15 @@ export default function Home() {
           let s=0; for (let j=0;j<stp;j++){ const v=(f8[i*stp+j]||0)/255; s+=v; if (v>maxV) maxV=v; }
           out[i]=s/stp; if (i<8){bassSum+=out[i];bassCnt++;}
         }
-        bass = bassCnt?bassSum/bassCnt:0;
+        let bass = bassCnt?bassSum/bassCnt:0;
         bass = ((draw as any)._bass||0)*0.85 + bass*0.15;
         (draw as any)._bass = bass;
-        beat = maxV > bass*1.4 && maxV > 0.35;
-        barData = out;
+        spec = { bars: out, bass, beat: maxV > bass*1.4 && maxV > 0.35 };
       } else {
-        for (let i=0;i<SPEC_BARS;i++) barData[i] = Math.max(0.05, Math.min(1, 0.3 + Math.sin(t*2+i*0.2)*0.2 + Math.sin(t*5+i*0.3)*0.15));
-        bass = 0.3 + Math.sin(t*2)*0.2; beat = (Math.sin(t*2.5)>0.9);
+        spec = idleSpectrum(t);
       }
-      if (vizStyle !== "none") {
-        const rgbV: [number,number,number] = (() => {
-          const hex = vizColor.replace("#","");
-          const v = hex.length===3?hex.split("").map(c=>c+c).join(""):hex;
-          return [parseInt(v.slice(0,2),16), parseInt(v.slice(2,4),16), parseInt(v.slice(4,6),16)];
-        })();
-        ctx.save();
-        try{ drawLiveSpectrum(ctx,{ W,H,bars:barData,bass,beat,style:vizStyle,rgb:rgbV,isMobile:isMobile,phase:t*0.5, barFill:`rgba(${rgbV[0]},${rgbV[1]},${rgbV[2]},0.95)` }); }catch(e){}
-        ctx.restore();
-        if (!noFilter) {} // spectrum tanpa filter
-      }
-      if (showTitle) {
-        const titleText = selectedTitle?.text || niche || "";
-        if (titleText) {
-          ctx.save();
-          ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
-          ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,-apple-system,sans-serif`;
-          ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10;
-          ctx.lineWidth=4; ctx.strokeStyle="rgba(0,0,0,0.85)"; ctx.lineJoin="round";
-          ctx.strokeText(titleText, W/2, H-50, W*0.9);
-          ctx.fillText(titleText, W/2, H-50, W*0.9);
-          ctx.restore();
-        }
-      }
-      if (showLyricsNow) {
-        const lines = lyricLinesValid;
-        const leadIn = 1.0;
-        const adur = (audEl?.duration && isFinite(audEl.duration)) ? audEl.duration : Math.max(lines.length*sd + 2, 30);
-        const perL = Math.max(1.2, (adur-leadIn-1)/lines.length);
-        const activeLine = Math.max(0, Math.min(lines.length-1, Math.floor((t-leadIn)/perL)));
-        const lt = perL>0 ? Math.max(0,Math.min(1, ((t-leadIn) - activeLine*perL)/perL)) : 0;
-        const line = lines[activeLine] || "";
-        ctx.save();
-        const fs = Math.floor(H*0.055);
-        ctx.font=`900 ${fs}px system-ui,-apple-system,sans-serif`;
-        ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.lineJoin="round";
-        const words = line.split(/\s+/);
-        const maxW = W*0.88;
-        let curL="";
-        const rows:string[]=[];
-        words.forEach(w=>{
-          const t2 = curL ? curL+" "+w : w;
-          if (ctx.measureText(t2).width > maxW && curL) { rows.push(curL); curL=w; } else curL=t2;
-        });
-        if (curL) rows.push(curL);
-        const lh = fs*1.25;
-        const baseY = H*0.7;
-        rows.forEach((row,ri)=>{
-          const y = baseY - (rows.length-1)*lh/2 + ri*lh;
-          const wds = row.split(/\s+/);
-          let totalW=0;
-          const widths=wds.map(w=>{const m=ctx.measureText(w).width; totalW+=m; return m;});
-          const sw=ctx.measureText(" ").width; totalW+=sw*(wds.length-1);
-          let x=W/2-totalW/2;
-          wds.forEach((w,wi)=>{
-            const isActive = (wi/Math.max(1,wds.length)) <= lt;
-            ctx.lineWidth=Math.max(5,fs/7); ctx.strokeStyle="rgba(0,0,0,0.9)";
-            ctx.strokeText(w, x+widths[wi]/2, y);
-            ctx.fillStyle = isActive ? "#fde047" : "#ffffff";
-            ctx.fillText(w, x+widths[wi]/2, y);
-            x+=widths[wi]+sw;
-          });
-        });
-        ctx.restore();
-      }
+      drawScene(t, spec);
+      void total;
     };
     draw();
     if (audEl && previewSrc) {
@@ -1402,78 +1555,21 @@ export default function Home() {
     }
   }
 
-  // ===== Static preview =====
+  // ===== Static preview (paused) =====
   const pendingStaticFrameRef = useRef<number>(0);
-  function drawStaticPreview() {
-    if (previewPlaying) return;
-    const canvas = previewCanvasRef.current;
-    if (!canvas) { pendingStaticFrameRef.current = requestAnimationFrame(drawStaticPreview); return; }
-    pendingStaticFrameRef.current = 0;
-    const ctx = canvas.getContext("2d", {alpha:false,desynchronized:true});
-    if (!ctx) return;
-    const W = canvas.width, H = canvas.height;
-    const sIdx = 0;
-    const img:HTMLImageElement|undefined = (drawStaticPreview as any)._imgs?.[sIdx];
-    ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
-    const cFilter = getFilterString();
-    const noFilter = cFilter==="none";
-    const drawOne = (im:HTMLImageElement)=>{
-      if (!im || !im.naturalWidth) { ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H); return; }
-      const ir = im.naturalWidth/im.naturalHeight, cr = W/H;
-      let sx=0,sy=0,sw=im.naturalWidth,sh=im.naturalHeight;
-      if (ir>cr){sh=im.naturalHeight;sw=sh*cr;sx=(im.naturalWidth-sw)/2;}
-      else{sw=im.naturalWidth;sh=sw/cr;sy=(im.naturalHeight-sh)/2;}
-      ctx.save();
-      if (!noFilter) ctx.filter=cFilter;
-      ctx.drawImage(im,sx,sy,sw,sh,0,0,W,H); ctx.restore();
-    };
-    if (img && img.complete) drawOne(img);
-    else {
-      const im = new Image(); im.crossOrigin="anonymous";
-      im.onload = ()=>{ (drawStaticPreview as any)._imgs = (drawStaticPreview as any)._imgs || []; (drawStaticPreview as any)._imgs[sIdx] = im; drawStaticPreview(); };
-      im.src = slides[sIdx]?.imageUrl || "";
-      ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H);
-    }
-    const vStrength = (vignetteAmt/100)*0.8;
-    if (vStrength>0.01){
-      const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
-      vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
-      ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
-    }
-    if (vizStyle !== "none" && img && img.complete) {
-      const rgbv: [number,number,number] = (() => {
-        const hex = vizColor.replace("#","");
-        const v = hex.length===3?hex.split("").map(c=>c+c).join(""):hex;
-        return [parseInt(v.slice(0,2),16),parseInt(v.slice(2,4),16),parseInt(v.slice(4,6),16)];
-      })();
-      const idleBars = new Float32Array(64);
-      for (let i=0;i<64;i++) idleBars[i] = Math.max(0.08, 0.2 + Math.sin(i*0.4)*0.1 + Math.sin(i*0.9)*0.08 + (i%8===0?0.15:0));
-      try{ drawLiveSpectrum(ctx,{W,H,bars:idleBars,bass:0.3,beat:false,style:vizStyle,rgb:rgbv,isMobile:isMobile,phase:0, barFill:`rgba(${rgbv[0]},${rgbv[1]},${rgbv[2]},0.9)`}); }catch(e){}
-    }
-    if (showTitle) {
-      const tt = selectedTitle?.text || niche || "";
-      if (tt) {
-        ctx.save();
-        ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
-        ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,-apple-system,sans-serif`;
-        ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10;
-        ctx.strokeStyle="rgba(0,0,0,0.85)"; ctx.lineWidth=4; ctx.lineJoin="round";
-        ctx.strokeText(tt,W/2,H-50,W*0.9); ctx.fillText(tt,W/2,H-50,W*0.9);
-        ctx.restore();
-      }
-    }
-  }
   const scheduleStatic = useCallback(()=>{
     if (pendingStaticFrameRef.current) return;
-    pendingStaticFrameRef.current = requestAnimationFrame(drawStaticPreview);
-  }, []);
+    pendingStaticFrameRef.current = requestAnimationFrame(()=>{
+      pendingStaticFrameRef.current = 0;
+      ensureImages().then(()=>{ if (!previewPlaying) drawScene(previewCurrent, idleSpectrum(previewCurrent)); });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewPlaying, previewCurrent]);
   useEffect(()=>()=>{ stopPreview(); if(pendingStaticFrameRef.current) cancelAnimationFrame(pendingStaticFrameRef.current); }, []);
-  useEffect(()=>{ if (!previewPlaying && slides.length>0) scheduleStatic();
-    // eslint-disable-next-line
-  },[previewPlaying,vizStyle,vizColor,activeFilter,brightness,contrast,saturation,sharpen,vignetteAmt,showTitle,selectedTitle?.id,niche,slides.length,step,aspectRatio]);
-  useEffect(()=>{ if (slides.length && !previewPlaying) scheduleStatic();
-    // eslint-disable-next-line
-  },[previewPlaying,slides]);
+  useEffect(()=>{
+    if (!didInit.current) return;
+    if (!previewPlaying && slides.length>0) scheduleStatic();
+  });
   useEffect(()=>{ if (selectedTitle && !musicTitle) setMusicTitle(selectedTitle.text.slice(0,80));
     // eslint-disable-next-line
   }, [selectedTitleId]);
@@ -1483,12 +1579,77 @@ export default function Home() {
     setMusicGenre(p.genre); setMusicMood(p.mood); setSelectedPreset(p.id);
   }
 
-  // ===== Derived (timeline) =====
-  const effSpeedTL = Math.max(0.25, Number(videoSpeed)||1);
-  const tdTL = Math.min(slideDuration*0.6, (isMobile?0.5:0.8))/effSpeedTL;
-  const perSlideTL = slideDuration/effSpeedTL + tdTL;
-  const slidesTotal = slides.length ? slides.length*perSlideTL : 0;
-  const totalTimeline = Math.max(slidesTotal, previewDuration || 0, 1);
+  // ===== Stiker drag on stage =====
+  const activeStkRef = useRef<{slideId:string; stkId:string}|null>(null);
+  function stickerDown(x:number, y:number, aspect: number): boolean {
+    const sel = selIdRef.current; if (!sel) return false;
+    const stk = slideOptsRef.current[sel]?.stickers;
+    if (!stk || !stk.length) return false;
+    let best = -1, bd = 0.1;
+    stk.forEach((s, i) => {
+      const d = Math.hypot((s.x - x), (s.y - y) * aspect);
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best < 0) return false;
+    activeStkRef.current = { slideId: sel, stkId: stk[best].id };
+    pushHistory(`stk:${sel}`);
+    return true;
+  }
+  function stickerMove(x:number, y:number) {
+    const a = activeStkRef.current; if (!a) return;
+    const nx = Math.max(0.02, Math.min(0.98, x));
+    const ny = Math.max(0.04, Math.min(0.96, y));
+    setSlideOptsById(cur => {
+      const o = cur[a.slideId]; if (!o?.stickers) return cur;
+      return { ...cur, [a.slideId]: { ...o, stickers: o.stickers.map(s => s.id===a.stkId ? {...s, x:nx, y:ny} : s) } };
+    });
+  }
+  function stickerUp() { activeStkRef.current = null; }
+
+  // ===== Stiker add/update =====
+  function addSticker(id: string, emoji: string) {
+    pushHistory(`addstk:${id}`);
+    setSlideOptsById(cur => {
+      const o = cur[id] || {};
+      const list = [...(o.stickers||[])];
+      list.push({ id: `stk_${Date.now()}_${list.length}`, emoji, x:0.5, y:0.35, size:0.11, rot:0 });
+      return { ...cur, [id]: { ...o, stickers: list } };
+    });
+  }
+  function updSticker(slideId:string, stkId:string, patch: Partial<{x:number;y:number;size:number;rot:number}>) {
+    setSlideOptsById(cur => {
+      const o = cur[slideId]; if (!o?.stickers) return cur;
+      return { ...cur, [slideId]: { ...o, stickers: o.stickers.map(s=>s.id===stkId?{...s,...patch}:s) } };
+    });
+  }
+  function delSticker(slideId:string, stkId:string) {
+    pushHistory(`delstk:${slideId}`);
+    setSlideOptsById(cur => {
+      const o = cur[slideId]; if (!o?.stickers) return cur;
+      return { ...cur, [slideId]: { ...o, stickers: o.stickers.filter(s=>s.id!==stkId) } };
+    });
+  }
+  function applyTransAll(tid: string) {
+    pushHistory("transall");
+    setTransition(tid);
+    setSlideOptsById(cur => {
+      const c2: Record<string, SlideOpt> = {};
+      for (const k of Object.keys(cur)) c2[k] = { ...cur[k], trans: tid };
+      return c2;
+    });
+    setSlides(cur => {
+      const c2: Record<string, SlideOpt> = {};
+      setSlideOptsById(prev => {
+        const nx = {...prev};
+        cur.forEach(s=>{ nx[s.id] = {...(nx[s.id]||{}), trans: tid}; });
+        return nx;
+      });
+      return cur;
+    });
+  }
+
+  // ===== Derived (labels) =====
+  const totalShown = Math.max(clipsTotal, previewDuration || 0, 1);
   const audioLabel =
     audioMode==="tts" ? (ttsUrl?"🔊 Narasi TTS siap":"🔊 TTS (belum dibuat)") :
     audioMode==="music" ? (musicUrl?"🎵 Musik upload":"🎵 Musik (belum diupload)") :
@@ -1501,22 +1662,23 @@ export default function Home() {
   // =========================================================================
   const apiRef = useRef<any>({});
   Object.assign(apiRef.current, {
-    openTool, setTool, setShowApiKeyModal, loadDraftsList, setShowDraftPicker, saveDraftManually,
+    openTool, openToolWithSel, setTool, setShowApiKeyModal, loadDraftsList, setShowDraftPicker, saveDraftManually,
     doGenerateKeywords, doGenerateTitles, doGenerateImages, handleUploadImages,
     doGenerateStoryboard, doGenerateImagesFromStory, doGenerateTTS, doAutoScript,
     doGenerateLyrics, doGenerateAIMusic, doCheckAiMusicStatus,
     handleUploadMusic, applyPreset, doT2V, doRender, downloadVideo, copyField, downloadMetaText,
-    togglePreview, stopPreview, seekPreview, moveSlide, duplicateSlide, removeSlide,
+    togglePreview, stopPreview, seekPreview, moveSlide, duplicateSlide, removeSlide, splitSlide,
     setPreviewMuted, handleLogoUpload, setNiche, setNKeywords, setKeywordMode, setManualKeywords,
     setKeywords, setTitlesPerKw, setSelectedTitleId, setTitles, setImageSource, setImageStyle,
     setAspectRatio, setNSlides, setSlides, setLyricLines, setAudioMode, setTtsVoice, setTtsText,
     setVizStyle, setVizColor, setSlideDuration, setTransitionDur, setTransition, setShowTitle,
     setShowLyrics, setCaptionStyle, setLogoPosition, setLogoDataUrl, setMusicTitle, setMusicLyrics,
     setMusicStylePrompt, setMusicModel, setMusicVocalType, setMusicVocalGender, setMusicGenre,
-    setMusicMood, setMusicEra, setMusicInstruments, setMusicTempo, setActiveFilter, setBrightness,
-    setContrast, setSaturation, setSharpen, setVignetteAmt, setVideoSpeed, setSpectrumSticker,
-    setQuality, setT2vPrompt, setT2vImageUrl, setT2vDuration, setError,
-    resetAdjust, startNewDraft, loadDraft, deleteDraft,
+    setMusicMood, setMusicEra, setMusicInstruments, setMusicTempo, setFilterPreset, setAdj,
+    setSpectrumSticker, setQuality, setT2vPrompt, setT2vImageUrl, setT2vDuration, setError,
+    startNewDraft, loadDraft, deleteDraft, undo, redo, setSelId, setOpt, setClipText,
+    addSticker, updSticker, delSticker, applyTransAll, pushHistory,
+    stickerDown, stickerMove, stickerUp,
   });
   const api = apiRef.current;
 
@@ -1524,20 +1686,22 @@ export default function Home() {
   //                                  JSX
   // =========================================================================
   return (
-    <main className="cc2-root">
+    <main className="cc3-root">
       {/* ========== TOPBAR ========== */}
-      <header className="cc2-topbar">
-        <div className="cc2-logo"><span className="cc2-logo-mark">▶</span><span className="cc2-logo-tx">VERVE</span></div>
-        <div className="cc2-projname" title={selectedTitle?.text || niche || "Proyek Tanpa Judul"}>
+      <header className="cc3-topbar">
+        <div className="cc3-logo"><span className="cc3-logo-mark">▶</span><span className="cc3-logo-tx">VERVE</span></div>
+        <div className="cc3-projname" title={selectedTitle?.text || niche || "Proyek Tanpa Judul"}>
           {selectedTitle?.text || niche || "Proyek Tanpa Judul"}
         </div>
-        <div className="cc2-topact">
-          <button className="cc2-tic" onClick={()=>setShowApiKeyModal(true)} title="API Key">🔑</button>
-          <button className="cc2-tic" onClick={()=>{loadDraftsList();setShowDraftPicker(true);}} title="Draft">
-            📂{draftList.length>0 && <i className="cc2-dot">{draftList.length}</i>}
+        <div className="cc3-topact">
+          <button className="cc3-tic" onClick={undo} disabled={!canUndo} title="Undo">↶</button>
+          <button className="cc3-tic" onClick={redo} disabled={!canRedo} title="Redo">↷</button>
+          <button className="cc3-tic" onClick={()=>setShowApiKeyModal(true)} title="API Key">🔑</button>
+          <button className="cc3-tic" onClick={()=>{loadDraftsList();setShowDraftPicker(true);}} title="Draft">
+            📂{draftList.length>0 && <i className="cc3-dot">{draftList.length}</i>}
           </button>
-          <button className="cc2-tic" onClick={()=>saveDraftManually()} title="Simpan">💾</button>
-          <button className="cc2-export" onClick={()=>openTool("ekspor")}>Export</button>
+          <button className="cc3-tic" onClick={()=>saveDraftManually()} title="Simpan">💾</button>
+          <button className="cc3-export" onClick={()=>openTool("ekspor")}>Export</button>
         </div>
       </header>
 
@@ -1547,24 +1711,19 @@ export default function Home() {
         hasSlides={slides.length>0}
         slideCount={slides.length}
         playing={previewPlaying}
-        current={previewCurrent}
-        perSlide={perSlideTL}
         rendering={loading==="render"}
         progress={progress}
-        videoUrl={videoUrl}
-        videoBlob={videoBlob}
         error={error}
         stageText={stageText}
         canvasRef={previewCanvasRef}
         api={api}
-        isMobile={isMobile}
       />
 
       {/* ========== TRANSPORT ========== */}
       <Transport
         playing={previewPlaying}
         current={previewCurrent}
-        max={Math.max(previewDuration, slidesTotal, 1)}
+        max={totalShown}
         muted={previewMuted}
         showTitle={showTitle}
         showLyrics={showLyrics}
@@ -1572,51 +1731,75 @@ export default function Home() {
       />
 
       {/* ========== TIMELINE ========== */}
-      <TimelineTrack
+      <TimelinePro
         slides={slides}
-        lyricLines={lyricLines}
-        perSlide={perSlideTL}
-        total={totalTimeline}
+        slideOptsById={slideOptsById}
+        timeline={timeline}
         current={previewCurrent}
+        total={totalShown}
+        selId={selId}
+        transition={transition}
+        transitionDur={transitionDur}
         audioLabel={audioLabel}
         audioOn={audioMode!=="none"}
-        audioLen={previewDuration}
         api={api}
+        isMobile={isMobile}
       />
 
-      {/* ========== TOOL SHEET ========== */}
-      <ToolSheet
-        tool={tool} api={api} isMobile={isMobile}
-        niche={niche} keywords={keywords} titles={titles} selectedTitle={selectedTitle} selectedTitleId={selectedTitleId}
-        titlesPerKw={titlesPerKw} nKeywords={nKeywords} keywordMode={keywordMode} manualKeywords={manualKeywords}
-        selectedPreset={selectedPreset} loading={loading} stageText={stageText} error={error}
-        imageSource={imageSource} imageStyle={imageStyle} aspectRatio={aspectRatio} nSlides={nSlides}
-        slides={slides} lyricLines={lyricLines} storyboard={storyboard}
-        audioMode={audioMode} ttsVoice={ttsVoice} ttsText={ttsText} ttsUrl={ttsUrl} musicUrl={musicUrl}
-        musicTitle={musicTitle} musicLyrics={musicLyrics} musicStylePrompt={musicStylePrompt}
-        musicModel={musicModel} musicVocalType={musicVocalType} musicVocalGender={musicVocalGender}
-        aiMusicUrl={aiMusicUrl} aiMusicStatus={aiMusicStatus} aiMusicTaskId={aiMusicTaskId}
-        aiMusicPolling={aiMusicPolling} musicGeneratedFrom={musicGeneratedFrom}
-        sunoApiKey={sunoApiKey} sunoProvider={sunoProvider} sunoCredits={sunoCredits}
-        vizStyle={vizStyle} vizColor={vizColor} spectrumSticker={spectrumSticker}
-        showTitle={showTitle} showLyrics={showLyrics} captionStyle={captionStyle}
-        activeFilter={activeFilter} brightness={brightness} contrast={contrast} saturation={saturation}
-        sharpen={sharpen} vignetteAmt={vignetteAmt} videoSpeed={videoSpeed}
-        slideDuration={slideDuration} transitionDur={transitionDur} transition={transition}
-        quality={quality} logoDataUrl={logoDataUrl} logoPosition={logoPosition}
-        t2vPrompt={t2vPrompt} t2vImageUrl={t2vImageUrl} t2vDuration={t2vDuration} t2vResult={t2vResult}
-        videoUrl={videoUrl} videoBlob={videoBlob} progress={progress} renderETA={renderETA}
-        meta={meta} copiedField={copiedField}
-      />
-
-      {/* ========== MAIN TOOLBAR ========== */}
-      <nav className="cc2-bar">
-        {TOOLS.map(t=>(
-          <button key={t.id} className={`cc2-tool ${tool===t.id?"active":""}`} onClick={()=>openTool(t.id)}>
-            <span className="cc2-tool-ic">{t.icon}</span><span className="cc2-tool-lb">{t.label}</span>
-          </button>
-        ))}
-      </nav>
+      {/* ========== SHEET + TOOLBAR ========== */}
+      <div className="cc3-bottom">
+        <ToolSheet
+          tool={tool} api={api} isMobile={isMobile}
+          niche={niche} keywords={keywords} titles={titles} selectedTitle={selectedTitle} selectedTitleId={selectedTitleId}
+          titlesPerKw={titlesPerKw} nKeywords={nKeywords} keywordMode={keywordMode} manualKeywords={manualKeywords}
+          selectedPreset={selectedPreset} loading={loading} stageText={stageText} error={error}
+          imageSource={imageSource} imageStyle={imageStyle} aspectRatio={aspectRatio} nSlides={nSlides}
+          slides={slides} lyricLines={lyricLines} storyboard={storyboard}
+          audioMode={audioMode} ttsVoice={ttsVoice} ttsText={ttsText} ttsUrl={ttsUrl} musicUrl={musicUrl}
+          musicTitle={musicTitle} musicLyrics={musicLyrics} musicStylePrompt={musicStylePrompt}
+          musicModel={musicModel} musicVocalType={musicVocalType} musicVocalGender={musicVocalGender}
+          aiMusicUrl={aiMusicUrl} aiMusicStatus={aiMusicStatus} aiMusicTaskId={aiMusicTaskId}
+          aiMusicPolling={aiMusicPolling} musicGeneratedFrom={musicGeneratedFrom}
+          sunoApiKey={sunoApiKey} sunoProvider={sunoProvider} sunoCredits={sunoCredits}
+          vizStyle={vizStyle} vizColor={vizColor} spectrumSticker={spectrumSticker}
+          showTitle={showTitle} showLyrics={showLyrics} captionStyle={captionStyle}
+          filterPreset={filterPreset} adj={adj}
+          slideDuration={slideDuration} transitionDur={transitionDur} transition={transition}
+          quality={quality} logoDataUrl={logoDataUrl} logoPosition={logoPosition}
+          t2vPrompt={t2vPrompt} t2vImageUrl={t2vImageUrl} t2vDuration={t2vDuration} t2vResult={t2vResult}
+          videoUrl={videoUrl} videoBlob={videoBlob} progress={progress} renderETA={renderETA}
+          meta={meta} copiedField={copiedField}
+          selId={selId} selIndex={selIndex} selOpt={selOpt}
+          aiMusicStart={aiMusicStart}
+        />
+        <nav className="cc3-bar">
+          {selId ? (
+            <>
+              {CLIP_TOOLS.map(t=>(
+                <button key={t.id} className={`cc3-tool ${tool===t.id?"active":""}`}
+                  onClick={()=>{
+                    if (t.id==="back") { setSelId(""); return; }
+                    if (t.id==="split") { splitSlide(selId); return; }
+                    if (t.id==="dup") { duplicateSlide(selId); return; }
+                    if (t.id==="del") { removeSlide(selId); return; }
+                    openToolWithSel(t.id as ToolId);
+                  }}>
+                  <span className="cc3-tool-ic">{t.icon}</span><span className="cc3-tool-lb">{t.label}</span>
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              {GLOBAL_TOOLS.map(t=>(
+                <button key={t.id} className={`cc3-tool ${tool===t.id?"active":""}`}
+                  onClick={()=> (t.id==="teks"||t.id==="stiker"||t.id==="efek") ? openToolWithSel(t.id) : openTool(t.id)}>
+                  <span className="cc3-tool-ic">{t.icon}</span><span className="cc3-tool-lb">{t.label}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </nav>
+      </div>
 
       {/* Audio global */}
       <audio ref={previewAudioRef} preload="metadata" playsInline crossOrigin="anonymous" className="hidden" />
@@ -1647,11 +1830,13 @@ export default function Home() {
                       <div className="text-sm font-bold truncate">{d.title}</div>
                       <div className="text-[10px] text-white/50 flex gap-2 flex-wrap">
                         <span>🖼️ {d.slides||0} slide</span>
-                        <span>• {new Date(d.updatedAt).toLocaleDateString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+                        <span>🕒 {d.updatedAt?new Date(d.updatedAt).toLocaleString("id-ID",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"-"}</span>
                       </div>
                     </div>
-                    <button onClick={()=>loadDraft(d.id)} className="shrink-0 px-3 py-1.5 rounded-lg bg-teal-500/80 hover:bg-teal-500 text-black text-[11px] font-bold">Buka</button>
-                    <button onClick={()=>{if(confirm("Hapus draft ini?"))deleteDraft(d.id);}} className="shrink-0 w-8 h-8 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-200 text-sm">🗑️</button>
+                    <div className="flex flex-col gap-1">
+                      <button onClick={()=>loadDraft(d.id)} className="px-3 py-1.5 rounded-lg bg-teal-500/25 hover:bg-teal-500/40 text-teal-200 text-xs font-bold">Buka</button>
+                      <button onClick={()=>deleteDraft(d.id)} className="px-3 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 text-[10px]">Hapus</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1663,20 +1848,61 @@ export default function Home() {
   );
 }
 
-/* =========================================================================
-   KOMPONEN MEMO — anti re-render (playback hanya update transport/timeline)
-   ========================================================================= */
-
+/* ============================== STAGE ============================== */
 const StageStage = memo(function StageStage(p:any) {
-  const { aspectRatio, hasSlides, playing, current, perSlide, slideCount, rendering, progress,
-          videoUrl, videoBlob, error, stageText, canvasRef, api, isMobile } = p;
+  const { aspectRatio, hasSlides, playing, rendering, progress, error, stageText, canvasRef, api } = p;
   const hostRef = useRef<HTMLDivElement|null>(null);
-  const slideNow = slideCount>1 && playing ? Math.min(slideCount, Math.floor(current/Math.max(0.5,perSlide))+1) : 0;
+  const [box, setBox] = useState<{w:number;h:number}>({w:0,h:0});
+  const dragRef = useRef<{grabbed:boolean; moved:boolean; x0:number; y0:number}|null>(null);
+  const ar = aspectRatio==="9:16" ? 9/16 : aspectRatio==="1:1" ? 1 : 16/9;
+
+  useEffect(()=>{
+    const host = hostRef.current; if (!host) return;
+    const fit = ()=>{
+      const r = host.getBoundingClientRect();
+      const pad = 0;
+      let w = r.width - pad, h = r.height - pad;
+      if (w/h > ar) w = h*ar; else h = w/ar;
+      setBox({w: Math.max(10, Math.floor(w)), h: Math.max(10, Math.floor(h))});
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(host);
+    return ()=>ro.disconnect();
+  }, [ar]);
+
+  function relPos(e: {clientX:number; clientY:number}): {x:number;y:number}|null {
+    const cv = hostRef.current?.querySelector("canvas");
+    if (!cv) return null;
+    const r = cv.getBoundingClientRect();
+    return { x: (e.clientX - r.left)/r.width, y: (e.clientY - r.top)/r.height };
+  }
+  function onDown(e: React.PointerEvent) {
+    const pos = relPos(e);
+    dragRef.current = { grabbed:false, moved:false, x0:e.clientX, y0:e.clientY };
+    if (pos) dragRef.current.grabbed = api.stickerDown(pos.x, pos.y, ar);
+  }
+  function onMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    if (Math.hypot(e.clientX-d.x0, e.clientY-d.y0) > 6) d.moved = true;
+    if (d.grabbed) {
+      const pos = relPos(e);
+      if (pos) api.stickerMove(pos.x, pos.y);
+    }
+  }
+  function onUp() {
+    const d = dragRef.current;
+    if (d?.grabbed) api.stickerUp();
+    if (d && !d.moved && !d.grabbed) api.togglePreview();
+    dragRef.current = null;
+  }
+
   return (
-    <section className="cc2-stage" onClick={()=>api.togglePreview()}>
-      <div className="cc2-stage-in">
-        <div ref={hostRef} className="cc2-canvas-host"
-          style={aspectRatio==="9:16"?{aspectRatio:"9/16"}:aspectRatio==="1:1"?{aspectRatio:"1/1"}:{aspectRatio:"16/9"}}>
+    <section className="cc3-stage">
+      <div ref={hostRef} className="cc3-stage-host">
+        <div className="cc3-frame" style={{ width: box.w||undefined, height: box.h||undefined }}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
           <canvas ref={canvasRef}
             width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
             height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
@@ -1692,9 +1918,6 @@ const StageStage = memo(function StageStage(p:any) {
               <div className="w-14 h-14 rounded-full bg-black/55 border border-white/25 backdrop-blur flex items-center justify-center text-white text-xl">▶</div>
             </div>
           )}
-          {slideNow>0 && (
-            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-white text-[10px] border border-white/10">🖼️ {slideNow}/{slideCount}</div>
-          )}
           {rendering && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/55 backdrop-blur-sm">
               <Spinner/>
@@ -1704,7 +1927,7 @@ const StageStage = memo(function StageStage(p:any) {
         </div>
       </div>
       {(error || stageText) && (
-        <div className="cc2-floatmsg" onClick={e=>e.stopPropagation()}>
+        <div className="cc3-floatmsg">
           {error && <div className="cc2-banner cc2-banner-err"><span className="flex-1">⚠️ {error}</span><button onClick={()=>api.setError("")} className="cc2-banner-x">×</button></div>}
           {stageText && <div className="cc2-banner cc2-banner-info"><Spinner/><span>{stageText}</span></div>}
         </div>
@@ -1713,110 +1936,157 @@ const StageStage = memo(function StageStage(p:any) {
   );
 });
 
+/* ============================== TRANSPORT ============================== */
 const Transport = memo(function Transport(p:any) {
   const { playing, current, max, muted, showTitle, showLyrics, api } = p;
   return (
-    <div className="cc2-transport">
-      <button className="cc2-tp" onClick={()=>api.seekPreview(0)}>⏮</button>
-      <button className="cc2-tp cc2-tp-play" onClick={()=>api.togglePreview()}>{playing?"⏸":"▶"}</button>
-      <button className="cc2-tp" onClick={()=>api.seekPreview(Math.min(max,current+1))}>⏭</button>
-      <span className="cc2-tp-time"><b>{formatDur(current)}</b> / {formatDur(max)}</span>
-      <input type="range" min={0} max={max} step={0.1} value={Math.min(current,max)}
-             onChange={e=>api.seekPreview(Number(e.target.value))} className="cc2-tp-seek"/>
-      <button className="cc2-tp" onClick={()=>{
+    <div className="cc3-transport">
+      <button className="cc3-tp" onClick={()=>api.seekPreview(Math.max(0,current-1))}>⏮</button>
+      <button className="cc3-tp cc3-tp-play" onClick={()=>api.togglePreview()}>{playing?"⏸":"▶"}</button>
+      <button className="cc3-tp" onClick={()=>api.seekPreview(Math.min(max,current+1))}>⏭</button>
+      <span className="cc3-tp-time"><b>{formatDur(current)}</b> / {formatDur(max)}</span>
+      <input type="range" min={0} max={Math.max(0.1,max)} step={0.05} value={Math.min(current,max)}
+             onChange={e=>api.seekPreview(Number(e.target.value))} className="cc3-tp-seek"/>
+      <button className="cc3-tp" onClick={()=>{
         api.setPreviewMuted((m:boolean)=>{const nm=!m; const a=document.querySelector("audio"); if(a)a.muted=nm; return nm;});
       }}>{muted?"🔇":"🔊"}</button>
-      <button className={`cc2-tp-mini ${showTitle?"on":""}`} onClick={()=>api.setShowTitle((v:boolean)=>!v)} title="Judul">🏷️</button>
-      <button className={`cc2-tp-mini ${showLyrics?"on":""}`} onClick={()=>api.setShowLyrics((v:boolean)=>!v)} title="Lirik">🎤</button>
+      <button className={`cc3-tp-mini ${showTitle?"on":""}`} onClick={()=>api.setShowTitle((v:boolean)=>!v)} title="Judul">🏷️</button>
+      <button className={`cc3-tp-mini ${showLyrics?"on":""}`} onClick={()=>api.setShowLyrics((v:boolean)=>!v)} title="Lirik">🎤</button>
     </div>
   );
 });
 
-const TimelineTrack = memo(function TimelineTrack(p:any) {
-  const { slides, lyricLines, perSlide, total, current, audioLabel, audioOn, audioLen, api } = p;
-  const [sel, setSel] = useState<string>("");
-  const [dragI, setDragI] = useState<number>(-1);
+/* ============================== TIMELINE PRO ============================== */
+const TimelinePro = memo(function TimelinePro(p:any) {
+  const { slides, slideOptsById, timeline, current, total, selId, transition, transitionDur, audioLabel, audioOn, api, isMobile } = p;
+  const px = isMobile ? 20 : 26; // px per detik
   const rowRef = useRef<HTMLDivElement|null>(null);
-  const dragRef = useRef<{from:number;startX:number;to:number}|null>(null);
-  const playheadPct = total>0 ? Math.min(100,(current/total)*100) : 0;
+  const [dragI, setDragI] = useState(-1);
+  const [resizing, setResizing] = useState<{i:number; dur:number}|null>(null);
+  const dragRef = useRef<{from:number; startX:number; to:number; moved:boolean}|null>(null);
+  const durationOf = (i:number) => timeline?.durs?.[i] ?? 0;
 
-  function onClipDown(e:React.PointerEvent, i:number){
+  const totalPx = Math.max(1, (timeline?.total || 1) * px) + 44;
+  const playX = Math.min(totalPx - 20, Math.max(0, current * px));
+
+  function onResizeDown(e:React.PointerEvent, i:number) {
+    e.stopPropagation();
+    const id = slides[i]?.id; if (!id) return;
+    const origDur = slideOptsById[id]?.dur ?? (timeline?.durs?.[i] || 3);
     const x0 = e.clientX;
-    let moved = false;
-    const id = slides[i]?.id; if(!id) return;
+    api.pushHistory(`resize:${id}`);
+    let last = origDur;
     const move = (ev:PointerEvent)=>{
-      if (!moved && Math.abs(ev.clientX-x0)>7){ moved=true; dragRef.current={from:i,startX:x0,to:i}; setDragI(i); }
-      if (dragRef.current){
-        dragRef.current.to = i;
-        const row = rowRef.current; if(!row) return;
-        const kids = [...row.querySelectorAll<HTMLElement>(".cc2-clip")];
+      const nd = Math.max(0.5, Math.min(30, origDur + (ev.clientX - x0)/px));
+      last = nd;
+      setResizing({i, dur: nd});
+      api.setOpt(id, { dur: Math.round(nd*20)/20 }, "");
+    };
+    const up = ()=>{
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      api.setOpt(id, { dur: Math.round(last*20)/20 }, "");
+      setResizing(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  function onClipDown(e:React.PointerEvent, i:number) {
+    const id = slides[i]?.id; if (!id) return;
+    const x0 = e.clientX;
+    dragRef.current = { from:i, startX:x0, to:i, moved:false };
+    const move = (ev:PointerEvent)=>{
+      const d = dragRef.current; if (!d) return;
+      if (!d.moved && Math.abs(ev.clientX - x0) > 7) { d.moved = true; setDragI(i); }
+      if (d.moved) {
+        const row = rowRef.current; if (!row) return;
+        const kids = [...row.querySelectorAll<HTMLElement>(".cc3-clip")];
         for (let k=0;k<kids.length;k++){
           const r = kids[k].getBoundingClientRect();
-          if (ev.clientX < r.left + r.width/2){ dragRef.current.to = k; break; }
-          dragRef.current.to = k;
+          if (ev.clientX < r.left + r.width/2) { d.to = k; break; }
+          d.to = k;
         }
+        setDragI(d.from);
       }
     };
-    const up = (ev:PointerEvent)=>{
-      window.removeEventListener("pointermove",move);
-      window.removeEventListener("pointerup",up);
+    const up = ()=>{
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
       const d = dragRef.current;
-      if (d && moved) api.moveSlide(d.from, d.to);
-      else { setSel(id); api.seekPreview(i*perSlide); }
-      dragRef.current=null; setDragI(-1);
+      if (d && d.moved) api.moveSlide(d.from, d.to);
+      else { api.setSelId(id); api.seekPreview((timeline?.starts?.[i] ?? 0) + 0.01); }
+      dragRef.current = null; setDragI(-1);
     };
-    window.addEventListener("pointermove",move);
-    window.addEventListener("pointerup",up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 
   return (
-    <div className="cc2-tl">
-      {sel && slides.some((s:Slide)=>s.id===sel) && (
-        <div className="cc2-tl-ctx">
-          <span className="cc2-tl-ctx-t">Klip terpilih</span>
-          <button className="cc2-tl-tool" onClick={()=>{api.duplicateSlide(sel);setSel("");}}>📑 Duplikat</button>
-          <button className="cc2-tl-tool" onClick={()=>api.openTool("teks")}>🔤 Edit Teks</button>
-          <button className="cc2-tl-tool" onClick={()=>api.openTool("speed")}>⏱ Durasi</button>
-          <button className="cc2-tl-tool warn" onClick={()=>{api.removeSlide(sel);setSel("");}}>🗑 Hapus</button>
+    <div className="cc3-tl">
+      {selId && slides.some((s:Slide)=>s.id===selId) ? (
+        <div className="cc3-tl-ctx">
+          <span className="cc3-tl-badge">🎞️ Klip {slides.findIndex((s:Slide)=>s.id===selId)+1}</span>
+          {resizing ? <span className="cc3-tl-badge teal">⏱ {resizing.dur.toFixed(1)}d</span> : null}
           <span className="flex-1"/>
-          <button className="cc2-tl-tool" onClick={()=>setSel("")}>✕</button>
+          <button className="cc3-tl-tool" onClick={()=>api.setSelId("")}>✕ Tutup seleksi</button>
+        </div>
+      ) : (
+        <div className="cc3-tl-ctx dim">
+          <span className="cc3-tl-hint">👆 Tap klip untuk pilih · seret untuk susun · tarik ▮ ujung klip untuk ubah durasi · tap 🔀 untuk transisi</span>
         </div>
       )}
-      <div className="cc2-tl-body">
-        <div className="cc2-tl-scroll" onClick={(e)=>{
-          const el = e.currentTarget.querySelector(".cc2-tl-tracks") as HTMLElement; if(!el) return;
-          const r = el.getBoundingClientRect();
-          api.seekPreview(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*total);
-        }}>
-          <div className="cc2-tl-tracks" style={{minWidth: Math.max(100, slides.length*58)+80}}>
-            <div className="cc2-tl-playhead" style={{left:`calc(${playheadPct}% - 1px)`}}/>
-            <div className="cc2-tl-row" ref={rowRef}>
-              {slides.map((s:Slide,i:number)=>{
-                const leftPct = (i*perSlide/total)*100;
-                const widthPct = Math.max(2,(perSlide/total)*100);
-                const isSel = sel===s.id;
-                const isDrag = dragI===i;
-                return (
-                  <div key={s.id} className={`cc2-clip ${isSel?"sel":""} ${isDrag?"drag":""}`}
-                       style={{left:`${leftPct}%`,width:`calc(${widthPct}% - 2px)`}}
+      <div className="cc3-tl-scroll" onClick={(e)=>{
+        if ((e.target as HTMLElement).closest(".cc3-clip,.cc3-tchip")) return;
+        const el = e.currentTarget.querySelector(".cc3-tl-canvas") as HTMLElement; if (!el) return;
+        const r = el.getBoundingClientRect();
+        api.seekPreview(Math.max(0, Math.min(total, (e.clientX - r.left)/px)));
+      }}>
+        <div className="cc3-tl-canvas" style={{ width: totalPx }}>
+          <div className="cc3-tl-playhead" style={{ left: playX }}/>
+          <div className="cc3-tl-row" ref={rowRef}>
+            {slides.map((s:Slide, i:number)=>{
+              const st = timeline?.starts?.[i] ?? 0;
+              const d = durationOf(i);
+              const tdur = timeline?.tdurs?.[i] ?? 0;
+              const tid = canonicalTrans(slideOptsById[s.id]?.trans ?? transition);
+              const tdef = TRANSITIONS.find(x=>x.id===tid);
+              const opt = slideOptsById[s.id] || {};
+              const isSel = selId === s.id;
+              return (
+                <div key={s.id}>
+                  <div className={`cc3-clip ${isSel?"sel":""} ${dragI===i?"drag":""}`}
+                       style={{ left: st*px, width: Math.max(18, d*px - 2) }}
                        onPointerDown={(e)=>onClipDown(e,i)}>
                     <img src={s.imageUrl} alt="" draggable={false}/>
-                    <span className="cc2-clip-n">{i+1}</span>
-                    {(s.lyric||lyricLines[i]) && <span className="cc2-clip-l">♪</span>}
+                    <span className="cc3-clip-n">{i+1}</span>
+                    <span className="cc3-clip-d">{(resizing && resizing.i===i ? resizing.dur : d).toFixed(1)}d</span>
+                    {(opt.text?.txt || opt.stickers?.length || opt.effect || opt.animIn || opt.animOut) ? (
+                      <span className="cc3-clip-tags">
+                        {opt.animIn||opt.animOut ? "🎬" : ""}{opt.effect ? "🎭" : ""}{opt.text?.txt ? "🔤" : ""}{opt.stickers?.length ? "😀" : ""}
+                      </span>
+                    ) : null}
+                    {isSel && <div className="cc3-h" onPointerDown={(e)=>onResizeDown(e,i)}><i/></div>}
                   </div>
-                );
-              })}
-              <label className="cc2-clip cc2-clip-add"
-                     style={{left:`${Math.min(96,(slides.length*perSlide/total)*100)}%`}}>
-                ＋<input type="file" accept="image/*" multiple hidden onChange={e=>api.handleUploadImages(e.target.files)}/>
-              </label>
-            </div>
-            <div className="cc2-tl-row audio">
-              <div className={`cc2-clip cc2-clip-a ${audioOn?"":"dim"}`}
-                   style={{left:0,width:`calc(${audioLen>0?Math.min(100,(audioLen/total)*100):100}% - 2px)`}}
-                   onPointerDown={(e)=>{e.stopPropagation();api.openTool("audio");}}>
-                <span className="cc2-clip-tx">{audioLabel}</span>
-              </div>
+                  {i < slides.length-1 && (
+                    <button className="cc3-tchip" style={{ left: (st + d + tdur/2)*px }}
+                      title={`Transisi: ${tdef?.label||tid}`}
+                      onPointerDown={e=>e.stopPropagation()}
+                      onClick={(e)=>{ e.stopPropagation(); api.setSelId(s.id); api.openTool("transisi"); }}>
+                      {tdef && tid!=="dissolve" ? tdef.emoji : "🔀"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <label className="cc3-clip cc3-clip-add" style={{ left: ((timeline?.total||0)*px) + 4 }}>
+              ＋<input type="file" accept="image/*" multiple hidden onChange={e=>api.handleUploadImages(e.target.files)}/>
+            </label>
+          </div>
+          <div className="cc3-tl-row audio">
+            <div className={`cc3-clip cc3-clip-a ${audioOn?"":"dim"}`}
+                 style={{ left:0, width: Math.max(60, (total*px) - 4) }}
+                 onPointerDown={(e)=>{e.stopPropagation(); api.openTool("audio");}}>
+              <span className="cc3-clip-tx">{audioLabel}</span>
             </div>
           </div>
         </div>
@@ -1826,27 +2096,37 @@ const TimelineTrack = memo(function TimelineTrack(p:any) {
 });
 
 /* ============================== TOOL SHEET ============================== */
+const SHEET_TITLES: Record<string, [string,string]> = {
+  ai:["✨","AI — Ide, Judul, Storyboard"], media:["🖼️","Media — Gambar"], audio:["🎧","Audio — Musik & Narasi"],
+  lirik:["🎤","Lirik & Caption"], teks:["🔤","Teks Klip"], stiker:["😀","Stiker"], efek:["🎭","Efek & Visualizer"],
+  filter:["🎨","Filter"], adjust:["🎛️","Adjust"], animasi:["🎬","Animasi Klip"], speed:["⚡","Speed & Durasi"],
+  transisi:["🔀","Transisi"], format:["🖼️","Format & Kualitas"], ekspor:["🚀","Ekspor"],
+};
 const ToolSheet = memo(function ToolSheet(p:any) {
-  const { tool, api, isMobile } = p;
+  const { tool, api } = p;
   if (!tool) return null;
+  const tt = SHEET_TITLES[tool] || ["🛠️", tool];
   return (
-    <div className="cc2-sheet">
-      <div className="cc2-sheet-head">
-        <span className="cc2-sheet-title">{TOOLS.find(t=>t.id===tool)?.icon} {TOOLS.find(t=>t.id===tool)?.label}</span>
-        <button className="cc2-sheet-x" onClick={()=>api.setTool(null)}>✕</button>
+    <div className="cc3-sheet">
+      <div className="cc3-sheet-head">
+        <span className="cc3-sheet-title">{tt[0]} {tt[1]}</span>
+        <button className="cc3-sheet-x" onClick={()=>api.setTool(null)}>✕</button>
       </div>
-      <div className="cc2-sheet-body">
-        {tool==="ai"     && <SheetAI p={p}/>}
-        {tool==="media"  && <SheetMedia p={p}/>}
-        {tool==="audio"  && <SheetAudio p={p}/>}
-        {tool==="teks"   && <SheetTeks p={p}/>}
-        {tool==="stiker" && <SheetStiker p={p}/>}
-        {tool==="efek"   && <SheetEfek p={p}/>}
-        {tool==="filter" && <SheetFilter p={p}/>}
-        {tool==="adjust" && <SheetAdjust p={p}/>}
-        {tool==="speed"  && <SheetSpeed p={p}/>}
-        {tool==="format" && <SheetFormat p={p}/>}
-        {tool==="ekspor" && <SheetEkspor p={p}/>}
+      <div className="cc3-sheet-body">
+        {tool==="ai"       && <SheetAI p={p}/>}
+        {tool==="media"    && <SheetMedia p={p}/>}
+        {tool==="audio"    && <SheetAudio p={p}/>}
+        {tool==="lirik"    && <SheetLirik p={p}/>}
+        {tool==="teks"     && <SheetTeks p={p}/>}
+        {tool==="stiker"   && <SheetStiker p={p}/>}
+        {tool==="efek"     && <SheetEfek p={p}/>}
+        {tool==="filter"   && <SheetFilter p={p}/>}
+        {tool==="adjust"   && <SheetAdjust p={p}/>}
+        {tool==="animasi"  && <SheetAnimasi p={p}/>}
+        {tool==="speed"    && <SheetSpeed p={p}/>}
+        {tool==="transisi" && <SheetTransisi p={p}/>}
+        {tool==="format"   && <SheetFormat p={p}/>}
+        {tool==="ekspor"   && <SheetEkspor p={p}/>}
       </div>
     </div>
   );
@@ -1856,6 +2136,23 @@ function Sec({title,children}:{title:string;children:React.ReactNode}) {
   return <div className="cc2-sec"><div className="cc2-sec-t">{title}</div><div className="cc2-sec-b">{children}</div></div>;
 }
 function Row({children}:{children:React.ReactNode}) { return <div className="cc2-row">{children}</div>; }
+function ClipHint({p}:{p:any}) {
+  if (p.selId) return null;
+  return (
+    <div className="cc3-hint">
+      Pilih klip dulu di timeline (tap thumbnail-nya).<br/>
+      {p.slides.length>0 ? (
+        <div className="cc3-hint-row">
+          {p.slides.map((s:Slide,i:number)=>(
+            <button key={s.id} className="cc3-hint-clip" onClick={()=>p.api.setSelId(s.id)}>
+              <img src={s.imageUrl} alt=""/><span>{i+1}</span>
+            </button>
+          ))}
+        </div>
+      ) : <span className="text-white/50">Belum ada klip — isi gambar dulu di 🖼️ Media.</span>}
+    </div>
+  );
+}
 
 function SheetAI({p}:{p:any}) {
   const {api} = p;
@@ -1977,12 +2274,12 @@ function SheetMedia({p}:{p:any}) {
             <input type="file" accept="image/*" multiple hidden onChange={e=>api.handleUploadImages(e.target.files)}/>
           </label>
         )}
-        {p.slides.length>0 && <button className="btn btn-danger" onClick={()=>{api.setSlides([]);api.setLyricLines([]);}}>🗑️</button>}
+        {p.slides.length>0 && <button className="btn btn-danger" onClick={()=>{api.pushHistory("clear");api.setSlides([]);api.setLyricLines([]);}}>🗑️</button>}
       </Row>
       {!p.selectedTitle && <div className="cc2-note">💡 Pilih judul dulu di sheet ✨AI.</div>}
     </Sec>
     {p.slides.length>0 && (
-      <Sec title={`Slide aktif (${p.slides.length}) — geser di timeline untuk susun ulang`}>
+      <Sec title={`Slide aktif (${p.slides.length}) — kelola di timeline`}>
         <div className="cc2-mediastrip">
           {p.slides.map((s:Slide,i:number)=>(
             <div key={s.id} className="cc2-mthumb">
@@ -2097,7 +2394,7 @@ function SheetAudio({p}:{p:any}) {
   </>);
 }
 
-function SheetTeks({p}:{p:any}) {
+function SheetLirik({p}:{p:any}) {
   const {api} = p;
   return (<>
     <Sec title="🏷️ Judul video">
@@ -2107,12 +2404,13 @@ function SheetTeks({p}:{p:any}) {
           onChange={e=>{ if(p.selectedTitleId) api.setTitles(p.titles.map((t:TitleItem)=>t.id===p.selectedTitleId?{...t,text:e.target.value}:t)); }}/>
       </Row>
     </Sec>
-    <Sec title="🎤 Lirik / caption per slide">
+    <Sec title="🎤 Lirik / caption per slide (karaoke)">
       <Row>
         <button onClick={()=>api.setShowLyrics((v:boolean)=>!v)} className={`cc2-tgl ${p.showLyrics?"on":""}`}>{p.showLyrics?"ON":"OFF"}</button>
         <select className="select flex-1" value={p.captionStyle} onChange={e=>api.setCaptionStyle(e.target.value)}>
-          <option value="capcut">Gaya CapCut</option><option value="karaoke">Karaoke</option>
-          <option value="minimal">Minimal</option><option value="bold">Bold besar</option>
+          <option value="capcut">Gaya Kuning-pop</option><option value="karaoke">Karaoke</option>
+          <option value="pop">Pop</option><option value="boldwhite">Bold Putih</option>
+          <option value="neon">Neon</option><option value="gradient">Gradient</option>
         </select>
       </Row>
       {p.slides.length===0 && <div className="cc2-note">Belum ada slide — isi di 🖼️ Media dulu.</div>}
@@ -2125,28 +2423,152 @@ function SheetTeks({p}:{p:any}) {
           </div>
         ))}
       </div>
+      <div className="cc2-note">💡 Ini caption karaoke (highlight per kata). Untuk teks bebas ala CapCut (font/warna/animasi), pakai tombol 🔤 Teks di toolbar klip.</div>
     </Sec>
   </>);
 }
 
-function SheetStiker({p}:{p:any}) {
+/* -------------------------- TEKS KLIP (CapCut-style) -------------------------- */
+function SheetTeks({p}:{p:any}) {
   const {api} = p;
-  return (
-    <Sec title="😀 Stiker overlay spectrum">
+  if (!p.selId) return <ClipHint p={p}/>;
+  const id = p.selId as string;
+  const opt = p.selOpt as SlideOpt|undefined;
+  const ct = opt?.text || null;
+  if (!ct) {
+    return (
+      <div className="cc3-hint">
+        Klip {(p.selIndex||0)+1} belum punya teks bebas.
+        <button className="btn btn-primary w-full mt-2" onClick={()=>api.setClipText(id, {...DEFAULT_TEXT, txt:"Teks baru"})}>＋ Tambah Teks</button>
+        <div className="cc2-note mt-2">Teks bebas ala CapCut: font, warna, outline, background, posisi & animasi — nempel di hasil export juga.</div>
+      </div>
+    );
+  }
+  const upd = (patch:Partial<ClipText>) => api.setClipText(id, {...ct, ...patch});
+  return (<>
+    <Sec title={`✏️ Isi teks (Klip ${(p.selIndex||0)+1})`}>
+      <textarea className="textarea" rows={2} value={ct.txt} onChange={e=>upd({txt:e.target.value})} placeholder="Ketik teks..."/>
       <div className="cc2-chips">
-        {STICKER_CHIPS.map(([v,e,l])=>(
-          <button key={v} onClick={()=>api.setSpectrumSticker(v)}
-            className={`chip ${p.spectrumSticker===v?"!bg-pink-500/40 !border-pink-400 !text-white":""}`}>{e} {l}</button>
+        {TEXT_TEMPLATES.map(t=>(
+          <button key={t.id} className="chip" onClick={()=>upd({...t.st})}>{t.emoji} {t.label}</button>
         ))}
       </div>
-      <div className="cc2-note">Stiker nempel di video hasil render, bukan cuma preview.</div>
     </Sec>
-  );
+    <Sec title="🔤 Font & ukuran">
+      <div className="cc2-chips">
+        {TEXT_FONTS.map(f=>(
+          <button key={f.id} className={`chip ${ct.font===f.id?"!bg-teal-400/30 !border-teal-300 !text-white":""}`} onClick={()=>upd({font:f.id})}>{f.label}</button>
+        ))}
+      </div>
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Ukuran</span><b className="text-teal-300">{Math.round(ct.size*100)}%</b></div>
+        <input type="range" min={0.03} max={0.1} step={0.002} value={ct.size} onChange={e=>upd({size:Number(e.target.value)})} className="w-full accent-teal-400"/>
+      </label>
+      <Row>
+        <button className={`cc2-tgl ${ct.bold?"on":""}`} onClick={()=>upd({bold:!ct.bold})}><b>B</b></button>
+        <button className={`cc2-tgl ${ct.italic?"on":""}`} onClick={()=>upd({italic:!ct.italic})}><i>I</i></button>
+        <button className={`cc2-tgl ${ct.shadow?"on":""}`} onClick={()=>upd({shadow:!ct.shadow})}>🌑 Bayangan</button>
+        <span className="flex-1"/>
+        {(["left","center","right"] as const).map(a=>(
+          <button key={a} className={`cc2-tgl ${ct.align===a?"on":""}`} onClick={()=>upd({align:a})}>{a==="left"?"⯇":a==="center"?"☰":"⯈"}</button>
+        ))}
+      </Row>
+    </Sec>
+    <Sec title="🎨 Warna, outline & background">
+      <div className="cc3-crow">
+        {TEXT_COLORS.map(c=>(
+          <button key={c} className={`cc3-swatch ${ct.color===c?"on":""}`} style={{background:c}} onClick={()=>upd({color:c})}/>
+        ))}
+      </div>
+      <Row>
+        <button className={`cc2-tgl ${ct.stroke?"on":""}`} onClick={()=>upd({stroke:!ct.stroke})}>🖍️ Outline</button>
+        {ct.stroke && <input type="color" value={ct.strokeColor} onChange={e=>upd({strokeColor:e.target.value})} className="cc2-colorwell"/>}
+        <button className={`cc2-tgl ${ct.bg?"on":""}`} onClick={()=>upd({bg:!ct.bg})}>🏷️ BG</button>
+        {ct.bg && <input type="color" value={ct.bgColor} onChange={e=>upd({bgColor:e.target.value})} className="cc2-colorwell"/>}
+      </Row>
+      {ct.stroke && (
+        <label className="block">
+          <div className="flex justify-between text-[11px] mb-0.5"><span>Tebal outline</span><b className="text-teal-300">{ct.strokeW}px</b></div>
+          <input type="range" min={0} max={10} step={0.5} value={ct.strokeW} onChange={e=>upd({strokeW:Number(e.target.value)})} className="w-full accent-teal-400"/>
+        </label>
+      )}
+    </Sec>
+    <Sec title="📍 Posisi & animasi">
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Posisi vertikal</span><b className="text-teal-300">{Math.round(ct.y*100)}%</b></div>
+        <input type="range" min={0.06} max={0.94} step={0.01} value={ct.y} onChange={e=>upd({y:Number(e.target.value)})} className="w-full accent-teal-400"/>
+      </label>
+      <div className="cc2-chips">
+        {TEXT_ANIMS.map(a=>(
+          <button key={a.id} className={`chip ${ct.anim===a.id?"!bg-teal-400/30 !border-teal-300 !text-white":""}`} onClick={()=>upd({anim:a.id})}>{a.emoji} {a.label}</button>
+        ))}
+      </div>
+    </Sec>
+    <button className="btn btn-danger w-full" onClick={()=>api.setClipText(id, null)}>🗑️ Hapus teks klip ini</button>
+  </>);
 }
 
+/* -------------------------- STIKER -------------------------- */
+function SheetStiker({p}:{p:any}) {
+  const {api} = p;
+  const [cat, setCat] = useState(STICKER_CATS[0].id);
+  if (!p.selId) return <ClipHint p={p}/>;
+  const id = p.selId as string;
+  const opt = p.selOpt as SlideOpt|undefined;
+  const list = opt?.stickers || [];
+  const curCat = STICKER_CATS.find(c=>c.id===cat) || STICKER_CATS[0];
+  return (<>
+    <Sec title={`😀 Tambah stiker (Klip ${(p.selIndex||0)+1})`}>
+      <div className="cc2-chips">
+        {STICKER_CATS.map(c=>(
+          <button key={c.id} className={`chip ${cat===c.id?"!bg-teal-400/30 !border-teal-300 !text-white":""}`} onClick={()=>setCat(c.id)}>{c.label}</button>
+        ))}
+      </div>
+      <div className="cc3-emoji-grid">
+        {curCat.items.map(e=>(
+          <button key={e} className="cc3-emoji" onClick={()=>api.addSticker(id, e)}>{e}</button>
+        ))}
+      </div>
+      <div className="cc2-note">👆 Setelah nambah, seret langsung stikernya di layar preview buat atur posisi.</div>
+    </Sec>
+    {list.length>0 && (
+      <Sec title={`Stiker di klip ini (${list.length})`}>
+        <div className="cc2-chips">
+          {list.map(st=>(
+            <span key={st.id} className="chip">
+              <span className="text-base">{st.emoji}</span>
+              <button className="text-white/70" onClick={()=>api.updSticker(id, st.id, {size: Math.max(0.05, (st.size||0.11)-0.02)})}>➖</button>
+              <button className="text-white/70" onClick={()=>api.updSticker(id, st.id, {size: Math.min(0.3, (st.size||0.11)+0.02)})}>➕</button>
+              <button className="text-white/70" onClick={()=>api.updSticker(id, st.id, {rot: ((st.rot||0)+45)%360})}>🔄</button>
+              <button className="text-red-300" onClick={()=>api.delSticker(id, st.id)}>×</button>
+            </span>
+          ))}
+        </div>
+      </Sec>
+    )}
+  </>);
+}
+
+/* -------------------------- EFEK -------------------------- */
 function SheetEfek({p}:{p:any}) {
   const {api} = p;
-  return (
+  const opt = p.selOpt as SlideOpt|undefined;
+  const cats = [...new Set(EFFECTS.map(e=>e.cat||""))];
+  return (<>
+    <Sec title={`🎭 Efek video — Klip ${p.selId?(p.selIndex||0)+1:"?"}`}>
+      {!p.selId && <ClipHint p={p}/>}
+      {p.selId && cats.map(cat=>(
+        <div key={cat} className="mb-1.5">
+          <div className="cc2-mini-lbl mb-1">{cat}</div>
+          <div className="cc2-chips">
+            {EFFECTS.filter(e=>(e.cat||"")===cat).map(e=>(
+              <button key={e.id||"none"} className={`chip ${(opt?.effect||"")===e.id?"!bg-pink-500/40 !border-pink-400 !text-white":""}`}
+                onClick={()=>api.setOpt(p.selId, { effect: e.id }, `${p.selId}:effect`)}>{e.emoji} {e.label}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </Sec>
     <Sec title="🎚️ Gaya Spektrum (visualizer audio)">
       <Row>
         <span className="cc2-mini-lbl">Warna</span>
@@ -2160,73 +2582,156 @@ function SheetEfek({p}:{p:any}) {
         ))}
       </div>
     </Sec>
-  );
-}
-
-function SheetFilter({p}:{p:any}) {
-  const {api} = p;
-  return (
-    <Sec title="🎛️ Filter video">
+    <Sec title="📊 Stiker overlay spectrum (di hasil render)">
       <div className="cc2-chips">
-        {FILTER_CHIPS.map(f=>(
-          <button key={f} onClick={()=>api.setActiveFilter(f)}
-            className={`chip ${p.activeFilter===f?"!bg-teal-400/30 !border-teal-300 !text-white":""}`}>{f==="none"?"🚫 Normal":f}</button>
-        ))}
-      </div>
-    </Sec>
-  );
-}
-
-const ADJUST_DEF = [
-  ["brightness","☀️ Brightness"],["contrast","◐ Kontras"],["saturation","🎨 Saturasi"],["sharpen","🔩 Sharpen"],
-] as const;
-function SheetAdjust({p}:{p:any}) {
-  const {api} = p;
-  const setter:any = { brightness:api.setBrightness, contrast:api.setContrast, saturation:api.setSaturation, sharpen:api.setSharpen };
-  return (
-    <Sec title="🎚️ Adjust (live)">
-      {ADJUST_DEF.map(([k,lb])=>(
-        <label key={k} className="block">
-          <div className="flex justify-between text-[11px] mb-0.5"><span>{lb}</span><b className="text-teal-300">{p[k]>0?`+${p[k]}`:p[k]}</b></div>
-          <input type="range" min={-100} max={100} value={p[k]} onChange={e=>setter[k](Number(e.target.value))} className="w-full accent-teal-400"/>
-        </label>
-      ))}
-      <label className="block">
-        <div className="flex justify-between text-[11px] mb-0.5"><span>🌑 Vignette</span><b className="text-teal-300">{p.vignetteAmt-75>0?`+${p.vignetteAmt-75}`:p.vignetteAmt-75}</b></div>
-        <input type="range" min={-100} max={100} value={p.vignetteAmt-75} onChange={e=>api.setVignetteAmt(Number(e.target.value)+75)} className="w-full accent-teal-400"/>
-      </label>
-      <button className="btn btn-ghost btn-sm w-full" onClick={api.resetAdjust}>♻️ Reset semua</button>
-    </Sec>
-  );
-}
-
-function SheetSpeed({p}:{p:any}) {
-  const {api} = p;
-  return (<>
-    <Sec title="⚡ Kecepatan & durasi">
-      <label className="block">
-        <div className="flex justify-between text-[11px] mb-1"><span>Speed</span><b className="text-teal-300">{p.videoSpeed.toFixed(2)}x</b></div>
-        <input type="range" min={0.5} max={2} step={0.25} value={p.videoSpeed} onChange={e=>api.setVideoSpeed(Number(e.target.value))} className="w-full accent-teal-400"/>
-      </label>
-      <Row>
-        <label className="flex-1"><span className="lbl">Durasi slide</span>
-          <input type="number" className="input" min={1} max={15} step={0.5} value={p.slideDuration} onChange={e=>api.setSlideDuration(Number(e.target.value))}/></label>
-        <label className="flex-1"><span className="lbl">Transisi (dtk)</span>
-          <input type="number" className="input" min={0} max={3} step={0.1} value={p.transitionDur} onChange={e=>api.setTransitionDur(Number(e.target.value))}/></label>
-      </Row>
-    </Sec>
-    <Sec title="➡️ Transisi">
-      <div className="cc2-stylegrid">
-        {TRANSITION_STYLES.map(t=>(
-          <button key={t.id} onClick={()=>api.setTransition(t.id)} className={`cc2-scard ${p.transition===t.id?"on":""}`}>
-            <b>{t.emoji} {t.label}</b>
-          </button>
+        {STICKER_CHIPS.map(([v,e,l])=>(
+          <button key={v} onClick={()=>api.setSpectrumSticker(v)}
+            className={`chip ${p.spectrumSticker===v?"!bg-pink-500/40 !border-pink-400 !text-white":""}`}>{e} {l}</button>
         ))}
       </div>
     </Sec>
   </>);
 }
 
+/* -------------------------- FILTER -------------------------- */
+function SheetFilter({p}:{p:any}) {
+  const {api} = p;
+  return (<>
+    <Sec title="🎨 Filter video (berlaku ke semua klip)">
+      <div className="cc3-fgrid">
+        {FILTERS.map(f=>(
+          <button key={f.id} onClick={()=>api.setFilterPreset(f.id)}
+            className={`cc3-fcard ${p.filterPreset===f.id?"on":""}`}>
+            <span className="cc3-fcard-e">{f.emoji}</span><span>{f.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="cc2-note">Filter hanya kena ke gambar — teks & stiker tetap tajam. Buat sentuhan akhir warna coba tab 🎛️ Adjust.</div>
+    </Sec>
+  </>);
+}
+
+/* -------------------------- ADJUST -------------------------- */
+function SheetAdjust({p}:{p:any}) {
+  const {api} = p;
+  const adj = p.adj as AdjustState;
+  return (
+    <Sec title="🎛️ Adjust (live, ke semua klip)">
+      {ADJUST_DEFS.map(d=>(
+        <label key={d.key} className="block">
+          <div className="flex justify-between text-[11px] mb-0.5">
+            <span>{d.emoji} {d.label}</span>
+            <b className="text-teal-300">{adj[d.key]}</b>
+          </div>
+          <input type="range" min={d.min} max={d.max} value={adj[d.key]}
+            onChange={e=>api.setAdj((cur:AdjustState)=>({...cur, [d.key]: Number(e.target.value)}))}
+            className="w-full accent-teal-400"/>
+        </label>
+      ))}
+      <button className="btn btn-ghost btn-sm w-full" onClick={()=>api.setAdj({...DEFAULT_ADJUST})}>♻️ Reset semua</button>
+    </Sec>
+  );
+}
+
+/* -------------------------- ANIMASI -------------------------- */
+function SheetAnimasi({p}:{p:any}) {
+  const {api} = p;
+  if (!p.selId) return <ClipHint p={p}/>;
+  const opt = p.selOpt as SlideOpt|undefined;
+  return (<>
+    <Sec title={`🎬 Animasi Masuk — Klip ${(p.selIndex||0)+1}`}>
+      <div className="cc2-chips">
+        {ANIM_IN.map(a=>(
+          <button key={a.id} className={`chip ${(opt?.animIn||"none")===a.id?"!bg-teal-400/30 !border-teal-300 !text-white":""}`}
+            onClick={()=>api.setOpt(p.selId, { animIn: a.id==="none"?undefined:a.id }, `${p.selId}:animIn`)}>{a.emoji} {a.label}</button>
+        ))}
+      </div>
+    </Sec>
+    <Sec title="🎬 Animasi Keluar">
+      <div className="cc2-chips">
+        {ANIM_OUT.map(a=>(
+          <button key={a.id} className={`chip ${(opt?.animOut||"none")===a.id?"!bg-teal-400/30 !border-teal-300 !text-white":""}`}
+            onClick={()=>api.setOpt(p.selId, { animOut: a.id==="none"?undefined:a.id }, `${p.selId}:animOut`)}>{a.emoji} {a.label}</button>
+        ))}
+      </div>
+      <label className="block mt-1">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Durasi animasi</span><b className="text-teal-300">{(opt?.animDur ?? 0.6).toFixed(2)}d</b></div>
+        <input type="range" min={0.2} max={2} step={0.05} value={opt?.animDur ?? 0.6}
+          onChange={e=>api.setOpt(p.selId, { animDur: Number(e.target.value) }, "")} className="w-full accent-teal-400"/>
+      </label>
+    </Sec>
+  </>);
+}
+
+/* -------------------------- SPEED & DURASI -------------------------- */
+function SheetSpeed({p}:{p:any}) {
+  const {api} = p;
+  if (!p.selId) return <ClipHint p={p}/>;
+  const opt = p.selOpt as SlideOpt|undefined;
+  const speed = opt?.speed ?? 1;
+  const holdDur = opt?.dur ?? p.slideDuration;
+  return (<>
+    <Sec title={`⚡ Speed — Klip ${(p.selIndex||0)+1}`}>
+      <div className="cc2-chips">
+        {[0.3,0.5,0.75,1,1.5,2,3].map(v=>(
+          <button key={v} className={`chip ${Math.abs(speed-v)<0.01?"!bg-teal-400/30 !border-teal-300 !text-white":""}`}
+            onClick={()=>api.setOpt(p.selId, { speed: v===1?undefined:v }, `${p.selId}:speed`)}>{v}x</button>
+        ))}
+      </div>
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Speed</span><b className="text-teal-300">{speed.toFixed(2)}x</b></div>
+        <input type="range" min={0.3} max={3} step={0.05} value={speed}
+          onChange={e=>api.setOpt(p.selId, { speed: Number(e.target.value) }, "")} className="w-full accent-teal-400"/>
+      </label>
+      <div className="cc2-note">⏱ Durasi efektif: <b>{(holdDur/speed).toFixed(1)} detik</b> (dari {holdDur.toFixed(1)}d ÷ {speed}x)</div>
+    </Sec>
+    <Sec title="⏱ Durasi hold klip">
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Durasi dasar</span><b className="text-teal-300">{holdDur.toFixed(1)} detik</b></div>
+        <input type="range" min={0.5} max={15} step={0.1} value={holdDur}
+          onChange={e=>api.setOpt(p.selId, { dur: Number(e.target.value) }, "")} className="w-full accent-teal-400"/>
+      </label>
+      <div className="cc2-note">💡 Bisa juga ditarik langsung dari pegangan ▮ di ujung kanan klip di timeline.</div>
+    </Sec>
+  </>);
+}
+
+/* -------------------------- TRANSISI -------------------------- */
+function SheetTransisi({p}:{p:any}) {
+  const {api} = p;
+  if (!p.selId) return <ClipHint p={p}/>;
+  const opt = p.selOpt as SlideOpt|undefined;
+  const cur = canonicalTrans(opt?.trans ?? p.transition);
+  const curDur = opt?.transDur ?? p.transitionDur;
+  const cats = [...new Set(TRANSITIONS.map(t=>t.cat||""))];
+  const isLast = (p.selIndex||0) >= p.slides.length-1;
+  return (<>
+    <Sec title={`🔀 Transisi dari Klip ${(p.selIndex||0)+1} → ${(p.selIndex||0)+2}`}>
+      {isLast && <div className="cc2-note">⚠️ Ini klip terakhir — transisinya berlaku kalau ada klip setelahnya.</div>}
+      {cats.map(cat=>(
+        <div key={cat} className="mb-1.5">
+          <div className="cc2-mini-lbl mb-1">{cat}</div>
+          <div className="cc2-chips">
+            {TRANSITIONS.filter(t=>(t.cat||"")===cat).map(t=>(
+              <button key={t.id} className={`chip ${cur===t.id?"!bg-teal-400/30 !border-teal-300 !text-white":""}`}
+                onClick={()=>api.setOpt(p.selId, { trans: t.id }, `${p.selId}:trans`)}>{t.emoji} {t.label}</button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </Sec>
+    <Sec title="⏱ Durasi transisi">
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Durasi</span><b className="text-teal-300">{curDur.toFixed(2)} detik</b></div>
+        <input type="range" min={0.2} max={1.5} step={0.05} value={curDur}
+          onChange={e=>api.setOpt(p.selId, { transDur: Number(e.target.value) }, "")} className="w-full accent-teal-400"/>
+      </label>
+      <button className="btn btn-ghost btn-sm w-full" onClick={()=>api.applyTransAll(cur)}>📌 Terapkan "{TRANSITIONS.find(t=>t.id===cur)?.label}" ke SEMUA sambungan</button>
+    </Sec>
+  </>);
+}
+
+/* -------------------------- FORMAT -------------------------- */
 function SheetFormat({p}:{p:any}) {
   const {api} = p;
   return (<>
@@ -2236,6 +2741,18 @@ function SheetFormat({p}:{p:any}) {
           <button key={r.id} onClick={()=>api.setAspectRatio(r.id)} className={`cc2-scard ${p.aspectRatio===r.id?"on":""}`}><b>{r.label}</b></button>
         ))}
       </div>
+    </Sec>
+    <Sec title="⏱ Durasi dasar (klip tanpa override)">
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Durasi slide default</span><b className="text-teal-300">{p.slideDuration.toFixed(1)} detik</b></div>
+        <input type="range" min={0.5} max={15} step={0.5} value={p.slideDuration}
+          onChange={e=>api.setSlideDuration(Number(e.target.value))} className="w-full accent-teal-400"/>
+      </label>
+      <label className="block">
+        <div className="flex justify-between text-[11px] mb-0.5"><span>Transisi default</span><b className="text-teal-300">{p.transitionDur.toFixed(2)} detik</b></div>
+        <input type="range" min={0.2} max={1.5} step={0.05} value={p.transitionDur}
+          onChange={e=>api.setTransitionDur(Number(e.target.value))} className="w-full accent-teal-400"/>
+      </label>
     </Sec>
     <Sec title="💎 Kualitas render">
       <div className="cc2-stylegrid">
@@ -2264,6 +2781,7 @@ function SheetFormat({p}:{p:any}) {
   </>);
 }
 
+/* -------------------------- EKSPOR -------------------------- */
 function SheetEkspor({p}:{p:any}) {
   const {api} = p;
   return (<>

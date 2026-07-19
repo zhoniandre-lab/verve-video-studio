@@ -13,6 +13,10 @@
  *  - Caption CapCut-style: kata demi kata highlight sesuai posisi audio
  */
 import type { VizStyle } from "./types";
+import {
+  buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
+} from "./editing";
+import type { SlideOpt, Timeline } from "./editing";
 
 export type Quality = "fast" | "balanced" | "high" | "max";
 export type Transition = "zoom" | "fade" | "slide" | "blur" | "glitch" | "none";
@@ -46,6 +50,9 @@ export interface RenderOptions {
   spectrumSticker?: string;   // "bars-bottom"|"wave-center"|"disc"|"none" — small overlay visualizer
   // ===== CAPCUT TEXT LAYERS =====
   textLayers?: TextLayer[];   // array custom text layers (multi-teks)
+  // ===== v5: PER-KLIP EDITING (transisi/durasi/animasi/efek/stiker/teks per slide) =====
+  slideOpts?: SlideOpt[];     // sejajar dgn images[]; bila ada → timeline per-klip
+  grainAmt?: number;          // 0..100 overlay grain film
   onProgress?: (p: number) => void;
   onStage?: (s: string) => void;
 }
@@ -345,14 +352,18 @@ interface DrawState {
   vignetteStrength?: number;
   spectrumSticker?: string;
   textLayers?: TextLayer[];
+  // v5 per-klip
+  clipT?: number; clipDur?: number; transId?: string;
+  timeline?: Timeline | null; slideOpts?: SlideOpt[] | null; grainAmt?: number;
 }
 
 function drawFrame(s: DrawState) {
   const { W,H,bars,rgb,style,imgs,slideIdx,isTransition,nextIdx,transT,slideT,bass,beat } = s;
   const ctx = s._canvas.getContext("2d", { alpha: false, desynchronized: true })!;
+  const useV5 = !!(s.slideOpts && s.timeline);
 
-  // Reset filter di awal frame
-  ctx.filter = s.videoFilter || "none";
+  // Reset filter di awal frame (v5: filter dikelola per-klip di paintClips)
+  ctx.filter = useV5 ? "none" : (s.videoFilter || "none");
 
   // ===== MOBILE SPEED: kurangi gradient & efek berat =====
   // Flat dark bg (gak bikin radial gradient tiap frame — 2-3× lebih cepat di mobile GPU)
@@ -370,7 +381,24 @@ function drawFrame(s: DrawState) {
     const dw=W*zoom, dh=H*zoom;
     ctx.drawImage(img,(W-dw)/2,(H-dh)/2,dw,dh);
   };
-  drawImg(cur,1,zoomBase);
+  if (!useV5) drawImg(cur,1,zoomBase);
+
+  // ===== v5: painter per-klip (animasi, transisi katalog, efek, stiker, teks, grain) =====
+  if (useV5) {
+    const optsArr = (s.slideOpts || []) as SlideOpt[];
+    paintClips(ctx, W, H, cur, nxt, {
+      clipT: typeof s.clipT === "number" ? s.clipT : slideT,
+      clipDur: s.clipDur || 1,
+      inTrans: isTransition, transT,
+      transId: s.transId || s._transition,
+      optCur: optsArr[slideIdx] || null,
+      optNxt: optsArr[nextIdx] || null,
+      globalFilter: s.videoFilter || "none",
+      absT: s.time, isMobile: W <= 720, beat,
+      grain: s.grainAmt || 0,
+      kbZoom: zoomBase,
+    });
+  }
 
   // Vignette PRA-RENDERED (dibuat sekali di setup) — tidak buat radial gradient tiap frame
   if ((s as any)._vignette) {
@@ -378,10 +406,10 @@ function drawFrame(s: DrawState) {
     ctx.globalAlpha = (typeof s.vignetteStrength==="number" ? s.vignetteStrength : 0.75);
     ctx.drawImage((s as any)._vignette, 0, 0, W, H);
     ctx.globalAlpha = 1;
-    ctx.filter = s.videoFilter || "none";
+    ctx.filter = useV5 ? "none" : (s.videoFilter || "none");
   }
 
-  if (isTransition && nxt) {
+  if (!useV5 && isTransition && nxt) {
     const t = easeInOut(transT);
     if (s._transition==="fade") drawImg(nxt,t,1);
     else if (s._transition==="zoom") { drawImg(cur,1-t,zoomBase*(1-t*0.1)); drawImg(nxt,t,0.97+t*0.03); }
@@ -1427,7 +1455,24 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   const slideDur = Math.max(1, slideDuration);
   const transDur = clamp(opts.transitionDuration??(mobileOptimized?0.5:0.8),0,slideDur*0.6);
   const perSlide = slideDur+transDur;
-  const totalDur = Math.max(audio?.duration||0, imgs.length*slideDur+transDur);
+
+  // ===== v5: timeline per-klip (durasi & transisi beda tiap slide) =====
+  let timeline: Timeline | null = null;
+  const slideOpts = (opts.slideOpts && opts.slideOpts.length === imgs.length) ? opts.slideOpts : null;
+  if (slideOpts) {
+    const durs = slideOpts.map(o => Math.max(0.4, (o?.dur ?? slideDur) / Math.max(0.25, o?.speed || 1)));
+    const tdurs = slideOpts.map((o, i) => {
+      if (i >= slideOpts.length - 1) return 0;
+      if (canonicalTrans(o?.trans ?? (transition || "dissolve")) === "none") return 0;
+      return clamp(o?.transDur ?? transDur, 0.15, durs[i] * 0.9);
+    });
+    const tids = slideOpts.map(o => canonicalTrans(o?.trans ?? (transition || "dissolve")));
+    timeline = buildTimeline(durs, tdurs, tids);
+    // isi transId canonical balik supaya painter konsisten
+    slideOpts.forEach((o, i) => { if (o) o.trans = tids[i]; });
+  }
+  const clipsTotal = timeline ? timeline.total : imgs.length*slideDur+transDur;
+  const totalDur = Math.max(audio?.duration||0, clipsTotal);
 
   // Warning: jika musik lebih pendek dari total slide (tanpa TTS)
   if (audio && audio.duration < totalDur - 0.5) {
@@ -1449,7 +1494,9 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   let capStyle: CaptionStyle = captionStyle || "capcut";
   if (captions && captions.length) finalCaptions = captions;
   else if (opts.lyrics?.length && opts.showLyrics) {
-    finalCaptions = buildCaptionsFromLyrics(opts.lyrics, totalDur, 1.2);
+    finalCaptions = timeline
+      ? captionsFromClips(opts.lyrics, timeline) as CaptionWord[]
+      : buildCaptionsFromLyrics(opts.lyrics, totalDur, 1.2);
   }
 
   const particles: DrawState["particles"] = [];
@@ -1457,6 +1504,11 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   let Mp4Muxer: any = null;
   try{ const mod = await import("mp4-muxer").catch(()=>null); Mp4Muxer = mod?.Muxer || (window as any).Mp4Muxer || (window as any).MP4Muxer; }catch{}
 
+  const sharedV5 = {
+    timeline, slideOpts,
+    grainAmt: opts.grainAmt || 0,
+    clipImgs: null as any, // diisi nanti bila perlu
+  };
   if (Mp4Muxer && supportsWebCodecs()){
     return renderWebCodecs({canvas,ctx,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,
       prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",
@@ -1468,6 +1520,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
       vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
       spectrumSticker: opts.spectrumSticker,
       textLayers: opts.textLayers,
+      ...sharedV5,
     } as any);
   }
   onStage?.("WebCodecs tidak tersedia, pakai MediaRecorder...");
@@ -1478,7 +1531,8 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     videoFilter: opts.videoFilter,
     vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
     spectrumSticker: opts.spectrumSticker,
-    textLayers: opts.textLayers} as any);
+    textLayers: opts.textLayers,
+    ...sharedV5} as any);
 }
 
 interface RenderBase {
@@ -1498,7 +1552,7 @@ interface RenderBase {
 }
 
 async function renderWebCodecs(b:any){
-  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,logoImg,logoPos,captions,captionStyle,showTitle} = b;
+  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
   onStage?.(`Encoding video (${prof.w}x${prof.h} @ ${fps}fps)...`);
 
   const muxer = new Mp4Muxer({
@@ -1571,14 +1625,24 @@ async function renderWebCodecs(b:any){
 
   for (let f=0; f<totalFrames; f++){
     const t = f/fps;
-    const slideFP = t/perSlide;
-    let slideIdx = Math.floor(slideFP);
-    let localT = t - slideIdx*perSlide;
-    let inTrans = localT >= slideDur;
-    let transT = inTrans ? (localT-slideDur)/transDur : 0;
-    let nextIdx = Math.min(slideIdx+1, imgs.length-1);
-    slideIdx = Math.min(slideIdx, imgs.length-1);
-    const slideT = Math.min(1, localT/slideDur);
+    let slideIdx:number,localT:number,inTrans:boolean,transT:number,nextIdx:number,frameDur:number,transId:string,clipT:number;
+    if (timeline) {
+      const L = locate(timeline, t);
+      slideIdx = L.idx; clipT = t - timeline.starts[L.idx]; frameDur = L.clipDur;
+      inTrans = L.inTrans; transT = L.transT; nextIdx = L.nextIdx;
+      localT = clipT;
+      transId = (slideOpts && slideOpts[slideIdx]?.trans) || transition || "dissolve";
+    } else {
+      const slideFP = t/perSlide;
+      slideIdx = Math.floor(slideFP);
+      localT = t - slideIdx*perSlide;
+      inTrans = localT >= slideDur;
+      transT = inTrans ? (localT-slideDur)/transDur : 0;
+      nextIdx = Math.min(slideIdx+1, imgs.length-1);
+      slideIdx = Math.min(slideIdx, imgs.length-1);
+      frameDur = slideDur; clipT = localT; transId = transition || "zoom";
+    }
+    const slideT = Math.min(1, localT/frameDur);
 
     const bars = spec.bars[f];
     const bass = spec.bassLevels[f];
@@ -1596,6 +1660,7 @@ async function renderWebCodecs(b:any){
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
       spectrumSticker: b.spectrumSticker,
       textLayers: b.textLayers,
+      clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt,
     } as any);
 
     const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
@@ -1625,7 +1690,7 @@ async function renderWebCodecs(b:any){
 }
 
 async function renderMediaRecorder(b:any){
-  const {canvas,imgs,audio,fps,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,logoImg,logoPos,captions,captionStyle,showTitle} = b;
+  const {canvas,imgs,audio,fps,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
   const stream:MediaStream = (canvas as any).captureStream(fps);
   let audioDest:MediaStreamAudioDestinationNode|null=null, actx:AudioContext|null=null;
   if (audio){
@@ -1654,12 +1719,21 @@ async function renderMediaRecorder(b:any){
     const elapsed=(performance.now()-startT)/1000;
     const t=Math.min(elapsed,totalDur);
     const f=Math.floor(t*fps);
-    const slideFP=t/perSlide;
-    let slideIdx=Math.floor(slideFP),localT=t-slideIdx*perSlide;
-    let inTrans=localT>=slideDur, transT=inTrans?(localT-slideDur)/transDur:0;
-    let nextIdx=Math.min(slideIdx+1,imgs.length-1);
-    slideIdx=Math.min(slideIdx,imgs.length-1);
-    const slideT=Math.min(1,localT/slideDur);
+    let slideIdx:number,localT:number,inTrans:boolean,transT:number,nextIdx:number,frameDur:number,transId:string,clipT:number;
+    if (timeline) {
+      const L = locate(timeline, t);
+      slideIdx = L.idx; clipT = t - timeline.starts[L.idx]; frameDur = L.clipDur;
+      inTrans = L.inTrans; transT = L.transT; nextIdx = L.nextIdx; localT = clipT;
+      transId = (slideOpts && slideOpts[slideIdx]?.trans) || transition || "dissolve";
+    } else {
+      const slideFP=t/perSlide;
+      slideIdx=Math.floor(slideFP); localT=t-slideIdx*perSlide;
+      inTrans=localT>=slideDur; transT=inTrans?(localT-slideDur)/transDur:0;
+      nextIdx=Math.min(slideIdx+1,imgs.length-1);
+      slideIdx=Math.min(slideIdx,imgs.length-1);
+      frameDur=slideDur; clipT=localT; transId=transition||"zoom";
+    }
+    const slideT=Math.min(1,localT/frameDur);
     const bars = spec.bars[Math.min(f,spec.bars.length-1)] || new Float32Array(prof.bars);
     const bass = spec.bassLevels[Math.min(f,spec.bassLevels.length-1)]||0;
     const beat = !!spec.beats[Math.min(f,spec.beats.length-1)];
@@ -1671,7 +1745,8 @@ async function renderMediaRecorder(b:any){
       videoFilter: b.videoFilter,
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
       spectrumSticker: b.spectrumSticker,
-      textLayers: b.textLayers} as any);
+      textLayers: b.textLayers,
+      clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt} as any);
     onProgress?.(t/totalDur);
     if(elapsed<totalDur+0.2) requestAnimationFrame(tick);
     else{mr.stop();actx?.close();}
