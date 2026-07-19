@@ -302,6 +302,82 @@ export function StudioEditor(p: StudioEditorProps) {
     // eslint-disable-next-line
   }, []);
 
+  // ===== MULTI-TRACK DRAG STATE (CapCut-style) =====
+  const trackDragRef = useRef<{
+    mode:"none"|"clip-move"|"clip-left"|"clip-right";
+    kind:"text"|"sticker"|"audio"|"video";
+    id:string;
+    startX:number;
+    origStart:number; origEnd:number; origDur:number;
+    trackW:number; trackLeft:number;
+    pxPerSec:number;
+  }>({mode:"none",kind:"text",id:"",startX:0,origStart:0,origEnd:0,origDur:0,trackW:0,trackLeft:0,pxPerSec:30});
+  const trackAreaRef = useRef<HTMLDivElement|null>(null);
+
+  const onTrackPointerDown = (e:React.TouchEvent|React.MouseEvent, kind:"text"|"sticker", id:string, handle:"move"|"left"|"right") => {
+    e.stopPropagation();
+    e.preventDefault();
+    const ev = "touches" in e ? e.touches[0] : (e as React.MouseEvent);
+    const track = trackAreaRef.current;
+    if (!track) return;
+    const r = track.getBoundingClientRect();
+    const pxPerSec = r.width / Math.max(totalDur, 1);
+    const layer = kind==="text" ? textLayers.find((l:any)=>l.id.replace(/^sel_/,"")===id) : null;
+    const start0 = layer ? (layer.start||0) : 0;
+    const end0 = layer ? (layer.end||totalDur) : totalDur;
+    trackDragRef.current = {
+      mode: handle==="move"?"clip-move":(handle==="left"?"clip-left":"clip-right"),
+      kind, id,
+      startX: ev.clientX,
+      origStart: start0, origEnd: end0, origDur: end0-start0,
+      trackW: r.width, trackLeft: r.left,
+      pxPerSec,
+    };
+    // Select layer
+    if (kind==="text") selectLayer(id);
+  };
+  const onTrackPointerMove = (e:Event) => {
+    const d = trackDragRef.current;
+    if (d.mode==="none") return;
+    const ev = (e as TouchEvent).touches?.[0] || (e as MouseEvent);
+    const dx = ev.clientX - d.startX;
+    const dt = dx / d.pxPerSec;
+    if (d.kind==="text") {
+      setTextLayers((ls:TextLayer[])=>ls.map((l:any)=>{
+        const lid = l.id.replace(/^sel_/,"");
+        if (lid !== d.id) return l;
+        let ns = l.start||0, ne = l.end||totalDur;
+        if (d.mode==="clip-move") {
+          ns = Math.max(0, Math.min(totalDur - d.origDur, d.origStart + dt));
+          ne = ns + d.origDur;
+        } else if (d.mode==="clip-left") {
+          ns = Math.max(0, Math.min(ne-0.3, d.origStart + dt));
+        } else if (d.mode==="clip-right") {
+          ne = Math.max(ns+0.3, Math.min(totalDur, d.origEnd + dt));
+        }
+        return {...l, start:ns, end:ne};
+      }));
+    }
+  };
+  const onTrackPointerUp = () => {
+    if (trackDragRef.current.mode!=="none") trackDragRef.current.mode = "none";
+  };
+  useEffect(()=>{
+    const mv = (e:Event)=>onTrackPointerMove(e);
+    const up = ()=>onTrackPointerUp();
+    window.addEventListener("touchmove", mv, {passive:false});
+    window.addEventListener("mousemove", mv);
+    window.addEventListener("touchend", up);
+    window.addEventListener("mouseup", up);
+    return ()=>{
+      window.removeEventListener("touchmove", mv);
+      window.removeEventListener("mousemove", mv);
+      window.removeEventListener("touchend", up);
+      window.removeEventListener("mouseup", up);
+    };
+    // eslint-disable-next-line
+  }, [totalDur]);
+
   return (
     <section className="mt-0">
       {/* FULLSCREEN STUDIO: di HP pakai fixed inset-0; di desktop tampil dalam card */}
@@ -572,67 +648,186 @@ export function StudioEditor(p: StudioEditorProps) {
           </div>
         </div>
 
-        {/* TIMELINE (thumbnail strip + playhead + waveform) — lebih kompak di HP */}
-        <div className="bg-[#0a0418] border-y border-white/10 px-1 py-1">
-          {/* Waveform bar audio (fake bars) */}
-          <div className="flex items-end gap-[2px] h-4 px-1 mb-0.5">
-            {Array.from({length:60}).map((_,i)=>{
-              const base = 0.2 + Math.sin(i*0.4)*0.15 + Math.sin(i*1.3)*0.1 + Math.random()*0.3;
-              return <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-pink-500/40 to-cyan-400/40"
-                style={{height:`${Math.min(1,base)*100}%`}}/>;
-            })}
-          </div>
-          <div className="relative">
-            {/* Playhead PUTIH garis vertikal */}
-            <div className="absolute top-0 bottom-0 w-0.5 bg-white z-10 pointer-events-none shadow-[0_0_8px_rgba(255,255,255,0.8)]"
-                 style={{left:`calc(${playheadPct}% - 1px)`}}>
-              <div className="absolute -top-0.5 -left-1.5 w-3.5 h-3.5 bg-white rotate-45"/>
-            </div>
-            <div ref={timelineStripRef}
-                 className="flex items-center gap-1 overflow-x-auto py-1 px-1 snap-x timeline-strip no-scrollbar"
-                 style={{scrollBehavior:"auto"}}>
-              {slides.map((s:any, i:number)=>{
-                const isActive = i===activeSlide;
+        {/* === MULTI-TRACK TIMELINE CAPCUT-STYLE === */}
+        <div ref={trackAreaRef} className="bg-[#0a0418] border-y border-white/10 select-none relative">
+          {/* TIME RULER (0:00 · 0:02 · 0:04 ...) */}
+          <div className="relative h-5 flex items-end overflow-hidden text-[9px] text-white/40 font-mono">
+            <div className="w-14 shrink-0"/> {/* left pad untuk toolbar */}
+            <div className="flex-1 relative">
+              {Array.from({length: Math.max(6, Math.ceil(totalDur/2)+1)}).map((_,i)=>{
+                const t = i*2;
+                if (t > totalDur+0.5) return null;
+                const pct = (t/totalDur)*100;
                 return (
-                  <button key={s.id}
-                    onClick={()=>{
-                      setActiveSlide(i);
-                      seekPreview(i*(curSlideDur+transitionDur/videoSpeed));
-                    }}
-                    className={`relative shrink-0 snap-start rounded-md overflow-hidden border-2 transition ${isActive?"border-pink-400 scale-[1.05] shadow-lg shadow-pink-500/40":"border-white/10 opacity-60"}`}
-                    style={{width:thumbW,height:thumbH}}>
-                    <img src={s.imageUrl} className="w-full h-full object-cover"
-                         style={{filter: isActive?getFilterString():"none"}} alt=""/>
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[9px] text-center py-0.5 font-bold">{i+1}</div>
-                  </button>
+                  <div key={i} className="absolute bottom-0" style={{left:`${pct}%`,transform:"translateX(-50%)"}}>
+                    <div className="w-px h-1.5 bg-white/20 mx-auto mb-0.5"/>
+                    <span>{formatDur(t)}</span>
+                  </div>
                 );
               })}
             </div>
           </div>
-          <div className="mt-1 px-1">
-            <input type="range" min={0} max={totalDur} step={0.05}
-                   value={previewCurrent}
-                   onChange={e=>{
-                     const t = Number(e.target.value);
-                     setActiveSlide(Math.min(slides.length-1, Math.floor(t/(curSlideDur+transitionDur/videoSpeed))));
-                     seekPreview(t);
-                   }}
-                   className="w-full accent-pink-500 h-1"/>
+
+          {/* TRACKS (scroll horizontal bareng dengan parent) */}
+          <div className="tracks-scroll relative overflow-x-auto no-scrollbar" style={{scrollBehavior:"auto"}}>
+            <div className="flex">
+              {/* KIRI: Track icons (seperti CapCut ♪, T) */}
+              <div className="w-14 shrink-0 flex flex-col border-r border-white/10 pr-1">
+                <div className="h-10 flex items-center justify-center text-sm">🎞</div>
+                <div className="h-7 flex items-center justify-center text-sm">♪</div>
+                <div className="h-8 flex items-center justify-center text-sm font-bold">T</div>
+                {spectrumSticker && spectrumSticker!=="none" && <div className="h-7 flex items-center justify-center text-sm">✨</div>}
+              </div>
+              {/* KANAN: Isi track dengan lebar sesuai durasi */}
+              <div className="flex-1 relative min-w-[200%]">
+                {/* VIDEO TRACK — thumbnail klip */}
+                <div className="relative h-10 my-0.5">
+                  {slides.map((s:any, i:number)=>{
+                    const clipStart = i*(curSlideDur+transitionDur/videoSpeed);
+                    const clipW = (curSlideDur/totalDur)*100;
+                    const isActive = Math.abs(previewCurrent - clipStart) < curSlideDur*0.6;
+                    return (
+                      <button key={s.id}
+                        onClick={()=>{ setActiveSlide(i); seekPreview(clipStart); }}
+                        className={`absolute top-0 bottom-0 rounded-md overflow-hidden border-2 cursor-pointer transition ${isActive?"border-pink-400 shadow-lg shadow-pink-500/30":"border-white/10 opacity-80"}`}
+                        style={{left:`${(clipStart/totalDur)*100}%`, width:`${clipW}%`, minWidth:"30px"}}>
+                        <img src={s.imageUrl} className="w-full h-full object-cover" alt="" draggable={false}/>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-white text-center py-px font-bold">{i+1}</div>
+                      </button>
+                    );
+                  })}
+                  {/* Tombol + di kanan klip terakhir buat tambah slide */}
+                  <button onClick={()=>window.alert("Upload/tambah gambar dari Step 3 ya bro 👍")}
+                    className="absolute top-0 bottom-0 w-7 rounded-md border-2 border-dashed border-white/30 flex items-center justify-center text-white/60 text-lg active:scale-95"
+                    style={{left:`${(slides.length*curSlideDur/totalDur)*100}%`, marginLeft:2}}>+</button>
+                </div>
+
+                {/* AUDIO TRACK (tosca/hijau) */}
+                <div className="relative h-7 my-0.5">
+                  {(audioMode!=="none" && (aiMusicUrl||ttsUrl||musicUrl)) ? (
+                    <div className="absolute inset-y-0 left-0 right-0 rounded-md bg-gradient-to-r from-cyan-600/70 to-teal-600/70 border border-cyan-400/50 overflow-hidden flex items-center px-1.5">
+                      <div className="flex items-center gap-px h-full w-full">
+                        {Array.from({length:100}).map((_,i)=>{
+                          const h = 15+Math.abs(Math.sin(i*0.4))*30+Math.abs(Math.sin(i*1.3))*20+(i%11===0?25:0)+Math.random()*25;
+                          return <div key={i} className="flex-1 bg-white/50 rounded-sm" style={{height:`${Math.min(100,h)}%`}}/>;
+                        })}
+                      </div>
+                      <span className="absolute left-1.5 top-0.5 text-[8px] text-white font-bold drop-shadow truncate max-w-[70%]">
+                        🎵 {audioMode==="tts"?"Narasi":audioMode==="aimusic"?"AI Music":"Musik"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="absolute inset-y-0 left-0 right-0 rounded-md border border-dashed border-white/15 flex items-center px-2 text-[8px] text-white/30">
+                      Track audio (pilih musik/narasi dulu)
+                    </div>
+                  )}
+                </div>
+
+                {/* TEXT TRACK (oranye seperti CapCut) */}
+                <div className="relative h-8 my-0.5">
+                  {textLayers.map((l:any, li:number)=>{
+                    const ls = l.start||0;
+                    const le = l.end||totalDur;
+                    const dur = Math.max(0.3, le-ls);
+                    const lid = l.id.replace(/^sel_/,"");
+                    const isSel = l.id.startsWith("sel_");
+                    const colors = ["#f97316","#ec4899","#a855f7","#22c55e","#eab308","#06b6d4"];
+                    const col = colors[li%colors.length];
+                    return (
+                      <div key={l.id}
+                           onMouseDown={(e)=>onTrackPointerDown(e,"text",lid,"move")}
+                           onTouchStart={(e)=>onTrackPointerDown(e,"text",lid,"move")}
+                           className={`absolute top-0 bottom-0 rounded-md border-2 cursor-move overflow-hidden touch-none ${isSel?"border-white shadow-lg":"border-white/30"}`}
+                           style={{
+                             left:`${(ls/totalDur)*100}%`,
+                             width:`${(dur/totalDur)*100}%`,
+                             background:`linear-gradient(135deg, ${col}, ${col}cc)`,
+                             minWidth:"36px",
+                           }}>
+                        <div className="h-full flex items-center px-1.5 text-[9px] text-white font-bold truncate select-none">
+                          <span className="mr-0.5">T</span><span className="truncate">{l.text||"Teks"}</span>
+                        </div>
+                        <div onMouseDown={(e)=>{e.stopPropagation();onTrackPointerDown(e,"text",lid,"left");}}
+                             onTouchStart={(e)=>{e.stopPropagation();onTrackPointerDown(e,"text",lid,"left");}}
+                             className="absolute left-0 top-0 bottom-0 w-2.5 bg-white/0 hover:bg-white/30 cursor-ew-resize active:bg-white/50"/>
+                        <div onMouseDown={(e)=>{e.stopPropagation();onTrackPointerDown(e,"text",lid,"right");}}
+                             onTouchStart={(e)=>{e.stopPropagation();onTrackPointerDown(e,"text",lid,"right");}}
+                             className="absolute right-0 top-0 bottom-0 w-2.5 bg-white/0 hover:bg-white/30 cursor-ew-resize active:bg-white/50"/>
+                      </div>
+                    );
+                  })}
+                  {textLayers.length===0 && (
+                    <div className="absolute inset-0 flex items-center px-2 text-[8px] text-white/30 border border-dashed border-white/15 rounded-md">
+                      Teks track — tambahkan teks dari tab Teks di bawah
+                    </div>
+                  )}
+                </div>
+
+                {/* STICKER TRACK (magenta) */}
+                {spectrumSticker && spectrumSticker!=="none" && (
+                  <div className="relative h-7 my-0.5">
+                    <div className="absolute inset-y-0 left-0 right-0 rounded-md bg-gradient-to-r from-pink-600/70 to-purple-600/70 border border-pink-400/50 flex items-center px-2 text-[9px] text-white font-bold">
+                      <span className="mr-1">🎧</span> Stiker · {STICKER_PRESETS.find((s:any)=>s.id===spectrumSticker)?.label||spectrumSticker}
+                    </div>
+                  </div>
+                )}
+
+                {/* PLAYHEAD PUTIH */}
+                <div className="absolute top-0 bottom-0 z-20 pointer-events-none"
+                     style={{left:`${playheadPct}%`, transform:"translateX(-1px)"}}>
+                  <div className="w-3.5 h-3.5 bg-white -ml-1 rotate-45 shadow-[0_0_6px_rgba(255,255,255,0.8)]"/>
+                  <div className="w-0.5 bg-white absolute top-3 -ml-[1px] bottom-0 shadow-[0_0_6px_rgba(255,255,255,0.6)]"/>
+                </div>
+              </div>
+            </div>
+            {/* Tap area untuk SEEK (di atas tracks) */}
+            <div className="absolute inset-0 z-10"
+                 onClick={(e)=>{
+                   const rect = e.currentTarget.getBoundingClientRect();
+                   const x = e.clientX - rect.left - 56;
+                   const w = rect.width - 56;
+                   const t = Math.max(0, Math.min(totalDur, (x/w)*totalDur));
+                   setActiveSlide(Math.min(slides.length-1, Math.floor(t/(curSlideDur+transitionDur/videoSpeed))));
+                   seekPreview(t);
+                 }}
+                 style={{pointerEvents:navigator.userAgent.match(/mobile|android/i)?"auto":"none"}}/>
           </div>
         </div>
 
-        {/* PLAYBACK CONTROLS (lebih kompak) */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-black">
-          <button onClick={()=>seekPreview(Math.max(0,previewCurrent-5))} aria-label="Mundur 5 detik" className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-base active:scale-95">⏮</button>
+        {/* CAPCUT CONTROL BAR (⤢ ▶ 🔊 ↺ ↻) */}
+        <div className="flex items-center justify-between px-2 py-1 bg-black">
+          <button aria-label="Fullscreen" className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-xl active:scale-95">⤢</button>
           <button onClick={togglePreview} aria-label={previewPlaying?"Jeda":"Putar"}
-                  className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white text-xl shadow-lg shadow-pink-500/40 active:scale-95">
+                  className="w-12 h-12 flex items-center justify-center text-3xl active:scale-90 pl-1">
             {previewPlaying?"⏸":"▶"}
           </button>
-          <button onClick={()=>seekPreview(Math.min(totalDur, previewCurrent+5))} aria-label="Maju 5 detik" className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-base active:scale-95">⏭</button>
-          <button onClick={()=>setPreviewMuted(!previewMuted)} aria-label={previewMuted?"Suarakan":"Bisukan"} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-base active:scale-95">
-            {previewMuted?"🔇":"🔊"}
-          </button>
-          <div className="text-[11px] text-white/70 font-mono ml-auto tabular-nums">{formatDur(previewCurrent)} / {formatDur(totalDur)}</div>
+          <div className="flex items-center gap-0.5">
+            <button onClick={()=>setPreviewMuted(!previewMuted)} className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-xl active:scale-95">
+              {previewMuted?"🔇":"🔊"}
+            </button>
+            <button aria-label="Undo" className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-xl active:scale-95 text-white/70">↺</button>
+            <button aria-label="Redo" className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 text-xl active:scale-95 text-white/70">↻</button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-3 pb-1 bg-black">
+          <div className="text-[11px] font-mono tabular-nums">
+            <span className="text-white">{formatDur(previewCurrent)}</span>
+            <span className="text-white/40"> / {formatDur(totalDur)}</span>
+          </div>
+          <button title="Tambah klip"
+            onClick={()=>{
+              // Quick add teks
+              const n: TextLayer = {
+                id:"t"+Date.now(), text:"Teks baru",
+                x:0.5, y:0.5, sizePct:0.08, opacity:1,
+                color:"#ffffff", bold:true, template:"default",
+                effect:"none", animIn:"fadein", animOut:"fade", animLoop:"none",
+                start:previewCurrent, end:Math.min(totalDur,previewCurrent+2),
+              };
+              const cleaned = textLayers.map((l:TextLayer)=>({...l,id:l.id.startsWith("sel_")?l.id.replace("sel_",""):l.id}));
+              setTextLayers([...cleaned,{...n,id:"sel_"+n.id}] as any);
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-lg active:scale-95">+</button>
         </div>
 
         {/* TOOLBAR 9 TABS (lebih kompak) */}
@@ -678,6 +873,8 @@ export function StudioEditor(p: StudioEditorProps) {
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .timeline-strip { scrollbar-width: none; }
+        .tracks-scroll { touch-action: pan-x; overscroll-behavior-x: contain; }
+        .tracks-scroll > div { touch-action: pan-x; }
         @keyframes tt-fadein { from{opacity:0;transform:translate(-50%,-40%) scale(0.9);} to{opacity:1;transform:translate(-50%,-50%) scale(1);} }
         @keyframes tt-pulse { 0%,100%{transform:translate(-50%,-50%) scale(1);} 50%{transform:translate(-50%,-50%) scale(1.08);} }
         @keyframes tt-bounce { 0%,100%{transform:translate(-50%,-50%) translateY(0);} 50%{transform:translate(-50%,-50%) translateY(-6px);} }

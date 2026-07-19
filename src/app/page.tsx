@@ -1539,11 +1539,22 @@ Dibuat dengan Verve AI Video Studio`;
       previewRafRef.current = requestAnimationFrame(draw);
       const now = performance.now();
       let t = 0;
+      let curTime = 0;
       if (audEl && !audEl.paused && audEl.duration && isFinite(audEl.duration)) {
-        t = (audEl.currentTime||0)*effSpeed;
-        setPreviewCurrent(audEl.currentTime);
+        curTime = audEl.currentTime||0;
+        t = curTime*effSpeed;
+        // JANGAN panggil setPreviewCurrent tiap frame (bikin re-render 60fps = macet!).
+        // Update state HANYA tiap ~100ms (10fps) untuk UI timeline.
+        if ((now - (draw as any)._lastUi || 0) > 100) {
+          (draw as any)._lastUi = now;
+          setPreviewCurrent(curTime);
+        }
       } else {
         t = ((now - startT)/1000)*effSpeed;
+        if ((now - (draw as any)._lastUi || 0) > 100) {
+          (draw as any)._lastUi = now;
+          setPreviewCurrent(t/effSpeed);
+        }
       }
 
       // Slide + transisi
