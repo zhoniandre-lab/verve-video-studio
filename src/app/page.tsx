@@ -336,6 +336,7 @@ export default function Home() {
   const [vignetteAmt, setVignetteAmt] = useState(75);
   const [videoSpeed, setVideoSpeed] = useState(1);
   const [spectrumSticker, setSpectrumSticker] = useState<string>("bars-bottom");
+  const [textLayers, setTextLayers] = useState<any[]>([]);
   const renderStartRef = useRef<number>(0);
   const [draftList, setDraftList] = useState<Array<{id:string;title:string;slides:number;updatedAt:number;thumb?:string;step?:number}>>([]);
   const [showDraftPicker, setShowDraftPicker] = useState(false);
@@ -807,6 +808,17 @@ export default function Home() {
       const effSpeed = Math.max(0.25, Number(videoSpeed)||1);
       const filterStr = getFilterString();
       const vignetteStrength = Math.max(0, Math.min(1, (vignetteAmt/100)*0.8));
+      // Hitung totalDur untuk timing text layer
+      const _slideDur = slideDuration/effSpeed;
+      const _transDur = transitionDur/effSpeed;
+      const _totalDur = Math.max(
+        (aiMusicUrl||ttsUrl||musicUrl)?0:slides.length*_slideDur+_transDur,
+        slides.length*_slideDur+_transDur,
+      );
+      const finalTextLayers = (textLayers||[]).map((l:any)=>({
+        ...l,
+        id: l.id?.replace(/^sel_/,""),
+      })).filter((l:any)=>l.text && l.text.trim());
       const blob = await renderSlideshow({
         images: slides.map(s=>s.imageUrl),
         audioUrl: audioUrl || undefined,
@@ -818,6 +830,7 @@ export default function Home() {
           : filterStr,
         vignetteStrength,
         spectrumSticker: spectrumSticker || "bars-bottom",
+        textLayers: finalTextLayers.length ? finalTextLayers : undefined,
         vizStyle, vizColor, title: showTitle ? (selectedTitle?.text || niche) : undefined,
         lyrics: showLyrics && hasLyrics ? finalLyrics : undefined,
         logoUrl: logoDataUrl || undefined,
@@ -2160,6 +2173,7 @@ Dibuat dengan Verve AI Video Studio`;
                 vignetteAmt={vignetteAmt} setVignetteAmt={setVignetteAmt}
                 spectrumSticker={spectrumSticker} setSpectrumSticker={setSpectrumSticker}
                 videoSpeed={videoSpeed} setVideoSpeed={setVideoSpeed}
+                textLayers={textLayers} setTextLayers={setTextLayers}
                 getFilterString={getFilterString}
                 resetAdjust={resetAdjust}
                 audioMode={audioMode} setAudioMode={setAudioMode}

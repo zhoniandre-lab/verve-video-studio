@@ -44,8 +44,43 @@ export interface RenderOptions {
   vignetteStrength?: number;  // 0..1 (default 0.75)
   videoSpeed?: number;        // 0.5..2 (default 1) - affects visuals only
   spectrumSticker?: string;   // "bars-bottom"|"wave-center"|"disc"|"none" — small overlay visualizer
+  // ===== CAPCUT TEXT LAYERS =====
+  textLayers?: TextLayer[];   // array custom text layers (multi-teks)
   onProgress?: (p: number) => void;
   onStage?: (s: string) => void;
+}
+
+// ===== CapCut-style Text Layer =====
+export interface TextLayer {
+  id: string;
+  text: string;
+  // Position 0..1 (relatif ke canvas)
+  x: number; // 0=kiri, 0.5=tengah, 1=kanan
+  y: number; // 0=atas, 1=bawah
+  // Anchor (0.5,0.5)=center
+  anchorX?: number;
+  anchorY?: number;
+  rotation?: number; // derajat
+  sizePct?: number;  // 0.02..0.2 (ukuran font relatif thd W)
+  opacity?: number;  // 0..1
+  color?: string;            // "#ffffff"
+  strokeColor?: string;      // outline
+  strokeWidth?: number;      // relatif ke font size (0..0.3)
+  shadowColor?: string;
+  shadowBlur?: number;
+  bold?: boolean;
+  italic?: boolean;
+  font?: string;             // nama font family
+  align?: "left"|"center"|"right";
+  // Style preset: "default" | "neon" | "boldwhite" | "fire" | "thanks" | "titlehere" | "mymusic" | "nowplaying" | "trendy" | "horror" | "aura" | "like" | ...
+  template?: string;
+  // Animation: "none" | "fadein" | "pop" | "typewriter" | "slideup" | "slideleft" | "glowpulse"
+  animIn?: string;
+  animOut?: string;
+  animLoop?: string;
+  // Timing (detik relatif ke video total)
+  start: number;
+  end: number;
 }
 
 export interface CaptionWord {
@@ -307,6 +342,7 @@ interface DrawState {
   videoFilter?: string;
   vignetteStrength?: number;
   spectrumSticker?: string;
+  textLayers?: TextLayer[];
 }
 
 function drawFrame(s: DrawState) {
@@ -391,6 +427,12 @@ function drawFrame(s: DrawState) {
     ctx.drawImage(s.logoImg,lx,ly,size,size);
     ctx.restore(); ctx.restore();
   }
+
+  // ===== TEXT LAYERS (multi-teks CapCut-style) =====
+  drawTextLayers(ctx, s);
+
+  // ===== SPECTRUM STICKER (di atas text — subscribe/like/bell/disc/wave) =====
+  drawSpectrumSticker(ctx, s);
 
   // Progress bar
   ctx.fillStyle="rgba(255,255,255,0.12)"; ctx.fillRect(0,H-3,W,3);
@@ -535,6 +577,282 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
     ctx.strokeText(cur.text, W/2, baseY, W*0.9);
     ctx.fillStyle=grad; ctx.shadowBlur=18; ctx.shadowColor="rgba(168,85,247,0.7)";
     ctx.fillText(cur.text, W/2, baseY, W*0.9);
+  }
+  ctx.restore();
+}
+
+// ===== Draw Text Layers (multi-teks CapCut-style) =====
+function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
+  const layers = s.textLayers;
+  if (!layers?.length) return;
+  const { W, H, time, rgb, bass } = s;
+  ctx.save();
+  ctx.filter = "none"; // text gak kena video filter (di CapCut text selalu tajam)
+  layers.forEach(layer => {
+    if (!layer.text) return;
+    // Cek timing
+    if (time < layer.start - 0.05 || time > layer.end + 0.05) return;
+    const localT = time - layer.start;
+    const dur = layer.end - layer.start;
+    if (dur <= 0) return;
+
+    // Hitung opacity dari anim in/out
+    let opacity = typeof layer.opacity === "number" ? layer.opacity : 1;
+    let scale = 1;
+    let offsetY = 0;
+    let offsetX = 0;
+    let letterClip = 1;
+
+    const inDur = 0.4;
+    const outDur = 0.4;
+    const inEase = Math.min(1, Math.max(0, localT/inDur));
+    const outEase = Math.min(1, Math.max(0, (dur-localT)/outDur));
+    if (layer.animIn === "fadein" || layer.animIn === "fade") opacity *= inEase;
+    if (layer.animOut === "fade" || layer.animOut === "fadeout") opacity *= outEase;
+    if (layer.animIn === "pop") scale *= 0.6 + inEase*0.4;
+    if (layer.animIn === "slideup") { offsetY = H*0.08*(1-inEase); opacity *= inEase; }
+    if (layer.animIn === "slideleft") { offsetX = W*0.1*(1-inEase); opacity *= inEase; }
+    if (layer.animIn === "typewriter") letterClip = inEase;
+    if (layer.animOut === "pop") scale *= 0.6 + 0.4*outEase;
+    if (layer.animLoop === "pulse") { scale *= 1 + Math.sin(time*4)*0.05 + bass*0.1; }
+    if (layer.animLoop === "glow") { /* glow lewat shadow */ }
+    if (layer.animLoop === "bounce") offsetY -= Math.abs(Math.sin(time*3))*H*0.01;
+
+    if (opacity <= 0.01) return;
+
+    const sizePct = layer.sizePct ?? 0.07;
+    const fontSize = Math.max(16, Math.floor(Math.min(W,H) * sizePct));
+    const bold = layer.bold !== false ? "900" : "400";
+    const italic = layer.italic ? "italic " : "";
+    const fontStack = (layer.font && layer.font!=="SYSTEM") ? layer.font : "system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
+    ctx.font = `${italic}${bold} ${fontSize}px ${fontStack}`;
+    ctx.textAlign = (layer.align || "center") as CanvasTextAlign;
+    ctx.textBaseline = "middle";
+    ctx.globalAlpha = clamp(opacity,0,1);
+
+    const px = layer.x * W + offsetX;
+    const py = layer.y * H + offsetY;
+    ctx.save();
+    ctx.translate(px, py);
+    if (layer.rotation) ctx.rotate((layer.rotation||0)*Math.PI/180);
+    ctx.scale(scale,scale);
+    const anchorX = (layer.anchorX ?? 0.5);
+    const anchorY = (layer.anchorY ?? 0.5);
+
+    // Template-based styling
+    const tpl = layer.template || "default";
+    let fill = layer.color || "#ffffff";
+    let stroke: string|null = "rgba(0,0,0,0.95)";
+    let sw = Math.max(4, fontSize/7);
+    let shadow = "transparent", shadowB = 0;
+
+    if (tpl === "default") {
+      stroke = "rgba(0,0,0,0.95)"; sw = Math.max(4,fontSize/7);
+    } else if (tpl === "neon") {
+      fill = rgba(rgb,1); stroke = null; shadow = rgba(rgb,1); shadowB = 25+bass*18;
+    } else if (tpl === "boldwhite") {
+      fill="#fff"; stroke="rgba(0,0,0,0.95)"; sw=Math.max(5,fontSize/6);
+    } else if (tpl === "thanks") {
+      fill="#fff"; stroke="#000"; sw=Math.max(4,fontSize/9);
+      // gradient red-white-blue
+      const g=ctx.createLinearGradient(0,-fontSize,0,fontSize);
+      g.addColorStop(0,"#ef4444");g.addColorStop(0.5,"#fff");g.addColorStop(1,"#3b82f6");
+      fill = g as any;
+    } else if (tpl === "fire") {
+      fill="#fff"; stroke="#000"; sw=Math.max(4,fontSize/8);
+      shadow="#ff6b00"; shadowB=20+bass*12;
+    } else if (tpl === "aura") {
+      fill="#fef08a"; stroke="#7c2d12"; sw=Math.max(4,fontSize/8);
+      shadow="#fb923c"; shadowB=28+bass*18;
+    } else if (tpl === "horror") {
+      fill="#dc2626"; stroke="#000"; sw=Math.max(5,fontSize/8);
+    } else if (tpl === "trendy") {
+      fill="#fff"; stroke="#ef4444"; sw=Math.max(6,fontSize/7);
+    } else if (tpl === "myvlog") {
+      fill="#fff"; stroke="#78350f"; sw=Math.max(4,fontSize/9);
+      const g=ctx.createLinearGradient(0,-fontSize,0,fontSize);
+      g.addColorStop(0,"#fbbf24");g.addColorStop(0.5,"#f97316");g.addColorStop(1,"#dc2626");
+      fill = g as any;
+    } else if (tpl === "please") {
+      fill="#fff"; stroke="#ec4899"; sw=Math.max(4,fontSize/9);
+    }
+
+    // Override dengan color custom
+    if (layer.color && tpl==="default") fill = layer.color;
+    if (layer.strokeColor) { stroke = layer.strokeColor; sw = layer.strokeWidth ? Math.max(1,layer.strokeWidth*fontSize) : Math.max(4,fontSize/7); }
+    if (layer.shadowColor) { shadow = layer.shadowColor; shadowB = layer.shadowBlur || 15; }
+
+    // Multi-line wrap
+    const text = layer.text;
+    const maxW = W*0.92;
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let cur = "";
+    words.forEach(w=>{
+      const t2 = cur?cur+" "+w:w;
+      if (ctx.measureText(t2).width > maxW && cur) { lines.push(cur); cur=w; } else cur=t2;
+    });
+    if (cur) lines.push(cur);
+    const lh = fontSize*1.2;
+    const totalH = lines.length*lh;
+    const startY = -totalH*anchorY;
+
+    ctx.shadowColor = shadow;
+    ctx.shadowBlur = shadowB;
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+
+    // Render per-line
+    lines.forEach((line, li)=>{
+      let renderText = line;
+      if (tpl === "typewriter" || layer.animIn === "typewriter") {
+        const chars = Math.max(0, Math.floor(line.length * letterClip));
+        renderText = line.slice(0, chars);
+      }
+      const y = startY + li*lh + lh/2;
+      if (stroke && sw>0) {
+        ctx.strokeStyle = stroke; ctx.lineWidth = sw;
+        ctx.strokeText(renderText, 0, y);
+      }
+      ctx.fillStyle = fill as any;
+      ctx.fillText(renderText, 0, y);
+    });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ===== Spectrum Sticker (subscribe/like/bell/fire/disc/wave/circle) =====
+function drawSpectrumSticker(ctx: CanvasRenderingContext2D, s: DrawState) {
+  if (!s.spectrumSticker || s.spectrumSticker==="none" || s.spectrumSticker==="bars-bottom") {
+    // bars-bottom sudah di-handle di drawSpectrum()
+    return;
+  }
+  const { W, H, time, rgb, bass, beat } = s;
+  ctx.save();
+  ctx.filter = "none";
+  const sticker = s.spectrumSticker;
+  if (sticker==="subscribe") {
+    // 👍 SUBSCRIBE 🔴 lonceng di pojok kiri atas (mirip YouTube)
+    const boxW = Math.floor(W*0.28);
+    const boxH = Math.floor(boxW*0.28);
+    const pad = W*0.03;
+    const x=pad, y=pad;
+    ctx.save();
+    // bg thumb
+    ctx.fillStyle="rgba(0,0,0,0.5)";
+    roundRect(ctx,x,y+boxH*0.1,boxH*0.9,boxH*0.9,boxH*0.2); ctx.fill();
+    ctx.fillStyle="#fff";
+    ctx.font=`900 ${Math.floor(boxH*0.65)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("👍", x+boxH*0.45, y+boxH*0.6);
+    // bg subscribe
+    roundRect(ctx,x+boxH+pad*0.3,y,boxW-boxH-pad*0.3,boxH,boxH*0.15);
+    ctx.fillStyle="#cc0000"; ctx.fill();
+    ctx.fillStyle="#fff";
+    ctx.font=`900 ${Math.floor(boxH*0.45)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("SUBSCRIBE",x+boxH+(boxW-boxH-pad*0.3)/2,y+boxH*0.5);
+    // bell
+    ctx.fillStyle="rgba(0,0,0,0.5)";
+    roundRect(ctx,x+boxW+pad*0.2,y+boxH*0.1,boxH*0.8,boxH*0.8,boxH*0.15); ctx.fill();
+    ctx.font=`900 ${Math.floor(boxH*0.55)}px sans-serif`;
+    ctx.fillText("🔔",x+boxW+pad*0.2+boxH*0.4,y+boxH*0.55);
+    ctx.restore();
+  } else if (sticker==="like") {
+    const size = Math.floor(Math.min(W,H)*0.12);
+    const x=W-size-20, y=20+size*0.2;
+    ctx.fillStyle="rgba(255,255,255,0.25)";
+    ctx.beginPath(); ctx.arc(x+size/2,y+size/2,size/2,0,Math.PI*2); ctx.fill();
+    ctx.font=`900 ${Math.floor(size*0.6)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("👍", x+size/2, y+size/2);
+    // count
+    ctx.fillStyle="rgba(0,0,0,0.5)";
+    roundRect(ctx,x-size*0.3,y+size+size*0.15,size*1.6,size*0.35,size*0.1); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font=`700 ${Math.floor(size*0.22)}px sans-serif`;
+    ctx.fillText("1.2M",x+size/2,y+size+size*0.32);
+  } else if (sticker==="bell") {
+    const size = Math.floor(Math.min(W,H)*0.1);
+    ctx.fillStyle="rgba(255,255,255,0.25)";
+    ctx.beginPath(); ctx.arc(W-size-20,size+10,size/2,0,Math.PI*2); ctx.fill();
+    ctx.font=`900 ${Math.floor(size*0.6)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("🔔", W-size-20, size+10);
+  } else if (sticker==="fire") {
+    const pad=20, bw=Math.floor(W*0.2), bh=Math.floor(bw*0.32);
+    ctx.save();
+    const g=ctx.createLinearGradient(pad,pad,pad+bw,pad+bh);
+    g.addColorStop(0,"#f97316");g.addColorStop(1,"#ef4444");
+    ctx.fillStyle=g;
+    roundRect(ctx,pad,pad,bw,bh,bh*0.3); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font=`900 ${Math.floor(bh*0.5)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("🔥 FYP", pad+bw/2, pad+bh*0.55);
+    ctx.restore();
+  } else if (sticker==="disc") {
+    // Vinyl disc berputar di pojok
+    const size = Math.floor(Math.min(W,H)*0.16);
+    const cx = W-size-30, cy = H*0.2;
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(time*1.5);
+    const rg=ctx.createRadialGradient(0,0,size*0.1,0,0,size*0.5);
+    rg.addColorStop(0,"#1f2937"); rg.addColorStop(0.4,"#000"); rg.addColorStop(0.5,"#374151"); rg.addColorStop(1,"#000");
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(0,0,size*0.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=rgba(s.rgb,1); ctx.beginPath(); ctx.arc(0,0,size*0.12,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(0,0,size*0.03,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else if (sticker==="wave-center" || sticker==="wave-bottom") {
+    // Wave line di tengah/bawah
+    const n=80;
+    const baseY = sticker==="wave-center" ? H*0.55 : H*0.9;
+    const maxA = H*0.05*(0.3+bass*2);
+    ctx.save();
+    ctx.strokeStyle=rgba(s.rgb,1); ctx.lineWidth=3; ctx.shadowColor=rgba(s.rgb,0.8); ctx.shadowBlur=12;
+    ctx.beginPath();
+    for(let i=0;i<=n;i++){
+      const x = (i/n)*W;
+      const v = Math.sin(i*0.3 + time*6)*maxA + Math.sin(i*0.7+time*2)*maxA*0.4;
+      if(i===0)ctx.moveTo(x,baseY+v); else ctx.lineTo(x,baseY+v);
+    }
+    ctx.stroke();
+    ctx.restore();
+  } else if (sticker==="circle") {
+    // Ring circle kecil di kiri atas
+    const cx = W*0.12, cy = H*0.18;
+    ctx.save();
+    ctx.strokeStyle=rgba(s.rgb,1); ctx.lineWidth=3; ctx.shadowColor=rgba(s.rgb,0.9); ctx.shadowBlur=18;
+    for(let r=0;r<3;r++){
+      ctx.globalAlpha=0.4+r*0.2;
+      ctx.beginPath(); ctx.arc(cx,cy,20+r*8+bass*15,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  } else if (sticker==="wave") {
+    ctx.save();
+    ctx.strokeStyle=rgba(s.rgb,1); ctx.lineWidth=3; ctx.shadowColor=rgba(s.rgb,0.8); ctx.shadowBlur=15;
+    const n=60, cy=H*0.78;
+    ctx.beginPath();
+    for(let i=0;i<=n;i++){
+      const x = W*0.05 + (i/n)*W*0.9;
+      const v = Math.sin(i*0.5+time*8)*H*0.03*(0.5+bass);
+      if(i===0)ctx.moveTo(x,cy+v); else ctx.lineTo(x,cy+v);
+    }
+    ctx.stroke();
+    ctx.restore();
+  } else if (sticker==="bars-top") {
+    const nb=36, bw=W*0.9/nb*0.7, by=H*0.06, maxH=H*0.06;
+    ctx.fillStyle=rgba(s.rgb,0.9); ctx.shadowColor=rgba(s.rgb,0.8); ctx.shadowBlur=10;
+    for(let i=0;i<nb;i++){
+      const v=0.2+Math.sin(i*0.3+time*4)*0.3+bass*0.8;
+      const h=v*maxH;
+      ctx.fillRect(W*0.05+i*(bw+W*0.9/nb*0.3),by+maxH-h,bw,h);
+    }
+  } else if (sticker==="diamond") {
+    const cx=W*0.5, cy=H*0.15;
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(Math.PI/4 + time*0.5);
+    const sz=14+bass*12;
+    ctx.fillStyle=rgba(s.rgb,1); ctx.shadowColor=rgba(s.rgb,0.9); ctx.shadowBlur=20;
+    ctx.fillRect(-sz,-sz,sz*2,sz*2);
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -833,6 +1151,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
       videoFilter: opts.videoFilter,
       vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
       spectrumSticker: opts.spectrumSticker,
+      textLayers: opts.textLayers,
     } as any);
   }
   onStage?.("WebCodecs tidak tersedia, pakai MediaRecorder...");
@@ -842,7 +1161,8 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     captions:finalCaptions,captionStyle:capStyle,showTitle:opts.showTitle,
     videoFilter: opts.videoFilter,
     vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
-    spectrumSticker: opts.spectrumSticker} as any);
+    spectrumSticker: opts.spectrumSticker,
+    textLayers: opts.textLayers} as any);
 }
 
 interface RenderBase {
@@ -959,6 +1279,7 @@ async function renderWebCodecs(b:any){
       videoFilter: b.videoFilter,
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
       spectrumSticker: b.spectrumSticker,
+      textLayers: b.textLayers,
     } as any);
 
     const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
@@ -1028,7 +1349,8 @@ async function renderMediaRecorder(b:any){
       logoImg,logoPos,captions,captionStyle,showCaption:!!captions?.length,
       videoFilter: b.videoFilter,
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
-      spectrumSticker: b.spectrumSticker} as any);
+      spectrumSticker: b.spectrumSticker,
+      textLayers: b.textLayers} as any);
     onProgress?.(t/totalDur);
     if(elapsed<totalDur+0.2) requestAnimationFrame(tick);
     else{mr.stop();actx?.close();}

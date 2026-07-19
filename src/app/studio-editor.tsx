@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   VIZ_STYLES, TRANSITION_STYLES, QUALITY_OPTIONS,
 } from "@/lib/types";
+import type { TextLayer } from "@/lib/recorder";
 
 const COLOR_PRESETS = [
   { hex:"#ec4899" },{ hex:"#a855f7" },{ hex:"#22d3ee" },{ hex:"#f59e0b" },
@@ -71,6 +72,7 @@ type StudioEditorProps = {
   vignetteAmt: number; setVignetteAmt:(v:number)=>void;
   spectrumSticker: string; setSpectrumSticker:(v:string)=>void;
   videoSpeed: number; setVideoSpeed:(v:number)=>void;
+  textLayers: TextLayer[]; setTextLayers:(v:TextLayer[]|((p:TextLayer[])=>TextLayer[]))=>void;
   getFilterString: (f?:string)=>string;
   resetAdjust: ()=>void;
   audioMode: any; setAudioMode:(v:any)=>void;
@@ -97,6 +99,7 @@ export function StudioEditor(p: StudioEditorProps) {
     activeFilter, setActiveFilter, brightness, setBrightness, contrast, setContrast,
     saturation, setSaturation, sharpen, setSharpen, vignetteAmt, setVignetteAmt,
     spectrumSticker, setSpectrumSticker, videoSpeed, setVideoSpeed,
+    textLayers, setTextLayers,
     getFilterString, resetAdjust, audioMode, setAudioMode,
     aiMusicUrl, ttsUrl, musicUrl, proxifyAudioUrl,
     previewAudioRef, previewCanvasRef, previewPlaying, previewCurrent,
@@ -259,6 +262,61 @@ export function StudioEditor(p: StudioEditorProps) {
                 🔥 FYP
               </div>
             )}
+
+            {/* ===== CUSTOM TEXT LAYERS (CapCut-style editable) ===== */}
+            {textLayers.map((l:TextLayer)=>{
+              if (!l.text) return null;
+              const fontSize = `calc(${Math.round((l.sizePct||0.07)*100)}% * 0.18)`;
+              let outerStyle: React.CSSProperties = {
+                position:"absolute",
+                left:`${(l.x)*100}%`, top:`${(l.y)*100}%`,
+                transform:`translate(-50%,-50%) rotate(${l.rotation||0}deg)`,
+                opacity: l.opacity??1,
+                textAlign:(l.align as any)||"center",
+                pointerEvents:"none",
+                whiteSpace:"pre-wrap",
+                maxWidth:"92%",
+                fontWeight: l.bold!==false?900:400,
+                fontStyle: l.italic?"italic":"normal",
+                fontFamily: l.font || "system-ui,-apple-system,sans-serif",
+              };
+              let innerStyle: React.CSSProperties = {
+                fontSize: fontSize,
+                lineHeight:1.15,
+                color: l.color||"#fff",
+                display:"inline-block",
+                padding:"0.05em 0.1em",
+              };
+              const tpl = l.template||"default";
+              // Warna/template
+              if (tpl==="neon") innerStyle={...innerStyle,color:"#fff",textShadow:`0 0 12px #ec4899,0 0 22px #a855f7`};
+              else if (tpl==="boldwhite") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"2px #000",textShadow:"0 2px 6px rgba(0,0,0,0.6)"};
+              else if (tpl==="thanks") innerStyle={...innerStyle,background:"linear-gradient(180deg,#ef4444 0%,#fff 50%,#3b82f6 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"1.5px #000",fontWeight:900};
+              else if (tpl==="trendy") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:`3px #ef4444`};
+              else if (tpl==="fire") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 16px #ff6b00,0 2px 0 #7c2d12"};
+              else if (tpl==="aura") innerStyle={...innerStyle,color:"#fef08a",textShadow:"0 0 22px #fb923c,0 2px 0 #7c2d12"};
+              else if (tpl==="horror") innerStyle={...innerStyle,color:"#dc2626",textShadow:"0 0 10px #000,0 2px 0 #000"};
+              else if (tpl==="titlehere") innerStyle={...innerStyle,color:"#fff",textShadow:"0 2px 0 #000,0 4px 8px rgba(0,0,0,0.6)"};
+              else if (tpl==="mymusic") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 14px #fff,0 2px 0 #000"};
+              else if (tpl==="nowplaying") innerStyle={...innerStyle,color:"#fff",textShadow:"0 2px 0 #000",letterSpacing:"0.05em"};
+              else if (tpl==="please") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"2px #ec4899"};
+              else if (tpl==="myvlog") innerStyle={...innerStyle,background:"linear-gradient(180deg,#fbbf24,#f97316,#dc2626)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"1px #78350f",fontWeight:900};
+              else innerStyle={...innerStyle,textShadow:"0 2px 4px rgba(0,0,0,0.9),0 0 2px rgba(0,0,0,0.9)"};
+              if (l.strokeColor && tpl==="default") innerStyle.WebkitTextStroke = `${Math.max(1,(l.strokeWidth||0.15)*20)}px ${l.strokeColor}`;
+              if (l.shadowColor) innerStyle.textShadow = `0 0 ${l.shadowBlur||8}px ${l.shadowColor}`;
+
+              // Animasi sederhana via CSS class
+              let animClass = "";
+              if (previewPlaying && l.animIn && l.animIn!=="none") animClass = "tt-fadein";
+              if (previewPlaying && l.animLoop==="pulse") animClass += " tt-pulse";
+              if (previewPlaying && l.animLoop==="bounce") animClass += " tt-bounce";
+
+              return (
+                <div key={l.id} style={outerStyle} className={animClass}>
+                  <span style={innerStyle}>{l.text}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -343,7 +401,7 @@ export function StudioEditor(p: StudioEditorProps) {
              style={{maxHeight:"42vh"}}>
           {tab==="edit" && <EditTab {...{slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport}}/>}
           {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,aiMusicUrl,ttsUrl,musicUrl,proxifyAudioUrl,audioSrc}}/>}
-          {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle}}/>}
+          {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}}/>}
           {tab==="sticker" && <StickerTab {...{spectrumSticker,setSpectrumSticker}}/>}
           {tab==="overlay" && <OverlayTab {...{logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle}}/>}
           {tab==="filter" && <FilterTab {...{slides,activeSlide,activeFilter,setActiveFilter,FILTERS}}/>}
@@ -367,6 +425,12 @@ export function StudioEditor(p: StudioEditorProps) {
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .timeline-strip { scrollbar-width: none; }
+        @keyframes tt-fadein { from{opacity:0;transform:translate(-50%,-40%) scale(0.9);} to{opacity:1;transform:translate(-50%,-50%) scale(1);} }
+        @keyframes tt-pulse { 0%,100%{transform:translate(-50%,-50%) scale(1);} 50%{transform:translate(-50%,-50%) scale(1.08);} }
+        @keyframes tt-bounce { 0%,100%{transform:translate(-50%,-50%) translateY(0);} 50%{transform:translate(-50%,-50%) translateY(-6px);} }
+        .tt-fadein { animation: tt-fadein 0.4s ease-out both; }
+        .tt-pulse { animation: tt-pulse 0.8s ease-in-out infinite; }
+        .tt-bounce { animation: tt-bounce 0.6s ease-in-out infinite; }
         @media (min-width: 768px) {
           .studio-shell { background:#000; border:1px solid rgba(255,255,255,0.1); }
         }
@@ -432,30 +496,295 @@ function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl}:any){
   );
 }
 
-function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle}:any){
+const TEXT_TEMPLATES = [
+  {id:"default",  label:"Default",      preview:"Teks"},
+  {id:"neon",     label:"💫 Neon",      preview:"Neon"},
+  {id:"boldwhite",label:"⚪ Bold Putih",preview:"BOLD"},
+  {id:"thanks",   label:"🙏 Thanks",    preview:"THANKS"},
+  {id:"titlehere",label:"🎬 Title Here",preview:"TITLE"},
+  {id:"mymusic",  label:"🎵 My Music",  preview:"My Music"},
+  {id:"nowplaying",label:"▶️ Now Playing",preview:"NOW PLAYING"},
+  {id:"trendy",   label:"🔴 Trendy",    preview:"TRENDY"},
+  {id:"fire",     label:"🔥 Api",       preview:"FIRE"},
+  {id:"horror",   label:"👻 Horror",    preview:"HORROR"},
+  {id:"aura",     label:"✨ Aura",      preview:"AURA"},
+  {id:"please",   label:"💕 Please Like",preview:"LIKE"},
+];
+
+const FONTS = [
+  {id:"SYSTEM",    label:"SYSTEM"},
+  {id:"Impact, sans-serif", label:"Washed"},
+  {id:"Georgia, serif", label:"Vision"},
+  {id:"'Courier New', monospace", label:"MODERN"},
+  {id:"'Brush Script MT', cursive", label:"Tooth Nail"},
+  {id:"'Comic Sans MS', cursive", label:"Celandine"},
+  {id:"'Trebuchet MS', sans-serif", label:"Starry"},
+  {id:"Tahoma, sans-serif", label:"KLOP"},
+  {id:"'Times New Roman', serif", label:"Antik"},
+];
+
+const ANIM_IN = [
+  {id:"none",    label:"❌ Tidak Ada"},
+  {id:"fadein",  label:"🌟 Fade In"},
+  {id:"pop",     label:"💥 Pop"},
+  {id:"slideup", label:"⬆️ Geser Atas"},
+  {id:"slideleft",label:"⬅️ Geser Kiri"},
+  {id:"typewriter",label:"⌨️ Ketik"},
+];
+const ANIM_LOOP = [
+  {id:"none",   label:"❌ Tidak Ada"},
+  {id:"pulse",  label:"💓 Denyut"},
+  {id:"bounce", label:"🏀 Mantul"},
+  {id:"glow",   label:"✨ Bersinar"},
+];
+
+function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}:any){
+  const [tab, setTab] = useState<"main"|"template"|"font"|"style"|"effect"|"animation"|"bubble">("main");
+  const selId = textLayers.find((l:TextLayer)=>l.id.startsWith("sel_"))?.id;
+  const sel:TextLayer = textLayers.find((l:TextLayer)=>l.id===selId) || textLayers[0];
+  const upd = (patch:Partial<TextLayer>) => {
+    setTextLayers((ls:TextLayer[])=>ls.map((l:TextLayer)=>l.id===(sel?.id)?{...l,...patch}:l));
+  };
+  const addText = () => {
+    const n: TextLayer = {
+      id:"t"+Date.now(), text:"Masukkan teks",
+      x:0.5, y:0.5, sizePct:0.08, opacity:1,
+      color:"#ffffff", bold:true, template:"default",
+      animIn:"fadein", animOut:"fade", animLoop:"none",
+      start:0, end: totalDur||10,
+    };
+    // Hapus selection flag lama
+    const cleaned = textLayers.map((l:TextLayer)=>({...l, id:l.id.startsWith("sel_")?l.id.replace("sel_",""):l.id}));
+    setTextLayers([...cleaned, {...n, id:"sel_"+n.id}] as any);
+  };
+  const delSel = () => {
+    if (!sel) return;
+    setTextLayers((ls:TextLayer[])=>ls.filter((l:TextLayer)=>l.id!==sel.id));
+  };
+  if (tab==="main") {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-bold text-white/80">💬 Teks</div>
+          <button onClick={addText} className="btn btn-primary btn-sm">+ Tambahkan teks</button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={()=>setShowTitle(!showTitle)} className={`q-tile !text-[10px] ${showTitle?"active":""}`}>
+            🏷️ Judul · {showTitle?"ON":"OFF"}
+          </button>
+          <button onClick={()=>setShowLyrics(!showLyrics)} className={`q-tile !text-[10px] ${showLyrics?"active":""}`}>
+            🎤 Karaoke · {showLyrics?"ON":"OFF"}
+          </button>
+        </div>
+        <div className="text-[11px] text-white/60">Gaya caption karaoke:</div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {[
+            {id:"capcut",label:"🟡 CapCut"},{id:"neon",label:"💫 Neon"},
+            {id:"boldwhite",label:"⚪ Bold"},{id:"gradient",label:"🌈 Gradient"},
+          ].map((s:any)=>(
+            <button key={s.id} onClick={()=>setCaptionStyle(s.id)}
+                    className={`q-tile !text-[10px] ${captionStyle===s.id?"active":""}`}>{s.label}</button>
+          ))}
+        </div>
+        <div className="h-px bg-white/10 my-1"/>
+        <div className="text-[11px] text-white/60">📑 Layer teks kamu:</div>
+        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+          {textLayers.length===0 && (
+            <div className="text-[11px] text-white/40 text-center py-4 border border-dashed border-white/10 rounded-lg">
+              Belum ada layer teks. Tap <b>+ Tambahkan teks</b> di atas buat nambah.
+            </div>
+          )}
+          {textLayers.map((l:TextLayer)=>(
+            <div key={l.id} className={`flex items-center gap-2 p-2 rounded-lg border ${sel?.id===l.id?"border-pink-400 bg-pink-500/10":"border-white/10 bg-white/5"}`}>
+              <button onClick={()=>setTextLayers((ls:TextLayer[])=>ls.map(x=>({...x,id:x.id===l.id?"sel_"+x.id.replace("sel_",""):x.id.replace("sel_","")})))}
+                className="flex-1 min-w-0 text-left">
+                <div className="text-xs font-bold truncate">{l.text}</div>
+                <div className="text-[9px] text-white/50">{l.template} · {(l.sizePct!*100).toFixed(0)}% · {l.start.toFixed(1)}s→{l.end.toFixed(1)}s</div>
+              </button>
+              <button onClick={()=>upd({opacity: l.opacity===0?1:0})} className="w-8 h-8 rounded-lg bg-white/5 text-sm">{l.opacity===0?"👁️‍🗨️":"👁"}</button>
+              <button onClick={()=>{setTextLayers((ls:TextLayer[])=>ls.filter(x=>x.id!==l.id));}} className="w-8 h-8 rounded-lg bg-red-500/20 text-red-200 text-sm">🗑</button>
+            </div>
+          ))}
+        </div>
+        {sel && (
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              {id:"template",l:"📋 Template"},{id:"font",l:"🔤 Font"},{id:"style",l:"🎨 Gaya"},
+              {id:"effect",l:"✨ Efek"},{id:"animation",l:"🎬 Animasi"},{id:"bubble",l:"💬 Gelembung"},
+            ].map((t:any)=>(
+              <button key={t.id} onClick={()=>setTab(t.id as any)}
+                className="q-tile !text-[10px] !py-2">{t.l}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (!sel) return <div className="text-xs text-white/50 text-center py-6">Pilih/buat layer teks dulu ya bro.</div>;
+
   return (
     <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">💬 Teks</div>
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={()=>setShowTitle(!showTitle)} className={`q-tile ${showTitle?"active":""}`}>
-          <div className="text-xs font-bold">🏷️ Judul</div>
-          <div className="text-[10px] text-white/60">{showTitle?"ON":"OFF"}</div>
-        </button>
-        <button onClick={()=>setShowLyrics(!showLyrics)} className={`q-tile ${showLyrics?"active":""}`}>
-          <div className="text-xs font-bold">🎤 Karaoke</div>
-          <div className="text-[10px] text-white/60">{showLyrics?"ON":"OFF"}</div>
-        </button>
+      <div className="flex items-center gap-2">
+        <button onClick={()=>setTab("main")} className="w-9 h-9 rounded-lg bg-white/10 text-sm">←</button>
+        <input className="input flex-1 !py-2 text-sm" value={sel.text}
+               onChange={e=>upd({text:e.target.value})} placeholder="Masukkan teks..."/>
+        <button onClick={delSel} className="w-9 h-9 rounded-lg bg-red-500/20 text-red-200 text-sm">🗑</button>
       </div>
-      <div className="text-[11px] text-white/60">Gaya caption:</div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
         {[
-          {id:"capcut",label:"🟡 CapCut"},{id:"neon",label:"💫 Neon"},
-          {id:"boldwhite",label:"⚪ Bold Putih"},{id:"gradient",label:"🌈 Gradient"},
-        ].map((s:any)=>(
-          <button key={s.id} onClick={()=>setCaptionStyle(s.id)}
-                  className={`q-tile !text-[10px] ${captionStyle===s.id?"active":""}`}>{s.label}</button>
+          {id:"template",l:"📋 Template"},{id:"font",l:"🔤 Font"},{id:"style",l:"🎨 Gaya"},
+          {id:"effect",l:"✨ Efek"},{id:"animation",l:"🎬 Animasi"},{id:"bubble",l:"💬 Gelembung"},
+        ].map((t:any)=>(
+          <button key={t.id} onClick={()=>setTab(t.id as any)}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold shrink-0 border ${tab===t.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/60"}`}>{t.l}</button>
         ))}
       </div>
+
+      {tab==="template" && (
+        <div>
+          <div className="grid grid-cols-4 gap-2">
+            {TEXT_TEMPLATES.map(t=>(
+              <button key={t.id} onClick={()=>upd({template:t.id})}
+                className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center p-1 text-center ${sel.template===t.id?"border-pink-400 bg-pink-500/10":"border-white/10 bg-white/5"}`}>
+                <div className="text-sm font-black truncate w-full" style={{
+                  color:t.id==="horror"?"#dc2626":t.id==="trendy"?"#ef4444":t.id==="aura"?"#fef08a":t.id==="fire"?"#f97316":"#fff",
+                  textShadow:t.id==="neon"?"0 0 12px #ec4899":t.id==="fire"?"0 0 14px #ff6b00":t.id==="aura"?"0 0 18px #fb923c":(t.id!=="default"?"0 1px 3px rgba(0,0,0,0.8)":"0 2px 4px rgba(0,0,0,0.9)"),
+                  WebkitTextStroke:t.id==="boldwhite"||t.id==="thanks"||t.id==="trendy"?"1.5px #000":"0",
+                }}>{t.preview}</div>
+                <div className="text-[8px] text-white/60 truncate w-full">{t.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab==="font" && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            {FONTS.map(f=>(
+              <button key={f.id} onClick={()=>upd({font:f.id})}
+                className={`p-2 rounded-lg border text-xs overflow-hidden ${(sel.font||"SYSTEM")===f.id?"border-pink-400 bg-pink-500/10 text-white":"border-white/10 bg-white/5 text-white/70"}`}
+                style={{fontFamily:f.id, fontWeight:900}}>{f.label}</button>
+            ))}
+          </div>
+          <label className="block pt-1">
+            <div className="flex justify-between text-[11px] mb-1">
+              <span>Ukuran</span><b className="text-pink-300">{Math.round((sel.sizePct||0.07)*100)}%</b>
+            </div>
+            <input type="range" min={3} max={15} step={0.5}
+                   value={Math.round((sel.sizePct||0.07)*100)}
+                   onChange={e=>upd({sizePct:Number(e.target.value)/100})}
+                   className="w-full accent-pink-500"/>
+          </label>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button onClick={()=>upd({bold:!sel.bold})}
+              className={`q-tile !text-xs ${sel.bold?"active":""}`}><b>B</b> Tebal</button>
+            <button onClick={()=>upd({italic:!sel.italic})}
+              className={`q-tile !text-xs ${sel.italic?"active":""}`}><i>I</i> Miring</button>
+          </div>
+        </div>
+      )}
+
+      {tab==="style" && (
+        <div className="space-y-2">
+          <div>
+            <div className="text-[11px] mb-1">🎨 Warna teks</div>
+            <div className="flex gap-2 flex-wrap items-center">
+              {["#ffffff","#fde047","#ef4444","#22c55e","#3b82f6","#a855f7","#ec4899","#f97316","#000000"].map(c=>(
+                <button key={c} onClick={()=>upd({color:c})}
+                  className={`w-8 h-8 rounded-full border-2 ${sel.color===c?"border-pink-400 scale-110":"border-white/20"}`}
+                  style={{background:c,boxShadow:`0 0 10px ${c}40`}}/>
+              ))}
+              <input type="color" value={sel.color||"#fff"} onChange={e=>upd({color:e.target.value})}
+                className="w-9 h-9 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] mb-1">🖌️ Gaya (stroke/shadow)</div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                {id:"none",l:"❌ Polos"},{id:"stroke",l:"⬛ Outline"},{id:"shadow",l:"🌑 Shadow"},{id:"glow",l:"✨ Glow"},
+              ].map((s:any)=>{
+                const isStroke = sel.strokeColor && !sel.shadowColor;
+                const isShadow = sel.shadowColor && !s.id.includes("glow");
+                const isGlow = sel.shadowBlur && sel.shadowBlur>15;
+                const active = (s.id==="none"&&!isStroke&&!isShadow&&!isGlow)
+                  || (s.id==="stroke"&&isStroke)
+                  || (s.id==="shadow"&&isShadow&&!isGlow)
+                  || (s.id==="glow"&&isGlow);
+                return <button key={s.id} onClick={()=>{
+                  if (s.id==="none") upd({strokeColor:undefined,strokeWidth:undefined,shadowColor:undefined,shadowBlur:undefined});
+                  else if (s.id==="stroke") upd({strokeColor:"#000000",strokeWidth:0.15,shadowColor:undefined,shadowBlur:undefined});
+                  else if (s.id==="shadow") upd({strokeColor:undefined,shadowColor:"rgba(0,0,0,0.8)",shadowBlur:6});
+                  else if (s.id==="glow") upd({strokeColor:undefined,shadowColor:sel.color||"#fff",shadowBlur:22});
+                }} className={`q-tile !text-[10px] ${active?"active":""}`}>{s.l}</button>;
+              })}
+            </div>
+          </div>
+          <label className="block">
+            <div className="flex justify-between text-[11px] mb-1"><span>Opacity</span><b className="text-pink-300">{Math.round((sel.opacity||1)*100)}%</b></div>
+            <input type="range" min={0} max={100} step={5} value={Math.round((sel.opacity||1)*100)}
+                   onChange={e=>upd({opacity:Number(e.target.value)/100})} className="w-full accent-pink-500"/>
+          </label>
+        </div>
+      )}
+
+      {tab==="effect" && (
+        <div className="space-y-2">
+          <div className="text-[11px] text-white/60">✨ Efek teks (coming soon — pakai template untuk sekarang)</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {["BASIC","Teks","Warna merek","Goresan","Bersinar","Latar belakang"].map((e,i)=>(
+              <button key={i} className="q-tile !text-[10px] !py-3 opacity-60">{e}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab==="animation" && (
+        <div className="space-y-3">
+          <div>
+            <div className="text-[11px] mb-1.5 text-white/70">🎬 Animasi Masuk</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {ANIM_IN.map(a=>(
+                <button key={a.id} onClick={()=>upd({animIn:a.id})}
+                  className={`q-tile !text-[10px] ${sel.animIn===a.id?"active":""}`}>{a.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] mb-1.5 text-white/70">🔁 Animasi Loop</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {ANIM_LOOP.map(a=>(
+                <button key={a.id} onClick={()=>upd({animLoop:a.id})}
+                  className={`q-tile !text-[10px] ${sel.animLoop===a.id?"active":""}`}>{a.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <div className="flex justify-between text-[11px] mb-1"><span>Mulai</span><b className="text-pink-300">{sel.start.toFixed(1)}s</b></div>
+              <input type="range" min={0} max={totalDur||10} step={0.1} value={sel.start}
+                     onChange={e=>upd({start:Math.min(Number(e.target.value),sel.end-0.2)})} className="w-full accent-pink-500"/>
+            </label>
+            <label className="block">
+              <div className="flex justify-between text-[11px] mb-1"><span>Selesai</span><b className="text-pink-300">{sel.end.toFixed(1)}s</b></div>
+              <input type="range" min={0} max={totalDur||10} step={0.1} value={sel.end}
+                     onChange={e=>upd({end:Math.max(Number(e.target.value),sel.start+0.2)})} className="w-full accent-pink-500"/>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {tab==="bubble" && (
+        <div className="space-y-2">
+          <div className="text-[11px] text-white/60">💬 Gelembung chat (coming soon)</div>
+          <div className="grid grid-cols-4 gap-2">
+            {["💬","💭","🔵","🟢","🟡","🗨️","📢","💡"].map((e,i)=>(
+              <button key={i} className="aspect-square rounded-xl border border-white/10 bg-white/5 text-2xl opacity-60">{e}</button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
