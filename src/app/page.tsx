@@ -1465,18 +1465,31 @@ Dibuat dengan Verve AI Video Studio`;
       // Bersihkan listener lama kalau ada (safety)
       if ((audEl as any)._cleanup) { try { (audEl as any)._cleanup(); } catch {} (audEl as any)._cleanup = null; }
       audEl.muted = previewMuted;
-      audEl.src = previewSrc;
+      audEl.crossOrigin = "anonymous";
+      // Kalau src sama dengan sebelumnya, jangan di-reset (bikin reload ulang di Android)
+      const wantSrc = previewSrc || "";
+      if (!wantSrc) {
+        try { audEl.removeAttribute("src"); audEl.load(); } catch {}
+      } else if (audEl.src !== wantSrc) {
+        audEl.src = wantSrc;
+      }
       try { audEl.currentTime = 0; } catch {}
       const onLoaded = () => { setPreviewDuration(isFinite(audEl.duration)?audEl.duration:0); };
       const onTime = () => { setPreviewCurrent(audEl.currentTime||0); };
       const onEnded = () => { stopPreview(); };
+      const onCanPlay = () => {
+        // Audio siap — ini yang bikin play sukses di mobile (butuh user gesture)
+        audEl.play().catch(()=>{});
+      };
       audEl.addEventListener("loadedmetadata", onLoaded);
       audEl.addEventListener("timeupdate", onTime);
       audEl.addEventListener("ended", onEnded);
+      audEl.addEventListener("canplay", onCanPlay);
       (audEl as any)._cleanup = () => {
         try { audEl.removeEventListener("loadedmetadata", onLoaded); } catch {}
         try { audEl.removeEventListener("timeupdate", onTime); } catch {}
         try { audEl.removeEventListener("ended", onEnded); } catch {}
+        try { audEl.removeEventListener("canplay", onCanPlay); } catch {}
       };
     }
 
@@ -2291,19 +2304,20 @@ Dibuat dengan Verve AI Video Studio`;
             </h3>
             <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
-              {step===5 && previewPlaying ? (
-                // Canvas resolusi sedang untuk preview smooth (480p)
-                <canvas ref={previewCanvasRef}
-                  width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
-                  height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
-                  className="w-full h-full"/>
-              ) : slides[0] ? (
+              {/* Canvas SELALU di-mount (hidden saat paused) — JANGAN conditional render,
+                  karena togglePreview() butuh ref canvas yang sudah ada SEBELUM klik Play. */}
+              <canvas ref={previewCanvasRef}
+                width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
+                height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
+                className={`w-full h-full ${step===5 && previewPlaying?"opacity-100":"opacity-0 absolute inset-0"}`}
+                style={{zIndex:step===5 && previewPlaying?1:0}}/>
+              {!(step===5 && previewPlaying) && (slides[0] ? (
                 <img src={slides[0].imageUrl} className="w-full h-full object-cover" alt="preview"/>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-white/40 text-xs text-center px-3" style={{aspectRatio:aspectRatio==="9:16"?"9/16":aspectRatio==="1:1"?"1/1":"16/9"}}>
                   Belum ada gambar
                 </div>
-              )}
+              ))}
               {!(step===5 && previewPlaying) && (
                 <SpectrumVisualizer
                   audioEl={previewAudioRef.current || undefined}

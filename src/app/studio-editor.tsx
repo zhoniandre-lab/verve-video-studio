@@ -407,16 +407,19 @@ export function StudioEditor(p: StudioEditorProps) {
                }}
                className="relative rounded-xl overflow-hidden border-2 border-white/15 shadow-2xl mx-auto touch-none"
                style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%", width:"100%"}}>
-            {previewPlaying ? (
-              <canvas ref={previewCanvasRef}
-                width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
-                height={isMobile?(aspectRatio==="9:16"?640:aspectRatio==="1:1"?480:360):(aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480)}
-                className="w-full h-full block" />
-            ) : slides[activeSlide] ? (
+            {/* 🎬 CANVAS SELALU DI-MOUNT (JANGAN conditional render!) — kalau canvas cuma ada saat previewPlaying=true,
+                maka saat pertama kali klik Play, ref canvas masih null → togglePreview() langsung return tanpa play. */}
+            <canvas ref={previewCanvasRef}
+              width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
+              height={isMobile?(aspectRatio==="9:16"?640:aspectRatio==="1:1"?480:360):(aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480)}
+              className={`w-full h-full block ${previewPlaying?"opacity-100":"opacity-0"}`}
+              style={{position:previewPlaying?"relative":"absolute", top:0, left:0, zIndex:previewPlaying?1:0}} />
+            {/* Thumbnail slide (hanya terlihat saat paused) */}
+            {!previewPlaying && (slides[activeSlide] ? (
               <img src={slides[activeSlide].imageUrl}
                    style={{filter: getFilterString()}}
-                   className="w-full h-full object-cover block" alt="preview"/>
-            ) : <div className="w-full h-full bg-neutral-900"/>}
+                   className="absolute inset-0 w-full h-full object-cover block" alt="preview"/>
+            ) : <div className="absolute inset-0 w-full h-full bg-neutral-900"/>)}
 
             {/* Vignette overlay live */}
             <div className="absolute inset-0 pointer-events-none" style={{
@@ -749,6 +752,7 @@ export function StudioEditor(p: StudioEditorProps) {
                     const col = colors[li%colors.length];
                     return (
                       <div key={l.id}
+                           data-clip="1"
                            onMouseDown={(e)=>onTrackPointerDown(e,"text",lid,"move")}
                            onTouchStart={(e)=>onTrackPointerDown(e,"text",lid,"move")}
                            className={`absolute top-0 bottom-0 rounded-md border-2 cursor-move overflow-hidden touch-none ${isSel?"border-white shadow-lg":"border-white/30"}`}

@@ -1547,8 +1547,13 @@ async function renderMediaRecorder(b:any){
   if (audio){
     actx=new (window.AudioContext||(window as any).webkitAudioContext)();
     audioDest=actx.createMediaStreamDestination();
-    const ab=actx.createBuffer(1,audio.data.length,audio.sampleRate);
-    ab.copyToChannel(audio.data,0);
+    // STEREO 2-channel (bukan mono) — kalau mono beberapa HP Android (khususnya Samsung)
+    // tidak memutar track audio di hasil export (mono AAC di MP4 sering gagal diputar).
+    // Kita pakai stereoL/R yang sudah di-resample ke 44100Hz dari decodeAudio().
+    const nCh = audio.channels || 2;
+    const ab=actx.createBuffer(nCh,audio.data.length,audio.sampleRate);
+    ab.copyToChannel(audio.stereoL||audio.data,0);
+    ab.copyToChannel(audio.stereoR||audio.data,1);
     const src=actx.createBufferSource(); src.buffer=ab; src.connect(audioDest); src.start();
     audioDest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
   }
