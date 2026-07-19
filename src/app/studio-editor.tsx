@@ -649,7 +649,21 @@ export function StudioEditor(p: StudioEditorProps) {
         </div>
 
         {/* === MULTI-TRACK TIMELINE CAPCUT-STYLE === */}
-        <div ref={trackAreaRef} className="bg-[#0a0418] border-y border-white/10 select-none relative">
+        <div ref={trackAreaRef}
+             className="bg-[#0a0418] border-y border-white/10 select-none relative"
+             onClick={(e)=>{
+               // Tap-to-seek: hanya jalankan jika target BUKAN klip/button (mencegah ganggu drag/klip)
+               const target = e.target as HTMLElement;
+               if (target.closest("button") || target.closest("[data-clip]")) return;
+               const rect = e.currentTarget.getBoundingClientRect();
+               // Track content area mulai setelah 56px (icon kiri)
+               const x = e.clientX - rect.left - 56;
+               const w = rect.width - 56 - 16;
+               if (x < 0 || w <= 0) return;
+               const t = Math.max(0, Math.min(totalDur, (x/w)*totalDur));
+               setActiveSlide(Math.min(slides.length-1, Math.floor(t/(curSlideDur+transitionDur/videoSpeed))));
+               seekPreview(t);
+             }}>
           {/* TIME RULER (0:00 · 0:02 · 0:04 ...) */}
           <div className="relative h-5 flex items-end overflow-hidden text-[9px] text-white/40 font-mono">
             <div className="w-14 shrink-0"/> {/* left pad untuk toolbar */}
@@ -773,25 +787,15 @@ export function StudioEditor(p: StudioEditorProps) {
                 )}
 
                 {/* PLAYHEAD PUTIH */}
-                <div className="absolute top-0 bottom-0 z-20 pointer-events-none"
+                <div className="absolute top-0 bottom-0 z-30 pointer-events-none"
                      style={{left:`${playheadPct}%`, transform:"translateX(-1px)"}}>
                   <div className="w-3.5 h-3.5 bg-white -ml-1 rotate-45 shadow-[0_0_6px_rgba(255,255,255,0.8)]"/>
                   <div className="w-0.5 bg-white absolute top-3 -ml-[1px] bottom-0 shadow-[0_0_6px_rgba(255,255,255,0.6)]"/>
                 </div>
               </div>
             </div>
-            {/* Tap area untuk SEEK (di atas tracks) */}
-            <div className="absolute inset-0 z-10"
-                 onClick={(e)=>{
-                   const rect = e.currentTarget.getBoundingClientRect();
-                   const x = e.clientX - rect.left - 56;
-                   const w = rect.width - 56;
-                   const t = Math.max(0, Math.min(totalDur, (x/w)*totalDur));
-                   setActiveSlide(Math.min(slides.length-1, Math.floor(t/(curSlideDur+transitionDur/videoSpeed))));
-                   seekPreview(t);
-                 }}
-                 style={{pointerEvents:navigator.userAgent.match(/mobile|android/i)?"auto":"none"}}/>
           </div>
+          {/* Tap-to-seek: pakai onPointerDown di wrapper track saja (TIDAK overlay absolute) */}
         </div>
 
         {/* CAPCUT CONTROL BAR (⤢ ▶ 🔊 ↺ ↻) */}
@@ -859,8 +863,7 @@ export function StudioEditor(p: StudioEditorProps) {
 
         {isMobile && <div className="h-[env(safe-area-inset-bottom)] bg-black"/>}
 
-        {/* Hidden audio */}
-        <audio ref={previewAudioRef} preload="metadata" className="hidden"/>
+        {/* Audio element dirender di page.tsx (global persistent, tidak re-mount antar step) */}
       </div>
 
       {/* Global styles utk fullscreen editor di HP */}

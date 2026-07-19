@@ -2393,8 +2393,6 @@ Dibuat dengan Verve AI Video Studio`;
               </div>
             )}
 
-            <audio ref={previewAudioRef} preload="metadata" className="hidden"
-                   src={proxifyAudioUrl((audioMode==="aimusic"&&aiMusicUrl)?aiMusicUrl:(audioMode==="tts"&&ttsUrl)?ttsUrl:(audioMode==="music"&&musicUrl)?musicUrl:(audioMode==="both"&&(musicUrl||aiMusicUrl))?(aiMusicUrl||musicUrl):"")||undefined}/>
             <p className="text-[10px] sm:text-xs text-white/50 mt-2 break-word">
               🔥 Tap ▶️ buat PREVIEW full video + musik + lirik + transisi SEBELUM render. Semua setting di bawah (warna, transisi, durasi, lirik) bisa diubah live. Render pakai engine WebCodecs super-cepat.
             </p>
@@ -2504,6 +2502,11 @@ Dibuat dengan Verve AI Video Studio`;
           </aside>
         </div>
       )}
+
+      {/* 🎧 Audio PREVIEW GLOBAL — harus selalu dirender (tidak boleh unmount saat pindah step/Studio),
+          karena createMediaElementSource cuma bisa dipanggil SEKALI per element seumur hidup halaman.
+          src di-set secara dinamis oleh togglePreview() dan StudioEditor useEffect. */}
+      <audio ref={previewAudioRef} preload="metadata" playsInline crossOrigin="anonymous" className="hidden" />
 
       <Footer />
 
