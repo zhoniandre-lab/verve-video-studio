@@ -69,6 +69,80 @@ const STICKER_PRESETS = [
   {id:"none",        cat:"deco",  icon:"❌", label:"Off",      bg:"#222"},
 ];
 
+// Konstanta untuk text editor (font, effects, animasi)
+const FONT_CSS: Record<string,string> = {
+  SYSTEM: "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+  WASHED: "'Impact','Arial Black','Helvetica Neue',sans-serif",
+  VISION: "Georgia,'Times New Roman',serif",
+  MODERN: "'Courier New','Courier',monospace",
+  TOOTH:  "'Brush Script MT','Segoe Script',cursive",
+  CELAND: "'Comic Sans MS',cursive",
+  STARRY: "'Trebuchet MS',sans-serif",
+  KLOP:   "Tahoma,Verdana,sans-serif",
+  ANTIK:  "'Times New Roman',Times,serif",
+  FEISTY: "'Palatino Linotype','Book Antiqua',Palatino,serif",
+  MONT:   "'Montserrat','Arial Black','Helvetica',sans-serif",
+  ROFUEGO:"'Impact','Oswald','Arial Narrow',sans-serif",
+  MERIENDA:"cursive",
+  RUST:   "'Courier New','Courier',monospace",
+  RUBIK:  "'Rubik','Arial Rounded MT Bold',sans-serif",
+  ITALIC: "Georgia,'Times New Roman',serif",
+  ATOMIC: "'Impact','Arial Black',sans-serif",
+  CCMOD:  "'Arial Black','Helvetica Neue',sans-serif",
+  CHUNK:  "'Rockwell Extra Bold','Arial Black',serif",
+  BOLD:   "'Impact','Bebas Neue','Arial Black',sans-serif",
+};
+const FONTS = Object.entries(FONT_CSS).map(([id,fb])=>({id,fb,label:id.charAt(0)+id.slice(1).toLowerCase()}));
+
+const TEXT_TEMPLATES = [
+  {id:"default",  label:"Default",      preview:"Teks"},
+  {id:"neon",     label:"💫 Neon",      preview:"Neon"},
+  {id:"boldwhite",label:"⚪ Bold Putih",preview:"BOLD"},
+  {id:"thanks",   label:"🙏 Thanks",    preview:"THANKS"},
+  {id:"titlehere",label:"🎬 Title Here",preview:"TITLE"},
+  {id:"mymusic",  label:"🎵 My Music",  preview:"MY MUSIC"},
+  {id:"nowplaying",label:"▶️ Now Playing",preview:"NOW PLAY"},
+  {id:"trendy",   label:"🔴 Trendy",    preview:"TRENDY"},
+  {id:"fire",     label:"🔥 Api",       preview:"FIRE"},
+  {id:"horror",   label:"👻 Horror",    preview:"HORROR"},
+  {id:"aura",     label:"✨ Aura",      preview:"AURA"},
+  {id:"please",   label:"💕 Please Like",preview:"LIKE"},
+];
+
+const TEXT_EFFECTS = [
+  {id:"none",label:"Polos",color:"#fff"},
+  {id:"art-paper",label:"Kertas"},
+  {id:"art-stroke-white",label:"Outline Putih"},
+  {id:"art-stroke-black",label:"Outline Hitam"},
+  {id:"art-blood",label:"Darah"},
+  {id:"art-yellow-black",label:"Kuning-Hitam"},
+  {id:"art-white-red",label:"Putih-Merah"},
+  {id:"art-gold-black",label:"Emas Hitam"},
+  {id:"art-neon-pink",label:"Neon Pink"},
+  {id:"art-neon-red",label:"Neon Merah"},
+  {id:"art-neon-blue",label:"Neon Biru"},
+  {id:"art-scratch-red",label:"Gores Merah"},
+  {id:"art-gradient-ko",label:"Gradien KOB"},
+  {id:"art-3d",label:"3D"},
+  {id:"art-chrome",label:"Chrome"},
+  {id:"art-glitter",label:"Glitter"},
+  {id:"art-sparkle",label:"Sparkle"},
+  {id:"art-glitch",label:"Glitch RGB"},
+];
+
+const ANIM_IN = [
+  {id:"none",label:"Tidak Ada"},{id:"fadein",label:"Fade In"},{id:"pop",label:"Pop"},
+  {id:"slideup",label:"Slide Up"},{id:"slideleft",label:"Slide Kiri"},{id:"typewriter",label:"Ketik"},
+];
+const ANIM_OUT = [
+  {id:"fade",label:"Fade Out"},{id:"pop",label:"Pop Out"},{id:"slideup",label:"Slide Up"},{id:"none",label:"Tetap"},
+];
+const ANIM_LOOP = [
+  {id:"none",label:"Tidak Ada"},{id:"pulse",label:"Denyut"},{id:"bounce",label:"Pantul"},
+];
+
+
+
 // ============ CAPCUT FULLSCREEN STUDIO (Step 5) ============
 type StudioEditorProps = {
   slides: any[]; aspectRatio: "16:9"|"9:16"|"1:1"; isMobile: boolean;
@@ -130,7 +204,8 @@ export function StudioEditor(p: StudioEditorProps) {
     onBack, onExport, onSaveDraft, onDeleteSlide, onDuplicateSlide,
   } = p;
 
-  const [tab, setTab] = useState<"edit"|"audio"|"text"|"sticker"|"overlay"|"filter"|"adjust"|"effect"|"speed">("edit");
+  const [tab, setTab] = useState<string>("spectrum");
+  type TabId = "spectrum"|"text"|"sticker"|"audio"|"filter"|"edit";
   const [activeSlide, setActiveSlide] = useState(0);
   const timelineStripRef = useRef<HTMLDivElement|null>(null);
   const previewFrameRef = useRef<HTMLDivElement|null>(null);
@@ -216,16 +291,20 @@ export function StudioEditor(p: StudioEditorProps) {
     }
   };
 
+  // Toolbar CAPCUT-STYLE: hanya tab UTAMA (tidak banyak tab yang membingungkan).
+  // - Tab SPEKTRUM diutamakan karena ini yang dipakai user paling banyak
+  // - Tab TEKS punya panel sendiri (add, list, edit selected)
+  // - Tab STIKER (subscribe/dll) di bawahnya
+  // - Tab FILTER & ADJUST digabung dalam satu "Warna" agar tidak kebanyakan tab
+  // - Tab AUDIO untuk ganti sumber/upload musik dari dalam studio
+  // - Tab EKSPOR langsung keluar
   const TABS = [
-    {id:"edit",    icon:"✂️", label:"Edit"},
-    {id:"audio",   icon:"🎵", label:"Audio"},
-    {id:"text",    icon:"💬", label:"Teks"},
-    {id:"sticker", icon:"🎧", label:"Stiker"},
-    {id:"overlay", icon:"🖼️", label:"Overlay"},
-    {id:"filter",  icon:"🎨", label:"Filter"},
-    {id:"adjust",  icon:"☀️", label:"Adjust"},
-    {id:"effect",  icon:"✨", label:"Efek"},
-    {id:"speed",   icon:"⚡", label:"Speed"},
+    {id:"spectrum",icon:"📊",label:"Spektrum",hint:"Gaya gelombang musik"},
+    {id:"text",    icon:"💬",label:"Teks",    hint:"Tambah/hapus/edit teks"},
+    {id:"sticker", icon:"🎧",label:"Stiker",  hint:"Subscribe, like, FYP"},
+    {id:"audio",   icon:"🎵",label:"Musik",   hint:"Ganti/volume musik"},
+    {id:"filter",  icon:"🎨",label:"Filter",  hint:"Warna & preset video"},
+    {id:"edit",    icon:"✂️",label:"Klip",    hint:"Durasi, transisi, hapus slide"},
   ] as const;
 
   const FILTERS = [
@@ -875,19 +954,17 @@ export function StudioEditor(p: StudioEditorProps) {
         {/* PANEL KONTEN (CapCut-style, lebih pendek agar preview besar) */}
         <div className="bg-gradient-to-b from-[#15091f] to-black border-t border-white/5 p-2.5 overflow-y-auto studio-panel"
              style={{maxHeight: isMobile?"30vh":"42vh"}}>
+          {/* Panel content — sederhana dengan penjelasan & preview thumbnail */}
+          {tab==="spectrum" && <SpectrumTab {...{vizStyle,setVizStyle,vizColor,setVizColor,spectrumSticker,setSpectrumSticker}}/>}
+          {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}}/>}
+          {tab==="sticker" && <StickerTab {...{spectrumSticker,setSpectrumSticker}}/>}
+          {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,proxifyAudioUrl,audioSrc,onBack,onPickMusic:p.onHandleUploadMusic,previewMuted,setPreviewMuted}}/>}
+          {tab==="filter" && <FilterTab {...{slides,activeSlide,activeFilter,setActiveFilter,FILTERS,brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,vignetteAmt,setVignetteAmt,resetAdjust,vizColor,setVizColor,logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,showTitle,setShowTitle,showLyrics,setShowLyrics}}/>}
           {tab==="edit" && <EditTab {...{slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport,
-            activeSlide, slidesLength:slides.length,
+            activeSlide, slidesLength:slides.length, videoSpeed, setVideoSpeed, curSlideDur,
             onDeleteSlide:()=>{ onDeleteSlide?.(activeSlide); setActiveSlide(Math.max(0,Math.min(activeSlide,(slides.length-1)-1))); },
             onDuplicateSlide:()=>{ onDuplicateSlide?.(activeSlide); }
           }}/>}
-          {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,proxifyAudioUrl,audioSrc,onBack,onPickMusic:p.onHandleUploadMusic}}/>}
-          {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}}/>}
-          {tab==="sticker" && <StickerTab {...{spectrumSticker,setSpectrumSticker}}/>}
-          {tab==="overlay" && <OverlayTab {...{logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle,spectrumSticker,setSpectrumSticker}}/>}
-          {tab==="filter" && <FilterTab {...{slides,activeSlide,activeFilter,setActiveFilter,FILTERS}}/>}
-          {tab==="adjust" && <AdjustTab {...{brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,vignetteAmt,setVignetteAmt,resetAdjust}}/>}
-          {tab==="effect" && <EffectTab {...{transition,setTransition,showTitle,setShowTitle,showLyrics,setShowLyrics}}/>}
-          {tab==="speed" && <SpeedTab {...{videoSpeed,setVideoSpeed,curSlideDur}}/>}
         </div>
 
         {isMobile && <div className="h-[env(safe-area-inset-bottom)] bg-black"/>}
@@ -922,86 +999,198 @@ export function StudioEditor(p: StudioEditorProps) {
 }
 
 // ====== TAB PANELS ======
-function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport,activeSlide,slidesLength,onDeleteSlide,onDuplicateSlide}:any){
+function SpectrumTab({vizStyle,setVizStyle,vizColor,setVizColor,spectrumSticker,setSpectrumSticker}:any){
+  const list = VIZ_STYLES as any[];
   return (
-    <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">✂️ Edit Klip</div>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <div className="flex justify-between text-[11px] mb-1"><span>⏱ Durasi klip</span><b className="text-pink-300">{slideDuration.toFixed(1)}s</b></div>
-          <input type="range" min={1} max={15} step={0.5} value={slideDuration}
-                 onChange={e=>setSlideDuration(Number(e.target.value))} className="w-full accent-pink-500"/>
-        </label>
-        <label className="block">
-          <div className="flex justify-between text-[11px] mb-1"><span>🔀 Transisi</span><b className="text-pink-300">{transitionDur.toFixed(2)}s</b></div>
-          <input type="range" min={0} max={2} step={0.1} value={transitionDur}
-                 onChange={e=>setTransitionDur(Number(e.target.value))} className="w-full accent-pink-500"/>
-        </label>
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-bold text-white">📊 Spektrum Musik</div>
+          <div className="text-[10px] text-white/50">Pilih gaya visualizer yang ikut gerak mengikuti musik. Tap untuk preview live di video.</div>
+        </div>
       </div>
-      <div>
-        <div className="text-[11px] mb-1.5 text-white/70">🔀 Jenis transisi</div>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-          {TRANSITION_STYLES.map((t:any)=>(
-            <button key={t.id} onClick={()=>setTransition(t.id)}
-                    className={`q-tile !text-[10px] !py-2 ${transition===t.id?"active":""}`}>
-              {t.emoji} {t.label}
+      {/* Warna tema (cepat akses, ga perlu ke tab lain) */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] text-white/60 mr-1">🎨 Warna:</span>
+        {COLOR_PRESETS.slice(0,8).map(c=>(
+          <button key={c.hex} onClick={()=>setVizColor(c.hex)}
+            className={`w-6 h-6 rounded-full border-2 ${vizColor===c.hex?"border-white scale-110":"border-white/20"}`}
+            style={{background:`radial-gradient(circle at 30% 30%,rgba(255,255,255,0.5),${c.hex} 60%)`}} title={c.hex}/>
+        ))}
+        <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)}
+          className="w-7 h-7 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
+      </div>
+      {/* Grid pilihan spektrum (4 kolom) — THUMBNAIL + label agar tidak bingung */}
+      <div className="grid grid-cols-4 gap-1.5 max-h-[240px] overflow-y-auto">
+        {list.map((s:any)=>(
+          <button key={s.id} onClick={()=>setVizStyle(s.id)}
+            className={`relative aspect-[4/5] rounded-xl border-2 overflow-hidden active:scale-95 ${vizStyle===s.id?"border-pink-400 shadow-lg shadow-pink-500/30":"border-white/10 bg-gradient-to-br from-white/5 to-white/0"}`}
+            title={s.desc}>
+            {/* Thumbnail mini pakai SVG sederhana agar keliatan bentuknya */}
+            <div className="absolute inset-0 flex items-end justify-center p-1">
+              <SpectrumThumbIcon style={s.id} color={vizColor}/>
+            </div>
+            <div className="absolute inset-x-0 bottom-0 bg-black/70 backdrop-blur px-1 py-0.5 text-[9px] font-bold text-white text-center truncate leading-tight">
+              {s.emoji} {s.label}
+            </div>
+            {vizStyle===s.id && <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-pink-500 text-white text-[9px] flex items-center justify-center font-black">✓</div>}
+          </button>
+        ))}
+      </div>
+      {/* Tombol stiker cepat (subscribe/like/dll) — shortcut ke tab Stiker */}
+      <div className="pt-1">
+        <div className="text-[10px] text-white/60 mb-1">🎯 Stiker overlay cepat:</div>
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+          <button onClick={()=>setSpectrumSticker("none")}
+            className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${spectrumSticker==="none"?"bg-white/20 border-white/30 text-white":"bg-white/5 border-white/10 text-white/70"}`}>
+            ❌ Off
+          </button>
+          {STICKER_PRESETS.filter(s=>s.cat!=="audio"&&s.id!=="none").slice(0,8).map(s=>(
+            <button key={s.id} onClick={()=>setSpectrumSticker(s.id)}
+              className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border active:scale-95 ${spectrumSticker===s.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}
+              style={s.color?{background:s.bg,color:s.color}:undefined}>
+              {s.icon} {s.label}
             </button>
           ))}
         </div>
-      </div>
-
-      {/* ====== MANAGE SLIDE (hapus/duplikat slide AKTIF) ====== */}
-      <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
-        <div className="text-[11px] text-white/70">🎞️ Slide aktif: <b className="text-pink-300">#{activeSlide+1} / {slidesLength}</b></div>
-        <div className="flex gap-1.5">
-          <button onClick={onDuplicateSlide} className="flex-1 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-bold active:scale-95">
-            ⎘ Duplikat
-          </button>
-          <button onClick={()=>{ if(slidesLength<=1){alert("Minimal harus ada 1 slide bro!");return;} if(confirm("Hapus slide ini?"))onDeleteSlide?.(); }}
-                  className="flex-1 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 text-red-200 text-[11px] font-bold active:scale-95">
-            🗑 Hapus
-          </button>
-        </div>
-        <label className="flex items-center justify-center gap-2 py-2 rounded-lg bg-white/5 border border-dashed border-white/20 text-[11px] text-white/70 active:scale-95 cursor-pointer">
-          ➕ Tambah gambar dari galeri
-          <input type="file" accept="image/*" hidden onChange={(e:any)=>{
-            const f = e.target.files?.[0]; if(!f) return;
-            const r = new FileReader();
-            r.onload = ()=>window.dispatchEvent(new CustomEvent("studio-add-image",{detail:{imageUrl:r.result,insertAt:activeSlide+1}}));
-            r.readAsDataURL(f);
-            e.target.value="";
-          }}/>
-        </label>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 pt-1">
-        <button onClick={onBack} className="btn btn-ghost text-xs col-span-1">← Audio</button>
-        <button onClick={onExport} className="btn btn-primary text-xs col-span-2 glow">Ekspor →</button>
       </div>
     </div>
   );
 }
 
-function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl,onBack,onPickMusic,onPickTts}:any){
+// Mini SVG thumbnail untuk tiap style spectrum (kasih visual preview kecil)
+function SpectrumThumbIcon({style,color}:{style:string;color:string}){
+  const h=40,w=40;
+  const bars=Array.from({length:12},(_,i)=>{
+    const seed=i*0.7+1;
+    const h1=8+Math.abs(Math.sin(seed*1.3))*18+(i%3===0?8:0)+Math.abs(Math.sin(seed*0.3))*8;
+    return Math.min(34,h1);
+  });
+  if(style==="luxury"||style==="circle"||style==="radial-bars"||style==="trapnation"||style==="monstercat"||style==="pulse"){
+    // Lingkaran
+    return <svg viewBox="0 0 40 40" className="w-full h-full"><circle cx="20" cy="22" r="12" fill="none" stroke={color} strokeWidth="1.5" opacity="0.8"/><circle cx="20" cy="22" r="6" fill={color} opacity="0.9"/></svg>;
+  }
+  if(style==="retrowave"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full"><circle cx="20" cy="24" r="9" fill={color} opacity="0.9"/><line x1="0" y1="32" x2="40" y2="32" stroke={color} strokeWidth="0.7"/></svg>;
+  }
+  if(style==="tunnel"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full"><rect x="8" y="10" width="24" height="22" fill="none" stroke={color} strokeWidth="1"/><rect x="13" y="14" width="14" height="14" fill="none" stroke={color} strokeWidth="1" opacity="0.7"/></svg>;
+  }
+  if(style==="wave"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full"><path d={`M 2 30 ${bars.map((b,i)=>`Q ${4+i*3} ${34-b} ${6+i*3} ${32-b*0.7}`).join(" ")}`} fill="none" stroke={color} strokeWidth="1.5"/></svg>;
+  }
+  if(style==="proximity"||style==="dubstep"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full">{bars.map((b,i)=>(
+      <rect key={i} x={3+i*2.8} y={20-b*0.4} width="2" height={b*0.8} fill={color}/>
+    ))}</svg>;
+  }
+  if(style==="minimal"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full">{bars.slice(0,8).map((b,i)=>(
+      <circle key={i} cx={4+i*4.5} cy={30} r={Math.max(0.8,b*0.07)} fill={color}/>
+    ))}</svg>;
+  }
+  if(style==="equalizer"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full">{bars.map((b,i)=>(
+      <rect key={i} x={3+i*2.8} y={34-b} width="2" height={b} fill={i<4?"#22c55e":i<8?"#eab308":"#ef4444"}/>
+    ))}</svg>;
+  }
+  if(style==="particles"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full">{bars.slice(0,6).map((_,i)=>(
+      <circle key={i} cx={8+i*5+Math.sin(i)*3} cy={20+i%2*5} r="1.5" fill={color}/>
+    ))}<circle cx="20" cy="24" r="5" fill={color} opacity="0.5"/></svg>;
+  }
+  if(style==="none"){
+    return <svg viewBox="0 0 40 40" className="w-full h-full"><text x="20" y="26" textAnchor="middle" fill="#fff" opacity="0.4" fontSize="10" fontWeight="900">OFF</text></svg>;
+  }
+  // Default bars
+  return <svg viewBox="0 0 40 40" className="w-full h-full">{bars.map((b,i)=>(
+    <rect key={i} x={3+i*2.8} y={34-b} width="2" height={b} fill={color}/>
+  ))}</svg>;
+}
+
+function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport,activeSlide,slidesLength,videoSpeed,setVideoSpeed,curSlideDur,onDeleteSlide,onDuplicateSlide}:any){
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-bold text-white/80">🎵 Audio</div>
-        <button onClick={onBack} className="text-[10px] px-2 py-1 rounded bg-white/10 text-white/70">← Kembali ke step Audio</button>
+    <div className="space-y-2.5">
+      <div>
+        <div className="text-xs font-bold text-white">✂️ Klip & Durasi</div>
+        <div className="text-[10px] text-white/50">Atur berapa lama tiap gambar tampil dan perpindahan antar slide.</div>
+      </div>
+      <label className="block">
+        <div className="flex justify-between text-[10px] mb-1"><span>⏱ Durasi per slide</span><b className="text-pink-300">{slideDuration.toFixed(1)} detik</b></div>
+        <input type="range" min={1} max={15} step={0.5} value={slideDuration}
+               onChange={e=>setSlideDuration(Number(e.target.value))} className="w-full accent-pink-500"/>
+      </label>
+      <label className="block">
+        <div className="flex justify-between text-[10px] mb-1"><span>🔀 Transisi</span><b className="text-pink-300">{transitionDur.toFixed(2)}s</b></div>
+        <input type="range" min={0} max={2} step={0.1} value={transitionDur}
+               onChange={e=>setTransitionDur(Number(e.target.value))} className="w-full accent-pink-500"/>
+      </label>
+      <label className="block">
+        <div className="flex justify-between text-[10px] mb-1"><span>⚡ Kecepatan</span><b className="text-pink-300">{videoSpeed.toFixed(2)}x</b></div>
+        <input type="range" min={0.5} max={2} step={0.25} value={videoSpeed}
+               onChange={e=>setVideoSpeed(Number(e.target.value))} className="w-full accent-pink-500"/>
+        <div className="grid grid-cols-4 gap-1 mt-1.5">
+          {[0.5,1,1.5,2].map((s:number)=>(
+            <button key={s} onClick={()=>setVideoSpeed(s)}
+              className={`py-1 rounded-md text-[10px] font-bold border ${Math.abs(videoSpeed-s)<0.01?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}>{s}x</button>
+          ))}
+        </div>
+      </label>
+      <div>
+        <div className="text-[10px] text-white/70 mb-1">🔀 Jenis transisi:</div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {TRANSITION_STYLES.map((t:any)=>(
+            <button key={t.id} onClick={()=>setTransition(t.id)}
+                    className={`q-tile !text-[10px] !py-2 ${transition===t.id?"active":""}`}>{t.emoji} {t.label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+        <div className="text-[10px] text-white/70">🎞️ Slide aktif: <b className="text-pink-300">#{activeSlide+1} / {slidesLength}</b></div>
+        <div className="flex gap-1.5">
+          <button onClick={onDuplicateSlide} className="flex-1 py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold active:scale-95">⎘ Duplikat</button>
+          <button onClick={()=>{if(slidesLength<=1){alert("Minimal harus ada 1 slide bro!");return;} if(confirm("Hapus slide ini?"))onDeleteSlide?.();}}
+                  className="flex-1 py-2 rounded-lg bg-red-500/20 border border-red-400/30 text-red-200 text-[10px] font-bold active:scale-95">🗑 Hapus</button>
+        </div>
+        <label className="flex items-center justify-center gap-2 py-2 rounded-lg bg-white/5 border border-dashed border-white/20 text-[10px] text-white/70 active:scale-95 cursor-pointer">
+          ➕ Tambah gambar dari galeri
+          <input type="file" accept="image/*" hidden onChange={(e:any)=>{
+            const f = e.target.files?.[0]; if(!f) return;
+            const r = new FileReader();
+            r.onload = ()=>window.dispatchEvent(new CustomEvent("studio-add-image",{detail:{imageUrl:r.result,insertAt:activeSlide+1}}));
+            r.readAsDataURL(f); e.target.value="";
+          }}/>
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        <button onClick={onBack} className="btn btn-ghost text-xs">← ke Audio</button>
+        <button onClick={onExport} className="btn btn-primary text-xs glow">Ekspor →</button>
+      </div>
+    </div>
+  );
+}
+
+function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl,onBack,onPickMusic,previewMuted,setPreviewMuted}:any){
+  return (
+    <div className="space-y-2.5">
+      <div>
+        <div className="text-xs font-bold text-white">🎵 Musik & Audio</div>
+        <div className="text-[10px] text-white/50">Pilih sumber suara, ganti musik, atau mute sementara.</div>
       </div>
       <div className="grid grid-cols-5 gap-1.5">
         {[{id:"tts",l:"🗣️ TTS"},{id:"music",l:"🎵 Musik"},{id:"aimusic",l:"🤖 AI"},{id:"both",l:"🔀 Campur"},{id:"none",l:"🔇 Mute"}].map((m:any)=>(
           <button key={m.id} onClick={()=>setAudioMode(m.id)}
-            className={`py-2.5 rounded-lg text-[10px] font-bold border active:scale-95 ${audioMode===m.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}>{m.l}</button>
+            className={`py-2.5 rounded-lg text-[9px] font-bold border active:scale-95 ${audioMode===m.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}>{m.l}</button>
         ))}
       </div>
       <div className="grid grid-cols-2 gap-1.5">
-        <label className="btn btn-ghost text-xs cursor-pointer flex items-center justify-center gap-1">
+        <label className="btn btn-ghost text-xs cursor-pointer flex items-center justify-center">
           🎵 Upload Musik
           <input type="file" accept="audio/*" hidden onChange={(e:any)=>onPickMusic?.(e.target.files?.[0])}/>
         </label>
-        <button onClick={onBack} className="btn btn-ghost text-xs">
-          🗣️ Edit Narasi
+        <button onClick={()=>setPreviewMuted(!previewMuted)}
+                className={`btn text-xs ${previewMuted?"btn-ghost":"btn-primary"}`}>
+          {previewMuted?"🔇 Suara Mati":"🔊 Suara Nyala"}
         </button>
       </div>
       {audioSrc && (
@@ -1010,116 +1199,11 @@ function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl,onBack,onPick
           <audio controls src={proxifyAudioUrl(audioSrc)} className="w-full"/>
         </div>
       )}
-      <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">
-        💡 Untuk ganti sumber musik / generate ulang AI song / ganti narasi TTS, tap <b>← Kembali ke step Audio</b>. Tombol 🔊 di kontrol playback untuk mute/unmute.
-      </div>
+      <button onClick={onBack} className="btn btn-ghost text-xs w-full">← Kembali ke halaman Audio buat generate ulang AI/Narasi</button>
+      <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">💡 Untuk buat lagu AI baru atau narasi TTS, tap tombol di atas buat balik ke Step Audio.</div>
     </div>
   );
 }
-
-const TEXT_TEMPLATES = [
-  {id:"default",  label:"Default",      preview:"Teks"},
-  {id:"neon",     label:"💫 Neon",      preview:"Neon"},
-  {id:"boldwhite",label:"⚪ Bold Putih",preview:"BOLD"},
-  {id:"thanks",   label:"🙏 Thanks",    preview:"THANKS"},
-  {id:"titlehere",label:"🎬 Title Here",preview:"TITLE"},
-  {id:"mymusic",  label:"🎵 My Music",  preview:"My Music"},
-  {id:"nowplaying",label:"▶️ Now Playing",preview:"NOW PLAYING"},
-  {id:"trendy",   label:"🔴 Trendy",    preview:"TRENDY"},
-  {id:"fire",     label:"🔥 Api",       preview:"FIRE"},
-  {id:"horror",   label:"👻 Horror",    preview:"HORROR"},
-  {id:"aura",     label:"✨ Aura",      preview:"AURA"},
-  {id:"please",   label:"💕 Please Like",preview:"LIKE"},
-];
-
-const FONTS = [
-  {id:"SYSTEM",    label:"SYSTEM",      fb:"system-ui,-apple-system,sans-serif"},
-  {id:"WASHED",    label:"Washed ↓",    fb:"'Impact','Arial Black',sans-serif"},
-  {id:"VISION",    label:"Vision 💎",   fb:"'Georgia','Times New Roman',serif"},
-  {id:"MODERN",    label:"MODERN 💎",   fb:"'Courier New',monospace"},
-  {id:"TOOTH",     label:"Tooth Nail 💎",fb:"'Brush Script MT','Segoe Script',cursive"},
-  {id:"CELAND",    label:"Celandine 💎",fb:"'Comic Sans MS',cursive"},
-  {id:"STARRY",    label:"Starry 💎",   fb:"'Trebuchet MS',sans-serif"},
-  {id:"KLOP",      label:"KLOP 💎",     fb:"Tahoma,sans-serif"},
-  {id:"ANTIK",     label:"Antik 💎",    fb:"'Times New Roman',serif"},
-  {id:"FEISTY",    label:"Feisty 💎",   fb:"'Palatino Linotype','Book Antiqua',serif"},
-  {id:"MONT",      label:"Montra 💎",   fb:"'Montserrat','Arial Black',sans-serif"},
-  {id:"ROFUEGO",   label:"ROFUEGO 💎",  fb:"'Impact','Oswald',sans-serif"},
-  {id:"MERIENDA",  label:"Merienda 💎", fb:"cursive"},
-  {id:"RUST",      label:"RUSTPRINT 💎",fb:"'Courier New',monospace"},
-  {id:"RUBIK",     label:"Rubik 💎",    fb:"'Rubik','Arial Rounded MT Bold',sans-serif"},
-  {id:"ITALIC",    label:"Italic 💎",   fb:"Georgia,serif"},
-  {id:"ATOMIC",    label:"ATOMIC 💎",   fb:"'Impact',sans-serif"},
-  {id:"CCMOD",     label:"CC-MODERNO 💎",fb:"'Arial Black',sans-serif"},
-  {id:"CHUNK",     label:"ChunkFive 💎",fb:"'Rockwell Extra Bold','Arial Black',serif"},
-  {id:"BOLD",      label:"Bebas 💎",    fb:"'Impact','Bebas Neue',sans-serif"},
-];
-// Font CSS untuk web preview (pakai web-safe stacks; effect keliatan kok tanpa Google Fonts CDN)
-const FONT_CSS: Record<string,string> = {
-  SYSTEM: "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
-  WASHED: "'Impact','Arial Black','Helvetica Neue',sans-serif",
-  VISION: "Georgia,'Times New Roman',serif",
-  MODERN: "'Courier New','Courier',monospace",
-  TOOTH:  "'Brush Script MT','Segoe Script',cursive",
-  CELAND: "'Comic Sans MS',cursive",
-  STARRY: "'Trebuchet MS',sans-serif",
-  KLOP:   "Tahoma,Verdana,sans-serif",
-  ANTIK:  "'Times New Roman',Times,serif",
-  FEISTY: "'Palatino Linotype','Book Antiqua',Palatino,serif",
-  MONT:   "'Montserrat','Arial Black','Helvetica',sans-serif",
-  ROFUEGO:"'Impact','Oswald','Arial Narrow',sans-serif",
-  MERIENDA:"cursive",
-  RUST:   "'Courier New','Courier',monospace",
-  RUBIK:  "'Rubik','Arial Rounded MT Bold',sans-serif",
-  ITALIC: "Georgia,'Times New Roman',serif",
-  ATOMIC: "'Impact','Arial Black',sans-serif",
-  CCMOD:  "'Arial Black','Helvetica Neue',sans-serif",
-  CHUNK:  "'Rockwell Extra Bold','Arial Black',serif",
-  BOLD:   "'Impact','Bebas Neue','Arial Black',sans-serif",
-};
-
-const ANIM_IN = [
-  {id:"none",    label:"❌ Tidak Ada"},
-  {id:"fadein",  label:"🌟 Fade In"},
-  {id:"pop",     label:"💥 Pop"},
-  {id:"slideup", label:"⬆️ Geser Atas"},
-  {id:"slideleft",label:"⬅️ Geser Kiri"},
-  {id:"typewriter",label:"⌨️ Ketik"},
-];
-const ANIM_LOOP = [
-  {id:"none",   label:"❌ Tidak Ada"},
-  {id:"pulse",  label:"💓 Denyut"},
-  {id:"bounce", label:"🏀 Mantul"},
-  {id:"glow",   label:"✨ Bersinar"},
-];
-const ANIM_OUT = [
-  {id:"fade",     label:"🌫️ Fade Out"},
-  {id:"pop",      label:"💨 Pop Out"},
-  {id:"slideup",  label:"⬆️ Slide Atas"},
-  {id:"slideleft",label:"⬅️ Slide Kiri"},
-];
-
-// ===== CAPCUT TEXT EFFECTS (16 presets) =====
-const TEXT_EFFECTS = [
-  {id:"none",              label:"❌ Basic",       color:"#aaa"},
-  {id:"art-paper",         label:"📄 Kertas",     color:"#f5f0e6"},
-  {id:"art-stroke-white",  label:"⬜ Outline Pth",color:"#fff"},
-  {id:"art-stroke-black",  label:"⬛ Outline Htm",color:"#000"},
-  {id:"art-blood",         label:"🩸 Darah",      color:"#8b0000"},
-  {id:"art-yellow-black",  label:"⚠️ Kuning Htm", color:"#fde047"},
-  {id:"art-white-red",     label:"🔴 Putih Merah",color:"#fff"},
-  {id:"art-gold-black",    label:"🏆 Emas",       color:"#fcd34d"},
-  {id:"art-neon-pink",     label:"💗 Neon Pink",  color:"#ff2d95"},
-  {id:"art-neon-red",      label:"❤️ Neon Merah", color:"#ff0033"},
-  {id:"art-neon-blue",     label:"💙 Neon Biru",  color:"#00e5ff"},
-  {id:"art-scratch-red",   label:"✏️ Goresan Merah",color:"#fff"},
-  {id:"art-gradient-ko",   label:"🌈 Kuning-Orange-Biru",color:"#f97316"},
-  {id:"art-3d",            label:"🧊 3D",         color:"#e5e7eb"},
-  {id:"art-chrome",        label:"⚪ Chrome",     color:"#d1d5db"},
-  {id:"art-glitter",       label:"✨ Glitter Pink",color:"#ec4899"},
-  {id:"art-sparkle",       label:"💫 Sparkle Cyan",color:"#22d3ee"},
-  {id:"art-glitch",        label:"📺 Glitch RGB", color:"#fff"},
-];
 
 function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}:any){
   const [tab, setTab] = useState<"main"|"template"|"font"|"style"|"effect"|"animation"|"bubble">("main");
@@ -1532,88 +1616,92 @@ function StickerTab({spectrumSticker,setSpectrumSticker}:any){
   );
 }
 
-function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle,spectrumSticker,setSpectrumSticker}:any){
+function FilterTab(p:any){
+  const {slides,activeSlide,activeFilter,setActiveFilter,FILTERS,
+         brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,
+         vignetteAmt,setVignetteAmt,resetAdjust,
+         vizColor,setVizColor,logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,
+         showTitle,setShowTitle,showLyrics,setShowLyrics} = p;
+  const [sub,setSub] = useState("filter");
+  const previewSrc = slides[Math.min(activeSlide,slides.length-1)]?.imageUrl;
+  const rows = [
+    {label:"☀️ Kecerahan",v:brightness,set:setBrightness,min:-50,max:50},
+    {label:"◐ Kontras",v:contrast,set:setContrast,min:-50,max:50},
+    {label:"🎨 Saturasi",v:saturation,set:setSaturation,min:-50,max:80},
+    {label:"✨ Tajam",v:sharpen,set:setSharpen,min:0,max:50},
+    {label:"🌑 Vignette",v:vignetteAmt,set:setVignetteAmt,min:0,max:100},
+  ];
   return (
     <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">🖼️ Overlay / Logo</div>
-      <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-center gap-2">
-        {logoDataUrl ? (
-          <img src={logoDataUrl} className="w-12 h-12 rounded-full border-2 border-white/30" alt="logo"/>
-        ) : (
-          <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-xl">🖼️</div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] text-white/80">Logo channel/watermark</div>
-          <div className="text-[10px] text-white/50">Maks 3MB, bulat otomatis</div>
+      <div className="flex gap-1 text-[10px] font-bold">
+        {[{id:"filter",l:"🎨 Filter"},{id:"adjust",l:"☀️ Adjust"},{id:"overlay",l:"🖼️ Logo"},{id:"togel",l:"🏷️ Judul/Lirik"}].map(b=>(
+          <button key={b.id} onClick={()=>setSub(b.id)}
+            className={`flex-1 py-1.5 rounded-md border ${sub===b.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}>{b.l}</button>
+        ))}
+      </div>
+
+      {sub==="filter" && (<>
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-bold text-white">Filter preset</div>
+          <button onClick={()=>setActiveFilter("none")} className="text-[10px] px-2 py-1 rounded bg-white/10">↻ Reset</button>
         </div>
-        <label className="btn btn-ghost btn-sm cursor-pointer">
-          Upload<input type="file" accept="image/*" hidden onChange={(e:any)=>onLogoUpload(e.target.files?.[0])}/>
-        </label>
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
+          {FILTERS.map((f:any)=>(
+            <button key={f.id} onClick={()=>setActiveFilter(f.id)}
+              className={`shrink-0 flex flex-col items-center gap-1 active:scale-95 ${activeFilter===f.id?"opacity-100":"opacity-70"}`}>
+              <div className="w-14 h-14 rounded-lg overflow-hidden border-2"
+                   style={{borderColor:activeFilter===f.id?"#ec4899":"rgba(255,255,255,0.15)"}}>
+                {previewSrc && <img src={previewSrc} className="w-full h-full object-cover" style={{filter:f.css}} alt=""/>}
+              </div>
+              <span className="text-[9px] text-white/80 whitespace-nowrap font-semibold">{f.label}</span>
+            </button>
+          ))}
+        </div>
+      </>)}
+
+      {sub==="adjust" && (<>
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-bold text-white">Adjust warna</div>
+          <button onClick={()=>{resetAdjust?.();}} className="text-[10px] px-2 py-1 rounded bg-white/10">↻ Reset</button>
+        </div>
+        <div className="space-y-2">
+          {rows.map(r=>(
+            <label key={r.label} className="block">
+              <div className="flex justify-between text-[10px] mb-0.5"><span>{r.label}</span><b className="text-pink-300">{r.v}</b></div>
+              <input type="range" min={r.min} max={r.max} value={r.v} onChange={e=>r.set(Number(e.target.value))} className="w-full accent-pink-500"/>
+            </label>
+          ))}
+        </div>
+      </>)}
+
+      {sub==="overlay" && (<>
+        <div className="text-xs font-bold text-white">Logo watermark</div>
+        <div className="p-2 rounded-xl bg-black/40 border border-white/10 flex items-center gap-2">
+          {logoDataUrl ? (<img src={logoDataUrl} className="w-10 h-10 rounded-full border-2 border-white/30" alt=""/>)
+            : (<div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">🖼️</div>)}
+          <div className="flex-1 text-[10px] text-white/60">Upload logo bulat channel kamu</div>
+          <label className="btn btn-ghost btn-xs cursor-pointer">Upload<input type="file" accept="image/*" hidden onChange={(e:any)=>onLogoUpload(e.target.files?.[0])}/></label>
+          {logoDataUrl && <button onClick={()=>setLogoPosition("none")} className="w-7 h-7 rounded-lg bg-red-500/20 text-red-200 text-xs">🗑</button>}
+        </div>
         {logoDataUrl && (
-          <button onClick={()=>setLogoPosition("none")} className="w-8 h-8 rounded-lg bg-red-500/20 text-red-200 text-sm">🗑</button>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[{id:"center",l:"🎯 Tengah"},{id:"corner",l:"📍 Pojok"},{id:"none",l:"❌ Off"}].map(p=>(
+              <button key={p.id} onClick={()=>setLogoPosition(p.id)}
+                className={`q-tile !text-[10px] ${logoPosition===p.id?"active":""}`}>{p.l}</button>
+            ))}
+          </div>
         )}
-      </div>
-      {logoDataUrl && (
-        <div className="grid grid-cols-3 gap-1.5">
-          {[{id:"center",l:"🎯 Tengah"},{id:"corner",l:"📍 Pojok"},{id:"none",l:"❌ Hidden"}].map((p:any)=>(
-            <button key={p.id} onClick={()=>setLogoPosition(p.id)}
-              className={`q-tile !text-[10px] ${logoPosition===p.id?"active":""}`}>{p.l}</button>
-          ))}
-        </div>
-      )}
-      <div>
-        <div className="text-[11px] mb-1 text-white/70">🎨 Warna tema spectrum</div>
-        <div className="flex gap-2 flex-wrap items-center">
-          {COLOR_PRESETS.map(c=>(
-            <button key={c.hex} onClick={()=>setVizColor(c.hex)}
-              className={`color-swatch ${vizColor===c.hex?"active":""}`}
-              style={{width:30,height:30,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
-          ))}
-          <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)}
-            className="w-10 h-10 rounded-full bg-transparent border-0 p-0 cursor-pointer"/>
-        </div>
-      </div>
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="text-[11px] text-white/70">📊 Style spectrum utama</div>
-          <button onClick={()=>setSpectrumSticker("none")} className="text-[9px] px-2 py-0.5 rounded bg-white/5 text-white/60">Reset stiker</button>
-        </div>
-        <div className="grid grid-cols-3 gap-1.5 max-h-[200px] overflow-y-auto">
-          {VIZ_STYLES.map((s:any)=>(
-            <button key={s.id} onClick={()=>setVizStyle(s.id)}
-              className={`q-tile !text-[10px] !py-2 ${vizStyle===s.id?"active":""}`} title={s.desc}>{s.emoji} {s.label}</button>
-          ))}
-        </div>
-      </div>
+      </>)}
+
+      {sub==="togel" && (<>
+        <div className="text-xs font-bold text-white">Judul & Lirik</div>
+        <Toggle label="🏷️ Judul video" desc="Tampilkan judul di bagian bawah" val={showTitle} set={setShowTitle}/>
+        <Toggle label="🎤 Karaoke lirik" desc="Highlight kata per kata ikut musik" val={showLyrics} set={setShowLyrics}/>
+      </>)}
     </div>
   );
 }
 
-function FilterTab({slides,activeSlide,activeFilter,setActiveFilter,FILTERS}:any){
-  const previewSrc = slides[Math.min(activeSlide,slides.length-1)]?.imageUrl;
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-bold text-white/80">🎨 Filter Video</div>
-        <button onClick={()=>setActiveFilter("none")} className="text-[10px] px-2 py-1 rounded bg-white/10 active:scale-95">↻ Reset</button>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 no-scrollbar">
-        {FILTERS.map((f:any)=>(
-          <button key={f.id} onClick={()=>setActiveFilter(f.id)}
-            className={`shrink-0 flex flex-col items-center gap-1 active:scale-95 ${activeFilter===f.id?"opacity-100":"opacity-70"}`}>
-            <div className="w-16 h-16 rounded-lg overflow-hidden border-2"
-                 style={{borderColor:activeFilter===f.id?"#ec4899":"rgba(255,255,255,0.15)"}}>
-              {previewSrc && (
-                <img src={previewSrc} className="w-full h-full object-cover" style={{filter:f.css}} alt=""/>
-              )}
-            </div>
-            <span className="text-[9px] text-white/80 whitespace-nowrap font-semibold">{f.label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function AdjustTab({brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,vignetteAmt,setVignetteAmt,resetAdjust}:any){
   const rows = [

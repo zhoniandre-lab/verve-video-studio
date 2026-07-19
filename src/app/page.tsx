@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import SpectrumVisualizer from "@/components/SpectrumVisualizer";
-import { renderSlideshow, downloadBlob } from "@/lib/recorder";
+import { renderSlideshow, downloadBlob, drawLiveSpectrum } from "@/lib/recorder";
 import type { Quality as RenderQuality, Transition, CaptionStyle } from "@/lib/recorder";
 import { cropImageToRatio, copyToClipboard } from "@/lib/imgutils";
 import {
@@ -1607,28 +1607,54 @@ Dibuat dengan Verve AI Video Studio`;
       vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
       ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 
-      // Spectrum bars
+      // ===== SPECTRUM LIVE (pakai drawLiveSpectrum yang sama dengan engine render — semua 17 style) =====
       const an = previewAnalyserRef.current;
-      let barData: Uint8Array;
+      const SPEC_BARS = 64;
+      let barData: Float32Array|Uint8Array = new Float32Array(SPEC_BARS);
+      let bass = 0, beat=false;
       if (analyserConnected && an) {
-        an.getByteFrequencyData(freq);
-        barData = freq;
+        const f8 = new Uint8Array(an.frequencyBinCount);
+        an.getByteFrequencyData(f8);
+        // Downsample ke 64 band
+        const out = new Float32Array(SPEC_BARS);
+        const step = Math.max(1, Math.floor(f8.length/SPEC_BARS));
+        let bassSum=0, bassCnt=0, maxV=0;
+        for (let i=0;i<SPEC_BARS;i++){
+          let s=0; for (let j=0;j<step;j++){ const v=(f8[i*step+j]||0)/255; s+=v; if (v>maxV) maxV=v; }
+          out[i]=s/step;
+          if (i<8){bassSum+=out[i];bassCnt++;}
+        }
+        bass = bassCnt?bassSum/bassCnt:0;
+        bass = ((draw as any)._bass||0)*0.85 + bass*0.15;
+        (draw as any)._bass = bass;
+        beat = maxV > bass*1.4 && maxV > 0.35;
+        barData = out;
       } else {
-        // fake sine spectrum
-        barData = new Uint8Array(64);
-        for (let i=0;i<64;i++) barData[i] = Math.max(0,Math.min(255, 80 + Math.sin(t*2+i*0.2)*40 + Math.sin(t*5+i*0.3)*20));
+        // Fake spectrum (tidak ada audio / mode diam)
+        for (let i=0;i<SPEC_BARS;i++){
+          barData[i] = Math.max(0.05, Math.min(1, 0.3 + Math.sin(t*2+i*0.2)*0.2 + Math.sin(t*5+i*0.3)*0.15));
+        }
+        bass = 0.3 + Math.sin(t*2)*0.2;
+        beat = (Math.sin(t*2.5)>0.9);
       }
-      const bars=40, bw=(W*0.9)/bars, baseY=H-24;
-      const grad=ctx.createLinearGradient(0,H,0,0);
-      grad.addColorStop(0,vizColor); grad.addColorStop(1,"#22d3ee");
-      ctx.save(); ctx.shadowBlur=12; ctx.shadowColor=vizColor;
-      for (let i=0;i<bars;i++){
-        const v = barData[Math.floor(i/bars*barData.length)]/255;
-        const h = 14 + v*H*0.18;
-        ctx.fillStyle = grad;
-        ctx.fillRect(W*0.05+i*bw+1, baseY-h, bw-2, h);
+      if (vizStyle !== "none") {
+        // Reset filter ke none untuk spectrum (biar tidak kena filter video)
+        const rgbV: [number,number,number] = (() => {
+          // parse hex color ke RGB
+          const hex = vizColor.replace("#","");
+          const v = hex.length===3?hex.split("").map(c=>c+c).join(""):hex;
+          return [parseInt(v.slice(0,2),16), parseInt(v.slice(2,4),16), parseInt(v.slice(4,6),16)];
+        })();
+        ctx.save();
+        try{
+          drawLiveSpectrum(ctx,{
+            W,H,bars:barData,bass,beat,style:vizStyle,rgb:rgbV,isMobile:isMobile,phase:t*0.5,
+            barFill:`rgba(${rgbV[0]},${rgbV[1]},${rgbV[2]},0.95)`,
+          });
+        }catch(e:any){ console.warn("spectrum err",e?.message); }
+        ctx.restore();
+        ctx.filter = cFilter; // balikin filter
       }
-      ctx.restore();
 
       // Title overlay
       if (showTitle) {

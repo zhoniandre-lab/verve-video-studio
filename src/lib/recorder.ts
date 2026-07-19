@@ -1089,17 +1089,24 @@ function drawSpectrumSticker(ctx: CanvasRenderingContext2D, s: DrawState) {
   ctx.restore();
 }
 
-function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
-  const { W,H,bars,rgb,bass,beat,style } = s;
-  const glow = s.profile.glow;
-  const isMobile = W <= 900;
-  ctx.save();
-  ctx.shadowBlur = isMobile ? Math.min(glow, 12) : glow;
-  ctx.shadowColor = rgba(rgb,1);
+// ====== SPECTRUM PREVIEW HELPERS (digunakan juga oleh live preview di page/studio) ======
+function hexToRgbFromHex(hex:string):[number,number,number]{ const [r,g,b]=hexToRgb(hex); return [r,g,b]; }
+function drawSpectrum(ctx:CanvasRenderingContext2D, s:DrawState){
+  drawLiveSpectrum(ctx,{W:s.W,H:s.H,bars:s.bars as any,bass:s.bass,beat:s.beat,style:s.style,rgb:s.rgb,isMobile:s.W<=900,phase:s.phase,barFill:rgba(s.rgb,0.95)});
+}
 
-  // Pre-compute warna bar SOLID (pakai warna utama langsung tanpa gradient per-bar)
-  // Ini boost besar di mobile — createLinearGradient tiap bar itu SANGAT mahal
-  const barFill = rgba(rgb, 0.95);
+// Legacy alias
+export function drawPreviewSpectrum(ctx:CanvasRenderingContext2D, opts:any){ drawLiveSpectrum(ctx,opts); }
+
+export function drawLiveSpectrum(ctx: CanvasRenderingContext2D, opts: {W:number;H:number;bars:Float32Array|Uint8Array|number[];bass:number;beat:boolean;style:string;rgb:[number,number,number];isMobile?:boolean;phase?:number;barFill?:string}) {
+  const {W,H,bars,bass,beat,style,rgb} = opts;
+  const isMobile = opts.isMobile ?? (W<=900);
+  const phase = opts.phase ?? 0;
+  const glow = isMobile ? 12 : 24;
+  ctx.save();
+  ctx.shadowBlur = glow;
+  ctx.shadowColor = rgba(rgb,1);
+  const barFill = opts.barFill || rgba(rgb,0.95);
 
   if (style==="luxury"||style==="bars") {
     const nBars = isMobile ? Math.min(bars.length, 40) : bars.length;
@@ -1118,7 +1125,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
       ctx.fillRect(x,y,barW,h); // fillRect lebih cepat 2-3× dari roundRect
     }
     // Reflection di bawah (satu rect solid alpha rendah — bukan mirror per-bar)
-    if (s.profile.reflections && !isMobile) {
+    if (false && !isMobile) {
       ctx.save(); ctx.globalAlpha=0.18; ctx.scale(1,-0.3);
       ctx.fillStyle = barFill;
       for (let i=0;i<bars.length;i++){
@@ -1143,24 +1150,14 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
       cg.addColorStop(0,"rgba(255,255,255,0.9)"); cg.addColorStop(0.6,rgba(rgb,0.7)); cg.addColorStop(1,rgba(rgb,0.1));
       ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
       ctx.fillStyle="#fff";
-      if (s.logoImg && (s.logoPos==="center"||!s.logoPos)){
-        const ls=r*1.5; ctx.save();
-        ctx.beginPath(); ctx.arc(0,0,ls/2,0,Math.PI*2); ctx.clip();
-        ctx.drawImage(s.logoImg,-ls/2,-ls/2,ls,ls); ctx.restore();
-      } else {
-        ctx.font=`${r}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle";
-        ctx.fillText("♪",0,2);
-      }
+      ctx.font=`${r}px sans-serif`; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText("♪",0,2);
       ctx.restore();
-      // Particles: kurangi 6→3 di mobile
-      if (beat) {
-        const nSpark = isMobile ? 2 : 6;
-        for (let k=0;k<nSpark;k++) s.particles.push({x:W/2+(Math.random()-0.5)*60,y:H*0.28+(Math.random()-0.5)*40,vx:(Math.random()-0.5)*5,vy:-Math.random()*3-1.5,life:1,size:Math.random()*2+1});
-      }
+      // Particles: kurangi 6→3 di mobile 
     }
   }
   else if (style==="circle"){
-    ctx.save(); ctx.translate(W/2,H*0.35); ctx.rotate(s.phase*0.2);
+    ctx.save(); ctx.translate(W/2,H*0.35); ctx.rotate(phase*0.2);
     const r0=Math.min(W,H)*0.09;
     ctx.strokeStyle=rgba(rgb,0.8); ctx.lineWidth=3; ctx.beginPath();
     for (let i=0;i<bars.length*2;i++){
@@ -1179,7 +1176,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
   else if (style==="trapnation"){
     ctx.save(); ctx.translate(W/2,H*0.32);
     const R=Math.min(W,H)*0.1*(1+bass*0.3);
-    ctx.rotate(-s.phase*0.8);
+    ctx.rotate(-phase*0.8);
     for (let ring=0;ring<2;ring++){
       ctx.strokeStyle=rgba(rgb,0.6-ring*0.2); ctx.lineWidth=2; ctx.beginPath();
       for (let i=0;i<bars.length;i++){
@@ -1190,7 +1187,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
       }
       ctx.closePath(); ctx.stroke();
     }
-    ctx.rotate(s.phase*0.8);
+    ctx.rotate(phase*0.8);
     ctx.fillStyle="#fff"; ctx.shadowBlur=30;
     ctx.beginPath(); ctx.arc(0,0,R*0.6,0,Math.PI*2); ctx.fill();
     ctx.restore();
@@ -1246,14 +1243,14 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
     ctx.save(); ctx.translate(W/2,H*0.4);
     const rings=12;
     for(let i=rings-1;i>=0;i--){
-      const k=(i+(s.phase*2)%1)/rings, sz=k*Math.min(W,H)*0.8;
+      const k=(i+(phase*2)%1)/rings, sz=k*Math.min(W,H)*0.8;
       ctx.strokeStyle=rgba(rgb,0.2+(1-k)*0.5); ctx.lineWidth=2;
       ctx.strokeRect(-sz/2,-sz*9/16/2,sz,sz*9/16);
     }
     ctx.restore();
   }
   else if (style==="particles"){
-    if(beat) for(let k=0;k<8;k++) s.particles.push({x:W/2+(Math.random()-0.5)*W*0.4,y:H*0.7+(Math.random()-0.5)*40,vx:(Math.random()-0.5)*6,vy:-Math.random()*5-1,life:1,size:Math.random()*3+2});
+     
   }
   // ===== SPECTRUM BARU (CapCut-style) =====
   else if (style==="wave"){
@@ -1265,7 +1262,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
       const x=(i/n)*W;
       const bi=Math.floor((i/n)*bars.length);
       const v=(bars as any)[bi]||0;
-      const maxA=Math.max(4, v*H*0.12*(0.5+bass*1.2)) + Math.sin(s.phase*2+i*0.25)*H*0.005;
+      const maxA=Math.max(4, v*H*0.12*(0.5+bass*1.2)) + Math.sin(phase*2+i*0.25)*H*0.005;
       if(i===0) ctx.moveTo(x,cy-maxA); else ctx.lineTo(x,cy-maxA);
     }
     ctx.stroke();
@@ -1275,7 +1272,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
   }
   else if (style==="radial-bars"){
     const cx=W/2, cy=H*0.35, n=Math.min(bars.length, isMobile?36:60), r0=Math.min(W,H)*0.08;
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(s.phase*0.4);
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(phase*0.4);
     ctx.fillStyle=rgba(rgb,0.9); ctx.shadowBlur=12; ctx.shadowColor=rgba(rgb,0.8);
     for(let i=0;i<n;i++){
       const a=(i/n)*Math.PI*2;
@@ -1349,14 +1346,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
   else if (style==="none"){
     // tanpa spectrum
   }
-  // particles
-  for(let i=s.particles.length-1;i>=0;i--){
-    const p=s.particles[i];
-    p.x+=p.vx; p.y+=p.vy; p.vy+=0.08; p.life-=0.02;
-    if(p.life<=0){s.particles.splice(i,1);continue;}
-    ctx.fillStyle=rgba(rgb,p.life);
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
-  }
+  // NOTE: particles stateful diurus di drawFrame utama (bukan di drawLiveSpectrum)
   ctx.restore();
 }
 
