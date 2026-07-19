@@ -208,8 +208,45 @@ export function StudioEditor(p: StudioEditorProps) {
     onBack, onExport, onSaveDraft, onDeleteSlide, onDuplicateSlide,
   } = p;
 
-  // CANVAS MILIK STUDIO SENDIRI (tidak pakai ref dari parent — itu untuk card preview step<=4)
-  const studioCanvasRef = useRef<HTMLCanvasElement|null>(null);
+  // Host div tempat canvas preview dari parent akan dipindahkan (reparent via DOM appendChild)
+  // saat step=5. Canvas TIDAK di-destroy/dibuat ulang → audio analyser tetap tersambung sempurna.
+  const canvasHostRef = useRef<HTMLDivElement|null>(null);
+  const canvasOrigParentRef = useRef<HTMLElement|null>(null);
+  const spectrumVizOrigNextSiblingRef = useRef<Node|null>(null);
+
+  useEffect(()=>{
+    // Cari canvas preview parent (id/hub ref dari window/document — lebih simpel pakai querySelector di host asli)
+    const origCanvasHost = document.getElementById("preview-canvas-host");
+    const host = canvasHostRef.current;
+    if (!origCanvasHost || !host) return;
+    const canvas = origCanvasHost.querySelector("canvas");
+    const spectrumViz = origCanvasHost.querySelector("canvas:nth-of-type(2)"); // canvas SpectrumVisualizer
+    // Pindahkan canvas + spectrum viz ke host studio
+    if (canvas) {
+      if (!canvasOrigParentRef.current) canvasOrigParentRef.current = origCanvasHost;
+      canvas.style.width="100%"; canvas.style.height="100%"; canvas.style.position="absolute"; canvas.style.inset="0";
+      host.appendChild(canvas);
+    }
+    if (spectrumViz) {
+      if (!spectrumVizOrigNextSiblingRef.current) spectrumVizOrigNextSiblingRef.current = spectrumViz.nextSibling;
+      (spectrumViz as HTMLElement).style.position="absolute"; (spectrumViz as HTMLElement).style.inset="0";
+      (spectrumViz as HTMLElement).style.width="100%"; (spectrumViz as HTMLElement).style.height="100%";
+      host.appendChild(spectrumViz);
+    }
+    return ()=>{
+      // Kembalikan ke parent asli saat unmount (keluar step 5)
+      if (canvas && canvasOrigParentRef.current) {
+        canvas.style.cssText = "";
+        canvasOrigParentRef.current.insertBefore(canvas, spectrumVizOrigNextSiblingRef.current || null);
+      }
+      if (spectrumViz && canvasOrigParentRef.current) {
+        (spectrumViz as HTMLElement).style.cssText = "";
+        canvasOrigParentRef.current.appendChild(spectrumViz);
+      }
+      canvasOrigParentRef.current = null;
+      spectrumVizOrigNextSiblingRef.current = null;
+    };
+  },[]);
 
   const [tab, setTab] = useState<string>("spectrum");
   type TabId = "spectrum"|"text"|"sticker"|"audio"|"filter"|"edit";
@@ -375,12 +412,13 @@ export function StudioEditor(p: StudioEditorProps) {
   }, [audioSrc, previewMuted, previewAudioRef, proxifyAudioUrl]);
 
   // ===== STATIC FRAME PREVIEW (saat paused di Studio) =====
-  // Gambar 1 frame ke canvas saat setting berubah — spektrum keliatan tanpa Play,
-  // HP tidak berat karena hanya render SEKALI per perubahan (bukan 60fps loop).
+  // Gambar 1 frame ke canvas saat setting berubah — spektrum keliatan tanpa Play.
+  // Canvas dicari di dalam host (tempat parent canvas sudah di-reparent).
   const studioImgCacheRef = useRef<Record<number,HTMLImageElement>>({});
   useEffect(()=>{
-    if (previewPlaying) return; // lagi play — RAF draw yang pegang
-    const canvas = studioCanvasRef.current;
+    if (previewPlaying) return;
+    // Canvas sudah di-reparent ke canvasHostRef oleh effect di atas
+    const canvas = canvasHostRef.current?.querySelector("canvas") as HTMLCanvasElement|null;
     if (!canvas) return;
     let cancelled = false;
     const draw = () => {
@@ -567,18 +605,16 @@ export function StudioEditor(p: StudioEditorProps) {
                }}
                className="relative rounded-xl overflow-hidden border-2 border-white/15 shadow-2xl mx-auto touch-none"
                style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%", width:"100%"}}>
-            {/* 🎬 CANVAS SELALU DI-MOUNT (JANGAN conditional render!) — kalau canvas cuma ada saat previewPlaying=true,
-                maka saat pertama kali klik Play, ref canvas masih null → togglePreview() langsung return tanpa play. */}
-            <canvas ref={studioCanvasRef}
-              width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
-              height={isMobile?(aspectRatio==="9:16"?640:aspectRatio==="1:1"?480:360):(aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480)}
-              className="w-full h-full block"
-              style={{background:"#000"}} />
+            {/* 🎬 CANVAS HOST — canvas dari parent akan di-appendChild ke sini oleh useEffect di atas.
+                Canvas TIDAK dibuat/di-destroy di sini (reparent DOM) → audio analyser tetap utuh. */}
+            <div ref={canvasHostRef} className="w-full h-full relative" style={{background:"#000"}} />
 
-            {/* Vignette overlay live */}
+            {/* Vignette overlay (DOM, hanya saat pause) — saat play vignette di-draw oleh canvas */}
+            {!previewPlaying && (
             <div className="absolute inset-0 pointer-events-none" style={{
               background:`radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,${(vignetteAmt/100)*0.8}) 100%)`
             }}/>
+            )}
 
             {/* Center Play — DIPERBESAR buat HP */}
             {!previewPlaying && slides.length>0 && (

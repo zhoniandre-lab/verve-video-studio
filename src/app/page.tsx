@@ -2448,19 +2448,17 @@ Dibuat dengan Verve AI Video Studio`;
 
           </div>
 
-          {step<=4 && (
-          <aside className="card lg:sticky lg:top-4 self-start min-w-0">
+          {/* Preview Live — canvas SELALU mounted (jangan conditional render), ref tidak boleh null.
+              Saat step=5 (Studio Editor), aside ini disembunyikan via CSS — canvas tetap di DOM sehingga
+              togglePreview/drawStaticPreview bisa jalan dan spektrum tetap sync dengan audio.
+              Di Studio canvas di-reparent ke area preview studio via useEffect agar tampil full-layar. */}
+          <aside className={`card lg:sticky lg:top-4 self-start min-w-0 ${step===5?"!hidden":""}`}>
             <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
               👁️ Preview Live
-              {step===5 && slides.length>0 && (
-                <button onClick={togglePreview}
-                  className={`ml-auto text-[11px] px-3 py-1.5 rounded-lg ${previewPlaying?"bg-red-500/30 border-red-500/40":"bg-purple-500/30 border-purple-400/40"} border text-white whitespace-nowrap`}>
-                  {previewPlaying?"⏹ Stop":"▶️ Preview Video"}
-                </button>
-              )}
             </h3>
-            {step!==5 && (<>
-            <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
+            {/* Canvas host (selalu ter-mount) — akan di-reparent oleh StudioEditor saat step=5 */}
+            <div id="preview-canvas-host"
+                 className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
               <canvas ref={previewCanvasRef}
                 width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
@@ -2493,7 +2491,7 @@ Dibuat dengan Verve AI Video Studio`;
                 </div>
               )}
             </div>
-            {step!==5 && slides.length>0 && (
+            {slides.length>0 && step!==5 && (
               <div className="mt-2 rounded-xl bg-black/40 border border-white/10 p-2 space-y-2">
                 <input
                   type="range"
@@ -2534,7 +2532,6 @@ Dibuat dengan Verve AI Video Studio`;
                 </div>
               </div>
             )}
-            </>)}
 
             <p className="text-[10px] sm:text-xs text-white/50 mt-2 break-word">
               🔥 Tap ▶️ buat PREVIEW full video + musik + lirik + transisi SEBELUM render. Semua setting di bawah (warna, transisi, durasi, lirik) bisa diubah live. Render pakai engine WebCodecs super-cepat.
@@ -2551,7 +2548,6 @@ Dibuat dengan Verve AI Video Studio`;
             )}
             <ProjectMeta title={selectedTitle?.text} niche={niche} slides={slides.length} quality={quality} ratio={aspectRatio} viz={vizStyle}/>
           </aside>
-          )}
 
           {videoUrl && meta && (
             <div className="lg:col-span-3 card mt-2 min-w-0">
