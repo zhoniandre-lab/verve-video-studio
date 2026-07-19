@@ -322,6 +322,9 @@ export default function Home() {
   const previewCanvasRef = useRef<HTMLCanvasElement|null>(null);
   const previewRafRef = useRef<number|null>(null);
   const previewAudioBufRef = useRef<{data:Float32Array;sampleRate:number}|null>(null);
+  const previewActxRef = useRef<AudioContext|null>(null);
+  const previewAnalyserRef = useRef<AnalyserNode|null>(null);
+  const previewAnalyserConnected = useRef<boolean>(false);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewCurrent, setPreviewCurrent] = useState(0);
   const [previewDuration, setPreviewDuration] = useState(0);
@@ -1403,10 +1406,13 @@ Dibuat dengan Verve AI Video Studio`;
     if (previewRafRef.current) { cancelAnimationFrame(previewRafRef.current); previewRafRef.current = null; }
     const audEl = previewAudioRef.current;
     if (audEl) {
-      if (!audEl.paused) audEl.pause();
-      if ((audEl as any)._cleanup) { (audEl as any)._cleanup(); (audEl as any)._cleanup = null; }
+      try { if (!audEl.paused) audEl.pause(); } catch {}
+      try { audEl.currentTime = 0; } catch {}
+      if ((audEl as any)._cleanup) { try { (audEl as any)._cleanup(); } catch {} (audEl as any)._cleanup = null; }
     }
+    // JANGAN close actx — AudioContext cuma bisa dibuat 6x di Chrome, dan createMediaElementSource cuma 1x per element
     setPreviewPlaying(false);
+    setPreviewCurrent(0);
   }
   function getFilterString(f?:string): string {
     const bright = 1 + brightness/100;
@@ -1453,66 +1459,107 @@ Dibuat dengan Verve AI Video Studio`;
       (audioMode==="both" && (musicUrl||aiMusicUrl)) ? (aiMusicUrl||musicUrl) : ""
     );
     const audEl = previewAudioRef.current;
+
+    // Setup event listener audio (hanya dipasang SEKALI per play; dibersihkan di stopPreview)
     if (audEl) {
+      // Bersihkan listener lama kalau ada (safety)
+      if ((audEl as any)._cleanup) { try { (audEl as any)._cleanup(); } catch {} (audEl as any)._cleanup = null; }
       audEl.muted = previewMuted;
       audEl.src = previewSrc;
-      audEl.currentTime = 0;
-      // Event listener untuk timeupdate & loadedmetadata (seek bar)
-      const onLoaded = () => { setPreviewDuration(audEl.duration||0); };
-      const onTime = () => { setPreviewCurrent(audEl.currentTime); };
-      const onEnded = () => { stopPreview(); setPreviewCurrent(0); };
+      try { audEl.currentTime = 0; } catch {}
+      const onLoaded = () => { setPreviewDuration(isFinite(audEl.duration)?audEl.duration:0); };
+      const onTime = () => { setPreviewCurrent(audEl.currentTime||0); };
+      const onEnded = () => { stopPreview(); };
       audEl.addEventListener("loadedmetadata", onLoaded);
       audEl.addEventListener("timeupdate", onTime);
       audEl.addEventListener("ended", onEnded);
-      // Bersihkan listener saat stop
       (audEl as any)._cleanup = () => {
-        audEl.removeEventListener("loadedmetadata", onLoaded);
-        audEl.removeEventListener("timeupdate", onTime);
-        audEl.removeEventListener("ended", onEnded);
+        try { audEl.removeEventListener("loadedmetadata", onLoaded); } catch {}
+        try { audEl.removeEventListener("timeupdate", onTime); } catch {}
+        try { audEl.removeEventListener("ended", onEnded); } catch {}
       };
     }
 
     // Load canvas & images
     const ctx = canvas.getContext("2d")!;
     const W = canvas.width, H = canvas.height;
-    // Load slides ke HTMLImageElement
     const imgs: HTMLImageElement[] = [];
     for (const s of slides) {
       const im = new Image(); im.crossOrigin = "anonymous";
       im.src = s.imageUrl;
-      try { await new Promise<void>((res,rej)=>{ im.onload=()=>res(); im.onerror=()=>res(); setTimeout(()=>res(),4000); }); } catch {}
+      try { await new Promise<void>((res)=>{ im.onload=()=>res(); im.onerror=()=>res(); setTimeout(()=>res(),4000); }); } catch {}
       imgs.push(im);
     }
-    // Setup audio + analyser
-    let actx: AudioContext|null = null; let analyser: AnalyserNode|null = null; let freq = new Uint8Array(0);
+
+    // === SETUP AUDIO ANALYSER (PERSISTENT — JANGAN createMediaElementSource lebih dari 1x!) ===
+    // createMediaElementSource HANYA BOLEH dipanggil SATU KALI per HTMLMediaElement seumur hidup halaman.
+    // Kalau dipanggil lagi → error "MediaElementSource already connected" → preview rusak.
+    let freq = new Uint8Array(64);
+    let analyserConnected = false;
+    try {
+      if (!previewActxRef.current) {
+        const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+        previewActxRef.current = new AC();
+      }
+      const actx = previewActxRef.current!;
+      if (actx.state === "suspended") {
+        try { await actx.resume(); } catch {}
+      }
+      if (audEl && previewSrc && !previewAnalyserConnected.current) {
+        const an = actx.createAnalyser();
+        an.fftSize = 256;
+        an.smoothingTimeConstant = 0.75;
+        const src = actx.createMediaElementSource(audEl);
+        src.connect(an);
+        an.connect(actx.destination);
+        previewAnalyserRef.current = an;
+        previewAnalyserConnected.current = true;
+      }
+      if (previewAnalyserRef.current) {
+        freq = new Uint8Array(previewAnalyserRef.current.frequencyBinCount);
+        analyserConnected = true;
+      }
+    } catch (e: any) {
+      console.warn("Audio analyser setup gagal (lanjut tanpa spectrum live):", e?.message || e);
+      analyserConnected = false;
+    }
+
     const startT = performance.now();
     setPreviewPlaying(true);
 
     const effSpeed = Math.max(0.25, Number(videoSpeed)||1);
+    const cFilter = getFilterString();
+    const vStrength = (vignetteAmt/100)*0.8;
+
+    // Ambil lyric lines yang valid
+    const lyricLinesValid = lyricLines.filter(x=>!!x && x.trim());
+    const showLyricsNow = showLyrics && lyricLinesValid.length>0;
+
     const draw = () => {
       previewRafRef.current = requestAnimationFrame(draw);
       const now = performance.now();
       let t = 0;
-      if (audEl && !audEl.paused && audEl.duration) t = audEl.currentTime*effSpeed;
-      else t = ((now - startT)/1000)*effSpeed;
+      if (audEl && !audEl.paused && audEl.duration && isFinite(audEl.duration)) {
+        t = (audEl.currentTime||0)*effSpeed;
+        setPreviewCurrent(audEl.currentTime);
+      } else {
+        t = ((now - startT)/1000)*effSpeed;
+      }
 
-      // Slide index — durasi/transisi dibagi speed untuk efek speed-up visual
+      // Slide + transisi
       const sd = Math.max(0.3, slideDuration/effSpeed);
       const td = Math.min(sd*0.6, (isMobile?0.5:0.8)/effSpeed);
       const perS = sd + td;
       let slideIdx = Math.floor(t/perS);
       let localT = t - slideIdx*perS;
-      let inTrans = localT >= sd;
-      let transT = td>0 && inTrans ? Math.min(1,(localT-sd)/td) : 0;
+      let inTrans = localT >= sd && td>0;
+      let transT = inTrans ? Math.min(1,(localT-sd)/td) : 0;
       let nextIdx = Math.min(slideIdx+1, imgs.length-1);
       slideIdx = Math.min(slideIdx, imgs.length-1);
       const slideT = Math.min(1, sd>0?localT/sd:0);
 
-      // Gambar background (slide) dengan transisi + filter CapCut
       ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
-      // Canvas filter: brightness, contrast, saturation, preset
-      const cFilter = getFilterString();
-      const drawImg = (img:HTMLImageElement, alpha=1, zoom=1, ox=0, oy=0)=>{
+      const drawImg = (img:HTMLImageElement, alpha=1, zoom=1)=>{
         if (!img.naturalWidth) { ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H); return; }
         const ir = img.naturalWidth/img.naturalHeight, cr = W/H;
         let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;
@@ -1522,120 +1569,117 @@ Dibuat dengan Verve AI Video Studio`;
         ctx.globalAlpha = alpha;
         ctx.filter = cFilter;
         const z = zoom;
-        ctx.translate(W/2+ox,H/2+oy); ctx.scale(z,z); ctx.translate(-W/2-ox,-H/2-oy);
+        ctx.translate(W/2,H/2); ctx.scale(z,z); ctx.translate(-W/2,-H/2);
         ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
         ctx.restore();
       };
-      // Zoom Ken Burns subtle
       const zb = 1 + slideT*0.04;
       drawImg(imgs[slideIdx], 1, zb);
       if (inTrans && imgs[nextIdx]) {
-        const nextZ = 1 + (1-transT)*0.04;
-        drawImg(imgs[nextIdx], transT, nextZ);
+        drawImg(imgs[nextIdx], transT, 1 + (1-transT)*0.04);
       }
-      // Vignette adjustable
-      const vStrength = vignetteAmt/100*0.8;
+      // Vignette
       const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
       vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
       ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 
-      // Spectrum ringkas (pakai analyser live, atau fake sine kalo ga ada audio)
-      if (analyser) {
-        analyser.getByteFrequencyData(freq);
+      // Spectrum bars
+      const an = previewAnalyserRef.current;
+      let barData: Uint8Array;
+      if (analyserConnected && an) {
+        an.getByteFrequencyData(freq);
+        barData = freq;
       } else {
-        freq = new Uint8Array(64);
-        for (let i=0;i<64;i++) freq[i] = 80 + Math.sin(t*2+i*0.2)*40 + Math.sin(t*5+i*0.3)*20;
+        // fake sine spectrum
+        barData = new Uint8Array(64);
+        for (let i=0;i<64;i++) barData[i] = Math.max(0,Math.min(255, 80 + Math.sin(t*2+i*0.2)*40 + Math.sin(t*5+i*0.3)*20));
       }
-      let bass=0; const bEnd=Math.floor(freq.length*0.1);
-      for (let i=0;i<bEnd;i++) bass+=freq[i]; bass/=bEnd||1; bass/=255;
-      // Bars bawah
-      const bars=40, bw=(W*0.9)/bars, baseY=H-24, grad=ctx.createLinearGradient(0,H,0,0);
+      const bars=40, bw=(W*0.9)/bars, baseY=H-24;
+      const grad=ctx.createLinearGradient(0,H,0,0);
       grad.addColorStop(0,vizColor); grad.addColorStop(1,"#22d3ee");
-      ctx.save(); ctx.shadowBlur=14; ctx.shadowColor=vizColor;
+      ctx.save(); ctx.shadowBlur=12; ctx.shadowColor=vizColor;
       for (let i=0;i<bars;i++){
-        const v=freq[Math.floor(i/bars*freq.length)]/255;
-        const h=18+v*H*0.18;
-        ctx.fillStyle=grad;
+        const v = barData[Math.floor(i/bars*barData.length)]/255;
+        const h = 14 + v*H*0.18;
+        ctx.fillStyle = grad;
         ctx.fillRect(W*0.05+i*bw+1, baseY-h, bw-2, h);
       }
       ctx.restore();
 
       // Title overlay
       if (showTitle) {
-        ctx.save();
-        ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
-        ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,sans-serif`;
-        ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10; ctx.lineWidth=4; ctx.strokeStyle="rgba(0,0,0,0.8)";
-        ctx.strokeText(selectedTitle?.text||niche||"", W/2, H-40, W*0.9);
-        ctx.fillText(selectedTitle?.text||niche||"", W/2, H-40, W*0.9);
-        ctx.restore();
+        const titleText = selectedTitle?.text || niche || "";
+        if (titleText) {
+          ctx.save();
+          ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
+          ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,-apple-system,sans-serif`;
+          ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10;
+          ctx.lineWidth=4; ctx.strokeStyle="rgba(0,0,0,0.85)"; ctx.lineJoin="round";
+          ctx.strokeText(titleText, W/2, H-50, W*0.9);
+          ctx.fillText(titleText, W/2, H-50, W*0.9);
+          ctx.restore();
+        }
       }
 
-      // Lirik/kapisi (ambil dari lyricLines, durasi per baris)
-      if (showLyrics && lyricLines.some(x=>!!x)) {
-        const lines = lyricLines.filter(x=>!!x && x.trim());
-        const leadIn = 1.2;
-        const totalLyricT = 180; // placeholder 3menit, nanti diganti dari audio
-        const dur = audEl?.duration || Math.max(lines.length*sd, totalLyricT);
-        const perL = (dur-leadIn-1)/lines.length;
-        const activeLine = Math.max(0,Math.min(lines.length-1, Math.floor((t-leadIn)/perL)));
-        const lt = ((t-leadIn) - activeLine*perL)/perL;
+      // Lirik karaoke
+      if (showLyricsNow) {
+        const lines = lyricLinesValid;
+        const leadIn = 1.0;
+        const adur = (audEl?.duration && isFinite(audEl.duration)) ? audEl.duration : Math.max(lines.length*sd + 2, 30);
+        const perL = Math.max(1.2, (adur-leadIn-1)/lines.length);
+        const activeLine = Math.max(0, Math.min(lines.length-1, Math.floor((t-leadIn)/perL)));
+        const lt = perL>0 ? Math.max(0,Math.min(1, ((t-leadIn) - activeLine*perL)/perL)) : 0;
         const line = lines[activeLine] || "";
         ctx.save();
-        ctx.fillStyle="#fde047"; ctx.textAlign="center"; ctx.textBaseline="middle";
         const fs = Math.floor(H*0.055);
-        ctx.font=`900 ${fs}px system-ui,sans-serif`;
-        // highlight per-kata sederhana
+        ctx.font=`900 ${fs}px system-ui,-apple-system,sans-serif`;
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.lineJoin="round";
         const words = line.split(/\s+/);
-        const maxW=W*0.88;
-        let curL="", curW=0; const rows:string[]=[];
+        const maxW = W*0.88;
+        let curL="";
+        const rows:string[]=[];
         words.forEach(w=>{
-          const t2 = curL?curL+" "+w:w;
+          const t2 = curL ? curL+" "+w : w;
           if (ctx.measureText(t2).width > maxW && curL) { rows.push(curL); curL=w; } else curL=t2;
         });
         if (curL) rows.push(curL);
-        const lh=fs*1.25; const baseY=H*0.7;
+        const lh = fs*1.25;
+        const baseY = H*0.7;
         rows.forEach((row,ri)=>{
           const y = baseY - (rows.length-1)*lh/2 + ri*lh;
           const wds = row.split(/\s+/);
-          let totalW=0; const widths=wds.map(w=>{const m=ctx.measureText(w).width; totalW+=m; return m;});
+          let totalW=0;
+          const widths=wds.map(w=>{const m=ctx.measureText(w).width; totalW+=m; return m;});
           const sw=ctx.measureText(" ").width; totalW+=sw*(wds.length-1);
           let x=W/2-totalW/2;
           wds.forEach((w,wi)=>{
             const isActive = (wi/Math.max(1,wds.length)) <= lt;
-            ctx.save();
-            ctx.lineWidth=Math.max(5,fs/7); ctx.strokeStyle="rgba(0,0,0,0.9)"; ctx.lineJoin="round";
-            ctx.strokeText(w,x+widths[wi]/2,y);
-            ctx.fillStyle=isActive?"#fde047":"#fff";
-            ctx.fillText(w,x+widths[wi]/2,y);
-            ctx.restore();
+            ctx.lineWidth=Math.max(5,fs/7); ctx.strokeStyle="rgba(0,0,0,0.9)";
+            ctx.strokeText(w, x+widths[wi]/2, y);
+            ctx.fillStyle = isActive ? "#fde047" : "#ffffff";
+            ctx.fillText(w, x+widths[wi]/2, y);
             x+=widths[wi]+sw;
           });
         });
         ctx.restore();
       }
-
-      // Logo pojok
-      // (sederhana)
     };
+
     draw();
+
     if (audEl && previewSrc) {
       try {
-        if (!actx) {
-          const AC = (window as any).AudioContext||(window as any).webkitAudioContext;
-          const ctxA: AudioContext = new AC();
-          actx = ctxA;
-          const an = ctxA.createAnalyser();
-          an.fftSize=256;
-          analyser = an;
-          const src = ctxA.createMediaElementSource(audEl);
-          src.connect(an); an.connect(ctxA.destination);
-          freq = new Uint8Array(an.frequencyBinCount);
+        const playPromise = audEl.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch((err:any)=>{
+            console.warn("audio.play() gagal:", err?.name, err?.message);
+            // Fallback: tetap animasi tanpa audio (sudah ditangani di draw() dengan t berbasis performance.now)
+          });
         }
-        if (actx && actx.state==="suspended") actx.resume();
-        await audEl.play().catch(()=>{});
-        audEl.onended = ()=>stopPreview();
-      } catch(e) {}
+      } catch(e:any){
+        console.warn("play() throw:", e?.message);
+      }
     }
   }
 
@@ -2183,6 +2227,7 @@ Dibuat dengan Verve AI Video Studio`;
                 previewCanvasRef={previewCanvasRef}
                 previewPlaying={previewPlaying}
                 previewCurrent={previewCurrent} setPreviewCurrent={setPreviewCurrent}
+                previewDuration={previewDuration}
                 previewMuted={previewMuted} setPreviewMuted={setPreviewMuted}
                 togglePreview={togglePreview}
                 stopPreview={stopPreview}

@@ -100,6 +100,7 @@ type StudioEditorProps = {
   previewAudioRef: any; previewCanvasRef: any;
   previewPlaying: boolean;
   previewCurrent: number; setPreviewCurrent:(v:number)=>void;
+  previewDuration: number;
   previewMuted: boolean; setPreviewMuted:(v:boolean|((p:boolean)=>boolean))=>void;
   togglePreview: ()=>void;
   stopPreview: ()=>void;
@@ -121,7 +122,7 @@ export function StudioEditor(p: StudioEditorProps) {
     textLayers, setTextLayers,
     getFilterString, resetAdjust, audioMode, setAudioMode,
     aiMusicUrl, ttsUrl, musicUrl, proxifyAudioUrl,
-    previewAudioRef, previewCanvasRef, previewPlaying, previewCurrent,
+    previewAudioRef, previewCanvasRef, previewPlaying, previewCurrent, previewDuration,
     previewMuted, setPreviewMuted, togglePreview, seekPreview,
     onBack, onExport, onSaveDraft,
   } = p;
@@ -244,7 +245,11 @@ export function StudioEditor(p: StudioEditorProps) {
 
   const transDur = Math.min(slideDuration*0.6, isMobile?0.5:0.8);
   const curSlideDur = slideDuration/videoSpeed;
-  const totalDur = Math.max(slides.length*curSlideDur + transitionDur/videoSpeed, 1);
+  const calcDur = Math.max(slides.length*curSlideDur + transitionDur/videoSpeed, 1);
+  // Pakai durasi audio sungguhan kalau tersedia (finite & >0), supaya slider akurat
+  const totalDur = (previewDuration && isFinite(previewDuration) && previewDuration>0.5)
+    ? Math.max(previewDuration, calcDur)
+    : calcDur;
 
   // Auto-scroll playhead into view
   useEffect(()=>{
@@ -255,9 +260,13 @@ export function StudioEditor(p: StudioEditorProps) {
     el.scrollTo({left:scrollTarget, behavior:"auto"});
   }, [previewCurrent, totalDur]);
 
-  // Thumb size per ratio
-  const thumbW = aspectRatio==="9:16"?42:aspectRatio==="1:1"?54:72;
-  const thumbH = aspectRatio==="9:16"?72:aspectRatio==="1:1"?54:42;
+  // Thumb size per ratio (lebih kecil di HP muat 4-5 thumb terlihat)
+  const thumbW = isMobile
+    ? (aspectRatio==="9:16"?32:aspectRatio==="1:1"?40:56)
+    : (aspectRatio==="9:16"?42:aspectRatio==="1:1"?54:72);
+  const thumbH = isMobile
+    ? (aspectRatio==="9:16"?56:aspectRatio==="1:1"?40:32)
+    : (aspectRatio==="9:16"?72:aspectRatio==="1:1"?54:42);
   const playheadPct = Math.min(100, Math.max(0,(previewCurrent/totalDur)*100));
 
   const audioSrc = (audioMode==="aimusic"&&aiMusicUrl)?aiMusicUrl:
@@ -313,15 +322,15 @@ export function StudioEditor(p: StudioEditorProps) {
           </button>
         </div>
 
-        {/* PREVIEW AREA (flex-1) */}
-        <div className="studio-preview-area relative flex-1 flex items-center justify-center bg-gradient-to-b from-black to-[#0a0418] overflow-hidden p-2">
+        {/* PREVIEW AREA (flex-1) — DIPERBESAR agar nyaman di Samsung A54 */}
+        <div className="studio-preview-area relative flex-1 flex items-center justify-center bg-gradient-to-b from-black to-[#0a0418] overflow-hidden p-1.5">
           <div ref={previewFrameRef}
                onClick={(e)=>{
                  // Tap area kosong untuk deselect
                  if (e.target===e.currentTarget) deselectLayers();
                }}
-               className="relative rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl mx-auto touch-none"
-               style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%"}}>
+               className="relative rounded-xl overflow-hidden border-2 border-white/15 shadow-2xl mx-auto touch-none"
+               style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%", width:"100%"}}>
             {previewPlaying ? (
               <canvas ref={previewCanvasRef}
                 width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
@@ -338,12 +347,13 @@ export function StudioEditor(p: StudioEditorProps) {
               background:`radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,${(vignetteAmt/100)*0.8}) 100%)`
             }}/>
 
-            {/* Center Play */}
+            {/* Center Play — DIPERBESAR buat HP */}
             {!previewPlaying && slides.length>0 && (
               <button onClick={()=>togglePreview()}
+                aria-label="Putar preview"
                 className="absolute inset-0 flex items-center justify-center">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/50 backdrop-blur-md border-2 border-white/40 flex items-center justify-center text-3xl text-white shadow-2xl active:scale-95">
-                  ▶️
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-black/60 backdrop-blur-md border-[3px] border-white/50 flex items-center justify-center text-4xl sm:text-5xl text-white shadow-2xl active:scale-90 transition-transform pl-1">
+                  ▶
                 </div>
               </button>
             )}
@@ -562,10 +572,10 @@ export function StudioEditor(p: StudioEditorProps) {
           </div>
         </div>
 
-        {/* TIMELINE (thumbnail strip + playhead + waveform) */}
-        <div className="bg-[#0a0418] border-y border-white/10 px-1 py-1.5">
+        {/* TIMELINE (thumbnail strip + playhead + waveform) — lebih kompak di HP */}
+        <div className="bg-[#0a0418] border-y border-white/10 px-1 py-1">
           {/* Waveform bar audio (fake bars) */}
-          <div className="flex items-end gap-[2px] h-6 px-1 mb-1">
+          <div className="flex items-end gap-[2px] h-4 px-1 mb-0.5">
             {Array.from({length:60}).map((_,i)=>{
               const base = 0.2 + Math.sin(i*0.4)*0.15 + Math.sin(i*1.3)*0.1 + Math.random()*0.3;
               return <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-pink-500/40 to-cyan-400/40"
@@ -611,36 +621,36 @@ export function StudioEditor(p: StudioEditorProps) {
           </div>
         </div>
 
-        {/* PLAYBACK CONTROLS */}
-        <div className="flex items-center justify-between gap-2 px-4 py-2 bg-black">
-          <button onClick={()=>seekPreview(Math.max(0,previewCurrent-5))} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg active:scale-95">⏮</button>
-          <button onClick={togglePreview}
-                  className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white text-2xl shadow-lg shadow-pink-500/40 active:scale-95">
-            {previewPlaying?"⏸":"▶️"}
+        {/* PLAYBACK CONTROLS (lebih kompak) */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-black">
+          <button onClick={()=>seekPreview(Math.max(0,previewCurrent-5))} aria-label="Mundur 5 detik" className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-base active:scale-95">⏮</button>
+          <button onClick={togglePreview} aria-label={previewPlaying?"Jeda":"Putar"}
+                  className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-white text-xl shadow-lg shadow-pink-500/40 active:scale-95">
+            {previewPlaying?"⏸":"▶"}
           </button>
-          <button onClick={()=>seekPreview(Math.min(totalDur, previewCurrent+5))} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg active:scale-95">⏭</button>
-          <button onClick={()=>setPreviewMuted(!previewMuted)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-lg active:scale-95">
+          <button onClick={()=>seekPreview(Math.min(totalDur, previewCurrent+5))} aria-label="Maju 5 detik" className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-base active:scale-95">⏭</button>
+          <button onClick={()=>setPreviewMuted(!previewMuted)} aria-label={previewMuted?"Suarakan":"Bisukan"} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-base active:scale-95">
             {previewMuted?"🔇":"🔊"}
           </button>
           <div className="text-[11px] text-white/70 font-mono ml-auto tabular-nums">{formatDur(previewCurrent)} / {formatDur(totalDur)}</div>
         </div>
 
-        {/* TOOLBAR 9 TABS (sticky) */}
-        <div className="flex items-stretch gap-0.5 p-1.5 bg-black border-t border-white/10 overflow-x-auto no-scrollbar">
+        {/* TOOLBAR 9 TABS (lebih kompak) */}
+        <div className="flex items-stretch gap-0.5 p-1 bg-black border-t border-white/10 overflow-x-auto no-scrollbar">
           {TABS.map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg shrink-0 min-w-[58px] text-[10px] font-semibold transition active:scale-95 ${
+              className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg shrink-0 min-w-[52px] text-[10px] font-semibold transition active:scale-95 ${
                 tab===t.id?"bg-gradient-to-b from-pink-500/40 to-pink-500/20 border border-pink-400/50 text-white":"text-white/60 hover:bg-white/5 border border-transparent"
               }`}>
-              <span className="text-lg leading-none">{t.icon}</span>
+              <span className="text-base leading-none">{t.icon}</span>
               <span className="whitespace-nowrap">{t.label}</span>
             </button>
           ))}
         </div>
 
-        {/* PANEL KONTEN */}
-        <div className="bg-gradient-to-b from-[#15091f] to-black border-t border-white/5 p-3 overflow-y-auto studio-panel"
-             style={{maxHeight:"42vh"}}>
+        {/* PANEL KONTEN (CapCut-style, lebih pendek agar preview besar) */}
+        <div className="bg-gradient-to-b from-[#15091f] to-black border-t border-white/5 p-2.5 overflow-y-auto studio-panel"
+             style={{maxHeight: isMobile?"30vh":"42vh"}}>
           {tab==="edit" && <EditTab {...{slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport}}/>}
           {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,aiMusicUrl,ttsUrl,musicUrl,proxifyAudioUrl,audioSrc}}/>}
           {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}}/>}
@@ -660,7 +670,8 @@ export function StudioEditor(p: StudioEditorProps) {
 
       {/* Global styles utk fullscreen editor di HP */}
       <style jsx global>{`
-        .studio-mobile { padding-bottom: 0; display:flex; flex-direction:column; }
+        .studio-mobile { padding-bottom: 0; display:flex; flex-direction:column; height:100dvh; height:100vh; }
+        .studio-mobile > .studio-preview-area { flex:1 1 auto; min-height:0; max-height:none; }
         .studio-preview-area { min-height: 0; }
         .studio-panel::-webkit-scrollbar { width: 4px; }
         .studio-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
@@ -1186,14 +1197,38 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
 }
 
 function StickerTab({spectrumSticker,setSpectrumSticker}:any){
-  const [cat, setCat] = useState<string>("audio");
-  const list = STICKER_PRESETS.filter((s:any)=>s.cat===cat);
+  // CapCut-style: halaman "kategori" → halaman "isi kategori" dengan tombol BACK
+  const [cat, setCat] = useState<string|null>(null);
+  const list = cat ? STICKER_PRESETS.filter((s:any)=>s.cat===cat) : [];
+  if (cat===null) {
+    return (
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-bold text-white/80">🎧 Stiker</div>
+        </div>
+        <div className="grid grid-cols-4 gap-2">
+          {STICKER_CATS.map((c:any)=>(
+            <button key={c.id} onClick={()=>setCat(c.id)}
+              className="aspect-square rounded-xl border-2 border-white/10 bg-white/5 hover:bg-white/10 active:scale-95 flex flex-col items-center justify-center gap-1">
+              <span className="text-2xl">{STICKER_PRESETS.find((s:any)=>s.cat===c.id)?.icon||"✨"}</span>
+              <span className="text-[9px] font-bold text-white/70">{c.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">
+          💡 Stiker audio bergerak ikut beat musik. Pilih kategori di atas lalu pilih stiker.
+        </div>
+      </div>
+    );
+  }
+  const curCat = STICKER_CATS.find((c:any)=>c.id===cat);
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2">
+        <button onClick={()=>setCat(null)} className="w-9 h-9 rounded-lg bg-white/10 text-base flex items-center justify-center active:scale-95">←</button>
         <div className="flex-1 flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
           <span className="text-sm">🔍</span>
-          <input placeholder="Cari stiker..." className="bg-transparent outline-none text-xs text-white placeholder:text-white/40 w-full"/>
+          <input placeholder={`Cari di ${curCat?.label||""}...`} className="bg-transparent outline-none text-xs text-white placeholder:text-white/40 w-full"/>
         </div>
       </div>
       {/* Kategori icon bar (mirip CapCut) */}
