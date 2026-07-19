@@ -16,8 +16,10 @@ export interface ClipText {
   y: number;           // 0.06..0.94 (posisi vertikal blok)
   align: "left" | "center" | "right";
   anim: string;        // id TEXT_ANIMS
+  karaokeWords?: { w: string; start: number; end: number }[]; // timing kata (keterangan otomatis)
+  karaokeColor?: string;
 }
-export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; }
+export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; opacity?: number; }
 export interface SlideOpt {
   dur?: number;              // detik (hold time, tanpa transisi)
   trans?: string;            // id TRANSITIONS (ke klip berikutnya)
@@ -28,6 +30,7 @@ export interface SlideOpt {
   speed?: number;            // 0.3..3 (dur efektif = dur/speed)
   effect?: string;           // id EFFECTS | ""
   filter?: string;           // id FILTERS | ""
+  loop?: string;             // id ANIM_LOOP (animasi berulang "Kombinasi")
   text?: ClipText | null;
   stickers?: StickerItem[];
 }
@@ -285,6 +288,12 @@ export function hexToRgbE(hex: string): [number, number, number] {
 interface DrawParams { zoom: number; alpha: number; dx: number; dy: number; rot: number; filter: string; blur: number; }
 const baseP = (filter: string): DrawParams => ({ zoom: 1, alpha: 1, dx: 0, dy: 0, rot: 0, filter, blur: 0 });
 
+/* Mode latar belakang global (fitur "Latar belakang": cover = isi penuh,
+   blur = letterbox dengan latar blur dari gambar itu sendiri,
+   color = letterbox dengan warna solid). */
+const DRAW_BG: { mode: "cover" | "blur" | "color"; color: string } = { mode: "cover", color: "#000000" };
+export function setDrawBg(mode: "cover" | "blur" | "color", color = "#000000") { DRAW_BG.mode = mode; DRAW_BG.color = color; }
+
 export function drawBase(ctx: CanvasRenderingContext2D, img: CanvasImageSource | null, W: number, H: number, p: DrawParams) {
   if (!img) { ctx.fillStyle = "#141419"; ctx.fillRect(0, 0, W, H); return; }
   const iw = (img as any).naturalWidth || (img as any).width || 0;
@@ -302,7 +311,25 @@ export function drawBase(ctx: CanvasRenderingContext2D, img: CanvasImageSource |
   if (p.rot) ctx.rotate(p.rot * Math.PI / 180);
   if (p.zoom !== 1) ctx.scale(p.zoom, p.zoom);
   ctx.translate(-W / 2, -H / 2);
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+  if (DRAW_BG.mode !== "cover") {
+    // latar belakang (blur dari gambar / warna solid) untuk area letterbox
+    ctx.save();
+    if (DRAW_BG.mode === "blur") {
+      ctx.filter = "blur(18px) brightness(0.65)";
+      ctx.drawImage(img, sx, sy, sw, sh, -W * 0.06, -H * 0.06, W * 1.12, H * 1.12);
+      ctx.filter = "none";
+      ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = DRAW_BG.color; ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+    // gambar utama mode "contain"
+    const sc = Math.min(W / iw, H / ih);
+    const dw = iw * sc, dh = ih * sc;
+    ctx.drawImage(img, 0, 0, iw, ih, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  } else {
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+  }
   ctx.restore();
 }
 
@@ -688,6 +715,30 @@ export function paintClipText(ctx: CanvasRenderingContext2D, W: number, H: numbe
   if (ct.shadow) { ctx.shadowColor = "rgba(0,0,0,0.85)"; ctx.shadowBlur = fs * (0.18 + shadowPulse * 0.35); }
   if (ct.anim === "glow") { ctx.shadowColor = ct.color; ctx.shadowBlur = fs * (0.3 + shadowPulse * 0.6); }
   ctx.globalAlpha = alpha;
+  if (ct.karaokeWords && ct.karaokeWords.length) {
+    // mode KARAOKE: tiap kata menyala saat timing-nya (keterangan otomatis)
+    const kws = ct.karaokeWords;
+    const widths = kws.map(k => ctx.measureText(k.w).width);
+    const gap = fs * 0.28;
+    const totalW = widths.reduce((a, b) => a + b, 0) + gap * (kws.length - 1);
+    let kx = ct.align === "left" ? xAnchor : ct.align === "right" ? xAnchor - totalW : xAnchor - totalW / 2;
+    ctx.textAlign = "left";
+    const ky = cy;
+    kws.forEach((k, i) => {
+      const isAct = clipT >= k.start - 0.05 && clipT < k.end + 0.12;
+      if (ct.stroke && ct.strokeW > 0) {
+        ctx.lineWidth = ct.strokeW; ctx.strokeStyle = ct.strokeColor;
+        ctx.strokeText(k.w, kx, ky);
+      }
+      if (ct.shadow || isAct) { ctx.shadowColor = isAct ? (ct.karaokeColor || "#ffd93d") : "rgba(0,0,0,0.85)"; ctx.shadowBlur = isAct ? fs * 0.45 : fs * 0.15; }
+      ctx.fillStyle = isAct ? (ct.karaokeColor || "#ffd93d") : ct.color;
+      ctx.fillText(k.w, kx, ky);
+      ctx.shadowBlur = 0;
+      kx += widths[i] + gap;
+    });
+    ctx.restore();
+    return;
+  }
   rows.forEach((row, ri) => {
     const y = cy - blockH / 2 + lh / 2 + ri * lh;
     if (ct.stroke && ct.strokeW > 0) {
@@ -700,6 +751,9 @@ export function paintClipText(ctx: CanvasRenderingContext2D, W: number, H: numbe
   });
   ctx.restore();
 }
+
+/* Efek overlay dipakai juga oleh Spectrum Studio */
+export const paintEffect = paintEffectOverlay;
 
 /* ---------------------- GRAIN (global) ---------------------- */
 export function paintGrain(ctx: CanvasRenderingContext2D, W: number, H: number, amt: number, absT: number, isMobile: boolean) {
@@ -749,6 +803,18 @@ export function paintClips(
   if (opt.animIn && p.clipT < animDur) applyAnim(curP, opt.animIn, p.clipT / animDur, true);
   // animasi keluar (hanya bila tidak ada transisi)
   if (opt.animOut && !p.inTrans && p.clipDur - p.clipT < animDur) applyAnim(curP, opt.animOut, (p.clipDur - p.clipT) / animDur, false);
+  // animasi LOOP ("Kombinasi efek")
+  if (opt.loop && opt.loop !== "none") {
+    const lt = p.absT;
+    switch (opt.loop) {
+      case "denyut":   curP.zoom *= 1 + 0.02 * Math.sin(lt * 5.4); break;
+      case "goyang":   curP.rot += Math.sin(lt * 2.1) * 0.9; break;
+      case "zoompelan":curP.zoom *= 1.02 + 0.05 * (0.5 + 0.5 * Math.sin(lt * 0.5)); break;
+      case "melayang": curP.dy += Math.sin(lt * 1.6) * 0.012; break;
+      case "berkedip": curP.alpha *= 0.82 + 0.18 * Math.sin(lt * 7); break;
+      case "ayun":     curP.rot += Math.sin(lt * 1.3) * 1.6; curP.dx += Math.sin(lt * 2.6) * 0.006; break;
+    }
+  }
 
   const nxtP = baseP(joinFilters(buildClipFilter(p.optNxt?.filter || "", null), p.globalFilter));
 
@@ -782,11 +848,340 @@ export function paintClips(
     } else paintEffectOverlay(ctx, W, H, eff, p.absT, p.isMobile);
   }
 
-  // stiker + teks (memudar saat transisi keluar)
+  // stiker + teks (memudar saat transisi keluar) — v6: stiker animasi/gambar
   const fadeMul = p.inTrans ? 1 - p.transT : 1;
-  paintStickers(ctx, W, H, opt.stickers, fadeMul);
+  paintStickersV6(ctx, W, H, opt.stickers, fadeMul, p.absT);
   if (opt.text) paintClipText(ctx, W, H, opt.text, p.clipT, p.clipDur, p.absT, fadeMul);
 
   // grain global
   paintGrain(ctx, W, H, p.grain, p.absT, p.isMobile);
+}
+
+/* =====================================================================
+   v6 EXTENSIONS — layout & fitur baru (100% orisinal)
+   - Font Google (gratis, lisensi OFL) untuk teks
+   - Animasi LOOP (tab "Kombinasi efek")
+   - Stiker ANIMASI (digambar per-frame) + stiker GAMBAR (overlay foto)
+   - Painter caption karaoke/bersih untuk preview & Spectrum Studio
+   - Mode latar belakang (cover / blur / warna) untuk drawBase
+   ===================================================================== */
+
+/* ---------- GOOGLE FONTS (OFL, bebas dipakai) ---------- */
+export const GOOGLE_FONT_LINK = "https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bangers&family=Bebas+Neue&family=Caveat:wght@700&family=Dancing+Script:wght@700&family=Lobster&family=Lora:ital,wght@0,700;1,600&family=Merriweather:wght@900&family=Montserrat:ital,wght@0,800;0,900;1,700&family=Oswald:wght@600;700&family=Pacifico&family=Playfair+Display:ital,wght@0,800;1,700&family=Poppins:ital,wght@0,700;0,900;1,700&family=Quicksand:wght@700&family=Righteous&family=Rubik:ital,wght@0,800;1,700&display=swap";
+
+TEXT_FONTS.push(
+  { id: "poppins",   label: "Poppins",   stack: "'Poppins',system-ui,sans-serif" },
+  { id: "montserrat",label: "Montserrat",stack: "'Montserrat',system-ui,sans-serif" },
+  { id: "bebas",     label: "Bebas",     stack: "'Bebas Neue',Impact,sans-serif" },
+  { id: "anton",     label: "Anton",     stack: "'Anton',Impact,sans-serif" },
+  { id: "oswald",    label: "Oswald",    stack: "'Oswald',system-ui,sans-serif" },
+  { id: "playfair",  label: "Playfair",  stack: "'Playfair Display',Georgia,serif" },
+  { id: "lora",      label: "Lora",      stack: "'Lora',Georgia,serif" },
+  { id: "dancing",   label: "Dancing",   stack: "'Dancing Script',cursive" },
+  { id: "pacifico",  label: "Pacifico",  stack: "'Pacifico',cursive" },
+  { id: "caveat",    label: "Caveat",    stack: "'Caveat',cursive" },
+  { id: "lobster",   label: "Lobster",   stack: "'Lobster',cursive" },
+  { id: "righteous", label: "Righteous", stack: "'Righteous',system-ui,sans-serif" },
+  { id: "bangers",   label: "Bangers",   stack: "'Bangers',Impact,sans-serif" },
+  { id: "archivo",   label: "Archivo",   stack: "'Archivo Black',Impact,sans-serif" },
+  { id: "rubik",     label: "Rubik",     stack: "'Rubik',system-ui,sans-serif" },
+  { id: "quicksand", label: "Quicksand", stack: "'Quicksand',system-ui,sans-serif" },
+  { id: "merri",     label: "Merri",     stack: "'Merriweather',Georgia,serif" },
+);
+
+const _fontLoadOnce = new Set<string>();
+export async function ensureFontsLoaded(): Promise<void> {
+  if (typeof document === "undefined" || !(document as any).fonts) return;
+  const fams = ["Poppins","Montserrat","Bebas Neue","Anton","Oswald","Playfair Display","Lora","Dancing Script","Pacifico","Caveat","Lobster","Righteous","Bangers","Archivo Black","Rubik","Quicksand","Merriweather"];
+  await Promise.all(fams.map(async f => {
+    if (_fontLoadOnce.has(f)) return;
+    try { await (document as any).fonts.load(`900 40px "${f}"`); await (document as any).fonts.load(`italic 700 40px "${f}"`); _fontLoadOnce.add(f); } catch {}
+  }));
+}
+export function fontStackById(id: string | undefined): string {
+  return TEXT_FONTS.find(f => f.id === id)?.stack || TEXT_FONTS[0].stack;
+}
+
+/* ---------- ANIMASI LOOP (tab "Kombinasi") ---------- */
+export const ANIM_LOOP: CatItem[] = [
+  { id: "none",    label: "Tanpa",      emoji: "🚫" },
+  { id: "denyut",  label: "Denyut",     emoji: "💓" },
+  { id: "goyang",  label: "Goyang",     emoji: "🍃" },
+  { id: "zoompelan",label:"Zoom Pelan", emoji: "🔍" },
+  { id: "melayang",label: "Melayang",   emoji: "🎈" },
+  { id: "berkedip",label: "Berkedip",   emoji: "⚡" },
+  { id: "ayun",    label: "Ayun Miring",emoji: "🕺" },
+];
+
+/* ---------- TEMPLATE KETERANGAN OTOMATIS (CC) ---------- */
+export interface CCTemplate { id: string; label: string; desc: string; capStyle: string; sample: string; color: string; }
+export const CC_TEMPLATES: CCTemplate[] = [
+  { id: "standar",  label: "Default",        desc: "Putih tebal, highlight kuning", capStyle: "capcut",    sample: "Rubah coklat yang cepat", color: "#ffffff" },
+  { id: "karaoke",  label: "Karaoke Glow",   desc: "Kata aktif menyala kuning",     capStyle: "karaoke",   sample: "Ikut kata demi kata",     color: "#fde047" },
+  { id: "tebal",    label: "Tebal Bersih",   desc: "Putih tebal tanpa warna",       capStyle: "boldwhite", sample: "The quick brown fox",   color: "#ffffff" },
+  { id: "neon",     label: "Neon",           desc: "Glow pink lembut",              capStyle: "neon",      sample: "Cahaya malam",          color: "#ec4899" },
+  { id: "pop",      label: "Pop",            desc: "Kuning ceria kotak",            capStyle: "pop",       sample: "Asik & ramai",           color: "#fde047" },
+  { id: "gradien",  label: "Gradien",        desc: "Warna gradasi halus",           capStyle: "gradient",  sample: "Warna-warni",            color: "#22d3ee" },
+];
+
+/* ---------- STIKER GAMBAR (overlay foto) ---------- */
+const STICKER_IMG_CACHE = new Map<string, HTMLImageElement | "loading" | "err">();
+export function ensureStickerImage(url: string): HTMLImageElement | null {
+  if (!url) return null;
+  const cur = STICKER_IMG_CACHE.get(url);
+  if (cur && cur !== "loading" && cur !== "err") return cur as HTMLImageElement;
+  if (cur === "loading" || cur === "err") return null;
+  STICKER_IMG_CACHE.set(url, "loading");
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => STICKER_IMG_CACHE.set(url, img);
+  img.onerror = () => STICKER_IMG_CACHE.set(url, "err");
+  img.src = url;
+  return null;
+}
+export async function preloadStickerImages(urls: string[]): Promise<void> {
+  await Promise.all(urls.map(u => new Promise<void>(res => {
+    const cur = STICKER_IMG_CACHE.get(u);
+    if (cur === "err" || (cur && cur !== "loading")) return res();
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => { STICKER_IMG_CACHE.set(u, img); res(); };
+    img.onerror = () => { STICKER_IMG_CACHE.set(u, "err"); res(); };
+    img.src = u;
+  })));
+}
+
+/* ---------- STIKER ANIMASI (orisinal, digambar kode) ---------- */
+export interface AnimStickerDef { id: string; label: string; cat: string; draw: (ctx: CanvasRenderingContext2D, s: number, t: number) => void; }
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+export const ANIM_STICKERS: AnimStickerDef[] = [
+  { id:"@ikuti", label:"IKUTI + Klik", cat:"sosmed", draw(ctx, s, t) {
+      const tap = (t % 1.6) < 0.25 ? 0.93 : 1;
+      ctx.save(); ctx.scale(tap, tap);
+      const w = s * 2.1, h = s * 0.86, x = -w / 2, y = -h / 2;
+      ctx.fillStyle = "#e8290b"; roundRectPath(ctx, x, y, w, h, h * 0.24); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = `900 ${h * 0.5}px system-ui,sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("IKUTI", s * 0.06, 0);
+      ctx.fillRect(x + w * 0.12, -h * 0.3, h * 0.12, h * 0.6); // ikon garis
+      ctx.restore();
+      // kursor panah
+      const cy = Math.sin(t * 9) * s * 0.03;
+      ctx.save(); ctx.translate(s * 0.85 + cy, s * 0.55 + cy); ctx.rotate(-0.5);
+      ctx.fillStyle = "#fff"; ctx.strokeStyle = "rgba(0,0,0,.55)"; ctx.lineWidth = s * 0.045;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(s * 0.16, s * 0.55); ctx.lineTo(s * 0.26, s * 0.36); ctx.lineTo(s * 0.5, s * 0.3); ctx.lineTo(s * 0.22, s * 0.02); ctx.closePath();
+      ctx.fill(); ctx.stroke(); ctx.restore();
+    } },
+  { id:"@like", label:"Jempol Pop", cat:"sosmed", draw(ctx, s, t) {
+      const ph = t % 1.8; const sc = ph < 0.3 ? 0.6 + 0.4 * (ph / 0.3) + Math.sin(ph / 0.3 * Math.PI) * 0.18 : 1;
+      ctx.save(); ctx.scale(sc, sc); ctx.rotate(Math.sin(t * 2.2) * 0.06);
+      ctx.font = `${s * 2}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("👍", 0, 0); ctx.restore();
+    } },
+  { id:"@lonceng", label:"Lonceng Goyang", cat:"sosmed", draw(ctx, s, t) {
+      ctx.save(); ctx.rotate(Math.sin(t * 7) * 0.22);
+      ctx.font = `${s * 2}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🔔", 0, 0); ctx.restore();
+    } },
+  { id:"@rec", label:"REC Kedip", cat:"sosmed", draw(ctx, s, t) {
+      const on = (t % 1.2) < 0.75;
+      const w = s * 1.9, h = s * 0.8;
+      ctx.fillStyle = "rgba(20,20,22,0.82)"; roundRectPath(ctx, -w / 2, -h / 2, w, h, h * 0.22); ctx.fill();
+      ctx.globalAlpha = on ? 1 : 0.15;
+      ctx.fillStyle = "#ff2d2d"; ctx.beginPath(); ctx.arc(-w * 0.3, 0, h * 0.26, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#fff"; ctx.font = `900 ${h * 0.5}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("REC", w * 0.12, 0);
+    } },
+  { id:"@wave", label:"Gelombang Audio", cat:"musik", draw(ctx, s, t) {
+      const n = 7;
+      for (let i = 0; i < n; i++) {
+        const h = s * (0.35 + Math.abs(Math.sin(t * 5 + i * 1.1)) * 1.15);
+        const x = (i - (n - 1) / 2) * s * 0.42;
+        const g = ctx.createLinearGradient(x, -h / 2, x, h / 2);
+        g.addColorStop(0, "#22d3ee"); g.addColorStop(1, "#a855f7");
+        ctx.fillStyle = g; roundRectPath(ctx, x - s * 0.13, -h / 2, s * 0.26, h, s * 0.13); ctx.fill();
+      }
+    } },
+  { id:"@eq", label:"Equalizer", cat:"musik", draw(ctx, s, t) {
+      const cols = 5;
+      for (let i = 0; i < cols; i++) {
+        for (let r = 0; r < 6; r++) {
+          const lit = r / 6 < Math.abs(Math.sin(t * 4.4 + i * 1.3)) ? 1 : 0.18;
+          ctx.globalAlpha = lit;
+          ctx.fillStyle = r > 3 ? "#fde047" : "#22d3ee";
+          const sz = s * 0.26;
+          roundRectPath(ctx, (i - (cols - 1) / 2) * s * 0.42 - sz / 2, (2 - r) * s * 0.3 - sz / 2, sz, sz * 0.72, sz * 0.2); ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    } },
+  { id:"@butterfly", label:"Kupu Terbang", cat:"suasana", draw(ctx, s, t) {
+      ctx.save();
+      ctx.translate(Math.sin(t * 1.7) * s * 0.35, Math.cos(t * 2.3) * s * 0.22);
+      ctx.rotate(Math.sin(t * 1.7) * 0.2);
+      ctx.scale(0.75 + Math.abs(Math.sin(t * 9)) * 0.3, 1);
+      ctx.font = `${s * 1.9}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🦋", 0, 0); ctx.restore();
+      // kilau kecil
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 5);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(s * 0.6, -s * 0.5, s * 0.06, s * 0.06);
+      ctx.globalAlpha = 1;
+    } },
+  { id:"@confetti", label:"Confetti", cat:"suasana", draw(ctx, s, t) {
+      const colors = ["#f43f5e","#fde047","#22d3ee","#a855f7","#22c55e"];
+      for (let i = 0; i < 14; i++) {
+        const ph = (t * (0.5 + rnd(i, 3) * 0.7) + rnd(i, 1)) % 1;
+        const x = (rnd(i, 2) - 0.5) * s * 2.2;
+        const y = -s + ph * s * 2.2;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(t * (2 + rnd(i, 4) * 4) + i);
+        ctx.fillStyle = colors[i % colors.length]; ctx.globalAlpha = 1 - ph * 0.4;
+        ctx.fillRect(-s * 0.07, -s * 0.045, s * 0.14, s * 0.09); ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    } },
+  { id:"@kaset", label:"Kaset Muter", cat:"musik", draw(ctx, s, t) {
+      const w = s * 2.2, h = s * 1.4;
+      ctx.fillStyle = "#d8c39a"; roundRectPath(ctx, -w / 2, -h / 2, w, h, s * 0.12); ctx.fill();
+      ctx.fillStyle = "#8a6f3f"; roundRectPath(ctx, -w * 0.38, -h * 0.36, w * 0.76, h * 0.5, s * 0.08); ctx.fill();
+      for (const cx of [-w * 0.2, w * 0.2]) {
+        ctx.save(); ctx.translate(cx, -h * 0.11); ctx.rotate(t * 3);
+        ctx.fillStyle = "#f5ead0"; ctx.beginPath(); ctx.arc(0, 0, s * 0.26, 0, TAU); ctx.fill();
+        ctx.fillStyle = "#4a3a1e";
+        for (let i = 0; i < 3; i++) { ctx.rotate(TAU / 3); ctx.fillRect(-s * 0.03, -s * 0.24, s * 0.06, s * 0.14); }
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.06, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = "#4a3a1e"; ctx.font = `900 ${s * 0.22}px system-ui,sans-serif`; ctx.textAlign = "center";
+      ctx.fillText("♪ MIXTAPE", 0, h * 0.33);
+    } },
+  { id:"@panah", label:"Panah Mantul", cat:"sosmed", draw(ctx, s, t) {
+      ctx.save(); ctx.translate(0, Math.abs(Math.sin(t * 4)) * -s * 0.3);
+      ctx.font = `${s * 2}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("⬇️", 0, 0); ctx.restore();
+    } },
+  { id:"@love", label:"Love Berdebar", cat:"suasana", draw(ctx, s, t) {
+      const beat = 1 + Math.max(0, Math.sin(t * 6)) * 0.18 + (Math.sin(t * 6) > 0.85 ? 0.12 : 0);
+      ctx.save(); ctx.scale(beat, beat);
+      ctx.font = `${s * 1.9}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("❤️", 0, 0); ctx.restore();
+    } },
+  { id:"@kilau", label:"Kilau Kedip", cat:"suasana", draw(ctx, s, t) {
+      const n = 4;
+      ctx.strokeStyle = "#fff7c9"; ctx.lineCap = "round";
+      for (let i = 0; i < n; i++) {
+        const tw = Math.sin(t * 3.2 + i * 1.9); if (tw <= 0.05) continue;
+        const x = Math.cos(i * 1.9) * s * 0.5, y = Math.sin(i * 2.4) * s * 0.5;
+        const r = s * (0.25 + 0.35 * tw);
+        ctx.globalAlpha = 0.9 * tw; ctx.lineWidth = s * 0.05;
+        ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r * 1.5); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } },
+  { id:"@nada", label:"Nada Melayang", cat:"musik", draw(ctx, s, t) {
+      const notes = ["🎵","🎶","🎼"];
+      notes.forEach((n, i) => {
+        const ph = (t * (0.4 + i * 0.15) + i * 0.33) % 1;
+        ctx.globalAlpha = Math.sin(ph * Math.PI);
+        ctx.font = `${s * (1 + i * 0.3)}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(n, (i - 1) * s * 0.7 + Math.sin(ph * 6) * s * 0.2, s * 0.6 - ph * s * 1.6);
+      });
+      ctx.globalAlpha = 1;
+    } },
+  { id:"@api", label:"Api Berkobar", cat:"suasana", draw(ctx, s, t) {
+      ctx.save(); ctx.scale(1 + Math.sin(t * 11) * 0.06, 1 + Math.sin(t * 13) * 0.1);
+      ctx.font = `${s * 2}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🔥", 0, 0); ctx.restore();
+    } },
+  { id:"@subs", label:"LANGGANAN", cat:"sosmed", draw(ctx, s, t) {
+      const w = s * 2.3, h = s * 0.62;
+      ctx.fillStyle = "rgba(10,10,12,0.75)"; roundRectPath(ctx, -w / 2, -h / 2, w, h, h / 2); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = s * 0.03; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = `800 ${h * 0.5}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const sc = 1 + Math.sin(t * 3) * 0.03;
+      ctx.save(); ctx.scale(sc, sc); ctx.fillText("👍 LANGGANAN 🔔", 0, -h * 0.02); ctx.restore();
+    } },
+];
+export const ANIM_STICKER_MAP: Record<string, AnimStickerDef> = Object.fromEntries(ANIM_STICKERS.map(a => [a.id, a]));
+export const STICKER_ANIM_CATS: { id: string; label: string }[] = [
+  { id: "sosmed", label: "🔥 Sosmed" }, { id: "musik", label: "🎵 Musik" }, { id: "suasana", label: "✨ Suasana" },
+];
+
+/* ---------- PAINTER STIKER v6 (anim + gambar + emoji) ---------- */
+export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: number, stickers: StickerItem[] | undefined, alpha: number, absT: number) {
+  if (!stickers || !stickers.length) return;
+  ctx.save();
+  for (const st of stickers as any[]) {
+    const px = Math.max(10, st.size * H);
+    ctx.save();
+    ctx.globalAlpha = alpha * (st.opacity ?? 1);
+    ctx.translate(st.x * W, st.y * H);
+    if (st.rot) ctx.rotate(st.rot * Math.PI / 180);
+    if (st.img) {
+      const img = ensureStickerImage(st.img);
+      if (img) {
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        const w = px * 2, h = px * 2 * (ih / iw);
+        ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = px * 0.12;
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      }
+    } else if (typeof st.emoji === "string" && st.emoji.startsWith("@")) {
+      const def = ANIM_STICKER_MAP[st.emoji];
+      if (def) def.draw(ctx, Math.max(8, px * 0.8), absT);
+    } else {
+      ctx.font = `${px}px 'Segoe UI Emoji','Noto Color Emoji',system-ui,sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = px * 0.08;
+      ctx.fillText(st.emoji, 0, 0);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+/* ---------- CAPTION PAINTER (preview & Spectrum Studio) ---------- */
+export interface CapWord { text: string; start: number; end: number; line: number; }
+export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H: number, words: CapWord[], t: number, capStyle: string, opts?: { yRatio?: number; sizeRatio?: number }) {
+  if (!words || !words.length) return;
+  const active = words.filter(w => t >= w.start - 0.05 && t <= w.end + 0.25);
+  if (!active.length) return;
+  const lineNo = active[0].line;
+  const lineWords = words.filter(w => w.line === lineNo);
+  const exact = words.find(w => t >= w.start && t < w.end && w.line === lineNo);
+  const y = (opts?.yRatio ?? 0.78) * H;
+  const fs = Math.max(12, (opts?.sizeRatio ?? 0.055) * H);
+  const gap = fs * 0.25;
+  ctx.save();
+  ctx.font = `900 ${fs}px 'Poppins',system-ui,sans-serif`;
+  ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+  const widths = lineWords.map(w => ctx.measureText(w.text).width);
+  const totalW = widths.reduce((a, b) => a + b, 0) + gap * (lineWords.length - 1);
+  let x = (W - totalW) / 2; ctx.textAlign = "left";
+  lineWords.forEach((w, i) => {
+    const isActive = exact === w || (!exact && w === active[active.length - 1]);
+    let fill = "#ffffff", strokeC = "rgba(0,0,0,0.85)", glow = "";
+    if (capStyle === "karaoke" || capStyle === "capcut") fill = isActive ? "#ffd93d" : "#ffffff";
+    else if (capStyle === "neon") { fill = isActive ? "#ffffff" : "#f9a8d4"; glow = "#ec4899"; }
+    else if (capStyle === "pop") { fill = isActive ? "#000000" : "#ffffff"; }
+    else if (capStyle === "gradient") fill = isActive ? "#22d3ee" : "#e2e8f0";
+    else if (capStyle === "boldwhite") fill = "#ffffff";
+    if (capStyle === "pop" && isActive) {
+      ctx.fillStyle = "#fde047";
+      roundRectPath(ctx, x - fs * 0.12, y - fs * 0.75, widths[i] + fs * 0.24, fs * 1.3, fs * 0.18); ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = fs * 0.06;
+      ctx.strokeText(w.text, x, y);
+    } else {
+      ctx.strokeStyle = strokeC; ctx.lineWidth = fs * 0.14; ctx.strokeText(w.text, x, y);
+    }
+    if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.6 : 0.3); }
+    ctx.fillStyle = fill; ctx.fillText(w.text, x, y);
+    ctx.shadowBlur = 0;
+    x += widths[i] + gap;
+  });
+  ctx.restore();
 }

@@ -15,6 +15,7 @@
 import type { VizStyle } from "./types";
 import {
   buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
+  setDrawBg, preloadStickerImages,
 } from "./editing";
 import type { SlideOpt, Timeline } from "./editing";
 
@@ -53,6 +54,11 @@ export interface RenderOptions {
   // ===== v5: PER-KLIP EDITING (transisi/durasi/animasi/efek/stiker/teks per slide) =====
   slideOpts?: SlideOpt[];     // sejajar dgn images[]; bila ada → timeline per-klip
   grainAmt?: number;          // 0..100 overlay grain film
+  // ===== v6: pengaturan ekspor kustom + latar + peningkat ketajaman =====
+  custom?: { w: number; h: number; fps: number; videoBitrate: number };
+  bgMode?: "cover" | "blur" | "color";
+  bgColor?: string;
+  sharpen?: boolean;          // "Peningkat Ketajaman" (SVG convolve filter)
   onProgress?: (p: number) => void;
   onStage?: (s: string) => void;
 }
@@ -1436,13 +1442,40 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   const { images, audioUrl, slideDuration, vizStyle, vizColor, title, quality, mobileOptimized,
     transition, onProgress, onStage, ratio, aspectRatio, captions, captionStyle } = opts;
   if (!images.length) throw new Error("Tidak ada gambar");
-  const prof = QUALITY_PROFILES[quality]||QUALITY_PROFILES.fast;
+  const baseProf = QUALITY_PROFILES[quality]||QUALITY_PROFILES.fast;
+  const prof: typeof baseProf = opts.custom
+    ? { ...baseProf, w: opts.custom.w, h: opts.custom.h, fps: opts.custom.fps, videoBitrate: opts.custom.videoBitrate }
+    : baseProf;
   const { w:rW, h:rH } = applyRatio(prof, ratio||aspectRatio||"16:9");
+  // v6: mode latar belakang (cover/blur/warna) dipakai drawBase di semua painter
+  setDrawBg(opts.bgMode || "cover", opts.bgColor || "#000000");
+  // v6: filter ketajaman (SVG convolve) bila diminta
+  let sharpNote = false;
+  if (opts.sharpen) {
+    try {
+      if (!document.getElementById("verve-sharp-svg")) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("id", "verve-sharp-svg"); svg.setAttribute("width", "0"); svg.setAttribute("height", "0");
+        svg.setAttribute("style", "position:absolute;left:-9999px;top:-9999px");
+        svg.innerHTML = `<filter id="vsharp"><feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0"/></filter>`;
+        document.body.appendChild(svg);
+      }
+    } catch {}
+  }
+  if (opts.sharpen) sharpNote = true;
+  const origVideoFilter = opts.videoFilter;
+  if (sharpNote) opts.videoFilter = [origVideoFilter, "url(#vsharp)"].filter(Boolean).join(" ");
   const canvas = document.createElement("canvas");
   canvas.width = rW; canvas.height = rH;
   const ctx = canvas.getContext("2d",{alpha:false,desynchronized:true})!;
   onStage?.("Menyiapkan aset...");
   const imgs = await prepareImages(images, rW, rH, onStage);
+  // v6: preload gambar stiker (overlay foto) supaya tergambar di export
+  try {
+    const stickerUrls: string[] = [];
+    (opts.slideOpts || []).forEach(o => (o?.stickers || []).forEach(st => { if ((st as any).img) stickerUrls.push((st as any).img); }));
+    if (stickerUrls.length) { onStage?.("Memuat stiker overlay..."); await preloadStickerImages([...new Set(stickerUrls)]); }
+  } catch {}
 
   let logoImg: HTMLImageElement|null = null;
   if (opts.logoUrl && opts.logoPosition!=="none"){
