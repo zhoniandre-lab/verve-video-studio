@@ -2142,8 +2142,58 @@ Dibuat dengan Verve AI Video Studio`;
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {([["tts","🔊 TTS"],["music","🎵 Musik"],["both","🎶 TTS+Musik"],["aimusic","🎼 AI Music"],["none","🔇 Mute"]] as const).map(([v,l])=>(
                       <button key={v} onClick={()=>setAudioMode(v as AudioMode)}
-                        className={`btn ${audioMode===v?"btn-primary":"btn-ghost"} text-xs sm:text-sm px-2 sm:px-3`}>{l}</button>
+                        className={`btn ${audioMode===v?"btn-primary":"btn-ghost"} text-xs sm:text-sm px-2 sm:px-3 min-h-[42px]`}>{l}</button>
                     ))}
+                  </div>
+                </div>
+
+                {/* ===== PICKER GAYA SPEKTRUM (wajib ada, inilah yang user marahin karena hilang) ===== */}
+                <div className="p-3 rounded-xl bg-gradient-to-br from-pink-600/10 to-purple-600/10 border border-pink-400/20">
+                  <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                    <span className="lbl !mb-0 flex items-center gap-1.5">🎚️ Gaya Spektrum</span>
+                    <label className="flex items-center gap-2 text-xs text-white/70">
+                      <span>Warna</span>
+                      <input type="color" value={vizColor} onChange={e=>setVizColor(e.target.value)}
+                             className="w-8 h-8 rounded-lg bg-transparent border border-white/20 cursor-pointer p-0.5"/>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {VIZ_STYLES.map(s=>(
+                      <button key={s.id} type="button" onClick={()=>setVizStyle(s.id)}
+                        className={`style-card !p-2 !min-h-[56px] ${vizStyle===s.id?"active":""}`}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-base">{s.emoji}</span>
+                          <span className="text-[11px] sm:text-xs font-bold leading-tight">{s.label}</span>
+                        </div>
+                        <div className="text-[9px] sm:text-[10px] text-white/50 mt-0.5 truncate">{s.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {/* Stiker overlay (subscribe/fire/disc/dll) */}
+                  <div className="mt-3">
+                    <span className="text-[10px] uppercase tracking-wider text-white/50 font-bold">Stiker Overlay</span>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {([
+                        ["bars-bottom","📊","Bars Bawah"],
+                        ["none","🚫","Polos"],
+                        ["subscribe","🔴","Subscribe"],
+                        ["like","👍","Like"],
+                        ["bell","🔔","Lonceng"],
+                        ["fire","🔥","Fire"],
+                        ["disc","💿","Disc"],
+                        ["wave-center","〰️","Wave Tengah"],
+                        ["wave-bottom","🌊","Wave Bawah"],
+                        ["circle","⭕","Circle"],
+                        ["bars-top","📈","Bars Atas"],
+                        ["glow-ring","💫","Glow Ring"],
+                        ["nowplaying","🎧","Now Playing"],
+                      ] as const).map(([v,e,l])=>(
+                        <button key={v} type="button" onClick={()=>setSpectrumSticker(v)}
+                          className={`chip text-[10px] px-2 py-1.5 min-h-[32px] ${spectrumSticker===v?"!bg-pink-500/40 !border-pink-400 !text-white":""}`}>
+                          <span className="mr-0.5">{e}</span>{l}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
