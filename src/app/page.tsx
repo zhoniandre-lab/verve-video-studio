@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import SpectrumVisualizer from "@/components/SpectrumVisualizer";
 import { renderSlideshow, downloadBlob, drawLiveSpectrum } from "@/lib/recorder";
 import type { Quality as RenderQuality, Transition, CaptionStyle } from "@/lib/recorder";
 import { cropImageToRatio, copyToClipboard } from "@/lib/imgutils";
@@ -2449,14 +2448,11 @@ Dibuat dengan Verve AI Video Studio`;
                   Belum ada gambar
                 </div>
               )}
-              <SpectrumVisualizer
-                audioEl={previewAudioRef.current || undefined}
-                style={vizStyle}
-                color={vizColor}
-                logoUrl={logoDataUrl || undefined}
-                width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
-                height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
-              />
+              {/* Spectrum dirender langsung di canvas utama oleh preview loop (drawLiveSpectrum)
+                  — TIDAK pakai komponen SpectrumVisualizer terpisah, karena:
+                  1. createMediaElementSource hanya boleh dipanggil 1x per <audio>,
+                  2. double canvas = lag di HP,
+                  3. spectrum sudah sync 100% dengan audio di previewCanvasRef. */}
               {slides.length>0 && !previewPlaying && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white/90 text-[10px] border border-white/10">
