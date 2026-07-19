@@ -402,6 +402,7 @@ const AUDIO_MENU: { id: string; icon: string; label: string; bdg?: string }[] = 
   { id: "tts",     icon: "🗣️", label: "Teks ke audio" },
   { id: "ekstrak", icon: "🎬", label: "Ekstrak", bdg: "MP3" },
   { id: "musik",   icon: "✨", label: "Musik AI (Suno)", bdg: "AI" },
+  { id: "hakcipta", icon: "🛡", label: "Cek Hak Cipta" },
   { id: "hapusAudio", icon: "🗑", label: "Hapus semua audio" },
 ];
 const RES_STOPS = [480, 720, 1080, 1440, 2160];
@@ -509,6 +510,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const barsRef = useRef<Float32Array>(new Float32Array(48));
   const clockRef = useRef<{ audio: HTMLAudioElement | null; t0: number; base: number }>({ audio: null, t0: 0, base: 0 });
   const slidesRef = useRef(slides); useEffect(() => { slidesRef.current = slides; }, [slides]);
+  const curTRef = useRef(0); useEffect(() => { curTRef.current = curT; }, [curT]);
+  const durTRef = useRef(0); useEffect(() => { durTRef.current = durT; }, [durT]);
   const optsRef = useRef(slideOptsById); useEffect(() => { optsRef.current = slideOptsById; }, [slideOptsById]);
   const adjRef = useRef(adj); useEffect(() => { adjRef.current = adj; }, [adj]);
   const filterRef = useRef(filterPreset); useEffect(() => { filterRef.current = filterPreset; }, [filterPreset]);
@@ -582,12 +585,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
 
   /* ---------- PREVIEW (canvas + rAF + audio clock) ---------- */
+  const drawFrameRefCb = useRef<(t: number) => void>(() => {});
   function getImage(url: string): HTMLImageElement | null {
     if (!url) return null;
     const c = imgsRef.current.get(url);
-    if (c) return c.complete ? c : null;
+    if (c) return c.complete && c.naturalWidth ? c : null;
     const img = new Image();
     img.crossOrigin = "anonymous";
+    img.onload = () => { try { drawFrameRefCb.current(curTRef.current); } catch {} };
     img.src = url;
     imgsRef.current.set(url, img);
     return img.complete && img.naturalWidth ? img : null;
@@ -638,7 +643,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
   }, [playing]);
 
+  useEffect(() => { drawFrameRefCb.current = drawFrame; }, [drawFrame]);
+
   const tick = useCallback(() => {
+    // jika master audio selesai tapi klip masih panjang → lanjut jam manual
+    const aud0 = clockRef.current.audio;
+    if (aud0 && aud0.ended) {
+      clockRef.current = { audio: null, t0: performance.now(), base: aud0.duration || 0 };
+    }
     const t = getClockT();
     const tl = timelineRef.current;
     const total = tl?.total || 0;
@@ -676,7 +688,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!slidesRef.current.length) return;
     if (playing) { stopPreview(); return; }
     // buat/reset sumber audio
-    const seekTo = curT;
+    let seekTo = curT;
+    if (durTRef.current > 0.3 && curT >= durTRef.current - 0.06) { seekTo = 0; setCurT(0); }
     let master: HTMLAudioElement | null = null;
     voiceEls.current = [];
     try {
@@ -740,7 +753,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const saveTimer = useRef<any>(null);
   const buildSnapshot = useCallback((thumbOverride?: string) => {
     const compactSlides = slides.slice(0, 16).map(s => (s.imageUrl.startsWith("data:") && s.imageUrl.length > 500_000) ? { ...s, imageUrl: "" } : s);
-    const thumb = thumbOverride ?? (coverThumb || (slides[0]?.imageUrl.startsWith("data:") ? slides[0].imageUrl.slice(0, 60000) : ""));
+    const first = slides[0]?.imageUrl || "";
+    const thumb = thumbOverride ?? (coverThumb || (first.startsWith("data:") ? first.slice(0, 40000) : first));
     return { v: 6, id: draftId || uid("d"), title: projTitle.slice(0, 80), updatedAt: Date.now(),
       slides: compactSlides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor,
       musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", filterPreset, adj, qualitySharp,
@@ -766,8 +780,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setMGenre(d.mGenre || "pop ballad"); setMMood(d.mMood || "emotional, menyentuh");
     setMModel(d.mModel || "suno-v5"); setMVocal(d.mVocal || "vocal");
     setSelId(""); setClipBar(false); setCurT(0);
+    (window as any).__v6prevlen = fromArrayLen((d.slides || []));
     histRef.current = { stk: [], i: -1 }; setHistTick(v => v + 1);
   }
+  function fromArrayLen(a: any[]): number { return Array.isArray(a) ? a.length : 0; }
   function persistSnapshot(manual = false) {
     try {
       const snap = buildSnapshot();
@@ -824,6 +840,21 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (cmd?.tool) setTimeout(() => openToolCmd(cmd.tool), 450);
     pushHist();
   }, []); // eslint-disable-line
+
+  // auto-AKHIRAN: saat media pertama ditambahkan pada proyek kosong (ala CapCut)
+  const prevLenRef = useRef<number | null>(null);
+  useEffect(() => {
+    const w = window as any;
+    if (typeof w.__v6prevlen === "number") { prevLenRef.current = w.__v6prevlen; w.__v6prevlen = undefined; }
+    const n = slides.length;
+    if (prevLenRef.current === 0 && n > 0 && !slides.some(x => x.id.startsWith("outro"))) {
+      const o = { id: uid("outro"), imageUrl: makeOutroImage("Terima kasih sudah menonton 🙏") };
+      setSlides(c => c.some(x => x.id.startsWith("outro")) ? c : [...c, o]);
+      setSlideOptsById(c => ({ ...c, [o.id]: { dur: 2.2, trans: "fadeblack" } }));
+      flash("🏁 Akhiran otomatis ditambahkan (tap untuk ganti/hapus)");
+    }
+    prevLenRef.current = n;
+  }, [slides]); // eslint-disable-line
 
   // autosave (debounce) setiap perubahan struktural
   useEffect(() => {
@@ -1277,6 +1308,32 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     r.readAsDataURL(f[0]);
   }
 
+  /* ---------- METADATA YOUTUBE ---------- */
+  const [meta, setMeta] = useState<any | null>(null);
+  const [copiedFld, setCopiedFld] = useState("");
+  async function genMetadata() {
+    setLoading("meta"); setError(""); setMeta(null);
+    try {
+      const r = await fetch("/api/hcnsec/metadata", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: projTitle, keyword: niche || projTitle, niche: niche || projTitle }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || `Error ${r.status}`);
+      setMeta(d);
+      flash("📋 Metadata YouTube dibuat");
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
+  }
+  async function copyFld(k: string, t: string) {
+    if (await copyTxt(t)) { setCopiedFld(k); setTimeout(() => setCopiedFld(""), 1400); }
+  }
+  function downloadMetaTxt() {
+    if (!meta) return;
+    const txt = `=== JUDUL (High CTR) ===\n${meta.titleHighCTR || ""}\n\n=== ALTERNATIF ===\n${(meta.titleAlternatives || []).map((t: string, i: number) => `${i + 1}. ${t}`).join("\n")}\n\n=== DESKRIPSI ===\n${meta.description || ""}\n\n=== TAGS ===\n${(meta.tags || []).join(", ")}\n\n=== HASHTAGS ===\n${meta.hashtags || ""}\n\nDibuat dengan VERVE`;
+    downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `meta_${Date.now()}.txt`);
+  }
+
   /* ---------- RENDER VIDEO ---------- */
   async function doRender() {
     if (!slides.length) return setErr({ message: "Belum ada media — tambahkan klip dulu" });
@@ -1329,6 +1386,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       setVideoUrl(URL.createObjectURL(blob));
       setProgress(1); flash("✅ Video selesai!");
       persistSnapshot(true);
+      genMetadata().catch(() => {});
     } catch (e: any) { setErr(e); }
     setLoading(null); setTimeout(() => setStageText(""), 2500);
   }
@@ -1435,6 +1493,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   }
   const dragSt = useRef<{ sid: string; stid: string } | null>(null);
+  const dragTx = useRef<{ sid: string } | null>(null);
   function onStageDown(e: React.PointerEvent) {
     const pt = stagePoint(e); if (!pt) return;
     const tl = timelineRef.current;
@@ -1442,6 +1501,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const L = locate(tl, Math.min(curT, Math.max(0, tl.total - 0.001)));
     const sid = slidesRef.current[L.idx]?.id;
     if (!sid) return;
+    // drag TEKS (posisi vertikal) kalau sentuh area teks
+    const cts = slideOptsById[sid]?.text;
+    if (cts?.txt?.trim() && Math.abs(pt.y - cts.y) < 0.07) {
+      dragTx.current = { sid };
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      return;
+    }
     const stks = slideOptsById[sid]?.stickers || [];
     for (let i = stks.length - 1; i >= 0; i--) {
       const s = stks[i];
@@ -1456,11 +1522,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setSelId(sid);
   }
   function onStageMove(e: React.PointerEvent) {
-    if (!dragSt.current) return;
     const pt = stagePoint(e); if (!pt) return;
+    if (dragTx.current) {
+      const sid = dragTx.current.sid;
+      const cur = slideOptsById[sid]?.text || { ...DEFAULT_TEXT };
+      setOpt(sid, { text: { ...cur, y: clampN(pt.y, 0.06, 0.94) } });
+      return;
+    }
+    if (!dragSt.current) return;
     moveSticker(dragSt.current.sid, dragSt.current.stid, pt.x, pt.y);
   }
-  function onStageUp() { dragSt.current = null; }
+  function onStageUp() { dragSt.current = null; dragTx.current = null; }
 
   return (
     <div className="v6e-root">
@@ -1607,6 +1679,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, projTitle,
           }}
         />
       )}
@@ -1643,6 +1716,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       )}
       {modal === "gambarai" && <GambarAiModal onClose={() => setModal(null)} onGen={(pr: string, st: string) => genImageForClip(pr, st, selId || undefined)} loading={loading} />}
       {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} />}
+      {modal === "hakcipta" && <HakCiptaModal musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl} onClose={() => setModal(null)} />}
 
       {/* toast & loading bar */}
       {!!stageText && <div style={{ position: "fixed", left: "50%", bottom: 118, transform: "translateX(-50%)", zIndex: 80, background: "rgba(10,10,14,.92)", border: "1px solid rgba(255,255,255,.15)", color: "#fff", fontSize: 11.5, fontWeight: 700, padding: "9px 16px", borderRadius: 999, maxWidth: "88vw", textAlign: "center" }}>{stageText}</div>}
@@ -1896,6 +1970,7 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
               if (m.id === "rekam") A.openModal("rekam");
               else if (m.id === "tts") A.openModal("tts");
               else if (m.id === "musik") A.openModal("musik");
+              else if (m.id === "hakcipta") A.openModal("hakcipta");
               else if (m.id === "hapusAudio") A.delAudio();
               close();
             }}>
@@ -2401,6 +2476,23 @@ function EksporSheet({ api: A, onClose }: any) {
               <>
                 <video src={A.videoUrl} controls style={{ width: "100%", borderRadius: 12, marginTop: 10, border: "1px solid var(--v6-line)" }} />
                 <button className="v6-bigcta" style={{ background: "#22c55e", color: "#052e16" }} onClick={A.downloadVideo}>⬇️ Download video {A.videoBlob ? `(${(A.videoBlob.size / 1048576).toFixed(1)} MB)` : ""}</button>
+                {!A.meta && <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={A.loading === "meta"} onClick={A.genMetadata}>
+                  {A.loading === "meta" ? "⏳ Menulis metadata…" : "📋 Metadata YouTube (judul + deskripsi + tags)"}</button>}
+                {!!A.meta && (
+                  <div style={{ marginTop: 10, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}>
+                    <b style={{ fontSize: 12 }}>📋 Metadata YouTube</b>
+                    {([["t", "🏷️ Judul", A.meta.titleHighCTR], ["d", "📝 Deskripsi", A.meta.description], ["g", "#️⃣ Tags", (A.meta.tags || []).join(", ")], ["h", "🔖 Hashtags", A.meta.hashtags]] as any[]).map(([k, lb, val]) => (
+                      <div key={k} style={{ marginTop: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 800, color: "#9ca3af" }}>{lb}</span>
+                          <button className="v6-chip" style={{ padding: "3px 10px" }} onClick={() => A.copyFld(k, val || "")}>{A.copiedFld === k ? "✓" : "SALIN"}</button>
+                        </div>
+                        <div style={{ fontSize: 11, background: "rgba(0,0,0,.35)", borderRadius: 10, padding: 9, marginTop: 4, lineHeight: 1.55, whiteSpace: k === "d" ? "pre-wrap" : "normal" }}>{val}</div>
+                      </div>
+                    ))}
+                    <button className="v6-btn" style={{ width: "100%", marginTop: 8 }} onClick={A.downloadMetaTxt}>📥 Download metadata (.txt)</button>
+                  </div>
+                )}
               </>
             )}
           </>
@@ -3014,5 +3106,38 @@ function TranskripPage({ onExit }: any) {
         <div className="v6-note">⚠️ Fitur ini memakai pengenal suara bawaan browser (eksperimen, paling akurat di Chrome). Verifikasi manual tetap disarankan.</div>
       </div>
     </div>
+  );
+}
+
+/* ==================================================================
+   HAK CIPTA — panduan status audio (jujur: bukan fingerprint scanner)
+   ================================================================== */
+function HakCiptaModal({ musicUrl, musicName, ttsUrl, voiceUrl, onClose }: any) {
+  const isSuno = !!musicUrl && /^https?:/i.test(musicUrl) && /kie\.ai|suno|apiframe|sunor|aimusic|cdn|r2\.dev/i.test(musicUrl);
+  const isEkstrak = !!musicUrl && musicUrl.startsWith("blob:");
+  const isUpload = !!musicUrl && musicUrl.startsWith("data:");
+  const rows: { ic: string; t: string; d: string; ok: "ok" | "warn" }[] = [];
+  if (isSuno) rows.push({ ic: "✅", t: `Musik: "${musicName || "Lagu AI"}"`, d: "Dibuat AI (Suno) = orisinal buatanmu — risiko klaim sangat rendah. Aman buat YouTube/TikTok/monetisasi.", ok: "ok" });
+  if (isEkstrak) rows.push({ ic: "⚠️", t: "Audio hasil ekstrak video", d: "Pastikan video sumbernya milikmu sendiri atau bebas lisensi. Mengekstrak lagu orang lain tetap berisiko klaim.", ok: "warn" });
+  if (isUpload) rows.push({ ic: "⚠️", t: "Musik upload dari HP", d: "Status hak cipta mengikuti file aslinya. Kalau itu lagu artis/karya orang lain, YouTube bisa memberi klaim — pakai musik AI lebih aman.", ok: "warn" });
+  if (ttsUrl) rows.push({ ic: "✅", t: "Narasi suara AI", d: "Suara sintetis dari teks kamu sendiri — aman.", ok: "ok" });
+  if (voiceUrl) rows.push({ ic: "✅", t: "Rekaman suara sendiri", d: "Suara kamu sendiri — 100% aman.", ok: "ok" });
+  if (!rows.length) rows.push({ ic: "ℹ️", t: "Belum ada audio", d: "Tambahkan audio dulu — nanti statusnya dicek di sini.", ok: "ok" });
+  return (
+    <MiniModal title="🛡 Cek Hak Cipta" onClose={onClose}>
+      {rows.map(r => (
+        <div key={r.t} className="v6-cardrow" style={{ cursor: "default", alignItems: "flex-start" }}>
+          <span style={{ fontSize: 18 }}>{r.ic}</span>
+          <div className="tt" style={{ fontSize: 12 }}>{r.t}
+            <div style={{ fontSize: 10.5, color: r.ok === "ok" ? "#86efac" : "#fbbf24", fontWeight: 500, lineHeight: 1.5, marginTop: 2 }}>{r.d}</div>
+          </div>
+        </div>
+      ))}
+      <div className="v6-lbl">CHECKLIST AMAN UPLOAD</div>
+      {["Gunakan musik dari Musik AI / instrumen bebas royalti", "Narasi = teks kamu sendiri atau TTS VERVE", "Visual = foto sendiri atau Gambar AI", "Hindari lagu artis & cuplikan film/orang lain"].map(c => (
+        <div key={c} style={{ fontSize: 11.5, padding: "5px 2px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>✅ {c}</div>
+      ))}
+      <div className="v6-note">Catatan jujur bro: VERVE tidak memiliki database fingerprint seperti YouTube Content ID. Panel ini <b>panduan status berdasar SUMBER audio</b> yang kamu pakai — keputusan akhir tetap di sistem platform tujuan.</div>
+    </MiniModal>
   );
 }
