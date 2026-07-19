@@ -10,6 +10,7 @@ const COLOR_PRESETS = [
   { hex:"#22c55e" },{ hex:"#ef4444" },{ hex:"#ffffff" },
 ];
 
+function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
 function formatDur(s:number): string {
   if (!isFinite(s)||s<0) s=0;
   const m=Math.floor(s/60), sec=Math.floor(s%60);
@@ -128,6 +129,88 @@ export function StudioEditor(p: StudioEditorProps) {
   const [tab, setTab] = useState<"edit"|"audio"|"text"|"sticker"|"overlay"|"filter"|"adjust"|"effect"|"speed">("edit");
   const [activeSlide, setActiveSlide] = useState(0);
   const timelineStripRef = useRef<HTMLDivElement|null>(null);
+  const previewFrameRef = useRef<HTMLDivElement|null>(null);
+
+  // ===== DRAG & RESIZE TEXT LANGSUNG DI PREVIEW (CapCut-style) =====
+  const dragRef = useRef<{
+    mode:"none"|"drag"|"resize";
+    layerId:string;
+    startX:number; startY:number;  // posisi sentuhan awal (px)
+    origX:number; origY:number;    // posisi layer awal (0..1)
+    origSize:number;               // sizePct awal
+    frameW:number; frameH:number;  // ukuran preview frame saat drag mulai
+    moved:boolean;
+  }>({mode:"none",layerId:"",startX:0,startY:0,origX:0.5,origY:0.5,origSize:0.08,frameW:0,frameH:0,moved:false});
+  const [showGuides, setShowGuides] = useState<{v?:number;h?:number}|null>(null);
+  const selectLayer = (id:string) => {
+    setTextLayers((ls:TextLayer[])=>ls.map(x=>({...x, id: x.id===id ? (x.id.startsWith("sel_")?x.id:"sel_"+x.id) : x.id.replace(/^sel_/,"")})));
+  };
+  const deselectLayers = () => {
+    setTextLayers((ls:TextLayer[])=>ls.map(x=>({...x, id: x.id.replace(/^sel_/,"")})));
+  };
+  const getRelPos = (clientX:number,clientY:number) => {
+    const el = previewFrameRef.current;
+    if (!el) return {rx:0.5,ry:0.5};
+    const r = el.getBoundingClientRect();
+    return { rx: clamp((clientX-r.left)/r.width,0,1), ry: clamp((clientY-r.top)/r.height,0,1) };
+  };
+  const onTextTouchStart = (e:React.TouchEvent|React.MouseEvent, layerId:string, mode:"drag"|"resize") => {
+    e.stopPropagation();
+    const ev = "touches" in e ? e.touches[0] : (e as React.MouseEvent);
+    const layer = textLayers.find(l=>l.id===layerId || l.id==="sel_"+layerId);
+    if (!layer) return;
+    // Pastikan layer terseleksi
+    if (!layer.id.startsWith("sel_")) selectLayer(layerId.replace(/^sel_/,""));
+    // Switch ke tab teks otomatis biar pengguna langsung bisa edit dari panel
+    if (tab!=="text") setTab("text");
+    const el = previewFrameRef.current;
+    const r = el?el.getBoundingClientRect():{width:100,height:100} as DOMRect;
+    dragRef.current = {
+      mode, layerId: layer.id.replace(/^sel_/,""),
+      startX: ev.clientX, startY: ev.clientY,
+      origX: layer.x, origY: layer.y,
+      origSize: layer.sizePct||0.07,
+      frameW: r.width, frameH: r.height,
+      moved:false,
+    };
+  };
+  const onPointerMove = (e:Event) => {
+    const d = dragRef.current;
+    if (d.mode==="none") return;
+    const ev = (e as TouchEvent).touches?.[0] || (e as MouseEvent);
+    const dx = ev.clientX - d.startX;
+    const dy = ev.clientY - d.startY;
+    if (Math.abs(dx)>2 || Math.abs(dy)>2) d.moved = true;
+    if (d.mode==="drag") {
+      let nx = clamp(d.origX + dx/d.frameW, 0.02, 0.98);
+      let ny = clamp(d.origY + dy/d.frameH, 0.02, 0.98);
+      // Smart guides — snap ke center, thirds
+      const vAnchors = [0.25,0.5,0.75];
+      const hAnchors = [0.2,0.33,0.5,0.66,0.8];
+      let snapV:number|undefined, snapH:number|undefined;
+      for (const a of vAnchors) if (Math.abs(nx-a)<0.025) { nx=a; snapV=a; break; }
+      for (const a of hAnchors) if (Math.abs(ny-a)<0.025) { ny=a; snapH=a; break; }
+      setShowGuides({v:snapV,h:snapH});
+      setTextLayers((ls:TextLayer[])=>ls.map(l=>{
+        const lid = l.id.replace(/^sel_/,"");
+        return lid===d.layerId ? {...l, x:nx, y:ny} : l;
+      }));
+    } else if (d.mode==="resize") {
+      // Resize berdasar jarak dari anchor (center layer)
+      const dist = Math.sqrt(dx*dx+dy*dy) / Math.min(d.frameW,d.frameH);
+      const ns = clamp(d.origSize + dist*0.15, 0.025, 0.22);
+      setTextLayers((ls:TextLayer[])=>ls.map(l=>{
+        const lid = l.id.replace(/^sel_/,"");
+        return lid===d.layerId ? {...l, sizePct:ns} : l;
+      }));
+    }
+  };
+  const onPointerEnd = () => {
+    if (dragRef.current.mode!=="none") {
+      dragRef.current.mode="none";
+      setTimeout(()=>setShowGuides(null),300);
+    }
+  };
 
   const TABS = [
     {id:"edit",    icon:"✂️", label:"Edit"},
@@ -193,6 +276,23 @@ export function StudioEditor(p: StudioEditorProps) {
     el.muted = previewMuted;
   }, [audioSrc, previewMuted, previewAudioRef, proxifyAudioUrl]);
 
+  // Global pointer move/up untuk drag text
+  useEffect(()=>{
+    const mv = (e:Event)=>onPointerMove(e);
+    const up = ()=>onPointerEnd();
+    window.addEventListener("touchmove", mv, {passive:false});
+    window.addEventListener("mousemove", mv);
+    window.addEventListener("touchend", up);
+    window.addEventListener("mouseup", up);
+    return ()=>{
+      window.removeEventListener("touchmove", mv);
+      window.removeEventListener("mousemove", mv);
+      window.removeEventListener("touchend", up);
+      window.removeEventListener("mouseup", up);
+    };
+    // eslint-disable-next-line
+  }, []);
+
   return (
     <section className="mt-0">
       {/* FULLSCREEN STUDIO: di HP pakai fixed inset-0; di desktop tampil dalam card */}
@@ -215,7 +315,12 @@ export function StudioEditor(p: StudioEditorProps) {
 
         {/* PREVIEW AREA (flex-1) */}
         <div className="studio-preview-area relative flex-1 flex items-center justify-center bg-gradient-to-b from-black to-[#0a0418] overflow-hidden p-2">
-          <div className="relative rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl mx-auto"
+          <div ref={previewFrameRef}
+               onClick={(e)=>{
+                 // Tap area kosong untuk deselect
+                 if (e.target===e.currentTarget) deselectLayers();
+               }}
+               className="relative rounded-xl overflow-hidden border-2 border-white/10 shadow-2xl mx-auto touch-none"
                style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%"}}>
             {previewPlaying ? (
               <canvas ref={previewCanvasRef}
@@ -334,6 +439,18 @@ export function StudioEditor(p: StudioEditorProps) {
               </div>
             )}
 
+            {/* ===== SMART GUIDES (garis bantu CapCut-style saat drag) ===== */}
+            {showGuides?.v!==undefined && (
+              <div className="absolute inset-0 pointer-events-none z-20">
+                <div className="absolute top-0 bottom-0 w-px bg-pink-400/90" style={{left:`${showGuides.v*100}%`,boxShadow:"0 0 6px #ec4899"}}/>
+              </div>
+            )}
+            {showGuides?.h!==undefined && (
+              <div className="absolute inset-0 pointer-events-none z-20">
+                <div className="absolute left-0 right-0 h-px bg-pink-400/90" style={{top:`${showGuides.h*100}%`,boxShadow:"0 0 6px #ec4899"}}/>
+              </div>
+            )}
+
             {/* ===== CUSTOM TEXT LAYERS (CapCut-style editable) ===== */}
             {textLayers.map((l:TextLayer)=>{
               if (!l.text) return null;
@@ -401,9 +518,44 @@ export function StudioEditor(p: StudioEditorProps) {
               if (previewPlaying && l.animLoop==="pulse") animClass += " tt-pulse";
               if (previewPlaying && l.animLoop==="bounce") animClass += " tt-bounce";
 
+              const isSelected = l.id.startsWith("sel_");
+              // Saat teks di-select, pointerEvents di-nyalain buat bisa di-drag
+              const wrapStyle: React.CSSProperties = {
+                ...outerStyle,
+                pointerEvents: isSelected && !previewPlaying ? "auto" : "none",
+                cursor: isSelected ? "move" : "default",
+                zIndex: isSelected ? 30 : 1,
+              };
+              if (isSelected && !previewPlaying) {
+                wrapStyle.outline = "2px dashed #22d3ee";
+                wrapStyle.outlineOffset = "4px";
+                wrapStyle.boxShadow = "0 0 0 1px rgba(0,0,0,0.6),0 0 20px rgba(34,211,238,0.5)";
+              }
               return (
-                <div key={l.id} style={outerStyle} className={animClass}>
+                <div key={l.id}
+                     style={wrapStyle}
+                     className={animClass + " select-none"}
+                     onMouseDown={(e)=>{ if (!previewPlaying) onTextTouchStart(e, l.id, "drag"); }}
+                     onTouchStart={(e)=>{ if (!previewPlaying) { e.stopPropagation(); e.preventDefault(); onTextTouchStart(e, l.id, "drag"); }}}
+                     onDoubleClick={()=>{
+                       // Double click → select & fokus ke input teks panel
+                       selectLayer(l.id);
+                       setTab("text");
+                     }}>
                   <span style={innerStyle}>{l.text}</span>
+                  {/* Resize handle pojok kanan bawah (saat selected) */}
+                  {isSelected && !previewPlaying && (
+                    <>
+                      <div style={{position:"absolute",right:-10,bottom:-10,width:22,height:22,borderRadius:"50%",
+                                   background:"#22d3ee",border:"3px solid #000",boxShadow:"0 2px 6px rgba(0,0,0,0.6)",
+                                   cursor:"nwse-resize",zIndex:40}}
+                           onMouseDown={(e)=>{e.stopPropagation();onTextTouchStart(e,l.id,"resize");}}
+                           onTouchStart={(e)=>{e.stopPropagation();e.preventDefault();onTextTouchStart(e,l.id,"resize");}}/>
+                      <div style={{position:"absolute",top:-8,left:-8,width:10,height:10,background:"#22d3ee",border:"2px solid #000",borderRadius:"50%"}}/>
+                      <div style={{position:"absolute",top:-8,right:-8,width:10,height:10,background:"#22d3ee",border:"2px solid #000",borderRadius:"50%"}}/>
+                      <div style={{position:"absolute",bottom:-8,left:-8,width:10,height:10,background:"#22d3ee",border:"2px solid #000",borderRadius:"50%"}}/>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -760,15 +912,34 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
           ))}
         </div>
         {sel && (
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              {id:"template",l:"📋 Template"},{id:"font",l:"🔤 Font"},{id:"style",l:"🎨 Gaya"},
-              {id:"effect",l:"✨ Efek"},{id:"animation",l:"🎬 Animasi"},{id:"bubble",l:"💬 Gelembung"},
-            ].map((t:any)=>(
-              <button key={t.id} onClick={()=>setTab(t.id as any)}
-                className="q-tile !text-[10px] !py-2">{t.l}</button>
-            ))}
-          </div>
+          <>
+            <div className="text-[11px] text-cyan-300 p-2 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center gap-2">
+              <span>👆</span>
+              <span className="flex-1 leading-snug"><b>Teks terseleksi!</b> Geser langsung di preview untuk pindahkan, atau tarik <span style={{display:"inline-block",width:12,height:12,background:"#22d3ee",borderRadius:"50%",border:"2px solid #000",verticalAlign:"middle"}}/> untuk resize.</span>
+            </div>
+            <div>
+              <div className="text-[11px] mb-1 text-white/60">📍 Posisi cepat:</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  {l:"↖️ Atas Kiri",x:0.15,y:0.18},{l:"⬆️ Atas Tengah",x:0.5,y:0.15},{l:"↗️ Atas Kanan",x:0.85,y:0.18},
+                  {l:"⬅️ Tengah Kiri",x:0.2,y:0.5},{l:"🎯 TENGAH",x:0.5,y:0.5},{l:"➡️ Tengah Kanan",x:0.8,y:0.5},
+                  {l:"↙️ Bawah Kiri",x:0.2,y:0.82},{l:"⬇️ Bawah Tengah",x:0.5,y:0.85},{l:"↘️ Bawah Kanan",x:0.8,y:0.82},
+                ].map((p:any,i)=>(
+                  <button key={i} onClick={()=>upd({x:p.x,y:p.y})}
+                    className={`q-tile !text-[9px] !py-2 ${Math.abs(sel.x-p.x)<0.02 && Math.abs(sel.y-p.y)<0.02?"active":""}`}>{p.l}</button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                {id:"template",l:"📋 Template"},{id:"font",l:"🔤 Font"},{id:"style",l:"🎨 Gaya"},
+                {id:"effect",l:"✨ Efek"},{id:"animation",l:"🎬 Animasi"},{id:"bubble",l:"💬 Gelembung"},
+              ].map((t:any)=>(
+                <button key={t.id} onClick={()=>setTab(t.id as any)}
+                  className="q-tile !text-[10px] !py-2">{t.l}</button>
+              ))}
+            </div>
+          </>
         )}
       </div>
     );
@@ -979,11 +1150,34 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
 
       {tab==="bubble" && (
         <div className="space-y-2">
-          <div className="text-[11px] text-white/60">💬 Gelembung chat (coming soon)</div>
+          <div className="text-[11px] text-white/70">💬 Gelembung chat / speech bubble</div>
           <div className="grid grid-cols-4 gap-2">
-            {["💬","💭","🔵","🟢","🟡","🗨️","📢","💡"].map((e,i)=>(
-              <button key={i} className="aspect-square rounded-xl border border-white/10 bg-white/5 text-2xl opacity-60">{e}</button>
-            ))}
+            {[
+              {id:"none",label:"❌ None",bg:"transparent",color:"#fff"},
+              {id:"bubble-r",label:"💬 Round",bg:"#fff",color:"#000"},
+              {id:"bubble-t",label:"🔷 Tail",bg:"#22d3ee",color:"#000"},
+              {id:"bubble-g",label:"🟢 Green",bg:"#22c55e",color:"#000"},
+              {id:"bubble-y",label:"🟡 Yellow",bg:"#fde047",color:"#000"},
+              {id:"bubble-p",label:"💜 Purple",bg:"#a855f7",color:"#fff"},
+              {id:"bubble-rekt",label:"▭ Rekt",bg:"#111",color:"#fff"},
+              {id:"bubble-tag",label:"🏷️ Tag",bg:"#ec4899",color:"#fff"},
+            ].map((b:any)=>{
+              const cur = (sel as any).bubble||"none";
+              return (
+                <button key={b.id} onClick={()=>upd({bubble:b.id} as any)}
+                  className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center text-xs font-bold relative ${cur===b.id?"border-pink-400 bg-pink-500/10":"border-white/10 bg-white/5"}`}
+                  style={{background:b.bg,color:b.color}}>
+                  <span style={{position:"relative"}}>
+                    {b.id==="bubble-t"&&<span style={{position:"absolute",bottom:-8,left:-4,width:0,height:0,borderLeft:"6px solid transparent",borderRight:"6px solid transparent",borderTop:`8px solid ${b.bg}`}}/>}
+                    {b.label.slice(0,2)}
+                  </span>
+                  <div className="text-[8px] mt-1 opacity-80">{b.label.slice(2).trim()}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">
+            💡 Gelembung otomatis muncul sebagai background rounded di belakang teks saat export.
           </div>
         </div>
       )}
