@@ -1710,6 +1710,26 @@ Dibuat dengan Verve AI Video Studio`;
   // Auto stop kalau keluar dari step 5 / halaman
   useEffect(()=>()=>stopPreview(), []);
 
+  // Listener untuk tambah gambar dari tombol + di track video Studio
+  useEffect(()=>{
+    const handler = (e:Event)=>{
+      const d = (e as CustomEvent).detail as any;
+      if (!d?.imageUrl) return;
+      const newSlide: Slide = {
+        id: "slide-"+Date.now()+"-"+Math.random().toString(36).slice(2,7),
+        imageUrl: d.imageUrl,
+      };
+      setSlides(cur=>{
+        const out = [...cur];
+        const at = Math.max(0, Math.min(cur.length, d.insertAt ?? cur.length));
+        out.splice(at,0,newSlide);
+        return out;
+      });
+    };
+    window.addEventListener("studio-add-image", handler as EventListener);
+    return ()=>window.removeEventListener("studio-add-image", handler as EventListener);
+  }, []);
+
   // Auto-isi judul lagu dari judul high-CTR yang dipilih (sekali)
   useEffect(()=>{
     if (selectedTitle && !musicTitle) {
@@ -2259,6 +2279,20 @@ Dibuat dengan Verve AI Video Studio`;
                 onBack={()=>setStep(4)}
                 onExport={()=>{stopPreview(); setStep(6);}}
                 onSaveDraft={()=>saveDraftManually()}
+                onDeleteSlide={(idx:number)=>{
+                  setSlides(cur=>{
+                    if (cur.length<=1) return cur;
+                    return cur.filter((_,i)=>i!==idx);
+                  });
+                }}
+                onDuplicateSlide={(idx:number)=>{
+                  setSlides(cur=>{
+                    const s = cur[idx]; if (!s) return cur;
+                    const copy = {...s, id: "slide-"+Date.now()+"-"+Math.random().toString(36).slice(2,7)};
+                    const out = [...cur]; out.splice(idx+1,0,copy); return out;
+                  });
+                }}
+                onHandleUploadMusic={handleUploadMusic}
               />
             )}
 

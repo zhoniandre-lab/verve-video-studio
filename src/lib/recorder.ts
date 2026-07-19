@@ -1255,6 +1255,100 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, s: DrawState) {
   else if (style==="particles"){
     if(beat) for(let k=0;k<8;k++) s.particles.push({x:W/2+(Math.random()-0.5)*W*0.4,y:H*0.7+(Math.random()-0.5)*40,vx:(Math.random()-0.5)*6,vy:-Math.random()*5-1,life:1,size:Math.random()*3+2});
   }
+  // ===== SPECTRUM BARU (CapCut-style) =====
+  else if (style==="wave"){
+    const n=80, cy=H*0.82;
+    ctx.save();
+    ctx.strokeStyle=rgba(rgb,0.95); ctx.lineWidth=3; ctx.shadowBlur=14; ctx.shadowColor=rgba(rgb,0.8);
+    ctx.beginPath();
+    for(let i=0;i<=n;i++){
+      const x=(i/n)*W;
+      const bi=Math.floor((i/n)*bars.length);
+      const v=(bars as any)[bi]||0;
+      const maxA=Math.max(4, v*H*0.12*(0.5+bass*1.2)) + Math.sin(s.phase*2+i*0.25)*H*0.005;
+      if(i===0) ctx.moveTo(x,cy-maxA); else ctx.lineTo(x,cy-maxA);
+    }
+    ctx.stroke();
+    ctx.globalAlpha=0.25; ctx.lineTo(W,cy); ctx.lineTo(0,cy); ctx.closePath();
+    ctx.fillStyle=rgba(rgb,0.5); ctx.fill();
+    ctx.restore();
+  }
+  else if (style==="radial-bars"){
+    const cx=W/2, cy=H*0.35, n=Math.min(bars.length, isMobile?36:60), r0=Math.min(W,H)*0.08;
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(s.phase*0.4);
+    ctx.fillStyle=rgba(rgb,0.9); ctx.shadowBlur=12; ctx.shadowColor=rgba(rgb,0.8);
+    for(let i=0;i<n;i++){
+      const a=(i/n)*Math.PI*2;
+      const bi=Math.floor((i/n)*bars.length);
+      const v=(bars as any)[bi]||0;
+      const len=r0 + v*Math.min(W,H)*0.3;
+      const lw=Math.max(2, Math.min(W,H)*0.008);
+      ctx.save(); ctx.rotate(a);
+      ctx.fillRect(-lw/2,-len,lw,len-r0);
+      ctx.restore();
+    }
+    ctx.shadowBlur=20+bass*14;
+    ctx.beginPath(); ctx.arc(0,0,r0*0.6+bass*6,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  else if (style==="equalizer"){
+    const nb=isMobile?24:40, bw=W*0.85/nb*0.85, by=H-10, maxH=H*0.28;
+    ctx.save();
+    for(let i=0;i<nb;i++){
+      const bi=Math.floor((i/nb)*bars.length);
+      const v=(bars as any)[bi]||0;
+      const h=Math.max(3,v*maxH);
+      const p=v;
+      const r=Math.floor(p>0.6?255:(p>0.3?255:60+195*p*1.6));
+      const g=Math.floor(p<0.3?220:(p<0.7?220-(p-0.3)*550:Math.max(0,220-(p-0.3)*550)));
+      ctx.fillStyle=`rgba(${r|0},${g|0},40,0.95)`;
+      ctx.fillRect(W*0.075+i*(bw+W*0.85/nb*0.15),by-h,bw,h);
+    }
+    ctx.restore();
+  }
+  else if (style==="pulse"){
+    const cx=W/2, cy=H*0.3;
+    ctx.save();
+    for(let k=0;k<3;k++){
+      const rr=Math.min(W,H)*0.08 + k*18 + bass*50;
+      ctx.strokeStyle=rgba(rgb,0.5-k*0.15); ctx.lineWidth=3-k*0.5;
+      ctx.shadowBlur=18+bass*18; ctx.shadowColor=rgba(rgb,0.9);
+      ctx.beginPath(); ctx.arc(cx,cy,rr,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.fillStyle=rgba(rgb,0.95);
+    ctx.beginPath(); ctx.arc(cx,cy,Math.min(W,H)*0.05+bass*14,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  else if (style==="minimal"){
+    const nd=isMobile?20:40, by=H-20;
+    ctx.save(); ctx.fillStyle=rgba(rgb,0.85);
+    for(let i=0;i<nd;i++){
+      const bi=Math.floor((i/nd)*bars.length);
+      const v=(bars as any)[bi]||0;
+      const rr=1.5+v*7;
+      ctx.beginPath();
+      ctx.arc(W*0.1+i*(W*0.8/(nd-1)),by-2-v*H*0.05,rr,0,Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  else if (style==="bars-top"){
+    const nBars=isMobile?Math.min(bars.length,30):bars.length;
+    const step=bars.length/nBars;
+    const barW=W/nBars*0.6,gap=W/nBars*0.4,maxH=H*0.12;
+    ctx.save(); ctx.fillStyle=rgba(rgb,0.9); ctx.shadowBlur=10; ctx.shadowColor=rgba(rgb,0.8);
+    for(let i=0;i<nBars;i++){
+      const bi=Math.floor(i*step);
+      let v=(bars as any)[bi]||0;
+      if(isMobile){const end=Math.min(bars.length,bi+Math.ceil(step));for(let j=bi;j<end;j++)if(bars[j]>v)v=bars[j];}
+      const h=v*maxH, x=i*(barW+gap)+gap/2, y=4;
+      ctx.fillRect(x,y,barW,h);
+    }
+    ctx.restore();
+  }
+  else if (style==="none"){
+    // tanpa spectrum
+  }
   // particles
   for(let i=s.particles.length-1;i>=0;i--){
     const p=s.particles[i];

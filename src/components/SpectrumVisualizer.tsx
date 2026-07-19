@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-type Style = "bars" | "circle" | "ncs" | "particles" | "luxury" | "trapnation" | "monstercat" | "proximity" | "retrowave" | "dubstep" | "tunnel";
+type Style = "bars" | "circle" | "ncs" | "particles" | "luxury" | "trapnation" | "monstercat" | "proximity" | "retrowave" | "dubstep" | "tunnel"
+  | "wave" | "radial-bars" | "bars-top" | "pulse" | "equalizer" | "minimal" | "none";
 
 interface Props {
   audioEl?: HTMLAudioElement | null;

@@ -9,7 +9,14 @@ export type VizStyle =
   | "proximity"     // Proximity mirror bars
   | "retrowave"     // Synthwave sun + grid
   | "dubstep"       // Middle gravity bars
-  | "tunnel";       // 3D tunnel
+  | "tunnel"        // 3D tunnel
+  | "wave"          // Smooth wave line (CapCut classic)
+  | "radial-bars"   // Radial bars around circle
+  | "bars-top"      // Bars di atas
+  | "pulse"         // Pulse beat ring
+  | "equalizer"     // Classic equalizer tebal
+  | "minimal"       // Minimal dots
+  | "none";         // Tanpa spectrum (cuma slide+teks)
 
 export type AudioMode = "tts" | "music" | "both" | "none" | "aimusic";
 export type ImageSource = "ai" | "upload" | "both" | "storyboard";
@@ -81,13 +88,20 @@ export const VIZ_STYLES: {id:VizStyle; label:string; emoji:string; desc:string}[
   { id:"luxury",     label:"Trap Nation Premium", emoji:"🔥", desc:"Logo berdenyut + bars + partikel" },
   { id:"trapnation", label:"Trap Nation Classic", emoji:"🎧", desc:"Lingkaran gelombang klasik" },
   { id:"circle",     label:"NCS Circle Wave",    emoji:"💫", desc:"Gelombang radial biru" },
+  { id:"radial-bars",label:"Radial Bars",        emoji:"🎯", desc:"Bars memutar di tengah" },
   { id:"monstercat", label:"Monstercat Dots",    emoji:"🔴", desc:"Titik-titik radial" },
   { id:"proximity",  label:"Proximity Mirror",   emoji:"🪞", desc:"Bars mirror atas-bawah" },
   { id:"bars",       label:"Classic Bars",       emoji:"📊", desc:"Bars neon bawah" },
+  { id:"equalizer",  label:"Equalizer Tebal",    emoji:"🎚️", desc:"Equalizer klasik" },
+  { id:"bars-top",   label:"Bars Atas",          emoji:"📈", desc:"Bars di atas video" },
+  { id:"wave",       label:"Smooth Wave",        emoji:"〰️", desc:"Gelombang halus" },
   { id:"dubstep",    label:"Dubstep Gravity",    emoji:"🌀", desc:"Bars dari tengah" },
+  { id:"pulse",      label:"Pulse Beat",         emoji:"💓", desc:"Lingkaran denyut ikut beat" },
   { id:"particles",  label:"Particles",          emoji:"✨", desc:"Titik-titik beat" },
+  { id:"minimal",    label:"Minimal Dots",       emoji:"⚪", desc:"Titik-titik kecil bawah" },
   { id:"retrowave",  label:"Retro/Synthwave",    emoji:"🌆", desc:"Matahari + grid 80an" },
   { id:"tunnel",     label:"3D Tunnel",          emoji:"🚇", desc:"Terowongan 3D" },
+  { id:"none",       label:"Tanpa Spectrum",     emoji:"🚫", desc:"Polos tanpa visualizer" },
 ];
 
 export const TRANSITION_STYLES: {id: string; label:string; emoji:string}[] = [

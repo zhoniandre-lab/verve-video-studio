@@ -108,6 +108,9 @@ type StudioEditorProps = {
   onBack: ()=>void;
   onExport: ()=>void;
   onSaveDraft: ()=>void;
+  onDeleteSlide?: (idx:number)=>void;
+  onDuplicateSlide?: (idx:number)=>void;
+  onHandleUploadMusic?: (f:File|undefined)=>void;
 };
 export function StudioEditor(p: StudioEditorProps) {
   const {
@@ -124,7 +127,7 @@ export function StudioEditor(p: StudioEditorProps) {
     aiMusicUrl, ttsUrl, musicUrl, proxifyAudioUrl,
     previewAudioRef, previewCanvasRef, previewPlaying, previewCurrent, previewDuration,
     previewMuted, setPreviewMuted, togglePreview, seekPreview,
-    onBack, onExport, onSaveDraft,
+    onBack, onExport, onSaveDraft, onDeleteSlide, onDuplicateSlide,
   } = p;
 
   const [tab, setTab] = useState<"edit"|"audio"|"text"|"sticker"|"overlay"|"filter"|"adjust"|"effect"|"speed">("edit");
@@ -697,26 +700,44 @@ export function StudioEditor(p: StudioEditorProps) {
               </div>
               {/* KANAN: Isi track dengan lebar sesuai durasi */}
               <div className="flex-1 relative min-w-[200%]">
-                {/* VIDEO TRACK — thumbnail klip */}
+                {/* VIDEO TRACK — thumbnail klip (bisa tap utk pilih, long-tap atau tombol action di tab Edit utk hapus/duplikat) */}
                 <div className="relative h-10 my-0.5">
                   {slides.map((s:any, i:number)=>{
                     const clipStart = i*(curSlideDur+transitionDur/videoSpeed);
                     const clipW = (curSlideDur/totalDur)*100;
-                    const isActive = Math.abs(previewCurrent - clipStart) < curSlideDur*0.6;
+                    const isActive = activeSlide===i;
                     return (
-                      <button key={s.id}
+                      <button key={s.id} data-clip="1"
                         onClick={()=>{ setActiveSlide(i); seekPreview(clipStart); }}
-                        className={`absolute top-0 bottom-0 rounded-md overflow-hidden border-2 cursor-pointer transition ${isActive?"border-pink-400 shadow-lg shadow-pink-500/30":"border-white/10 opacity-80"}`}
+                        className={`absolute top-0 bottom-0 rounded-md overflow-hidden border-2 cursor-pointer transition ${isActive?"border-pink-400 shadow-lg shadow-pink-500/30 z-10":"border-white/10 opacity-80"}`}
                         style={{left:`${(clipStart/totalDur)*100}%`, width:`${clipW}%`, minWidth:"30px"}}>
                         <img src={s.imageUrl} className="w-full h-full object-cover" alt="" draggable={false}/>
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-white text-center py-px font-bold">{i+1}</div>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-white text-center py-px font-bold flex items-center justify-center gap-0.5">
+                          {isActive && slides.length>1 && (<>
+                            <span onClick={(e)=>{e.stopPropagation();onDuplicateSlide?.(i);}} className="px-0.5 hover:bg-white/20 rounded">⎘</span>
+                            <span onClick={(e)=>{e.stopPropagation();if(confirm("Hapus slide ini?"))onDeleteSlide?.(i);}} className="px-0.5 hover:bg-red-500/40 rounded">🗑</span>
+                          </>)}
+                          <span>{i+1}</span>
+                        </div>
                       </button>
                     );
                   })}
-                  {/* Tombol + di kanan klip terakhir buat tambah slide */}
-                  <button onClick={()=>window.alert("Upload/tambah gambar dari Step 3 ya bro 👍")}
-                    className="absolute top-0 bottom-0 w-7 rounded-md border-2 border-dashed border-white/30 flex items-center justify-center text-white/60 text-lg active:scale-95"
-                    style={{left:`${(slides.length*curSlideDur/totalDur)*100}%`, marginLeft:2}}>+</button>
+                  {/* Tombol + tambah gambar dari camera roll — upload langsung ke slides */}
+                  <label className="absolute top-0 bottom-0 w-7 rounded-md border-2 border-dashed border-white/30 flex items-center justify-center text-white/60 text-lg active:scale-95 cursor-pointer"
+                    style={{left:`${Math.min(99,(slides.length*curSlideDur/totalDur)*100)}%`, marginLeft:2}}>
+                    +
+                    <input type="file" accept="image/*" hidden onChange={(e:any)=>{
+                      const f = e.target.files?.[0]; if (!f) return;
+                      const reader = new FileReader();
+                      reader.onload = ()=>{
+                        const url = reader.result as string;
+                        // Pakai CustomEvent untuk komunikasi ke parent (page.tsx handle via window)
+                        window.dispatchEvent(new CustomEvent("studio-add-image",{detail:{imageUrl:url,insertAt:activeSlide+1}}));
+                      };
+                      reader.readAsDataURL(f);
+                      e.target.value = "";
+                    }}/>
+                  </label>
                 </div>
 
                 {/* AUDIO TRACK (tosca/hijau) */}
@@ -854,11 +875,15 @@ export function StudioEditor(p: StudioEditorProps) {
         {/* PANEL KONTEN (CapCut-style, lebih pendek agar preview besar) */}
         <div className="bg-gradient-to-b from-[#15091f] to-black border-t border-white/5 p-2.5 overflow-y-auto studio-panel"
              style={{maxHeight: isMobile?"30vh":"42vh"}}>
-          {tab==="edit" && <EditTab {...{slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport}}/>}
-          {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,aiMusicUrl,ttsUrl,musicUrl,proxifyAudioUrl,audioSrc}}/>}
+          {tab==="edit" && <EditTab {...{slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport,
+            activeSlide, slidesLength:slides.length,
+            onDeleteSlide:()=>{ onDeleteSlide?.(activeSlide); setActiveSlide(Math.max(0,Math.min(activeSlide,(slides.length-1)-1))); },
+            onDuplicateSlide:()=>{ onDuplicateSlide?.(activeSlide); }
+          }}/>}
+          {tab==="audio" && <AudioTab {...{audioMode,setAudioMode,proxifyAudioUrl,audioSrc,onBack,onPickMusic:p.onHandleUploadMusic}}/>}
           {tab==="text" && <TextTab {...{showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}}/>}
           {tab==="sticker" && <StickerTab {...{spectrumSticker,setSpectrumSticker}}/>}
-          {tab==="overlay" && <OverlayTab {...{logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle}}/>}
+          {tab==="overlay" && <OverlayTab {...{logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle,spectrumSticker,setSpectrumSticker}}/>}
           {tab==="filter" && <FilterTab {...{slides,activeSlide,activeFilter,setActiveFilter,FILTERS}}/>}
           {tab==="adjust" && <AdjustTab {...{brightness,setBrightness,contrast,setContrast,saturation,setSaturation,sharpen,setSharpen,vignetteAmt,setVignetteAmt,resetAdjust}}/>}
           {tab==="effect" && <EffectTab {...{transition,setTransition,showTitle,setShowTitle,showLyrics,setShowLyrics}}/>}
@@ -897,14 +922,14 @@ export function StudioEditor(p: StudioEditorProps) {
 }
 
 // ====== TAB PANELS ======
-function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport}:any){
+function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,transition,setTransition,onBack,onExport,activeSlide,slidesLength,onDeleteSlide,onDuplicateSlide}:any){
   return (
     <div className="space-y-3">
       <div className="text-xs font-bold text-white/80">✂️ Edit Klip</div>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <div className="flex justify-between text-[11px] mb-1"><span>⏱ Durasi klip</span><b className="text-pink-300">{slideDuration.toFixed(1)}s</b></div>
-          <input type="range" min={1.5} max={8} step={0.5} value={slideDuration}
+          <input type="range" min={1} max={15} step={0.5} value={slideDuration}
                  onChange={e=>setSlideDuration(Number(e.target.value))} className="w-full accent-pink-500"/>
         </label>
         <label className="block">
@@ -924,6 +949,31 @@ function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,
           ))}
         </div>
       </div>
+
+      {/* ====== MANAGE SLIDE (hapus/duplikat slide AKTIF) ====== */}
+      <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-2">
+        <div className="text-[11px] text-white/70">🎞️ Slide aktif: <b className="text-pink-300">#{activeSlide+1} / {slidesLength}</b></div>
+        <div className="flex gap-1.5">
+          <button onClick={onDuplicateSlide} className="flex-1 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-bold active:scale-95">
+            ⎘ Duplikat
+          </button>
+          <button onClick={()=>{ if(slidesLength<=1){alert("Minimal harus ada 1 slide bro!");return;} if(confirm("Hapus slide ini?"))onDeleteSlide?.(); }}
+                  className="flex-1 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 text-red-200 text-[11px] font-bold active:scale-95">
+            🗑 Hapus
+          </button>
+        </div>
+        <label className="flex items-center justify-center gap-2 py-2 rounded-lg bg-white/5 border border-dashed border-white/20 text-[11px] text-white/70 active:scale-95 cursor-pointer">
+          ➕ Tambah gambar dari galeri
+          <input type="file" accept="image/*" hidden onChange={(e:any)=>{
+            const f = e.target.files?.[0]; if(!f) return;
+            const r = new FileReader();
+            r.onload = ()=>window.dispatchEvent(new CustomEvent("studio-add-image",{detail:{imageUrl:r.result,insertAt:activeSlide+1}}));
+            r.readAsDataURL(f);
+            e.target.value="";
+          }}/>
+        </label>
+      </div>
+
       <div className="grid grid-cols-3 gap-2 pt-1">
         <button onClick={onBack} className="btn btn-ghost text-xs col-span-1">← Audio</button>
         <button onClick={onExport} className="btn btn-primary text-xs col-span-2 glow">Ekspor →</button>
@@ -932,23 +982,37 @@ function EditTab({slideDuration,setSlideDuration,transitionDur,setTransitionDur,
   );
 }
 
-function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl}:any){
+function AudioTab({audioMode,setAudioMode,audioSrc,proxifyAudioUrl,onBack,onPickMusic,onPickTts}:any){
   return (
     <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">🎵 Audio</div>
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-bold text-white/80">🎵 Audio</div>
+        <button onClick={onBack} className="text-[10px] px-2 py-1 rounded bg-white/10 text-white/70">← Kembali ke step Audio</button>
+      </div>
       <div className="grid grid-cols-5 gap-1.5">
         {[{id:"tts",l:"🗣️ TTS"},{id:"music",l:"🎵 Musik"},{id:"aimusic",l:"🤖 AI"},{id:"both",l:"🔀 Campur"},{id:"none",l:"🔇 Mute"}].map((m:any)=>(
           <button key={m.id} onClick={()=>setAudioMode(m.id)}
             className={`py-2.5 rounded-lg text-[10px] font-bold border active:scale-95 ${audioMode===m.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/70"}`}>{m.l}</button>
         ))}
       </div>
-      <div className="text-[11px] text-white/60 p-2 rounded-lg bg-white/5">
-        💡 Tap <b>← Kembali</b> di top bar buat ganti sumber audio / generate ulang lagu AI.
+      <div className="grid grid-cols-2 gap-1.5">
+        <label className="btn btn-ghost text-xs cursor-pointer flex items-center justify-center gap-1">
+          🎵 Upload Musik
+          <input type="file" accept="audio/*" hidden onChange={(e:any)=>onPickMusic?.(e.target.files?.[0])}/>
+        </label>
+        <button onClick={onBack} className="btn btn-ghost text-xs">
+          🗣️ Edit Narasi
+        </button>
       </div>
       {audioSrc && (
-        <audio controls src={proxifyAudioUrl(audioSrc)} className="w-full"/>
+        <div className="rounded-xl bg-black/40 border border-white/10 p-2">
+          <div className="text-[10px] text-white/60 mb-1">Preview audio saat ini:</div>
+          <audio controls src={proxifyAudioUrl(audioSrc)} className="w-full"/>
+        </div>
       )}
-      <div className="text-[10px] text-white/50">Volume audio diatur oleh tombol 🔊 di kontrol playback.</div>
+      <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">
+        💡 Untuk ganti sumber musik / generate ulang AI song / ganti narasi TTS, tap <b>← Kembali ke step Audio</b>. Tombol 🔊 di kontrol playback untuk mute/unmute.
+      </div>
     </div>
   );
 }
@@ -1468,7 +1532,7 @@ function StickerTab({spectrumSticker,setSpectrumSticker}:any){
   );
 }
 
-function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle}:any){
+function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizColor,setVizColor,vizStyle,setVizStyle,spectrumSticker,setSpectrumSticker}:any){
   return (
     <div className="space-y-3">
       <div className="text-xs font-bold text-white/80">🖼️ Overlay / Logo</div>
@@ -1485,6 +1549,9 @@ function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizCo
         <label className="btn btn-ghost btn-sm cursor-pointer">
           Upload<input type="file" accept="image/*" hidden onChange={(e:any)=>onLogoUpload(e.target.files?.[0])}/>
         </label>
+        {logoDataUrl && (
+          <button onClick={()=>setLogoPosition("none")} className="w-8 h-8 rounded-lg bg-red-500/20 text-red-200 text-sm">🗑</button>
+        )}
       </div>
       {logoDataUrl && (
         <div className="grid grid-cols-3 gap-1.5">
@@ -1507,11 +1574,14 @@ function OverlayTab({logoDataUrl,logoPosition,setLogoPosition,onLogoUpload,vizCo
         </div>
       </div>
       <div>
-        <div className="text-[11px] mb-1 text-white/70">📊 Style spectrum utama</div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {VIZ_STYLES.filter((v:any,i:number,a:any)=>a.findIndex((x:any)=>x.id===v.id)===i).map((s:any)=>(
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] text-white/70">📊 Style spectrum utama</div>
+          <button onClick={()=>setSpectrumSticker("none")} className="text-[9px] px-2 py-0.5 rounded bg-white/5 text-white/60">Reset stiker</button>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5 max-h-[200px] overflow-y-auto">
+          {VIZ_STYLES.map((s:any)=>(
             <button key={s.id} onClick={()=>setVizStyle(s.id)}
-              className={`q-tile !text-[10px] ${vizStyle===s.id?"active":""}`}>{s.emoji} {s.label}</button>
+              className={`q-tile !text-[10px] !py-2 ${vizStyle===s.id?"active":""}`} title={s.desc}>{s.emoji} {s.label}</button>
           ))}
         </div>
       </div>
