@@ -1733,8 +1733,105 @@ Dibuat dengan Verve AI Video Studio`;
     }
   }
 
+  // ===== RENDER FRAME STATIS (preview thumbnail saat pause / awal masuk studio) =====
+  // Dipanggil saat: (a) masuk ke halaman/setelah render awal, (b) setting berubah (filter/spectrum/vizColor/slide aktif),
+  // (c) slide berubah. Tujuannya: canvas keliatan langsung tanpa perlu Play, dan spektrum/filter kelihatan live.
+  const pendingStaticFrameRef = useRef<number>(0);
+  function drawStaticPreview() {
+    if (previewPlaying) return; // JANGAN ganggu yang lagi play
+    const canvas = previewCanvasRef.current;
+    if (!canvas) { pendingStaticFrameRef.current = requestAnimationFrame(drawStaticPreview); return; }
+    pendingStaticFrameRef.current = 0;
+    const ctx = canvas.getContext("2d", {alpha:false,desynchronized:true});
+    if (!ctx) return;
+    const W = canvas.width, H = canvas.height;
+    const sIdx = Math.max(0, Math.min(slides.length-1,
+      step===5 ? Math.floor(previewCurrent/Math.max(0.3, slideDuration)) : 0
+    ));
+    const img:HTMLImageElement|undefined = (drawStaticPreview as any)._imgs?.[sIdx];
+    // Gambar background hitam
+    ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+    const cFilter = getFilterString();
+    const drawOne = (im:HTMLImageElement, alpha=1)=>{
+      if (!im || !im.naturalWidth) { ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H); return; }
+      const ir = im.naturalWidth/im.naturalHeight, cr = W/H;
+      let sx=0,sy=0,sw=im.naturalWidth,sh=im.naturalHeight;
+      if (ir>cr){sh=im.naturalHeight;sw=sh*cr;sx=(im.naturalWidth-sw)/2;}
+      else{sw=im.naturalWidth;sh=sw/cr;sy=(im.naturalHeight-sh)/2;}
+      ctx.save(); ctx.globalAlpha=alpha; ctx.filter=cFilter;
+      ctx.drawImage(im,sx,sy,sw,sh,0,0,W,H); ctx.restore();
+    };
+    if (img && img.complete) drawOne(img,1);
+    else {
+      // Load async kalau belum ada
+      const im = new Image(); im.crossOrigin="anonymous";
+      im.onload = ()=>{
+        (drawStaticPreview as any)._imgs = (drawStaticPreview as any)._imgs || [];
+        (drawStaticPreview as any)._imgs[sIdx] = im;
+        drawStaticPreview();
+      };
+      im.src = slides[sIdx]?.imageUrl || "";
+      ctx.fillStyle="#222"; ctx.fillRect(0,0,W,H);
+    }
+    // Vignette
+    const vStrength = (vignetteAmt/100)*0.8;
+    const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
+    vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+    // ===== SPECTRUM STATIS (pakai level idle biar keliatan "idup") =====
+    if (vizStyle !== "none" && img && img.complete) {
+      const rgbv: [number,number,number] = (() => {
+        const hex = vizColor.replace("#","");
+        const v = hex.length===3?hex.split("").map(c=>c+c).join(""):hex;
+        return [parseInt(v.slice(0,2),16),parseInt(v.slice(2,4),16),parseInt(v.slice(4,6),16)];
+      })();
+      const idleBars = new Float32Array(64);
+      for (let i=0;i<64;i++){
+        idleBars[i] = Math.max(0.08, 0.2 + Math.sin(i*0.4)*0.1 + Math.sin(i*0.9)*0.08 + (i%8===0?0.15:0));
+      }
+      try{
+        drawLiveSpectrum(ctx,{W,H,bars:idleBars,bass:0.3,beat:false,style:vizStyle,rgb:rgbv,isMobile:isMobile,phase:0,
+          barFill:`rgba(${rgbv[0]},${rgbv[1]},${rgbv[2]},0.9)`});
+      }catch(e){}
+      ctx.filter = cFilter;
+    }
+
+    // Title
+    if (showTitle) {
+      const tt = selectedTitle?.text || niche || "";
+      if (tt) {
+        ctx.save();
+        ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="bottom";
+        ctx.font=`900 ${Math.floor(H*0.045)}px system-ui,-apple-system,sans-serif`;
+        ctx.shadowColor="rgba(0,0,0,0.9)"; ctx.shadowBlur=10;
+        ctx.strokeStyle="rgba(0,0,0,0.85)"; ctx.lineWidth=4; ctx.lineJoin="round";
+        ctx.strokeText(tt,W/2,H-50,W*0.9); ctx.fillText(tt,W/2,H-50,W*0.9);
+        ctx.restore();
+      }
+    }
+  }
+  // Throttle: panggil drawStaticPreview pada rAF berikutnya (digabung beberapa setState sekaligus)
+  const scheduleStatic = useCallback(()=>{
+    if (pendingStaticFrameRef.current) return;
+    pendingStaticFrameRef.current = requestAnimationFrame(drawStaticPreview);
+  }, []);
+
   // Auto stop kalau keluar dari step 5 / halaman
-  useEffect(()=>()=>stopPreview(), []);
+  useEffect(()=>()=>{ stopPreview(); if(pendingStaticFrameRef.current) cancelAnimationFrame(pendingStaticFrameRef.current); }, []);
+
+  // Trigger static frame saat setting berubah / step/slide berubah
+  useEffect(()=>{
+    if (!previewPlaying && slides.length>0) scheduleStatic();
+    // eslint-disable-next-line
+  },[previewPlaying,vizStyle,vizColor,activeFilter,brightness,contrast,saturation,sharpen,vignetteAmt,
+     showTitle,selectedTitle?.id,niche,slides.length,step,aspectRatio]);
+
+  // Panggil static frame segera saat semua image sudah siap (img onload akan trigger ulang)
+  useEffect(()=>{
+    if (slides.length && !previewPlaying) scheduleStatic();
+    // eslint-disable-next-line
+  },[previewPlaying,slides]);
 
   // Listener untuk tambah gambar dari tombol + di track video Studio
   useEffect(()=>{
@@ -2364,21 +2461,21 @@ Dibuat dengan Verve AI Video Studio`;
             </h3>
             <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
-              {/* Canvas SELALU di-mount (hidden saat paused) — JANGAN conditional render,
-                  karena togglePreview() butuh ref canvas yang sudah ada SEBELUM klik Play. */}
+              {/* Canvas SELALU di-mount & SELALU terlihat — static frame digambar otomatis
+                  saat paused, dan RAF draw() saat play. Tidak perlu img overlay lagi. */}
               <canvas ref={previewCanvasRef}
                 width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
                 height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
-                className={`w-full h-full ${step===5 && previewPlaying?"opacity-100":"opacity-0 absolute inset-0"}`}
-                style={{zIndex:step===5 && previewPlaying?1:0}}/>
-              {!(step===5 && previewPlaying) && (slides[0] ? (
-                <img src={slides[0].imageUrl} className="w-full h-full object-cover" alt="preview"/>
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs text-center px-3" style={{aspectRatio:aspectRatio==="9:16"?"9/16":aspectRatio==="1:1"?"1/1":"16/9"}}>
+                className="w-full h-full block"
+                style={{background:"#000"}}/>
+              {slides.length===0 && (
+                <div className="absolute inset-0 flex items-center justify-center text-white/40 text-xs text-center px-3">
                   Belum ada gambar
                 </div>
-              ))}
-              {!(step===5 && previewPlaying) && (
+              )}
+              {/* SpectrumVisualizer sudah tidak dipakai di step<=4 karena spektrum digambar di canvas statis (supaya sinkron dengan Studio).
+                  Biarkan untuk preview step<5 jika dibutuhkan, tapi matikan kalau step===5 (pakai canvas). */}
+              {step!==5 && (
                 <SpectrumVisualizer
                   audioEl={previewAudioRef.current || undefined}
                   style={vizStyle}
@@ -2388,19 +2485,15 @@ Dibuat dengan Verve AI Video Studio`;
                   height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
                 />
               )}
-              <div className="absolute bottom-2 left-2 right-2 text-white text-center text-xs sm:text-sm font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,1)] px-2 break-word"
-                   style={{textShadow:`0 0 12px ${vizColor}`}}>
-                {showTitle ? (selectedTitle?.text || niche || "Judul video di sini") : ""}
-              </div>
               {step===5 && slides.length>0 && !previewPlaying && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white/90 text-[10px] border border-white/10">
-                    ▶️ Tap Play di bawah buat preview
+                    ▶️ Tap Play buat preview bergerak
                   </div>
                 </div>
               )}
-              {/* Indikator slide aktif saat preview */}
-              {step===5 && previewPlaying && slides.length>1 && (
+              {/* Indikator slide aktif saat preview (step 5) */}
+              {step===5 && slides.length>1 && (
                 <div className="absolute top-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-white text-[10px] border border-white/10">
                   🖼️ {Math.min(slides.length, Math.floor(previewCurrent/(Math.max(1,slideDuration)+Math.min(slideDuration*0.6,isMobile?0.5:0.8)))+1)}/{slides.length}
                 </div>

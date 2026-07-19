@@ -4,6 +4,7 @@ import {
   VIZ_STYLES, TRANSITION_STYLES, QUALITY_OPTIONS,
 } from "@/lib/types";
 import type { TextLayer } from "@/lib/recorder";
+import { drawLiveSpectrum } from "@/lib/recorder";
 
 const COLOR_PRESETS = [
   { hex:"#ec4899" },{ hex:"#a855f7" },{ hex:"#22d3ee" },{ hex:"#f59e0b" },
@@ -367,6 +368,68 @@ export function StudioEditor(p: StudioEditorProps) {
     el.muted = previewMuted;
   }, [audioSrc, previewMuted, previewAudioRef, proxifyAudioUrl]);
 
+  // ===== STATIC FRAME PREVIEW (saat paused di Studio) =====
+  // Gambar 1 frame ke canvas saat setting berubah — spektrum keliatan tanpa Play,
+  // HP tidak berat karena hanya render SEKALI per perubahan (bukan 60fps loop).
+  const studioImgCacheRef = useRef<Record<number,HTMLImageElement>>({});
+  useEffect(()=>{
+    if (previewPlaying) return; // lagi play — RAF draw yang pegang
+    const canvas = previewCanvasRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+    const draw = () => {
+      if (cancelled) return;
+      const ctx = canvas.getContext("2d",{alpha:false,desynchronized:true});
+      if (!ctx) return;
+      const W = canvas.width, H = canvas.height;
+      ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+      const slide = slides[activeSlide];
+      if (slide) {
+        let img = studioImgCacheRef.current[activeSlide];
+        const renderImg = () => {
+          if (cancelled || !img) return;
+          const cFilter = getFilterString();
+          const ir = img.naturalWidth/img.naturalHeight, cr = W/H;
+          let sx=0,sy=0,sw=img.naturalWidth,sh=img.naturalHeight;
+          if (ir>cr){sh=img.naturalHeight;sw=sh*cr;sx=(img.naturalWidth-sw)/2;}
+          else{sw=img.naturalWidth;sh=sw/cr;sy=(img.naturalHeight-sh)/2;}
+          ctx.save(); ctx.filter=cFilter;
+          ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H); ctx.restore();
+          // Vignette
+          const vStrength = (vignetteAmt/100)*0.8;
+          const vg = ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
+          vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${vStrength})`);
+          ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+          // Spectrum idle bars
+          if (vizStyle !== "none") {
+            const hex = vizColor.replace("#","");
+            const v = hex.length===3?hex.split("").map(c=>c+c).join(""):hex;
+            const rgb:[number,number,number] = [parseInt(v.slice(0,2),16),parseInt(v.slice(2,4),16),parseInt(v.slice(4,6),16)];
+            const idle = new Float32Array(64);
+            for (let i=0;i<64;i++) idle[i] = Math.max(0.08, 0.22 + Math.sin(i*0.4)*0.1 + Math.sin(i*0.9)*0.08 + (i%8===0?0.15:0));
+            try{ drawLiveSpectrum(ctx,{W,H,bars:idle,bass:0.3,beat:false,style:vizStyle,rgb,isMobile,phase:0,barFill:`rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.9)`}); }catch(e){}
+            ctx.filter=cFilter;
+          }
+          // Title overlay (jika showTitle)
+          // (judul tidak tampil di studio preview static karena di-handle oleh drawTextLayers untuk custom text;
+          //  title utama akan tampil saat Play).
+        };
+        if (img && img.complete && img.naturalWidth) {
+          renderImg();
+        } else {
+          img = new Image(); img.crossOrigin="anonymous";
+          img.onload = ()=>{ studioImgCacheRef.current[activeSlide]=img; renderImg(); };
+          img.src = slide.imageUrl;
+          studioImgCacheRef.current[activeSlide]=img;
+        }
+      }
+    };
+    // rAF supaya tidak render 2x untuk beberapa setState berbarengan
+    const id = requestAnimationFrame(draw);
+    return ()=>{ cancelled=true; cancelAnimationFrame(id); };
+  },[previewPlaying,activeSlide,slides,vizStyle,vizColor,activeFilter,brightness,contrast,
+     saturation,sharpen,vignetteAmt,aspectRatio,isMobile,getFilterString]);
+
   // Global pointer move/up untuk drag text
   useEffect(()=>{
     const mv = (e:Event)=>onPointerMove(e);
@@ -421,27 +484,36 @@ export function StudioEditor(p: StudioEditorProps) {
   const onTrackPointerMove = (e:Event) => {
     const d = trackDragRef.current;
     if (d.mode==="none") return;
-    const ev = (e as TouchEvent).touches?.[0] || (e as MouseEvent);
-    const dx = ev.clientX - d.startX;
-    const dt = dx / d.pxPerSec;
-    if (d.kind==="text") {
-      setTextLayers((ls:TextLayer[])=>ls.map((l:any)=>{
-        const lid = l.id.replace(/^sel_/,"");
-        if (lid !== d.id) return l;
-        let ns = l.start||0, ne = l.end||totalDur;
-        if (d.mode==="clip-move") {
-          ns = Math.max(0, Math.min(totalDur - d.origDur, d.origStart + dt));
-          ne = ns + d.origDur;
-        } else if (d.mode==="clip-left") {
-          ns = Math.max(0, Math.min(ne-0.3, d.origStart + dt));
-        } else if (d.mode==="clip-right") {
-          ne = Math.max(ns+0.3, Math.min(totalDur, d.origEnd + dt));
-        }
-        return {...l, start:ns, end:ne};
-      }));
-    }
+    // THROTTLE: jangan panggil setTextLayers setiap pointermove (60x/detik) —
+    // ini bikin re-render tree besar tiap frame di HP, SANGAT BERAT.
+    // Pakai rAF + update state HANYA sekali per frame.
+    if ((d as any)._raf) return;
+    (d as any)._raf = requestAnimationFrame(()=>{
+      (d as any)._raf = 0;
+      const ev = (e as TouchEvent).touches?.[0] || (e as MouseEvent);
+      const dx = ev.clientX - d.startX;
+      const dt = dx / d.pxPerSec;
+      if (d.kind==="text") {
+        setTextLayers((ls:TextLayer[])=>ls.map((l:any)=>{
+          const lid = l.id.replace(/^sel_/,"");
+          if (lid !== d.id) return l;
+          let ns = l.start||0, ne = l.end||totalDur;
+          if (d.mode==="clip-move") {
+            ns = Math.max(0, Math.min(totalDur - d.origDur, d.origStart + dt));
+            ne = ns + d.origDur;
+          } else if (d.mode==="clip-left") {
+            ns = Math.max(0, Math.min(ne-0.3, d.origStart + dt));
+          } else if (d.mode==="clip-right") {
+            ne = Math.max(ns+0.3, Math.min(totalDur, d.origEnd + dt));
+          }
+          return {...l, start:ns, end:ne};
+        }));
+      }
+    });
   };
   const onTrackPointerUp = () => {
+    const d = trackDragRef.current;
+    if ((d as any)._raf){ cancelAnimationFrame((d as any)._raf); (d as any)._raf=0; }
     if (trackDragRef.current.mode!=="none") trackDragRef.current.mode = "none";
   };
   useEffect(()=>{
@@ -494,14 +566,8 @@ export function StudioEditor(p: StudioEditorProps) {
             <canvas ref={previewCanvasRef}
               width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
               height={isMobile?(aspectRatio==="9:16"?640:aspectRatio==="1:1"?480:360):(aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480)}
-              className={`w-full h-full block ${previewPlaying?"opacity-100":"opacity-0"}`}
-              style={{position:previewPlaying?"relative":"absolute", top:0, left:0, zIndex:previewPlaying?1:0}} />
-            {/* Thumbnail slide (hanya terlihat saat paused) */}
-            {!previewPlaying && (slides[activeSlide] ? (
-              <img src={slides[activeSlide].imageUrl}
-                   style={{filter: getFilterString()}}
-                   className="absolute inset-0 w-full h-full object-cover block" alt="preview"/>
-            ) : <div className="absolute inset-0 w-full h-full bg-neutral-900"/>)}
+              className="w-full h-full block"
+              style={{background:"#000"}} />
 
             {/* Vignette overlay live */}
             <div className="absolute inset-0 pointer-events-none" style={{
