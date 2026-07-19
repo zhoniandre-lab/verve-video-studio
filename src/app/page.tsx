@@ -9,7 +9,7 @@ import {
 } from "@/lib/types";
 import type { VizStyle, AudioMode, ImageSource } from "@/lib/types";
 import type { VideoMeta } from "@/lib/hcnsec";
-import { StudioEditor, ExportPanel } from "./studio-editor";
+import { ExportPanel } from "./studio-editor";
 
 type Mode = "slideshow" | "t2v";
 
@@ -1745,9 +1745,7 @@ Dibuat dengan Verve AI Video Studio`;
     const ctx = canvas.getContext("2d", {alpha:false,desynchronized:true});
     if (!ctx) return;
     const W = canvas.width, H = canvas.height;
-    const sIdx = Math.max(0, Math.min(slides.length-1,
-      step===5 ? Math.floor(previewCurrent/Math.max(0.3, slideDuration)) : 0
-    ));
+    const sIdx = 0;
     const img:HTMLImageElement|undefined = (drawStaticPreview as any)._imgs?.[sIdx];
     // Gambar background hitam
     ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
@@ -1876,7 +1874,7 @@ Dibuat dengan Verve AI Video Studio`;
               Verve <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">AI Video Studio</span>
             </h1>
             <p className="text-[10px] sm:text-xs text-white/50 mt-1 truncate">
-              Keyword → Judul → Gambar → Spectrum → Video · Super Cepat ⚡
+              Keyword → Judul → Gambar → Audio → Video · Super Cepat ⚡
             </p>
           </div>
         </div>
@@ -1900,8 +1898,8 @@ Dibuat dengan Verve AI Video Studio`;
       )}
 
       {mode === "slideshow" ? (
-        <div className={`mt-4 lg:mt-6 ${step<=4?"grid lg:grid-cols-3":""} gap-4 sm:gap-6`}>
-          <div className={`${step<=4?"lg:col-span-2 card":""} w-full min-w-0`}>
+        <div className="mt-4 lg:mt-6 grid lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="lg:col-span-2 card w-full min-w-0">
             <StepBar step={step} />
 
             {step === 1 && (
@@ -2353,81 +2351,12 @@ Dibuat dengan Verve AI Video Studio`;
                 )}
                 <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost" onClick={()=>setStep(3)}>← Kembali</button>
-                  <button className="btn btn-primary" onClick={()=>setStep(5)}>Lanjut ke Render →</button>
+                  <button className="btn btn-primary" onClick={()=>{stopPreview(); setStep(5);}}>Lanjut ke Ekspor →</button>
                 </div>
               </section>
             )}
 
-            {step === 5 && slides.length>0 && (
-              <StudioEditor
-                slides={slides}
-                aspectRatio={aspectRatio}
-                isMobile={isMobile}
-                selectedTitle={selectedTitle}
-                niche={niche}
-                slideDuration={slideDuration} setSlideDuration={setSlideDuration}
-                transitionDur={transitionDur} setTransitionDur={setTransitionDur}
-                transition={transition} setTransition={setTransition}
-                showTitle={showTitle} setShowTitle={setShowTitle}
-                showLyrics={showLyrics} setShowLyrics={setShowLyrics}
-                captionStyle={captionStyle} setCaptionStyle={setCaptionStyle}
-                vizStyle={vizStyle} setVizStyle={setVizStyle}
-                vizColor={vizColor} setVizColor={setVizColor}
-                logoDataUrl={logoDataUrl}
-                logoPosition={logoPosition} setLogoPosition={setLogoPosition}
-                onLogoUpload={handleLogoUpload}
-                activeFilter={activeFilter} setActiveFilter={setActiveFilter}
-                brightness={brightness} setBrightness={setBrightness}
-                contrast={contrast} setContrast={setContrast}
-                saturation={saturation} setSaturation={setSaturation}
-                sharpen={sharpen} setSharpen={setSharpen}
-                vignetteAmt={vignetteAmt} setVignetteAmt={setVignetteAmt}
-                spectrumSticker={spectrumSticker} setSpectrumSticker={setSpectrumSticker}
-                videoSpeed={videoSpeed} setVideoSpeed={setVideoSpeed}
-                textLayers={textLayers} setTextLayers={setTextLayers}
-                getFilterString={getFilterString}
-                resetAdjust={resetAdjust}
-                audioMode={audioMode} setAudioMode={setAudioMode}
-                aiMusicUrl={aiMusicUrl} ttsUrl={ttsUrl} musicUrl={musicUrl}
-                proxifyAudioUrl={proxifyAudioUrl}
-                previewAudioRef={previewAudioRef}
-                
-                previewPlaying={previewPlaying}
-                previewCurrent={previewCurrent} setPreviewCurrent={setPreviewCurrent}
-                previewDuration={previewDuration}
-                previewMuted={previewMuted} setPreviewMuted={setPreviewMuted}
-                togglePreview={togglePreview}
-                stopPreview={stopPreview}
-                seekPreview={seekPreview}
-                onBack={()=>setStep(4)}
-                onExport={()=>{stopPreview(); setStep(6);}}
-                onSaveDraft={()=>saveDraftManually()}
-                onDeleteSlide={(idx:number)=>{
-                  setSlides(cur=>{
-                    if (cur.length<=1) return cur;
-                    return cur.filter((_,i)=>i!==idx);
-                  });
-                }}
-                onDuplicateSlide={(idx:number)=>{
-                  setSlides(cur=>{
-                    const s = cur[idx]; if (!s) return cur;
-                    const copy = {...s, id: "slide-"+Date.now()+"-"+Math.random().toString(36).slice(2,7)};
-                    const out = [...cur]; out.splice(idx+1,0,copy); return out;
-                  });
-                }}
-                onHandleUploadMusic={handleUploadMusic}
-              />
-            )}
-
-            {step === 5 && slides.length===0 && (
-              <section className="mt-4 p-8 text-center">
-                <div className="text-5xl mb-3">🎞️</div>
-                <div className="text-white/70 mb-4">Belum ada slide. Kembali ke Step 3 buat generate gambar dulu ya bro.</div>
-                <button className="btn btn-primary" onClick={()=>setStep(3)}>← Ke Step Gambar</button>
-              </section>
-            )}
-
-            {step === 6 && (
+            {step === 5 && (
               <ExportPanel
                 slides={slides}
                 isMobile={isMobile}
@@ -2437,7 +2366,7 @@ Dibuat dengan Verve AI Video Studio`;
                 loading={loading} progress={progress} renderETA={renderETA} stageText={stageText}
                 videoUrl={videoUrl} videoBlob={videoBlob}
                 meta={meta}
-                onBack={()=>setStep(5)}
+                onBack={()=>setStep(4)}
                 onRender={doRender}
                 onDownload={downloadVideo}
                 onCopy={copyField}
@@ -2452,11 +2381,11 @@ Dibuat dengan Verve AI Video Studio`;
               Saat step=5 (Studio Editor), aside ini disembunyikan via CSS — canvas tetap di DOM sehingga
               togglePreview/drawStaticPreview bisa jalan dan spektrum tetap sync dengan audio.
               Di Studio canvas di-reparent ke area preview studio via useEffect agar tampil full-layar. */}
-          <aside className={`card lg:sticky lg:top-4 self-start min-w-0 ${step===5?"!hidden":""}`}>
+          <aside className="card lg:sticky lg:top-4 self-start min-w-0">
             <h3 className="font-bold text-base sm:text-lg mb-2 flex items-center gap-2">
               👁️ Preview Live
             </h3>
-            {/* Canvas host (selalu ter-mount) — akan di-reparent oleh StudioEditor saat step=5 */}
+            {/* Canvas host (selalu ter-mount) — spektrum nyambung audio 100% */}
             <div id="preview-canvas-host"
                  className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
@@ -2491,7 +2420,7 @@ Dibuat dengan Verve AI Video Studio`;
                 </div>
               )}
             </div>
-            {slides.length>0 && step!==5 && (
+            {slides.length>0 && (
               <div className="mt-2 rounded-xl bg-black/40 border border-white/10 p-2 space-y-2">
                 <input
                   type="range"
@@ -2737,7 +2666,7 @@ function ModeTabs({mode,setMode}:{mode:Mode;setMode:(m:Mode)=>void}) {
 }
 
 function StepBar({step}:{step:number}) {
-  const labels = ["Keyword","Judul","Gambar","Audio","Edit","Ekspor"];
+  const labels = ["Keyword","Judul","Gambar","Audio","Ekspor"];
   return (
     <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1">
       {labels.map((l,i)=>{
