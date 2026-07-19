@@ -2391,7 +2391,7 @@ Dibuat dengan Verve AI Video Studio`;
                 aiMusicUrl={aiMusicUrl} ttsUrl={ttsUrl} musicUrl={musicUrl}
                 proxifyAudioUrl={proxifyAudioUrl}
                 previewAudioRef={previewAudioRef}
-                previewCanvasRef={previewCanvasRef}
+                
                 previewPlaying={previewPlaying}
                 previewCurrent={previewCurrent} setPreviewCurrent={setPreviewCurrent}
                 previewDuration={previewDuration}
@@ -2459,10 +2459,9 @@ Dibuat dengan Verve AI Video Studio`;
                 </button>
               )}
             </h3>
+            {step!==5 && (<>
             <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-black mx-auto"
                  style={aspectRatio==="9:16"?{aspectRatio:"9/16", maxWidth: isMobile?"240px":"280px"}:aspectRatio==="1:1"?{aspectRatio:"1/1",maxWidth:isMobile?"300px":"320px"}:{aspectRatio:"16/9"}}>
-              {/* Canvas SELALU di-mount & SELALU terlihat — static frame digambar otomatis
-                  saat paused, dan RAF draw() saat play. Tidak perlu img overlay lagi. */}
               <canvas ref={previewCanvasRef}
                 width={aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854}
                 height={aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480}
@@ -2473,37 +2472,29 @@ Dibuat dengan Verve AI Video Studio`;
                   Belum ada gambar
                 </div>
               )}
-              {/* SpectrumVisualizer sudah tidak dipakai di step<=4 karena spektrum digambar di canvas statis (supaya sinkron dengan Studio).
-                  Biarkan untuk preview step<5 jika dibutuhkan, tapi matikan kalau step===5 (pakai canvas). */}
-              {step!==5 && (
-                <SpectrumVisualizer
-                  audioEl={previewAudioRef.current || undefined}
-                  style={vizStyle}
-                  color={vizColor}
-                  logoUrl={logoDataUrl || undefined}
-                  width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
-                  height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
-                />
-              )}
-              {step===5 && slides.length>0 && !previewPlaying && (
+              <SpectrumVisualizer
+                audioEl={previewAudioRef.current || undefined}
+                style={vizStyle}
+                color={vizColor}
+                logoUrl={logoDataUrl || undefined}
+                width={aspectRatio==="9:16"?720:aspectRatio==="1:1"?720:1280}
+                height={aspectRatio==="9:16"?1280:aspectRatio==="1:1"?720:720}
+              />
+              {slides.length>0 && !previewPlaying && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white/90 text-[10px] border border-white/10">
                     ▶️ Tap Play buat preview bergerak
                   </div>
                 </div>
               )}
-              {/* Indikator slide aktif saat preview (step 5) */}
-              {step===5 && slides.length>1 && (
+              {slides.length>1 && previewPlaying && (
                 <div className="absolute top-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded-full text-white text-[10px] border border-white/10">
                   🖼️ {Math.min(slides.length, Math.floor(previewCurrent/(Math.max(1,slideDuration)+Math.min(slideDuration*0.6,isMobile?0.5:0.8)))+1)}/{slides.length}
                 </div>
               )}
             </div>
-
-            {/* === CAPCUT-STYLE PREVIEW CONTROLS (Step 5) === */}
-            {step===5 && slides.length>0 && (
+            {step!==5 && slides.length>0 && (
               <div className="mt-2 rounded-xl bg-black/40 border border-white/10 p-2 space-y-2">
-                {/* Timeline slider */}
                 <input
                   type="range"
                   min={0}
@@ -2532,33 +2523,18 @@ Dibuat dengan Verve AI Video Studio`;
                     {formatDur(previewCurrent)} / {formatDur(previewDuration)}
                   </div>
                 </div>
-
-                {/* Quick edit chip (langsung ubah setting tanpa keluar dari preview) */}
                 <div className="text-[10px] text-white/50 pt-1 border-t border-white/10">
                   ⚡ Quick edit (live):
                 </div>
                 <div className="flex gap-1 flex-wrap">
                   <button onClick={()=>setSlideDuration(sd=>Math.max(1.5, sd-0.5))} className="btn btn-sm btn-ghost">⏩ -0.5s</button>
-                  <button onClick={()=>setSlideDuration(sd=>Math.min(8, sd+0.5))} className="btn btn-sm btn-ghost">⏪ +0.5s</button>
+                  <button onClick={()=>setSlideDuration(sd=>Math.min(15, sd+0.5))} className="btn btn-sm btn-ghost">⏪ +0.5s</button>
                   <button onClick={()=>setShowLyrics(v=>!v)} className={`btn btn-sm ${showLyrics?"btn-primary":"btn-ghost"}`}>🎤 Lirik</button>
                   <button onClick={()=>setShowTitle(v=>!v)} className={`btn btn-sm ${showTitle?"btn-primary":"btn-ghost"}`}>🏷️ Judul</button>
                 </div>
-                <div className="flex gap-1 flex-wrap">
-                  {TRANSITION_STYLES.slice(0,4).map(t=>(
-                    <button key={t.id} onClick={()=>setTransition(t.id as Transition)}
-                            className={`btn btn-sm ${transition===t.id?"btn-primary":"btn-ghost"}`}>{t.emoji} {t.label}</button>
-                  ))}
-                </div>
-                <div className="flex gap-1 flex-wrap items-center">
-                  <span className="text-[10px] text-white/50 mr-1">Warna:</span>
-                  {COLOR_PRESETS.slice(0,5).map(c=>(
-                    <button key={c.hex} onClick={()=>setVizColor(c.hex)} title={c.name}
-                            className={`color-swatch ${vizColor===c.hex?"active":""}`}
-                            style={{width:24,height:24,background:`radial-gradient(circle at 30% 30%, rgba(255,255,255,0.5), ${c.hex} 60%)`}}/>
-                  ))}
-                </div>
               </div>
             )}
+            </>)}
 
             <p className="text-[10px] sm:text-xs text-white/50 mt-2 break-word">
               🔥 Tap ▶️ buat PREVIEW full video + musik + lirik + transisi SEBELUM render. Semua setting di bawah (warna, transisi, durasi, lirik) bisa diubah live. Render pakai engine WebCodecs super-cepat.

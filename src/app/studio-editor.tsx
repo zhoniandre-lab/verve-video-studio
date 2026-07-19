@@ -172,7 +172,10 @@ type StudioEditorProps = {
   audioMode: any; setAudioMode:(v:any)=>void;
   aiMusicUrl: string; ttsUrl: string; musicUrl: string;
   proxifyAudioUrl:(u:string)=>string;
-  previewAudioRef: any; previewCanvasRef: any;
+  previewAudioRef: any;
+  onPlayingChange?: (playing: boolean) => void;
+  onPreviewCurrent?: (t: number) => void;
+  onPreviewDuration?: (d: number) => void;
   previewPlaying: boolean;
   previewCurrent: number; setPreviewCurrent:(v:number)=>void;
   previewDuration: number;
@@ -200,10 +203,13 @@ export function StudioEditor(p: StudioEditorProps) {
     textLayers, setTextLayers,
     getFilterString, resetAdjust, audioMode, setAudioMode,
     aiMusicUrl, ttsUrl, musicUrl, proxifyAudioUrl,
-    previewAudioRef, previewCanvasRef, previewPlaying, previewCurrent, previewDuration,
+    previewAudioRef, previewPlaying, previewCurrent, previewDuration,
     previewMuted, setPreviewMuted, togglePreview, seekPreview,
     onBack, onExport, onSaveDraft, onDeleteSlide, onDuplicateSlide,
   } = p;
+
+  // CANVAS MILIK STUDIO SENDIRI (tidak pakai ref dari parent — itu untuk card preview step<=4)
+  const studioCanvasRef = useRef<HTMLCanvasElement|null>(null);
 
   const [tab, setTab] = useState<string>("spectrum");
   type TabId = "spectrum"|"text"|"sticker"|"audio"|"filter"|"edit";
@@ -374,7 +380,7 @@ export function StudioEditor(p: StudioEditorProps) {
   const studioImgCacheRef = useRef<Record<number,HTMLImageElement>>({});
   useEffect(()=>{
     if (previewPlaying) return; // lagi play — RAF draw yang pegang
-    const canvas = previewCanvasRef.current;
+    const canvas = studioCanvasRef.current;
     if (!canvas) return;
     let cancelled = false;
     const draw = () => {
@@ -563,7 +569,7 @@ export function StudioEditor(p: StudioEditorProps) {
                style={{...ratioStyle, maxHeight:"100%", maxWidth:"100%", width:"100%"}}>
             {/* 🎬 CANVAS SELALU DI-MOUNT (JANGAN conditional render!) — kalau canvas cuma ada saat previewPlaying=true,
                 maka saat pertama kali klik Play, ref canvas masih null → togglePreview() langsung return tanpa play. */}
-            <canvas ref={previewCanvasRef}
+            <canvas ref={studioCanvasRef}
               width={isMobile?(aspectRatio==="9:16"?360:aspectRatio==="1:1"?480:640):(aspectRatio==="9:16"?480:aspectRatio==="1:1"?480:854)}
               height={isMobile?(aspectRatio==="9:16"?640:aspectRatio==="1:1"?480:360):(aspectRatio==="9:16"?854:aspectRatio==="1:1"?480:480)}
               className="w-full h-full block"
