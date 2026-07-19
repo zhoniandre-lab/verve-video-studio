@@ -34,20 +34,38 @@ function MetaRow({label,value,onCopy,copied,multiline}:{label:string;value:strin
   );
 }
 
-// ============ STICKER PRESETS ============
+// ============ STICKER PRESETS (CapCut-style grid, dikelompokkan) ============
+const STICKER_CATS = [
+  {id:"audio",label:"🎵 Audio"},
+  {id:"yt",label:"📺 YouTube"},
+  {id:"viral",label:"🔥 Viral"},
+  {id:"deco",label:"✨ Deco"},
+];
 const STICKER_PRESETS = [
-  {id:"none",        icon:"❌", label:"None"},
-  {id:"bars-bottom", icon:"📊", label:"Bars Bwh"},
-  {id:"wave-bottom", icon:"📶", label:"Wave"},
-  {id:"wave-center", icon:"〰️", label:"Wave Mid"},
-  {id:"bars-top",    icon:"📈", label:"Bars Atas"},
-  {id:"circle",      icon:"⭕", label:"Circle"},
-  {id:"disc",        icon:"💿", label:"Disc"},
-  {id:"diamond",     icon:"💎", label:"Diamond"},
-  {id:"subscribe",   icon:"🔴", label:"SUBSCRIBE"},
-  {id:"like",        icon:"👍", label:"Like"},
-  {id:"bell",        icon:"🔔", label:"Lonceng"},
-  {id:"fire",        icon:"🔥", label:"Fire"},
+  // Audio spectrum
+  {id:"bars-bottom", cat:"audio", icon:"📊", label:"Bars",   bg:"linear-gradient(135deg,#ec4899,#8b5cf6)"},
+  {id:"wave-bottom", cat:"audio", icon:"〰️", label:"Wave",   bg:"linear-gradient(135deg,#06b6d4,#3b82f6)"},
+  {id:"wave-center", cat:"audio", icon:"🌊", label:"Wave Mid",bg:"linear-gradient(135deg,#10b981,#06b6d4)"},
+  {id:"bars-top",    cat:"audio", icon:"📈", label:"Bars Atas",bg:"linear-gradient(135deg,#f59e0b,#ef4444)"},
+  {id:"circle",      cat:"audio", icon:"⭕", label:"Circle",  bg:"linear-gradient(135deg,#a855f7,#ec4899)"},
+  {id:"disc",        cat:"audio", icon:"💿", label:"Vinyl",   bg:"linear-gradient(135deg,#1f2937,#111)"},
+  {id:"wave",        cat:"audio", icon:"📉", label:"Smooth",  bg:"linear-gradient(135deg,#22d3ee,#a855f7)"},
+  {id:"diamond",     cat:"audio", icon:"💎", label:"Diamond", bg:"linear-gradient(135deg,#06b6d4,#8b5cf6)"},
+  // YouTube
+  {id:"subscribe",   cat:"yt",    icon:"🔴", label:"SUBSCRIBE",bg:"#cc0000"},
+  {id:"subscribed",  cat:"yt",    icon:"✅", label:"SUBSCRIBED",bg:"#888"},
+  {id:"like",        cat:"yt",    icon:"👍", label:"Like",     bg:"#2563eb"},
+  {id:"bell",        cat:"yt",    icon:"🔔", label:"Lonceng",  bg:"#f59e0b"},
+  {id:"headphones",  cat:"yt",    icon:"🎧", label:"Headphone",bg:"linear-gradient(135deg,#ec4899,#f97316)"},
+  {id:"play",        cat:"yt",    icon:"▶️", label:"Play",     bg:"#fff",color:"#000"},
+  // Viral
+  {id:"fire",        cat:"viral", icon:"🔥", label:"FYP",      bg:"linear-gradient(135deg,#f97316,#ef4444)"},
+  {id:"fyp-text",    cat:"viral", icon:"💯", label:"FYP Text", bg:"linear-gradient(135deg,#8b5cf6,#ec4899)"},
+  {id:"nowplaying",  cat:"viral", icon:"🎶", label:"NOW PLAY", bg:"#000",color:"#22d3ee"},
+  {id:"mymusic",     cat:"viral", icon:"♪",  label:"MY MUSIC", bg:"linear-gradient(135deg,#ec4899,#a855f7)"},
+  // Deco
+  {id:"glow-ring",   cat:"deco",  icon:"✨", label:"Glow Ring",bg:"linear-gradient(135deg,#fbbf24,#ef4444)"},
+  {id:"none",        cat:"deco",  icon:"❌", label:"Off",      bg:"#222"},
 ];
 
 // ============ CAPCUT FULLSCREEN STUDIO (Step 5) ============
@@ -242,14 +260,21 @@ export function StudioEditor(p: StudioEditorProps) {
                 ⚡ {videoSpeed}x
               </div>
             )}
-            {/* Subscribe sticker */}
+            {/* ===== STICKERS ===== */}
             {spectrumSticker==="subscribe" && (
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-full text-[11px] font-black shadow-lg border-2 border-white">
-                🔴 SUBSCRIBE
+              <div className="absolute top-3 left-3 flex items-center gap-1 rounded-md overflow-hidden shadow-lg">
+                <div className="bg-black/70 w-8 h-8 flex items-center justify-center text-lg">👍</div>
+                <div className="bg-red-600 px-3 py-1.5 text-white text-[11px] font-black">SUBSCRIBE</div>
+                <div className="bg-black/70 w-8 h-8 flex items-center justify-center text-lg">🔔</div>
+              </div>
+            )}
+            {spectrumSticker==="subscribed" && (
+              <div className="absolute top-3 left-3 bg-white/80 px-3 py-1.5 rounded-md text-[11px] font-black text-gray-800 shadow-lg">
+                ✓ SUBSCRIBED
               </div>
             )}
             {spectrumSticker==="like" && (
-              <div className="absolute bottom-20 right-4 flex flex-col items-center gap-0.5">
+              <div className="absolute top-14 right-3 flex flex-col items-center gap-0.5">
                 <div className="w-11 h-11 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-2xl active:scale-95">👍</div>
                 <div className="text-white text-[10px] font-bold drop-shadow-lg">1.2M</div>
               </div>
@@ -257,9 +282,55 @@ export function StudioEditor(p: StudioEditorProps) {
             {spectrumSticker==="bell" && (
               <div className="absolute top-14 right-4 w-11 h-11 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-2xl">🔔</div>
             )}
+            {spectrumSticker==="headphones" && (
+              <div className="absolute top-14 right-3 w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-orange-500 flex items-center justify-center text-2xl shadow-lg shadow-pink-500/50">🎧</div>
+            )}
+            {spectrumSticker==="play" && (
+              <div className="absolute top-14 right-3 w-11 h-11 rounded-full bg-white flex items-center justify-center text-xl text-black shadow-lg">▶</div>
+            )}
             {spectrumSticker==="fire" && (
-              <div className="absolute top-14 left-4 bg-gradient-to-r from-orange-500 to-red-500 text-white px-2 py-1 rounded-full text-[10px] font-black shadow-lg flex items-center gap-1">
+              <div className="absolute top-14 left-3 bg-gradient-to-r from-orange-500 to-red-500 text-white px-2 py-1 rounded-full text-[10px] font-black shadow-lg flex items-center gap-1">
                 🔥 FYP
+              </div>
+            )}
+            {spectrumSticker==="fyp-text" && (
+              <div className="absolute top-20 left-3 bg-gradient-to-br from-purple-600 to-pink-500 text-white px-3 py-1.5 rounded-lg text-[12px] font-black shadow-lg shadow-purple-500/50">
+                #FYP
+              </div>
+            )}
+            {spectrumSticker==="nowplaying" && (
+              <div className="absolute bottom-16 left-3 bg-black/70 backdrop-blur px-3 py-1.5 rounded-full text-[10px] font-black text-cyan-300 flex items-center gap-1 shadow-lg border border-cyan-400/30">
+                ▶ NOW PLAYING
+              </div>
+            )}
+            {spectrumSticker==="mymusic" && (
+              <div className="absolute top-20 left-3 bg-gradient-to-br from-pink-500 to-purple-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-black shadow-lg flex items-center gap-1">
+                ♪ MY MUSIC
+              </div>
+            )}
+            {spectrumSticker==="disc" && (
+              <div className="absolute top-14 right-3 w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 via-black to-gray-800 flex items-center justify-center shadow-xl animate-spin" style={{animationDuration:"3s"}}>
+                <div className="w-5 h-5 rounded-full bg-pink-500 flex items-center justify-center text-[8px] text-white font-black">♪</div>
+              </div>
+            )}
+            {spectrumSticker==="diamond" && (
+              <div className="absolute top-14 left-1/2 -translate-x-1/2 w-10 h-10 rotate-45 bg-pink-500 shadow-lg shadow-pink-500/60"/>
+            )}
+            {spectrumSticker==="circle" && (
+              <div className="absolute top-16 left-6 w-12 h-12 rounded-full border-[3px] border-pink-400 shadow-[0_0_14px_rgba(236,72,153,0.8)]"/>
+            )}
+            {spectrumSticker==="glow-ring" && (
+              <div className="absolute top-12 left-1/2 -translate-x-1/2 flex items-center justify-center">
+                <div className="w-14 h-14 rounded-full border-[3px] border-pink-400 absolute animate-ping opacity-60"/>
+                <div className="w-10 h-10 rounded-full border-[3px] border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.9)]"/>
+              </div>
+            )}
+            {spectrumSticker==="bars-top" && (
+              <div className="absolute top-3 left-0 right-0 flex items-end justify-center gap-[2px] h-6 px-3">
+                {Array.from({length:24}).map((_,i)=>{
+                  const h = 20+Math.sin(i*0.7+Date.now()/200)*10+Math.random()*8;
+                  return <div key={i} className="w-1 bg-gradient-to-t from-pink-500 to-cyan-400 rounded-sm" style={{height:`${Math.max(4,h)}px`}}/>;
+                })}
               </div>
             )}
 
@@ -267,6 +338,7 @@ export function StudioEditor(p: StudioEditorProps) {
             {textLayers.map((l:TextLayer)=>{
               if (!l.text) return null;
               const fontSize = `calc(${Math.round((l.sizePct||0.07)*100)}% * 0.18)`;
+              const eff = (l as any).effect || "none";
               let outerStyle: React.CSSProperties = {
                 position:"absolute",
                 left:`${(l.x)*100}%`, top:`${(l.y)*100}%`,
@@ -278,7 +350,7 @@ export function StudioEditor(p: StudioEditorProps) {
                 maxWidth:"92%",
                 fontWeight: l.bold!==false?900:400,
                 fontStyle: l.italic?"italic":"normal",
-                fontFamily: l.font || "system-ui,-apple-system,sans-serif",
+                fontFamily: (l.font && FONT_CSS[l.font]) ? FONT_CSS[l.font] : (l.font || "system-ui,-apple-system,sans-serif"),
               };
               let innerStyle: React.CSSProperties = {
                 fontSize: fontSize,
@@ -288,8 +360,26 @@ export function StudioEditor(p: StudioEditorProps) {
                 padding:"0.05em 0.1em",
               };
               const tpl = l.template||"default";
-              // Warna/template
-              if (tpl==="neon") innerStyle={...innerStyle,color:"#fff",textShadow:`0 0 12px #ec4899,0 0 22px #a855f7`};
+              // Efek khusus DOM preview
+              if (eff==="art-paper") innerStyle={...innerStyle,color:"#f5f0e6",WebkitTextStroke:"1px rgba(120,80,40,0.7)",textShadow:"0 2px 4px rgba(80,40,10,0.4)"};
+              else if (eff==="art-stroke-white") innerStyle={...innerStyle,color:"transparent",WebkitTextStroke:"3px #fff",textShadow:"0 2px 6px rgba(0,0,0,0.6)"};
+              else if (eff==="art-stroke-black") innerStyle={...innerStyle,color:"transparent",WebkitTextStroke:"3px #000",textShadow:"0 2px 6px rgba(0,0,0,0.4)"};
+              else if (eff==="art-blood") innerStyle={...innerStyle,color:"#8b0000",WebkitTextStroke:"1.5px #2a0000",textShadow:"0 0 14px #ff0000,0 2px 0 #000"};
+              else if (eff==="art-yellow-black") innerStyle={...innerStyle,color:"#fde047",WebkitTextStroke:"3px #000",textShadow:"0 3px 6px rgba(0,0,0,0.5)"};
+              else if (eff==="art-white-red") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"2.5px #dc2626",textShadow:"0 0 10px rgba(220,38,38,0.5)"};
+              else if (eff==="art-gold-black") innerStyle={...innerStyle,color:"#fcd34d",WebkitTextStroke:"2px #000",background:"linear-gradient(180deg,#fff3b0,#fcd34d 30%,#b45309 55%,#fde68a 75%,#92400e)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",textShadow:"0 0 10px rgba(255,200,50,0.5)",fontWeight:900};
+              else if (eff==="art-neon-pink") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 8px #ff2d95,0 0 18px #ff2d95,0 0 32px #ff2d95"};
+              else if (eff==="art-neon-red") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 8px #ff0033,0 0 18px #ff0033,0 0 30px #ff0033"};
+              else if (eff==="art-neon-blue") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 8px #00e5ff,0 0 18px #00e5ff,0 0 30px #00e5ff"};
+              else if (eff==="art-scratch-red") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"2px #ff0033",textShadow:"0 0 12px rgba(255,0,50,0.7)"};
+              else if (eff==="art-gradient-ko") innerStyle={...innerStyle,color:"#f97316",WebkitTextStroke:"1.5px #000",background:"linear-gradient(180deg,#fde047,#f97316,#2563eb)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:900};
+              else if (eff==="art-3d") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"1.5px #000",textShadow:"3px 3px 0 #374151,6px 6px 0 rgba(0,0,0,0.3)",fontWeight:900};
+              else if (eff==="art-chrome") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"1px #1f2937",background:"linear-gradient(180deg,#e5e7eb 0%,#fff 30%,#9ca3af 45%,#fff 60%,#6b7280 75%,#d1d5db)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",textShadow:"0 2px 4px rgba(0,0,0,0.5)",fontWeight:900};
+              else if (eff==="art-glitter") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 10px #ec4899,0 0 22px #ec4899,0 0 36px #ec4899"};
+              else if (eff==="art-sparkle") innerStyle={...innerStyle,color:"#fff",textShadow:"0 0 10px #22d3ee,0 0 22px #22d3ee,0 0 36px #22d3ee"};
+              else if (eff==="art-glitch") innerStyle={...innerStyle,color:"#fff",textShadow:"-2px 0 #ff0050,2px 0 #00e5ff",fontWeight:900};
+              // Warna/template (hanya kalau effect = none)
+              else if (tpl==="neon") innerStyle={...innerStyle,color:"#fff",textShadow:`0 0 12px #ec4899,0 0 22px #a855f7`};
               else if (tpl==="boldwhite") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"2px #000",textShadow:"0 2px 6px rgba(0,0,0,0.6)"};
               else if (tpl==="thanks") innerStyle={...innerStyle,background:"linear-gradient(180deg,#ef4444 0%,#fff 50%,#3b82f6 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"1.5px #000",fontWeight:900};
               else if (tpl==="trendy") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:`3px #ef4444`};
@@ -302,8 +392,8 @@ export function StudioEditor(p: StudioEditorProps) {
               else if (tpl==="please") innerStyle={...innerStyle,color:"#fff",WebkitTextStroke:"2px #ec4899"};
               else if (tpl==="myvlog") innerStyle={...innerStyle,background:"linear-gradient(180deg,#fbbf24,#f97316,#dc2626)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"1px #78350f",fontWeight:900};
               else innerStyle={...innerStyle,textShadow:"0 2px 4px rgba(0,0,0,0.9),0 0 2px rgba(0,0,0,0.9)"};
-              if (l.strokeColor && tpl==="default") innerStyle.WebkitTextStroke = `${Math.max(1,(l.strokeWidth||0.15)*20)}px ${l.strokeColor}`;
-              if (l.shadowColor) innerStyle.textShadow = `0 0 ${l.shadowBlur||8}px ${l.shadowColor}`;
+              if (l.strokeColor && tpl==="default" && eff==="none") innerStyle.WebkitTextStroke = `${Math.max(1,(l.strokeWidth||0.15)*20)}px ${l.strokeColor}`;
+              if (l.shadowColor && eff==="none") innerStyle.textShadow = `0 0 ${l.shadowBlur||8}px ${l.shadowColor}`;
 
               // Animasi sederhana via CSS class
               let animClass = "";
@@ -512,16 +602,50 @@ const TEXT_TEMPLATES = [
 ];
 
 const FONTS = [
-  {id:"SYSTEM",    label:"SYSTEM"},
-  {id:"Impact, sans-serif", label:"Washed"},
-  {id:"Georgia, serif", label:"Vision"},
-  {id:"'Courier New', monospace", label:"MODERN"},
-  {id:"'Brush Script MT', cursive", label:"Tooth Nail"},
-  {id:"'Comic Sans MS', cursive", label:"Celandine"},
-  {id:"'Trebuchet MS', sans-serif", label:"Starry"},
-  {id:"Tahoma, sans-serif", label:"KLOP"},
-  {id:"'Times New Roman', serif", label:"Antik"},
+  {id:"SYSTEM",    label:"SYSTEM",      fb:"system-ui,-apple-system,sans-serif"},
+  {id:"WASHED",    label:"Washed ↓",    fb:"'Impact','Arial Black',sans-serif"},
+  {id:"VISION",    label:"Vision 💎",   fb:"'Georgia','Times New Roman',serif"},
+  {id:"MODERN",    label:"MODERN 💎",   fb:"'Courier New',monospace"},
+  {id:"TOOTH",     label:"Tooth Nail 💎",fb:"'Brush Script MT','Segoe Script',cursive"},
+  {id:"CELAND",    label:"Celandine 💎",fb:"'Comic Sans MS',cursive"},
+  {id:"STARRY",    label:"Starry 💎",   fb:"'Trebuchet MS',sans-serif"},
+  {id:"KLOP",      label:"KLOP 💎",     fb:"Tahoma,sans-serif"},
+  {id:"ANTIK",     label:"Antik 💎",    fb:"'Times New Roman',serif"},
+  {id:"FEISTY",    label:"Feisty 💎",   fb:"'Palatino Linotype','Book Antiqua',serif"},
+  {id:"MONT",      label:"Montra 💎",   fb:"'Montserrat','Arial Black',sans-serif"},
+  {id:"ROFUEGO",   label:"ROFUEGO 💎",  fb:"'Impact','Oswald',sans-serif"},
+  {id:"MERIENDA",  label:"Merienda 💎", fb:"cursive"},
+  {id:"RUST",      label:"RUSTPRINT 💎",fb:"'Courier New',monospace"},
+  {id:"RUBIK",     label:"Rubik 💎",    fb:"'Rubik','Arial Rounded MT Bold',sans-serif"},
+  {id:"ITALIC",    label:"Italic 💎",   fb:"Georgia,serif"},
+  {id:"ATOMIC",    label:"ATOMIC 💎",   fb:"'Impact',sans-serif"},
+  {id:"CCMOD",     label:"CC-MODERNO 💎",fb:"'Arial Black',sans-serif"},
+  {id:"CHUNK",     label:"ChunkFive 💎",fb:"'Rockwell Extra Bold','Arial Black',serif"},
+  {id:"BOLD",      label:"Bebas 💎",    fb:"'Impact','Bebas Neue',sans-serif"},
 ];
+// Font CSS untuk web preview (pakai web-safe stacks; effect keliatan kok tanpa Google Fonts CDN)
+const FONT_CSS: Record<string,string> = {
+  SYSTEM: "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+  WASHED: "'Impact','Arial Black','Helvetica Neue',sans-serif",
+  VISION: "Georgia,'Times New Roman',serif",
+  MODERN: "'Courier New','Courier',monospace",
+  TOOTH:  "'Brush Script MT','Segoe Script',cursive",
+  CELAND: "'Comic Sans MS',cursive",
+  STARRY: "'Trebuchet MS',sans-serif",
+  KLOP:   "Tahoma,Verdana,sans-serif",
+  ANTIK:  "'Times New Roman',Times,serif",
+  FEISTY: "'Palatino Linotype','Book Antiqua',Palatino,serif",
+  MONT:   "'Montserrat','Arial Black','Helvetica',sans-serif",
+  ROFUEGO:"'Impact','Oswald','Arial Narrow',sans-serif",
+  MERIENDA:"cursive",
+  RUST:   "'Courier New','Courier',monospace",
+  RUBIK:  "'Rubik','Arial Rounded MT Bold',sans-serif",
+  ITALIC: "Georgia,'Times New Roman',serif",
+  ATOMIC: "'Impact','Arial Black',sans-serif",
+  CCMOD:  "'Arial Black','Helvetica Neue',sans-serif",
+  CHUNK:  "'Rockwell Extra Bold','Arial Black',serif",
+  BOLD:   "'Impact','Bebas Neue','Arial Black',sans-serif",
+};
 
 const ANIM_IN = [
   {id:"none",    label:"❌ Tidak Ada"},
@@ -537,6 +661,34 @@ const ANIM_LOOP = [
   {id:"bounce", label:"🏀 Mantul"},
   {id:"glow",   label:"✨ Bersinar"},
 ];
+const ANIM_OUT = [
+  {id:"fade",     label:"🌫️ Fade Out"},
+  {id:"pop",      label:"💨 Pop Out"},
+  {id:"slideup",  label:"⬆️ Slide Atas"},
+  {id:"slideleft",label:"⬅️ Slide Kiri"},
+];
+
+// ===== CAPCUT TEXT EFFECTS (16 presets) =====
+const TEXT_EFFECTS = [
+  {id:"none",              label:"❌ Basic",       color:"#aaa"},
+  {id:"art-paper",         label:"📄 Kertas",     color:"#f5f0e6"},
+  {id:"art-stroke-white",  label:"⬜ Outline Pth",color:"#fff"},
+  {id:"art-stroke-black",  label:"⬛ Outline Htm",color:"#000"},
+  {id:"art-blood",         label:"🩸 Darah",      color:"#8b0000"},
+  {id:"art-yellow-black",  label:"⚠️ Kuning Htm", color:"#fde047"},
+  {id:"art-white-red",     label:"🔴 Putih Merah",color:"#fff"},
+  {id:"art-gold-black",    label:"🏆 Emas",       color:"#fcd34d"},
+  {id:"art-neon-pink",     label:"💗 Neon Pink",  color:"#ff2d95"},
+  {id:"art-neon-red",      label:"❤️ Neon Merah", color:"#ff0033"},
+  {id:"art-neon-blue",     label:"💙 Neon Biru",  color:"#00e5ff"},
+  {id:"art-scratch-red",   label:"✏️ Goresan Merah",color:"#fff"},
+  {id:"art-gradient-ko",   label:"🌈 Kuning-Orange-Biru",color:"#f97316"},
+  {id:"art-3d",            label:"🧊 3D",         color:"#e5e7eb"},
+  {id:"art-chrome",        label:"⚪ Chrome",     color:"#d1d5db"},
+  {id:"art-glitter",       label:"✨ Glitter Pink",color:"#ec4899"},
+  {id:"art-sparkle",       label:"💫 Sparkle Cyan",color:"#22d3ee"},
+  {id:"art-glitch",        label:"📺 Glitch RGB", color:"#fff"},
+];
 
 function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,setCaptionStyle,textLayers,setTextLayers,totalDur}:any){
   const [tab, setTab] = useState<"main"|"template"|"font"|"style"|"effect"|"animation"|"bubble">("main");
@@ -550,6 +702,7 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
       id:"t"+Date.now(), text:"Masukkan teks",
       x:0.5, y:0.5, sizePct:0.08, opacity:1,
       color:"#ffffff", bold:true, template:"default",
+      effect:"none",
       animIn:"fadein", animOut:"fade", animLoop:"none",
       start:0, end: totalDur||10,
     };
@@ -660,11 +813,16 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
 
       {tab==="font" && (
         <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="flex gap-1.5 text-[10px] font-bold overflow-x-auto no-scrollbar pb-0.5">
+            {["🔍 Cari","Font merek","Sedang tren","Sepak bola","Minions"].map((c,i)=>(
+              <button key={i} className={`px-2.5 py-1 rounded-md shrink-0 border ${i===0?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/60"}`}>{c}</button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 max-h-[240px] overflow-y-auto">
             {FONTS.map(f=>(
               <button key={f.id} onClick={()=>upd({font:f.id})}
-                className={`p-2 rounded-lg border text-xs overflow-hidden ${(sel.font||"SYSTEM")===f.id?"border-pink-400 bg-pink-500/10 text-white":"border-white/10 bg-white/5 text-white/70"}`}
-                style={{fontFamily:f.id, fontWeight:900}}>{f.label}</button>
+                className={`p-2 rounded-lg border text-xs overflow-hidden ${(sel.font||"SYSTEM")===f.id?"border-pink-400 bg-pink-500/10 text-white":"border-white/10 bg-white/5 text-white/80"}`}
+                style={{fontFamily:f.fb, fontWeight:900, fontSize:"11px"}}>{f.label}</button>
             ))}
           </div>
           <label className="block pt-1">
@@ -730,12 +888,47 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
       )}
 
       {tab==="effect" && (
-        <div className="space-y-2">
-          <div className="text-[11px] text-white/60">✨ Efek teks (coming soon — pakai template untuk sekarang)</div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {["BASIC","Teks","Warna merek","Goresan","Bersinar","Latar belakang"].map((e,i)=>(
-              <button key={i} className="q-tile !text-[10px] !py-3 opacity-60">{e}</button>
-            ))}
+        <div className="space-y-2.5">
+          <div className="flex gap-1.5 text-[10px] font-bold">
+            <button className="px-2.5 py-1 rounded-md bg-pink-500/30 border border-pink-400 text-white">🔥 Sedang tren</button>
+            <button className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-white/60">Klasik</button>
+            <button className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-white/60">BAF</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {TEXT_EFFECTS.map(e=>{
+              const isActive = ((sel as any).effect||"none")===e.id;
+              let previewStyle: React.CSSProperties = {
+                fontWeight:900, fontSize:15,
+                color:"#fff",
+                lineHeight:1.1,
+              };
+              if (e.id==="art-paper") previewStyle={...previewStyle,color:"#f5f0e6",WebkitTextStroke:"0.5px rgba(120,80,40,0.8)",textShadow:"0 1px 2px rgba(80,40,10,0.5)"};
+              else if (e.id==="art-stroke-white") previewStyle={...previewStyle,color:"transparent",WebkitTextStroke:"1.5px #fff",textShadow:"0 1px 3px rgba(0,0,0,0.6)"};
+              else if (e.id==="art-stroke-black") previewStyle={...previewStyle,color:"transparent",WebkitTextStroke:"1.5px #000",textShadow:"0 1px 3px rgba(0,0,0,0.4)",background:"#444",padding:"4px 6px",borderRadius:4};
+              else if (e.id==="art-blood") previewStyle={...previewStyle,color:"#8b0000",WebkitTextStroke:"0.5px #2a0000",textShadow:"0 0 6px #ff0000"};
+              else if (e.id==="art-yellow-black") previewStyle={...previewStyle,color:"#fde047",WebkitTextStroke:"1.5px #000"};
+              else if (e.id==="art-white-red") previewStyle={...previewStyle,color:"#fff",WebkitTextStroke:"1.2px #dc2626",textShadow:"0 0 5px rgba(220,38,38,0.6)"};
+              else if (e.id==="art-gold-black") previewStyle={...previewStyle,background:"linear-gradient(180deg,#fff3b0,#fcd34d 30%,#b45309 55%,#fde68a 75%,#92400e)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"1px #000"};
+              else if (e.id==="art-neon-pink") previewStyle={...previewStyle,color:"#fff",textShadow:"0 0 5px #ff2d95,0 0 12px #ff2d95,0 0 22px #ff2d95"};
+              else if (e.id==="art-neon-red") previewStyle={...previewStyle,color:"#fff",textShadow:"0 0 5px #ff0033,0 0 12px #ff0033,0 0 22px #ff0033"};
+              else if (e.id==="art-neon-blue") previewStyle={...previewStyle,color:"#fff",textShadow:"0 0 5px #00e5ff,0 0 12px #00e5ff,0 0 22px #00e5ff"};
+              else if (e.id==="art-scratch-red") previewStyle={...previewStyle,color:"#fff",WebkitTextStroke:"1px #ff0033",textShadow:"0 0 6px rgba(255,0,50,0.7)"};
+              else if (e.id==="art-gradient-ko") previewStyle={...previewStyle,background:"linear-gradient(180deg,#fde047,#f97316,#2563eb)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"0.7px #000"};
+              else if (e.id==="art-3d") previewStyle={...previewStyle,color:"#fff",WebkitTextStroke:"0.7px #000",textShadow:"2px 2px 0 #374151,4px 4px 0 rgba(0,0,0,0.3)"};
+              else if (e.id==="art-chrome") previewStyle={...previewStyle,background:"linear-gradient(180deg,#e5e7eb 0%,#fff 30%,#9ca3af 45%,#fff 60%,#6b7280 75%,#d1d5db)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",WebkitTextStroke:"0.5px #1f2937"};
+              else if (e.id==="art-glitter") previewStyle={...previewStyle,color:"#fff",textShadow:"0 0 6px #ec4899,0 0 14px #ec4899,0 0 24px #ec4899"};
+              else if (e.id==="art-sparkle") previewStyle={...previewStyle,color:"#fff",textShadow:"0 0 6px #22d3ee,0 0 14px #22d3ee,0 0 24px #22d3ee"};
+              else if (e.id==="art-glitch") previewStyle={...previewStyle,color:"#fff",textShadow:"-1.5px 0 #ff0050,1.5px 0 #00e5ff"};
+              else previewStyle={...previewStyle,color:e.color,textShadow:"0 1px 2px rgba(0,0,0,0.9)"};
+              return (
+                <button key={e.id} onClick={()=>upd({effect:e.id})}
+                  className={`aspect-[4/3] rounded-xl border-2 flex flex-col items-center justify-center p-1 ${isActive?"border-pink-400 bg-pink-500/10":"border-white/10 bg-gradient-to-br from-white/8 to-white/3"}`}
+                  style={e.id==="art-stroke-black"?{background:"linear-gradient(135deg,#222,#444)"}:undefined}>
+                  <div style={previewStyle} className="truncate max-w-full text-center">Aa</div>
+                  <div className="text-[8px] text-white/60 mt-1 truncate w-full text-center leading-tight">{e.label}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -748,6 +941,15 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
               {ANIM_IN.map(a=>(
                 <button key={a.id} onClick={()=>upd({animIn:a.id})}
                   className={`q-tile !text-[10px] ${sel.animIn===a.id?"active":""}`}>{a.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] mb-1.5 text-white/70">🚪 Animasi Keluar</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {ANIM_OUT.map(a=>(
+                <button key={a.id} onClick={()=>upd({animOut:a.id})}
+                  className={`q-tile !text-[10px] ${(sel.animOut||"fade")===a.id?"active":""}`}>{a.label}</button>
               ))}
             </div>
           </div>
@@ -790,20 +992,44 @@ function TextTab({showTitle,setShowTitle,showLyrics,setShowLyrics,captionStyle,s
 }
 
 function StickerTab({spectrumSticker,setSpectrumSticker}:any){
+  const [cat, setCat] = useState<string>("audio");
+  const list = STICKER_PRESETS.filter((s:any)=>s.cat===cat);
   return (
-    <div className="space-y-3">
-      <div className="text-xs font-bold text-white/80">🎧 Stiker & Spectrum</div>
-      <div className="grid grid-cols-4 gap-1.5">
-        {STICKER_PRESETS.map((s:any)=>(
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+          <span className="text-sm">🔍</span>
+          <input placeholder="Cari stiker..." className="bg-transparent outline-none text-xs text-white placeholder:text-white/40 w-full"/>
+        </div>
+      </div>
+      {/* Kategori icon bar (mirip CapCut) */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+        {[
+          {id:"image+",ico:"🖼️"},{id:"sparkle+",ico:"✨"},{id:"bookmark",ico:"🔖"},{id:"paperclip",ico:"📎"},
+          {id:"emoji",ico:"😀"},{id:"hot",ico:"🔥"},{id:"ball",ico:"⚽"},{id:"minion",ico:"👀"},
+        ].map((c,i)=>(
+          <button key={i} className={`w-10 h-10 shrink-0 rounded-xl border flex items-center justify-center text-lg ${i===0?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>{c.ico}</button>
+        ))}
+      </div>
+      {/* Sub-kategori */}
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+        {STICKER_CATS.map((c:any)=>(
+          <button key={c.id} onClick={()=>setCat(c.id)}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold shrink-0 border ${cat===c.id?"bg-pink-500/30 border-pink-400 text-white":"bg-white/5 border-white/10 text-white/60"}`}>{c.label}</button>
+        ))}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {list.map((s:any)=>(
           <button key={s.id} onClick={()=>setSpectrumSticker(s.id)}
-            className={`p-2 rounded-lg border text-center active:scale-95 ${spectrumSticker===s.id?"bg-pink-500/30 border-pink-400":"bg-white/5 border-white/10"}`}>
-            <div className="text-xl">{s.icon}</div>
-            <div className="text-[9px] text-white/70 mt-0.5 leading-tight">{s.label}</div>
+            className={`aspect-square rounded-xl border-2 flex flex-col items-center justify-center active:scale-95 ${spectrumSticker===s.id?"border-pink-400 bg-pink-500/10":"border-white/10"}`}
+            style={{background: s.bg, color: s.color||"#fff"}}>
+            <div className="text-2xl drop-shadow-lg">{s.icon}</div>
+            <div className="text-[8px] mt-1 font-bold drop-shadow" style={{color:s.color||"#fff"}}>{s.label}</div>
           </button>
         ))}
       </div>
       <div className="text-[10px] text-white/50 p-2 rounded-lg bg-white/5">
-        💡 Stiker muncul di preview saat kamu tap play. Spectrum bars pakai audio aktif.
+        💡 Stiker audio bergerak ikut beat musik. Tap ▶️ di preview buat lihat animasinya.
       </div>
     </div>
   );

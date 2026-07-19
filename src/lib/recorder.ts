@@ -74,6 +74,8 @@ export interface TextLayer {
   align?: "left"|"center"|"right";
   // Style preset: "default" | "neon" | "boldwhite" | "fire" | "thanks" | "titlehere" | "mymusic" | "nowplaying" | "trendy" | "horror" | "aura" | "like" | ...
   template?: string;
+  // Text effect preset (CapCut-style: art-paper, art-stroke-white, art-stroke-black, art-blood, art-yellow-black, art-white-red, art-gold-black, art-neon-pink, art-neon-red, art-scratch-red, art-gradient-kuning-orange-biru, art-3d, art-chrome, art-glitter, art-sparkle)
+  effect?: string;
   // Animation: "none" | "fadein" | "pop" | "typewriter" | "slideup" | "slideleft" | "glowpulse"
   animIn?: string;
   animOut?: string;
@@ -611,9 +613,12 @@ function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
     if (layer.animOut === "fade" || layer.animOut === "fadeout") opacity *= outEase;
     if (layer.animIn === "pop") scale *= 0.6 + inEase*0.4;
     if (layer.animIn === "slideup") { offsetY = H*0.08*(1-inEase); opacity *= inEase; }
-    if (layer.animIn === "slideleft") { offsetX = W*0.1*(1-inEase); opacity *= inEase; }
+    if (layer.animIn === "slideleft") { offsetX = -W*0.1*(1-inEase); opacity *= inEase; }
     if (layer.animIn === "typewriter") letterClip = inEase;
-    if (layer.animOut === "pop") scale *= 0.6 + 0.4*outEase;
+    // Out animations
+    if (layer.animOut === "pop") { scale *= 0.6 + 0.4*outEase; opacity *= outEase; } // mengecil ke 0.6
+    if (layer.animOut === "slideup") { offsetY -= H*0.08*(1-outEase); opacity *= outEase; }
+    if (layer.animOut === "slideleft") { offsetX -= W*0.1*(1-outEase); opacity *= outEase; }
     if (layer.animLoop === "pulse") { scale *= 1 + Math.sin(time*4)*0.05 + bass*0.1; }
     if (layer.animLoop === "glow") { /* glow lewat shadow */ }
     if (layer.animLoop === "bounce") offsetY -= Math.abs(Math.sin(time*3))*H*0.01;
@@ -624,7 +629,34 @@ function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
     const fontSize = Math.max(16, Math.floor(Math.min(W,H) * sizePct));
     const bold = layer.bold !== false ? "900" : "400";
     const italic = layer.italic ? "italic " : "";
-    const fontStack = (layer.font && layer.font!=="SYSTEM") ? layer.font : "system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
+    const FONT_CSS: Record<string,string> = {
+      SYSTEM: "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+      WASHED: "'Impact','Arial Black','Helvetica Neue',sans-serif",
+      VISION: "Georgia,'Times New Roman',serif",
+      MODERN: "'Courier New','Courier',monospace",
+      TOOTH:  "'Brush Script MT','Segoe Script',cursive",
+      CELAND: "'Comic Sans MS',cursive",
+      STARRY: "'Trebuchet MS',sans-serif",
+      KLOP:   "Tahoma,Verdana,sans-serif",
+      ANTIK:  "'Times New Roman',Times,serif",
+      FEISTY: "'Palatino Linotype','Book Antiqua',Palatino,serif",
+      MONT:   "'Montserrat','Arial Black','Helvetica',sans-serif",
+      ROFUEGO:"'Impact','Oswald','Arial Narrow',sans-serif",
+      MERIENDA:"cursive",
+      RUST:   "'Courier New','Courier',monospace",
+      RUBIK:  "'Rubik','Arial Rounded MT Bold',sans-serif",
+      ITALIC: "Georgia,'Times New Roman',serif",
+      ATOMIC: "'Impact','Arial Black',sans-serif",
+      CCMOD:  "'Arial Black','Helvetica Neue',sans-serif",
+      CHUNK:  "'Rockwell Extra Bold','Arial Black',serif",
+      BOLD:   "'Impact','Bebas Neue','Arial Black',sans-serif",
+    };
+    let fontStack = "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
+    if (layer.font) {
+      if (layer.font==="SYSTEM") fontStack = FONT_CSS.SYSTEM;
+      else if (FONT_CSS[layer.font]) fontStack = FONT_CSS[layer.font];
+      else fontStack = layer.font;
+    }
     ctx.font = `${italic}${bold} ${fontSize}px ${fontStack}`;
     ctx.textAlign = (layer.align || "center") as CanvasTextAlign;
     ctx.textBaseline = "middle";
@@ -641,7 +673,8 @@ function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
 
     // Template-based styling
     const tpl = layer.template || "default";
-    let fill = layer.color || "#ffffff";
+    const eff = layer.effect || "none";
+    let fill: string|CanvasGradient = layer.color || "#ffffff";
     let stroke: string|null = "rgba(0,0,0,0.95)";
     let sw = Math.max(4, fontSize/7);
     let shadow = "transparent", shadowB = 0;
@@ -654,10 +687,9 @@ function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
       fill="#fff"; stroke="rgba(0,0,0,0.95)"; sw=Math.max(5,fontSize/6);
     } else if (tpl === "thanks") {
       fill="#fff"; stroke="#000"; sw=Math.max(4,fontSize/9);
-      // gradient red-white-blue
       const g=ctx.createLinearGradient(0,-fontSize,0,fontSize);
       g.addColorStop(0,"#ef4444");g.addColorStop(0.5,"#fff");g.addColorStop(1,"#3b82f6");
-      fill = g as any;
+      fill = g;
     } else if (tpl === "fire") {
       fill="#fff"; stroke="#000"; sw=Math.max(4,fontSize/8);
       shadow="#ff6b00"; shadowB=20+bass*12;
@@ -672,15 +704,91 @@ function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
       fill="#fff"; stroke="#78350f"; sw=Math.max(4,fontSize/9);
       const g=ctx.createLinearGradient(0,-fontSize,0,fontSize);
       g.addColorStop(0,"#fbbf24");g.addColorStop(0.5,"#f97316");g.addColorStop(1,"#dc2626");
-      fill = g as any;
+      fill = g;
     } else if (tpl === "please") {
       fill="#fff"; stroke="#ec4899"; sw=Math.max(4,fontSize/9);
     }
 
-    // Override dengan color custom
-    if (layer.color && tpl==="default") fill = layer.color;
-    if (layer.strokeColor) { stroke = layer.strokeColor; sw = layer.strokeWidth ? Math.max(1,layer.strokeWidth*fontSize) : Math.max(4,fontSize/7); }
-    if (layer.shadowColor) { shadow = layer.shadowColor; shadowB = layer.shadowBlur || 15; }
+    // ===== CAPCUT TEXT EFFECT PRESETS =====
+    // Effect ini override/menambah di atas template — jadi pakai effect langsung.
+    if (eff === "art-paper") {
+      // Teks kertas: putih kasar dengan noise look — putih solid, outline tipis, shadow bawah lembut
+      fill = "#f5f0e6"; stroke = "rgba(120,80,40,0.7)"; sw = Math.max(3,fontSize/12);
+      shadow = "rgba(80,40,10,0.4)"; shadowB = 6;
+    } else if (eff === "art-stroke-white") {
+      // Goresan putih: tebal outline putih di atas fill transparan
+      fill = "rgba(0,0,0,0)"; stroke = "#ffffff"; sw = Math.max(8,fontSize/5);
+      shadow = "rgba(0,0,0,0.6)"; shadowB = 10;
+    } else if (eff === "art-stroke-black") {
+      fill = "rgba(255,255,255,0)"; stroke = "#000000"; sw = Math.max(8,fontSize/5);
+      shadow = "rgba(0,0,0,0.4)"; shadowB = 6;
+    } else if (eff === "art-blood") {
+      // Merah darah: merah tua dengan shadow merah
+      fill = "#8b0000"; stroke = "#2a0000"; sw = Math.max(5,fontSize/8);
+      shadow = "#ff0000"; shadowB = 14+bass*8;
+    } else if (eff === "art-yellow-black") {
+      // Kuning outline hitam tebal (style peringatan/Thrasher)
+      fill = "#fde047"; stroke = "#000000"; sw = Math.max(8,fontSize/5);
+      shadow = "rgba(0,0,0,0.5)"; shadowB = 8;
+    } else if (eff === "art-white-red") {
+      // Putih outline merah
+      fill = "#ffffff"; stroke = "#dc2626"; sw = Math.max(6,fontSize/6);
+      shadow = "rgba(220,38,38,0.5)"; shadowB = 10;
+    } else if (eff === "art-gold-black") {
+      // Emas outline hitam dengan gradient metalik
+      const g = ctx.createLinearGradient(0,-fontSize*0.6,0,fontSize*0.6);
+      g.addColorStop(0,"#fff3b0"); g.addColorStop(0.3,"#fcd34d"); g.addColorStop(0.55,"#b45309");
+      g.addColorStop(0.75,"#fde68a"); g.addColorStop(1,"#92400e");
+      fill = g; stroke = "#000"; sw = Math.max(6,fontSize/7);
+      shadow = "rgba(255,200,50,0.5)"; shadowB = 10;
+    } else if (eff === "art-neon-pink") {
+      fill = "#ffffff"; stroke = null;
+      shadow = "#ff2d95"; shadowB = 28+bass*16;
+    } else if (eff === "art-neon-red") {
+      fill = "#ffffff"; stroke = null;
+      shadow = "#ff0033"; shadowB = 26+bass*16;
+    } else if (eff === "art-neon-blue") {
+      fill = "#ffffff"; stroke = null;
+      shadow = "#00e5ff"; shadowB = 26+bass*16;
+    } else if (eff === "art-scratch-red") {
+      // Putih goresan merah (outline merah + bayangan merah)
+      fill = "#ffffff"; stroke = "#ff0033"; sw = Math.max(5,fontSize/8);
+      shadow = "rgba(255,0,50,0.7)"; shadowB = 12;
+    } else if (eff === "art-gradient-ko") {
+      // Gradient kuning-orange-biru (Kuning→Orange→Biru)
+      const g = ctx.createLinearGradient(0,-fontSize*0.6,0,fontSize*0.6);
+      g.addColorStop(0,"#fde047"); g.addColorStop(0.5,"#f97316"); g.addColorStop(1,"#2563eb");
+      fill = g; stroke = "rgba(0,0,0,0.9)"; sw = Math.max(5,fontSize/8);
+      shadow = "rgba(0,0,0,0.5)"; shadowB = 8;
+    } else if (eff === "art-3d") {
+      // Teks 3D dengan extrude ke kiri-bawah
+      fill = "#ffffff"; stroke = "#000000"; sw = Math.max(4,fontSize/10);
+      shadow = "rgba(0,0,0,0.7)"; shadowB = 0; // shadow mati, kita pakai manual extrude
+    } else if (eff === "art-chrome") {
+      // Chrome metal: gradient perak
+      const g = ctx.createLinearGradient(0,-fontSize*0.6,0,fontSize*0.6);
+      g.addColorStop(0,"#e5e7eb"); g.addColorStop(0.3,"#ffffff"); g.addColorStop(0.45,"#9ca3af");
+      g.addColorStop(0.6,"#ffffff"); g.addColorStop(0.75,"#6b7280"); g.addColorStop(1,"#d1d5db");
+      fill = g; stroke = "#1f2937"; sw = Math.max(3,fontSize/12);
+      shadow = "rgba(0,0,0,0.5)"; shadowB = 6;
+    } else if (eff === "art-glitter") {
+      // Glitter pink: putih dengan glow pink tebal
+      fill = "#ffffff"; stroke = null;
+      shadow = "#ec4899"; shadowB = 30+bass*20;
+    } else if (eff === "art-sparkle") {
+      // Sparkle cyan: putih glow cyan
+      fill = "#ffffff"; stroke = null;
+      shadow = "#22d3ee"; shadowB = 30+bass*18;
+    } else if (eff === "art-glitch") {
+      // Glitch RGB split effect
+      fill = "#ffffff"; stroke = null;
+      shadow = "rgba(0,0,0,0.7)"; shadowB = 0;
+    }
+
+    // Override dengan color custom (hanya kalau user belum pilih effect dan pakai default template)
+    if (layer.color && tpl==="default" && eff==="none") fill = layer.color;
+    if (layer.strokeColor && eff==="none") { stroke = layer.strokeColor; sw = layer.strokeWidth ? Math.max(1,layer.strokeWidth*fontSize) : Math.max(4,fontSize/7); }
+    if (layer.shadowColor && eff==="none") { shadow = layer.shadowColor; shadowB = layer.shadowBlur || 15; }
 
     // Multi-line wrap
     const text = layer.text;
@@ -710,12 +818,60 @@ function drawTextLayers(ctx: CanvasRenderingContext2D, s: DrawState) {
         renderText = line.slice(0, chars);
       }
       const y = startY + li*lh + lh/2;
-      if (stroke && sw>0) {
-        ctx.strokeStyle = stroke; ctx.lineWidth = sw;
-        ctx.strokeText(renderText, 0, y);
+
+      // ===== SPECIAL EFFECTS: 3D extrude =====
+      if (eff === "art-3d") {
+        const depth = Math.max(4, fontSize/12);
+        ctx.save();
+        ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
+        for (let d=depth; d>=2; d-=2) {
+          ctx.fillStyle = "#374151";
+          ctx.fillText(renderText, d, y+d);
+        }
+        for (let d=depth; d>=2; d-=2) {
+          ctx.fillStyle = "#6b7280";
+          ctx.fillText(renderText, d*0.5, y+d*0.5);
+        }
+        ctx.restore();
       }
-      ctx.fillStyle = fill as any;
-      ctx.fillText(renderText, 0, y);
+
+      // ===== SPECIAL EFFECTS: Glitch RGB split =====
+      if (eff === "art-glitch") {
+        const off = Math.sin(time*20)*3 + 2;
+        ctx.save();
+        ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = "rgba(255,0,80,0.9)";
+        ctx.fillText(renderText, -off, y);
+        ctx.fillStyle = "rgba(0,229,255,0.9)";
+        ctx.fillText(renderText, off, y);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.restore();
+      }
+
+      // Neon multi-layer glow untuk art-neon-* dan art-glitter/sparkle
+      if (eff === "art-neon-pink" || eff === "art-neon-red" || eff === "art-neon-blue" || eff === "art-glitter" || eff === "art-sparkle") {
+        ctx.save();
+        ctx.shadowColor = shadow; ctx.shadowBlur = shadowB;
+        ctx.fillStyle = fill as any;
+        ctx.fillText(renderText, 0, y);
+        // double-stroke glow
+        ctx.shadowBlur = shadowB*1.8;
+        ctx.fillText(renderText, 0, y);
+        ctx.shadowBlur = shadowB*2.5;
+        ctx.globalAlpha = 0.7;
+        ctx.fillText(renderText, 0, y);
+        ctx.restore();
+        ctx.shadowColor = shadow; ctx.shadowBlur = shadowB;
+        // skip stroke
+      } else {
+        if (stroke && sw>0) {
+          ctx.strokeStyle = stroke; ctx.lineWidth = sw;
+          ctx.strokeText(renderText, 0, y);
+        }
+        ctx.fillStyle = fill as any;
+        ctx.fillText(renderText, 0, y);
+      }
     });
     ctx.restore();
   });
@@ -852,6 +1008,82 @@ function drawSpectrumSticker(ctx: CanvasRenderingContext2D, s: DrawState) {
     const sz=14+bass*12;
     ctx.fillStyle=rgba(s.rgb,1); ctx.shadowColor=rgba(s.rgb,0.9); ctx.shadowBlur=20;
     ctx.fillRect(-sz,-sz,sz*2,sz*2);
+    ctx.restore();
+  } else if (sticker==="subscribed") {
+    const pad=W*0.03, bw=Math.floor(W*0.26), bh=Math.floor(bw*0.28);
+    ctx.save();
+    ctx.fillStyle="rgba(120,120,120,0.95)";
+    roundRect(ctx,pad,pad,bw,bh,bh*0.2); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font=`900 ${Math.floor(bh*0.48)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("✓ SUBSCRIBED",pad+bw/2,pad+bh*0.52);
+    ctx.restore();
+  } else if (sticker==="headphones") {
+    const size=Math.floor(Math.min(W,H)*0.14);
+    const cx=W-size-20, cy=20+size*0.3;
+    ctx.save();
+    const rg=ctx.createLinearGradient(cx-size/2,cy-size/2,cx+size/2,cy+size/2);
+    rg.addColorStop(0,"#ec4899"); rg.addColorStop(1,"#f97316");
+    ctx.fillStyle=rg; ctx.shadowColor="rgba(236,72,153,0.7)"; ctx.shadowBlur=14+bass*10;
+    ctx.beginPath(); ctx.arc(cx,cy,size/2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font=`900 ${Math.floor(size*0.6)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.shadowBlur=0;
+    ctx.fillText("🎧",cx,cy+2);
+    ctx.restore();
+  } else if (sticker==="play") {
+    const size=Math.floor(Math.min(W,H)*0.1);
+    const cx=W*0.85, cy=H*0.18;
+    ctx.save();
+    ctx.fillStyle="#fff"; ctx.shadowColor="rgba(0,0,0,0.5)"; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.arc(cx,cy,size/2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#000"; ctx.shadowBlur=0;
+    ctx.beginPath(); ctx.moveTo(cx-size*0.15,cy-size*0.2); ctx.lineTo(cx+size*0.22,cy); ctx.lineTo(cx-size*0.15,cy+size*0.2); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  } else if (sticker==="fyp-text") {
+    const pad=W*0.04, bw=Math.floor(W*0.24), bh=Math.floor(bw*0.38);
+    ctx.save();
+    const rg=ctx.createLinearGradient(pad,pad,pad+bw,pad+bh);
+    rg.addColorStop(0,"#8b5cf6"); rg.addColorStop(1,"#ec4899");
+    ctx.fillStyle=rg; ctx.shadowColor="rgba(139,92,246,0.7)"; ctx.shadowBlur=12+bass*8;
+    roundRect(ctx,pad,pad+bh+10,bw,bh,bh*0.2); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font=`900 ${Math.floor(bh*0.55)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.shadowBlur=0;
+    ctx.fillText("#FYP",pad+bw/2,pad+bh*0.5+bh+10);
+    ctx.restore();
+  } else if (sticker==="nowplaying") {
+    const pad=W*0.04, bw=Math.floor(W*0.4), bh=Math.floor(W*0.08);
+    const y=H-bh-W*0.04;
+    ctx.save();
+    ctx.fillStyle="rgba(0,0,0,0.7)";
+    roundRect(ctx,pad,y,bw,bh,bh*0.3); ctx.fill();
+    ctx.fillStyle="#22d3ee"; ctx.font=`900 ${Math.floor(bh*0.5)}px sans-serif`;
+    ctx.textAlign="left"; ctx.textBaseline="middle";
+    ctx.shadowColor="rgba(34,211,238,0.8)"; ctx.shadowBlur=10;
+    ctx.fillText("▶ NOW PLAYING",pad+bh*0.4,y+bh*0.5);
+    ctx.restore();
+  } else if (sticker==="mymusic") {
+    const pad=W*0.04, bw=Math.floor(W*0.32), bh=Math.floor(W*0.11);
+    const y=H*0.12;
+    ctx.save();
+    const rg=ctx.createLinearGradient(pad,y,pad+bw,y+bh);
+    rg.addColorStop(0,"#ec4899"); rg.addColorStop(1,"#a855f7");
+    ctx.fillStyle=rg; ctx.shadowColor="rgba(236,72,153,0.7)"; ctx.shadowBlur=14;
+    roundRect(ctx,pad,y,bw,bh,bh*0.25); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font=`900 ${Math.floor(bh*0.5)}px sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.shadowBlur=0;
+    ctx.fillText("♪ MY MUSIC",pad+bw/2,y+bh*0.52);
+    ctx.restore();
+  } else if (sticker==="glow-ring") {
+    const cx=W/2, cy=H*0.12;
+    ctx.save();
+    ctx.strokeStyle=rgba(s.rgb,1); ctx.lineWidth=4; ctx.shadowColor=rgba(s.rgb,0.9); ctx.shadowBlur=24+bass*16;
+    for (let k=0;k<2;k++){
+      ctx.globalAlpha=0.7-k*0.3;
+      ctx.beginPath(); ctx.arc(cx,cy,18+k*10+bass*18,0,Math.PI*2); ctx.stroke();
+    }
     ctx.restore();
   }
   ctx.restore();
