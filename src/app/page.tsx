@@ -1737,6 +1737,43 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!tid) { setOpt(sid, { text: null } as Partial<SlideOpt>); return; }
     setOpt(sid, { texts: (slideOptsById[sid]?.texts || []).filter(x => x.id !== tid) } as Partial<SlideOpt>);
   }
+
+  /* ===== v8.3: OBJEK TERPILIH — aksi cepat (Edit / Duplikat / Hapus) ala CapCut ===== */
+  function selTextInfo(): { sid: string; tid: string } | null {
+    const raw = selTextSidRef.current;
+    if (!raw) return null;
+    const ci = raw.indexOf("::");
+    return { sid: ci < 0 ? raw : raw.slice(0, ci), tid: ci < 0 ? "" : raw.slice(ci + 2) };
+  }
+  function editSelText() {
+    const inf = selTextInfo(); if (!inf) return;
+    startTextEdit(inf.sid, inf.tid);
+  }
+  function dupSelText() {
+    const inf = selTextInfo(); if (!inf) return;
+    const cur = getTextOf(inf.sid, inf.tid); if (!cur) return;
+    pushHist();
+    const nid = uid("tx");
+    const clone: ClipText = { ...cur, id: nid, start: _r2((cur.start ?? 0) + 0.4) };
+    const o = slideOptsById[inf.sid] || {};
+    setOpt(inf.sid, { texts: [...((o as any).texts || []), clone] } as Partial<SlideOpt>);
+    setSelTextSid(selTextEncode(inf.sid, nid));
+    flash("⧉ Teks digandakan — jalur baru dibuat di track");
+  }
+  function delSelObj() {
+    if (selStik) {
+      pushHist();
+      delSticker(selStik.sid, selStik.stid);
+      setSelStik(null);
+      flash("🗑 Stiker dihapus");
+      return;
+    }
+    const inf = selTextInfo(); if (!inf) return;
+    pushHist();
+    delTextObj(inf.sid, inf.tid);
+    setSelTextSid("");
+    flash("🗑 Teks dihapus dari track");
+  }
   const selTextEncode = (sid: string, tid: string) => (tid ? `${sid}::${tid}` : sid);
   // id = klip (opsional) · tid = lapisan tertentu (opsional — kalau diisi, langsung edit lapisan itu, tanpa bikin baru)
   function startTextEdit(id?: string, tid?: string | null) {
@@ -2344,6 +2381,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
             style={{ touchAction: "none" }} />
           <div className={`selbox ${selId ? "on" : ""}`} />
+          {/* v8.3: tombol hapus CEPAT di panggung saat objek (teks/stiker) terpilih */}
+          {(selTextSid || selStik) && !tool && (
+            <button className="v6e-stagedel" title="Hapus objek terpilih" onClick={(e) => { e.stopPropagation(); delSelObj(); }}>🗑</button>
+          )}
           {!slides.length && (
             <div className="v6e-stage-empty">
               <div style={{ fontSize: 40 }}>🎬</div>
@@ -2394,6 +2435,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       {/* ============ TIMELINE ============ */}
       <TimelineV6
         slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT} playing={playing}
+        selTextSid={selTextSid} selStik={selStik}
         pxs={tlPxs} onZoom={(v: number) => setTlPxs(clampN(v, 0.6, 140))}
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
         musicDur={musicDur} ttsDur={ttsDur} voiceDur={voiceDur}
@@ -2440,7 +2482,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
       {/* ============ TOOLBAR ============ */}
       <div className="v6e-toolbar">
-        {clipBar && selId ? (
+        {selTextSid && !tool ? (
+          /* v8.3: OBJEK TERPILIH (teks) → bar aksi cepat: lepas / edit / duplikat / hapus */
+          <div className="v6e-tools">
+            <button className="v6e-tlbtn v6e-tlback" onClick={() => setSelTextSid("")}>‹<span>Lepas</span></button>
+            <button className="v6e-tlbtn" onClick={editSelText}>✏️<span>Edit</span></button>
+            <button className="v6e-tlbtn" onClick={dupSelText}>⧉<span>Duplikat</span></button>
+            <button className="v6e-tlbtn" style={{ color: "#f87171" }} onClick={delSelObj}>🗑<span>Hapus</span></button>
+          </div>
+        ) : selStik && !tool ? (
+          /* v8.3: OBJEK TERPILIH (stiker) → bar aksi cepat */
+          <div className="v6e-tools">
+            <button className="v6e-tlbtn v6e-tlback" onClick={() => setSelStik(null)}>‹<span>Lepas</span></button>
+            <button className="v6e-tlbtn" onClick={() => onStickerChipTap(selStik.sid, selStik.stid)}>✏️<span>Kelola</span></button>
+            <button className="v6e-tlbtn" style={{ color: "#f87171" }} onClick={delSelObj}>🗑<span>Hapus</span></button>
+          </div>
+        ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
             {CLIP_TOOLS.map(t => (
@@ -3005,13 +3062,16 @@ function TimelineV6(p: any) {
                     {textItems.map(({ s, t, tid, st, dd, free }: any) => {
                       const dd4 = dragRef.current as any;
                       const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
+                      const enc = tid ? `${s.id}::${tid}` : s.id;
+                      const isSel = p.selTextSid === enc;
+                      const isLyr = /^lyr_/.test(t?.id || tid || "");
                       return (
                         <div key={`${s.id}:${tid}`} style={{ position: "relative", height: 46, marginBottom: 5 }}>
-                          <div className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""}`} title="Jalur teks — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
+                          <div className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Jalur teks — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
                             onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
                             onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
                             style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
-                            {tid ? "⧉ " : ""}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
+                            {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
                             <span className="txtdur" title="Tarik untuk ubah durasi teks"
                               onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
                           </div>
@@ -3022,9 +3082,10 @@ function TimelineV6(p: any) {
                     {stikItems.map(({ s, st, t0, dd, free }: any) => {
                       const dd5 = dragRef.current as any;
                       const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
+                      const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
                       return (
                         <div key={st.id} style={{ position: "relative", height: 46, marginBottom: 5 }}>
-                          <div className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""}`} title="Jalur stiker — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
+                          <div className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Jalur stiker — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
                             onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
                             onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
                             style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0 }}>

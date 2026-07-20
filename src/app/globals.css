@@ -1543,3 +1543,11 @@ b.ok, b.warn, b.err { color:inherit; }
 .lh-dotnav { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
 .lh-dotnav button { width:32px; height:32px; border-radius:10px; background:#17171f; border:1px solid var(--v6-line); color:#9a9aa8; font-size:11px; font-weight:800; cursor:pointer; }
 .lh-dotnav button.on { background:var(--v6-teal); color:#04211f; border-color:var(--v6-teal); }
+
+/* ===== v8.3 TRACK DALAM: seleksi objek jelas + hapus cepat ===== */
+.v6e-stage{position:relative}
+.v6e-textchip.sel{outline:2px solid #22d3ee;outline-offset:1px;box-shadow:0 0 0 3px rgba(34,211,238,.22),0 4px 16px rgba(34,211,238,.2);z-index:3}
+.v6e-textchip.lyr{background:linear-gradient(90deg,rgba(13,116,128,.96),rgba(8,145,178,.92));border:1px solid rgba(103,232,249,.35)}
+.v6e-textchip.lyr.sel{outline-color:#67e8f9}
+.v6e-stagedel{position:absolute;top:10px;right:10px;z-index:40;width:42px;height:42px;border-radius:13px;border:1px solid rgba(255,255,255,.25);background:rgba(220,38,38,.93);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.45);backdrop-filter:blur(4px);cursor:pointer}
+.v6e-stagedel:active{transform:scale(.9)}
