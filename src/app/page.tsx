@@ -492,6 +492,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [videoUrl, setVideoUrl] = useState("");
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   /* ---------- ekspor v6 ---------- */
+  const [tlPxs, setTlPxs] = useState(() => { try { return Number(localStorage.getItem("verve_tl_scale")) || 56; } catch { return 56; } });
+  useEffect(() => { try { localStorage.setItem("verve_tl_scale", String(tlPxs)); } catch {} }, [tlPxs]);
   const [exTab, setExTab] = useState<"video" | "gif">("video");
   const [exRes, setExRes] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").r || 1080; } catch { return 1080; } });
   const [exFps, setExFps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").f || 30; } catch { return 30; } });
@@ -1732,6 +1734,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       {/* ============ TIMELINE ============ */}
       <TimelineV6
         slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT} playing={playing}
+        pxs={tlPxs} onZoom={(v: number) => setTlPxs(clampN(v, 5, 140))}
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
@@ -1860,15 +1863,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 /* ==================================================================
    TIMELINE v6 — rail kiri + 3 track + playhead + seek ruler
    ================================================================== */
-const PXS = 56; // px per detik
+const PXS = 56; // px per detik (default — skala bisa dizoom cubit di timeline)
+const TL_MIN_PXS = 5, TL_MAX_PXS = 140; // batas zoom skala timeline
 function TimelineV6(p: any) {
   const { slides, slideOptsById, timeline, selId, curT, musicUrl, musicName, ttsUrl, voiceUrl } = p;
+  const PXS0 = clampN(Number(p.pxs) || PXS, TL_MIN_PXS, TL_MAX_PXS);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
-  const contentW = Math.max(320, total * PXS + halfW * 2 + 16);
+  const contentW = Math.max(320, total * PXS0 + halfW * 2 + 16);
   const dragRef = useRef<{ kind: "trim" | "reorder"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r" } | null>(null);
   const scrubHoldRef = useRef(false);
+  // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
+  const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchZRef = useRef<{ d0: number; vx: number } | null>(null);
+  const zoomAnchorRef = useRef<{ t: number; vx: number } | null>(null);
+  const suppressSeekRef = useRef(false);
   const [, force] = useState(0);
 
   // ukur setengah lebar viewport → konten diberi ruang kiri-kanan supaya detik 0 & akhir bisa tepat di garis tengah
@@ -1880,22 +1890,67 @@ function TimelineV6(p: any) {
     return () => ro.disconnect();
   }, []);
 
+  // jangkar zoom: titik di bawah cubitan jari tetap di tempat setelah skala berubah
+  useEffect(() => {
+    const el = scrollRef.current;
+    const a = zoomAnchorRef.current;
+    if (!el || !a) return;
+    suppressSeekRef.current = true;
+    el.scrollLeft = clampN(a.t * PXS0 + halfW - a.vx, 0, Math.max(0, contentW - el.clientWidth));
+    requestAnimationFrame(() => { suppressSeekRef.current = false; });
+  }, [PXS0, halfW, contentW]);
+
   // saat diputar: KONTEN yang bergerak di bawah garis penanda (garis tetap diam di tengah, ala CapCut)
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !p.playing || scrubHoldRef.current) return;
-    const target = clampN(curT * PXS, 0, Math.max(0, contentW - el.clientWidth));
+    const target = clampN(curT * PXS0, 0, Math.max(0, contentW - el.clientWidth));
     if (Math.abs(el.scrollLeft - target) > 0.5) el.scrollLeft = target;
-  }, [curT, p.playing, contentW]);
+  }, [curT, p.playing, contentW, PXS0]);
 
   // saat tidak diputar: geser konten = geser waktu (garis tengah sebagai penanda posisi)
   function onTlScroll(e: any) {
-    if (p.playing) return;
+    if (p.playing || suppressSeekRef.current || pinchZRef.current) return;
     const sl = e.target.scrollLeft;
-    p.onSeek(clampN(sl / PXS, 0, Math.max(0, total - 0.01)));
+    p.onSeek(clampN(sl / PXS0, 0, Math.max(0, total - 0.01)));
   }
 
-  function clipW(i: number): number { return Math.max(30, (timeline?.durs?.[i] || 0) * PXS); }
+  // ---- pinch zoom skala di area track ----
+  function onWrapDown(e: React.PointerEvent) {
+    scrubHoldRef.current = true;
+    tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+    if (tlPtrs.current.size >= 2) {
+      const pts = [...tlPtrs.current.values()];
+      const el = scrollRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const vx = ((pts[0].x + pts[1].x) / 2) - r.left;
+        pinchZRef.current = { d0: Math.max(10, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)), vx };
+        zoomAnchorRef.current = { t: (el.scrollLeft + vx - halfW) / PXS0, vx };
+      }
+      dragRef.current = null; // batalkan drag klip/trim saat mencubit
+    }
+  }
+  function onWrapMove(e: React.PointerEvent) {
+    if (!tlPtrs.current.has(e.pointerId)) return;
+    tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pz = pinchZRef.current;
+    if (pz && tlPtrs.current.size >= 2) {
+      const pts = [...tlPtrs.current.values()];
+      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const el = scrollRef.current;
+      if (el) zoomAnchorRef.current = { t: (el.scrollLeft + pz.vx - halfW) / PXS0, vx: pz.vx };
+      p.onZoom(Math.round(clampN(PXS0 * (d / pz.d0), TL_MIN_PXS, TL_MAX_PXS) * 10) / 10);
+    }
+  }
+  function onWrapUp(e: React.PointerEvent) {
+    tlPtrs.current.delete(e.pointerId);
+    if (tlPtrs.current.size < 2) { pinchZRef.current = null; zoomAnchorRef.current = null; }
+    if (tlPtrs.current.size === 0) scrubHoldRef.current = false;
+  }
+
+  function clipW(i: number): number { return Math.max(30, (timeline?.durs?.[i] || 0) * PXS0); }
 
   function onClipDown(e: React.PointerEvent, i: number) {
     const sid = slides[i].id;
@@ -1934,7 +1989,7 @@ function TimelineV6(p: any) {
   function onHdlMove(e: React.PointerEvent) {
     const d = dragRef.current;
     if (!d || d.kind !== "trim") return;
-    const dxT = (e.clientX - d.startX) / PXS;
+    const dxT = (e.clientX - d.startX) / PXS0;
     // handle kanan: tarik kanan = tambah panjang; handle kiri: tarik kiri = tambah panjang (ke belakang)
     const nd = clampN(d.startDur + (d.side === "l" ? -dxT : dxT), 0.4, 600);
     p.onTrim(slides[d.i].id, nd);
@@ -1945,16 +2000,18 @@ function TimelineV6(p: any) {
     const el = scrollRef.current; if (!el || !total) return;
     const r = el.getBoundingClientRect();
     const x = e.clientX - r.left + el.scrollLeft - halfW;
-    p.onSeek(clampN(x / PXS, 0, Math.max(0, total - 0.01)));
+    p.onSeek(clampN(x / PXS0, 0, Math.max(0, total - 0.01)));
     const move = (ev: PointerEvent) => {
       const xx = ev.clientX - r.left + el.scrollLeft - halfW;
-      p.onSeek(clampN(xx / PXS, 0, Math.max(0, total - 0.01)));
+      p.onSeek(clampN(xx / PXS0, 0, Math.max(0, total - 0.01)));
     };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
 
-  const secs = Math.ceil(total) + 1;
+  // penggaris adaptif: makin di-zoom keluar, label makin jarang (per 2d/5d/10d/…/10 menit)
+  const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => s * PXS0 >= 42) || 600;
+  const nTicks = Math.ceil(total / tickStep) + 1;
 
   const hasAudio = !!(musicUrl || ttsUrl || voiceUrl);
   const clipTexts = slides.map((s: Slide) => ({ s, t: slideOptsById[s.id]?.text })).filter((x: any) => x.t && x.t.txt?.trim());
@@ -1978,21 +2035,22 @@ function TimelineV6(p: any) {
         {/* tracks (garis penanda DIAM di tengah — konten yang bergerak di bawahnya) */}
         <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
           <div className="v6e-tl-scrollwrap" ref={scrollRef} onScroll={onTlScroll}
-            onPointerDown={() => { scrubHoldRef.current = true; }}
-            onPointerUp={() => { scrubHoldRef.current = false; }}
-            onPointerCancel={() => { scrubHoldRef.current = false; }}
-            style={{ position: "absolute", inset: 0 }}>
+            onPointerDown={onWrapDown} onPointerMove={onWrapMove} onPointerUp={onWrapUp} onPointerCancel={onWrapUp}
+            style={{ position: "absolute", inset: 0, touchAction: "pan-x pan-y" }}>
             <div style={{ position: "relative", width: contentW, display: "flex" }}>
               <div style={{ width: halfW, flex: "0 0 auto" }} />
               <div style={{ position: "relative", flex: "0 0 auto" }}>
-                {/* ruler detik */}
-            <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none" }} onPointerDown={rulerDown}>
-              {Array.from({ length: secs + 1 }).map((_, i) => (
-                <span key={i} style={{ position: "absolute", left: i * PXS, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
-                  {i % 2 === 0 ? formatDur(i) : "·"}
-                </span>
-              ))}
-            </div>
+                {/* ruler waktu (adaptif ikut zoom) */}
+                <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none" }} onPointerDown={rulerDown}>
+                  {Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep; return (
+                    <span key={k} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
+                      {formatDur(sec)}
+                    </span>
+                  ); })}
+                  {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < total ? (
+                    <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-2px)", fontSize: 8.5, color: "#4b5260", fontWeight: 600 }}>·</span>
+                  ) : null; })}
+                </div>
 
             {/* TRACK 1: video */}
             <div className="v6e-track">
@@ -2073,6 +2131,23 @@ function TimelineV6(p: any) {
           </div>
           {/* garis penanda tetap di tengah layar */}
           {total > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
+          {/* tombol zoom: ketuk → semua proyek muat 1 layar; cubit di track = perbesar/persempit */}
+          {total > 0 && (
+            <button className="v6e-tlfit" title="Tampilkan seluruh proyek dalam 1 layar (cubit track untuk zoom manual)"
+              onClick={() => {
+                const el = scrollRef.current;
+                if (!el) return;
+                zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
+                p.onZoom(clampN((el.clientWidth - 24) / total, TL_MIN_PXS, TL_MAX_PXS));
+              }}>⤢</button>
+          )}
+          {Math.abs(PXS0 - PXS) > 1 && (
+            <button className="v6e-tlfp" title="Kembali ke skala normal" onClick={() => {
+              const el = scrollRef.current;
+              if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
+              p.onZoom(PXS);
+            }}>{PXS0 > PXS ? "🔍+" : "🔍−"}</button>
+          )}
         </div>
       </div>
     </div>
