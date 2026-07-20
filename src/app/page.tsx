@@ -452,6 +452,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [ttsUrl, setTtsUrl] = useState("");
   const [ttsText, setTtsText] = useState("");
   const [voiceUrl, setVoiceUrl] = useState(""); // rekaman
+  const [musicDur, setMusicDur] = useState(0); // detik — panel track audio sepanjang durasi asli
+  const [ttsDur, setTtsDur] = useState(0);
+  const [voiceDur, setVoiceDur] = useState(0);
   const [audMuted, setAudMuted] = useState(false);
   const [musicVol, setMusicVol] = useState(1);        // 0..1.5
   const [voiceVol, setVoiceVol] = useState(1);        // 0..1.5 (tts+rekaman)
@@ -795,7 +798,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const thumb = thumbOverride ?? (coverThumb || (first.startsWith("data:") ? first.slice(0, 40000) : first));
     return { v: 6, id: draftId || uid("d"), title: projTitle.slice(0, 80), updatedAt: Date.now(),
       slides: compactSlides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor,
-      musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", filterPreset, adj, qualitySharp,
+      musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", musicDur, ttsDur, voiceDur, filterPreset, adj, qualitySharp,
       musicVol, voiceVol, musicFadeIn, musicFadeOut,
       capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb: thumb, audMuted,
       mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal };
@@ -808,6 +811,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setTransition(d.transition || "dissolve"); setTransitionDur(d.transitionDur ?? 0.6);
     setBgMode(d.bgMode || "cover"); setBgColor(d.bgColor || "#000000");
     setMusicUrl(d.musicUrl || ""); setMusicName(d.musicName || "");
+    setMusicDur(d.musicDur || 0); setTtsDur(d.ttsDur || 0); setVoiceDur(d.voiceDur || 0);
     setTtsUrl(d.ttsUrl || ""); setTtsText(d.ttsText || ""); setVoiceUrl(d.voiceUrl || "");
     setFilterPreset(d.filterPreset || "none"); setAdj({ ...DEFAULT_ADJUST, ...(d.adj || {}) });
     setQualitySharp(!!d.qualitySharp);
@@ -1076,7 +1080,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!f) return;
     if (f.size > 18 * 1024 * 1024) return setErr({ message: "File musik terlalu besar (maks 18MB)" });
     const r = new FileReader();
-    r.onload = () => { setMusicUrl(r.result as string); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash("🎵 Musik ditambahkan"); };
+    r.onload = () => { const u = r.result as string; setMusicUrl(u); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash("🎵 Musik ditambahkan"); getAudioDuration(u).then(setMusicDur); };
     r.readAsDataURL(f);
   }
   async function mixAudioUrls(parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number }[]): Promise<string | null> {
@@ -1117,6 +1121,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const data = await r.json().catch(() => ({}));
       if (!r.ok || data.error) throw new Error(data.error || `Error ${r.status}`);
       setTtsUrl(data.url); setTtsText(text.slice(0, 3500));
+      getAudioDuration(data.url).then(setTtsDur);
       flash("🗣️ Narasi AI siap — masuk track audio");
       setModal(null);
     } catch (e: any) { setErr(e); }
@@ -1133,6 +1138,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const wav = bufferToWav(buf);
       const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
       setMusicUrl(url); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40));
+      getAudioDuration(url).then(setMusicDur);
       actx.close();
       flash("🎬 Audio dari video berhasil diekstrak");
     } catch (e: any) { setErr(e); }
@@ -1181,6 +1187,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (url) {
           clearInterval(itv);
           setMusicUrl(url); setMusicName(mTitle || "Lagu AI");
+          getAudioDuration(url).then(setMusicDur);
           setMStatus("selesai"); setMTask("");
           try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
           flash("✅ Lagu AI selesai — masuk track audio");
@@ -1512,7 +1519,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             setStageText("🗣️ Membuat suara narasi...");
             const tr = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 3500), voice: "nova" }) });
             const td = await tr.json().catch(() => ({}));
-            if (td.url) { setTtsUrl(td.url); }
+            if (td.url) { setTtsUrl(td.url); getAudioDuration(td.url).then(setTtsDur); }
           }
         } catch {}
       } else if (wzAudio === "suno") {
@@ -1736,13 +1743,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT} playing={playing}
         pxs={tlPxs} onZoom={(v: number) => setTlPxs(clampN(v, 5, 140))}
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
+        musicDur={musicDur} ttsDur={ttsDur} voiceDur={voiceDur}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
-        onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); flash("🗑 Track audio dikosongkan"); }}
+        onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); flash("🗑 Track audio dikosongkan"); }}
         onAddText={() => startTextEdit()}
         onEditText={(sid: string) => startTextEdit(sid)}
         onAddOutro={addOutro}
@@ -1810,7 +1818,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
-            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
+            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
@@ -1829,7 +1837,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       )}
 
       {/* modal-modul */}
-      {modal === "rekam" && <RekamModal onClose={() => setModal(null)} onUse={(u: string) => { setVoiceUrl(u); setModal(null); flash("🎙️ Rekaman masuk track audio"); }} />}
+      {modal === "rekam" && <RekamModal onClose={() => setModal(null)} onUse={(u: string) => { setVoiceUrl(u); setModal(null); flash("🎙️ Rekaman masuk track audio"); getAudioDuration(u).then(setVoiceDur); }} />}
       {modal === "tts" && <TtsModal initial={ttsText} onClose={() => setModal(null)} onGen={doTTS} loading={loading} voice={ttsVoice} setVoice={setTtsVoice} />}
       {modal === "musik" && <MusikModal
         onClose={() => setModal(null)} sunoKey={sunoKey} setSunoKey={setSunoKey} sunoProv={sunoProv} setSunoProv={setSunoProv}
@@ -1871,7 +1879,9 @@ function TimelineV6(p: any) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
-  const contentW = Math.max(320, total * PXS0 + halfW * 2 + 16);
+  // total tampilan: ikut elemen terpanjang (video ATAU audio — lagu 5 menit = track 5 menit)
+  const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
+  const contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
   const dragRef = useRef<{ kind: "trim" | "reorder"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r" } | null>(null);
   const scrubHoldRef = useRef(false);
   // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
@@ -1912,7 +1922,7 @@ function TimelineV6(p: any) {
   function onTlScroll(e: any) {
     if (p.playing || suppressSeekRef.current || pinchZRef.current) return;
     const sl = e.target.scrollLeft;
-    p.onSeek(clampN(sl / PXS0, 0, Math.max(0, total - 0.01)));
+    p.onSeek(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
   }
 
   // ---- pinch zoom skala di area track ----
@@ -1997,13 +2007,13 @@ function TimelineV6(p: any) {
   function onHdlUp() { dragRef.current = null; }
 
   function rulerDown(e: React.PointerEvent) {
-    const el = scrollRef.current; if (!el || !total) return;
+    const el = scrollRef.current; if (!el || !dispTotal) return;
     const r = el.getBoundingClientRect();
     const x = e.clientX - r.left + el.scrollLeft - halfW;
-    p.onSeek(clampN(x / PXS0, 0, Math.max(0, total - 0.01)));
+    p.onSeek(clampN(x / PXS0, 0, Math.max(0, dispTotal - 0.01)));
     const move = (ev: PointerEvent) => {
       const xx = ev.clientX - r.left + el.scrollLeft - halfW;
-      p.onSeek(clampN(xx / PXS0, 0, Math.max(0, total - 0.01)));
+      p.onSeek(clampN(xx / PXS0, 0, Math.max(0, dispTotal - 0.01)));
     };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
@@ -2011,7 +2021,7 @@ function TimelineV6(p: any) {
 
   // penggaris adaptif: makin di-zoom keluar, label makin jarang (per 2d/5d/10d/…/10 menit)
   const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => s * PXS0 >= 42) || 600;
-  const nTicks = Math.ceil(total / tickStep) + 1;
+  const nTicks = Math.ceil(dispTotal / tickStep) + 1;
 
   const hasAudio = !!(musicUrl || ttsUrl || voiceUrl);
   const clipTexts = slides.map((s: Slide) => ({ s, t: slideOptsById[s.id]?.text })).filter((x: any) => x.t && x.t.txt?.trim());
@@ -2047,7 +2057,7 @@ function TimelineV6(p: any) {
                       {formatDur(sec)}
                     </span>
                   ); })}
-                  {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < total ? (
+                  {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < dispTotal ? (
                     <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-2px)", fontSize: 8.5, color: "#4b5260", fontWeight: 600 }}>·</span>
                   ) : null; })}
                 </div>
@@ -2094,35 +2104,58 @@ function TimelineV6(p: any) {
               <button className="v6e-addclip" onClick={p.onAddClip}>＋</button>
             </div>
 
-            {/* TRACK 2: audio */}
-            <div className="v6e-track-add">
+            {/* TRACK 2: audio — balok sepanjang DURASI ASLI audio (lahan kerja di track) */}
+            <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
               {!hasAudio ? (
                 <button className="v6e-track-addbtn" onClick={p.onAddAudio}><i>🎵</i> ＋ Tambahkan audio</button>
-              ) : (
-                <div style={{ display: "flex", gap: 6 }}>
-                  {!!musicUrl && (
-                    <div className="v6e-audioclip" onClick={p.onAddAudio} title="Musik">
-                      <i style={{ fontStyle: "normal" }}>♪</i>
-                      <span className="wv">{Array.from({ length: 16 }).map((_, k) => <i key={k} style={{ height: 5 + ((k * 37) % 16) }} />)}</span>
-                      <span className="nm">{musicName || "Musik"}</span>
+              ) : (() => {
+                const rows: { key: string; grad: string; col: string; icon: string; nm: string; dur: number }[] = [];
+                if (musicUrl) rows.push({ key: "m", grad: "linear-gradient(90deg,#0f766e,#14b8a6)", col: "#04211f", icon: "♪", nm: musicName || "Musik", dur: p.musicDur || 0 });
+                if (ttsUrl) rows.push({ key: "t", grad: "linear-gradient(90deg,#7c3aed,#a855f7)", col: "#fff", icon: "🗣️", nm: "Narasi AI", dur: p.ttsDur || 0 });
+                if (voiceUrl) rows.push({ key: "v", grad: "linear-gradient(90deg,#b91c1c,#ef4444)", col: "#fff", icon: "🎙️", nm: "Rekaman", dur: p.voiceDur || 0 });
+                const rowH = rows.length > 1 ? 30 : 46;
+                const wOf = (r: any) => Math.max(90, (r.dur || 4) * PXS0);
+                const maxW = Math.max(...rows.map(wOf));
+                return (
+                  <div style={{ position: "relative", width: maxW + 8 + 96, height: rows.length * rowH + (rows.length - 1) * 5 }}>
+                    {rows.map((r, k) => (
+                      <div key={r.key} className="v6e-audioclip" onClick={p.onAddAudio} title={r.nm}
+                        style={{ position: "absolute", left: 0, top: k * (rowH + 5), width: wOf(r), height: rowH, background: r.grad, color: r.col, overflow: "hidden" }}>
+                        <i style={{ fontStyle: "normal" }}>{r.icon}</i>
+                        <span className="wv">{Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % Math.max(8, rowH - 14)) }} />)}</span>
+                        <span className="nm" style={rowH < 40 ? { fontSize: 9.5 } : undefined}>{r.nm}{r.dur ? ` · ${formatDur(r.dur)}` : ""}</span>
+                      </div>
+                    ))}
+                    <div style={{ position: "absolute", left: maxW + 8, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0, height: 42 }} onClick={p.onAddAudio}>＋</button>
+                      <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0, height: 42 }} onClick={p.onDelAudio} title="Hapus audio">🗑</button>
                     </div>
-                  )}
-                  {!!ttsUrl && <div className="v6e-audioclip" style={{ background: "linear-gradient(90deg,#7c3aed,#a855f7)", color: "#fff" }} onClick={p.onAddAudio}><span className="nm">🗣️ Narasi AI</span></div>}
-                  {!!voiceUrl && <div className="v6e-audioclip" style={{ background: "linear-gradient(90deg,#b91c1c,#ef4444)", color: "#fff" }} onClick={p.onAddAudio}><span className="nm">🎙️ Rekaman</span></div>}
-                  <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0 }} onClick={p.onAddAudio}>＋</button>
-                  <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0 }} onClick={p.onDelAudio} title="Hapus audio">🗑</button>
-                </div>
-              )}
+                  </div>
+                );
+              })()}
             </div>
 
-            {/* TRACK 3: teks */}
-            <div className="v6e-track-add">
-              <button className="v6e-track-addbtn" onClick={p.onAddText}><i>🔤</i> ＋ Tambahkan teks</button>
-              {clipTexts.map(({ s, t }: any) => (
-                <button key={s.id} className="v6e-textchip" style={{ marginLeft: 6 }} onClick={() => p.onEditText(s.id)}>
-                  “{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
-                </button>
-              ))}
+            {/* TRACK 3: teks — chip sejajar posisi klipnya di garis waktu */}
+            <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
+              {!clipTexts.length ? (
+                <button className="v6e-track-addbtn" onClick={p.onAddText}><i>🔤</i> ＋ Tambahkan teks</button>
+              ) : (() => {
+                const items = clipTexts.map(({ s, t }: any) => {
+                  const i = slides.findIndex((x: Slide) => x.id === s.id);
+                  return { s, t, st: timeline?.starts?.[i] || 0, dd: timeline?.durs?.[i] || 3 };
+                });
+                const maxEnd = Math.max(...items.map((x: any) => x.st + x.dd), 1);
+                return (
+                  <div style={{ position: "relative", width: maxEnd * PXS0 + 56, height: 46 }}>
+                    {items.map(({ s, t, st, dd }: any) => (
+                      <button key={s.id} className="v6e-textchip" style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap" }} onClick={() => p.onEditText(s.id)}>
+                        “{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
+                      </button>
+                    ))}
+                    <button className="v6e-track-addbtn" style={{ position: "absolute", left: maxEnd * PXS0 + 8, top: 3, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText}>＋</button>
+                  </div>
+                );
+              })()}
             </div>
 
               </div>
@@ -2130,15 +2163,15 @@ function TimelineV6(p: any) {
             </div>
           </div>
           {/* garis penanda tetap di tengah layar */}
-          {total > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
+          {dispTotal > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
           {/* tombol zoom: ketuk → semua proyek muat 1 layar; cubit di track = perbesar/persempit */}
-          {total > 0 && (
+          {dispTotal > 0 && (
             <button className="v6e-tlfit" title="Tampilkan seluruh proyek dalam 1 layar (cubit track untuk zoom manual)"
               onClick={() => {
                 const el = scrollRef.current;
                 if (!el) return;
                 zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
-                p.onZoom(clampN((el.clientWidth - 24) / total, TL_MIN_PXS, TL_MAX_PXS));
+                p.onZoom(clampN((el.clientWidth - 24) / dispTotal, TL_MIN_PXS, TL_MAX_PXS));
               }}>⤢</button>
           )}
           {Math.abs(PXS0 - PXS) > 1 && (
