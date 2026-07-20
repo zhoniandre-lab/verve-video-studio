@@ -427,7 +427,7 @@ const AUDIO_MENU: { id: string; icon: string; label: string; bdg?: string }[] = 
 ];
 const RES_STOPS = [480, 720, 1080, 1440, 2160];
 const FPS_STOPS = [24, 25, 30, 50, 60];
-const MBPS_STOPS = [5, 10, 20, 50, 100];
+const MBPS_STOPS = [5, 8, 12, 20, 50];
 const IMG_STYLE_PRESETS = [
   { id: "cinematic", label: "🎬 Cinematic" }, { id: "studio", label: "📸 Studio" },
   { id: "epic",      label: "⚔️ Fantasy" },  { id: "anime", label: "🌸 Anime" },
@@ -1650,8 +1650,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; });
     setVideoBlob(null);
     setStageText("Menyiapkan render...");
+    let wakeLock: any = null;
     try {
       await ensureFontsLoaded().catch(() => {});
+      // v8.1: tahan layar tetap menyala selama render (HP lock = render rusak/kepotong)
+      try { wakeLock = await (navigator as any).wakeLock?.request?.("screen"); } catch {}
+      // v8.1: lewati klip tanpa gambar (dataURL raksasa dipangkas hemat memori saat simpan draf)
+      const useSlides = slides.filter(s => s.imageUrl && s.imageUrl.length > 8);
+      if (!useSlides.length) throw new Error("Semua klip tidak punya gambar (data terpangkas hemat memori) — rakit ulang draf dari Lahan ya bro.");
+      if (useSlides.length !== slides.length) flash(`⚠️ ${slides.length - useSlides.length} klip tanpa gambar dilewati`);
       const duck = (ttsUrl || voiceUrl) ? 0.4 : 1; // musik diturunkan tipis kalau ada suara
       const parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number; off?: number }[] = [];
       if (musicUrl) parts.push({ url: proxifyAudioUrl(musicUrl), gain: musicVol * duck, fadeIn: musicFadeIn, fadeOut: musicFadeOut, off: musicOff });
@@ -1663,7 +1670,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (singleClean) audioUrl = single!.url;
       else if (parts.length >= 1) audioUrl = await mixAudioUrls(parts);
 
-      const orderedOpts: SlideOpt[] = slides.map(s => {
+      const orderedOpts: SlideOpt[] = useSlides.map(s => {
         const o = { ...(slideOptsById[s.id] || {}) } as SlideOpt;
         if (o.text && !o.text.txt?.trim()) delete o.text;
         if (o.texts) { o.texts = o.texts.filter((x: ClipText) => x?.txt?.trim()); if (!o.texts.length) delete o.texts; }
@@ -1673,7 +1680,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const resMap: Record<number, [number, number]> = { 480: [854, 480], 720: [1280, 720], 1080: [1920, 1080], 1440: [2560, 1440], 2160: [3840, 2160] };
       const [w, h] = resMap[exRes] || [1280, 720];
       const blob = await renderSlideshow({
-        images: slides.map(s => s.imageUrl),
+        images: useSlides.map(s => s.imageUrl),
         audioUrl: audioUrl || undefined,
         slideDuration,
         transitionDuration: transitionDur,
@@ -1695,12 +1702,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onProgress: (p: number) => { setProgress(p); if (p > 0.02 && p < 0.98) setStageText(`Rendering ${Math.round(p * 100)}%`); },
         onStage: (s: string) => setStageText(s),
       } as any);
+      // v8.1 SANITY: file super-kecil untuk durasi panjang = render busuk (frame kosong)
+      const durGuess = Math.max(clipsTotal || 0, musicDur || 0);
+      if (durGuess > 15 && blob.size < 150_000) {
+        throw new Error(`File render cuma ${(blob.size / 1024).toFixed(0)} KB untuk video ${Math.round(durGuess)} detik — ada yang ganjil. Coba Render Ulang ya bro.`);
+      }
       setVideoBlob(blob);
       setVideoUrl(URL.createObjectURL(blob));
       setProgress(1); flash("✅ Video selesai!");
       persistSnapshot(true);
       genMetadata().catch(() => {});
     } catch (e: any) { setErr(e); }
+    finally { try { wakeLock?.release?.(); } catch {} }
     setLoading(null); setTimeout(() => setStageText(""), 2500);
   }
   async function doRenderGif() {
@@ -3389,13 +3402,14 @@ function EksporSheet({ api: A, onClose }: any) {
               </div>
             </div>
             <div className="v6-xp-block">
-              <div className="bh"><b>Bitrate (Mbps)</b><span>Direkomendasikan: 10–20</span></div>
+              <div className="bh"><b>Bitrate (Mbps)</b><span>Konten lagu/statik: 8–12 sudah kinclong</span></div>
               <div className="v6-xp-slider">
                 <input type="range" min={0} max={4} step={1} value={mbIdx < 0 ? 1 : mbIdx} onChange={e => A.setExMbps(MBPS_STOPS[Number(e.target.value)])} />
                 <div className="v6-xp-ticks">{MBPS_STOPS.map(m => <span key={m}>{m}{A.exMbps === m ? <b>✔</b> : null}</span>)}</div>
               </div>
             </div>
             <div className="v6-xp-est">Perkiraan ukuran file: <b style={{ color: "#fff" }}>{A.estMB.toFixed(A.estMB > 80 ? 0 : 1)} MB</b> · durasi {formatDur(A.clipsTotal)}</div>
+            {A.estMB > 800 && <div className="v6-risk">🐘 Estimasi {A.estMB.toFixed(0)} MB itu RAKSASA buat HP (memori penuh, render lambat). Turunkan bitrate ke 8–12 Mbps — buat video lagu tetap kinclong.</div>}
             {A.exRes >= 1440 && <div className="v6-risk">⚠️ Render 2K/4K di HP butuh waktu & RAM besar. Kalau gagal, turunkan ke 1080p ya bro.</div>}
             <button className="v6-bigcta" onClick={A.doRender} disabled={A.loading === "render"}>
               {A.loading === "render" ? `⏳ Rendering… ${Math.round(A.progress * 100)}%` : A.videoUrl ? "🔄 Render Ulang" : "Ekspor"}</button>

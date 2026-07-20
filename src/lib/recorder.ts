@@ -151,34 +151,39 @@ async function decodeAudio(url: string, onStage?:(s:string)=>void) {
       actx.close();
       throw new Error("Audio tidak bisa diputar (format corrupt/CORS). Coba generate ulang lagu atau pakai file upload ya bro.");
     }
-    // KONVERSI ke STEREO 44100Hz — ini format PALING kompatibel untuk Android/iOS/YouTube.
-    // Sebelumnya mono + sampleRate mentah (bisa 24k/32k/48k) bikin beberapa HP Android
-    // memutar video tanpa suara (padahal YouTube bisa karena YouTube re-encode otomatis).
+    // KONVERSI ke STEREO 44100Hz — format paling kompatibel untuk Android/iOS/YouTube.
+    // v8.1: kalau sumber SUDAH 44.1k (umumnya lagu), ambil saluran langsung TANPA
+    // resample+tanpa salinan mono — hemat ~180MB RAM & detik CPU di HP.
     const targetSR = 44100;
     const nCh = 2;
-    const nFrames = Math.round(audioBuf.duration * targetSR);
-    const resampleRatio = targetSR / audioBuf.sampleRate;
-    const outL = new Float32Array(nFrames);
-    const outR = new Float32Array(nFrames);
     const srcCh = audioBuf.numberOfChannels;
-    const sL = audioBuf.getChannelData(0);
-    const sR = srcCh > 1 ? audioBuf.getChannelData(1) : sL;
-    for (let i=0;i<nFrames;i++){
-      const srcIdx = i / resampleRatio;
-      const i0 = Math.floor(srcIdx);
-      const i1 = Math.min(i0+1, sL.length-1);
-      const f = srcIdx - i0;
-      const l0 = sL[i0]||0, l1 = sL[i1]||0;
-      const r0 = sR[i0]||0, r1 = sR[i1]||0;
-      outL[i] = l0*(1-f) + l1*f;
-      outR[i] = r0*(1-f) + r1*f;
+    let outL: Float32Array, outR: Float32Array, nFrames: number;
+    if (Math.round(audioBuf.sampleRate) === targetSR) {
+      // getChannelData mengembalikan salinan — aman dipakai setelah actx.close()
+      outL = audioBuf.getChannelData(0);
+      outR = srcCh > 1 ? audioBuf.getChannelData(1) : outL;
+      nFrames = outL.length;
+    } else {
+      nFrames = Math.round(audioBuf.duration * targetSR);
+      const resampleRatio = targetSR / audioBuf.sampleRate;
+      outL = new Float32Array(nFrames);
+      outR = new Float32Array(nFrames);
+      const sL = audioBuf.getChannelData(0);
+      const sR = srcCh > 1 ? audioBuf.getChannelData(1) : sL;
+      for (let i=0;i<nFrames;i++){
+        const srcIdx = i / resampleRatio;
+        const i0 = Math.floor(srcIdx);
+        const i1 = Math.min(i0+1, sL.length-1);
+        const f = srcIdx - i0;
+        const l0 = sL[i0]||0, l1 = sL[i1]||0;
+        const r0 = sR[i0]||0, r1 = sR[i1]||0;
+        outL[i] = l0*(1-f) + l1*f;
+        outR[i] = r0*(1-f) + r1*f;
+      }
     }
-    // Mix down untuk spectrum/analysis (mono untuk internal)
-    const mono = new Float32Array(nFrames);
-    for (let i=0;i<nFrames;i++) mono[i] = (outL[i]+outR[i])*0.5;
-    // Interleaved stereo untuk encoder (f32-planar butuh channel terpisah nanti)
+    // data = kanal kiri — CUKUP untuk analisis spektrum/beat (tanpa salinan mono tambahan)
     actx.close();
-    return { data: mono, sampleRate: targetSR, channels: nCh, duration: nFrames/targetSR,
+    return { data: outL, sampleRate: targetSR, channels: nCh, duration: nFrames/targetSR,
       stereoL: outL, stereoR: outR };
   } catch(e:any) {
     if (e?.name === "AbortError") throw new Error("Ambil audio timeout. Cek koneksi lalu render ulang.");
@@ -186,48 +191,104 @@ async function decodeAudio(url: string, onStage?:(s:string)=>void) {
   }
 }
 
-async function prepareImages(sources: string[], W:number, H:number, onStage?:(s:string)=>void): Promise<HTMLCanvasElement[]> {
-  onStage?.("Memproses gambar...");
-  const out: HTMLCanvasElement[] = [];
-  // PARALLEL load (max 4 sekaligus) — boost besar di HP
-  const loadOne = async (src:string, idx:number):Promise<HTMLCanvasElement> => {
-    onStage?.(`Memproses gambar ${idx+1}/${sources.length}...`);
-    const img = await loadImage(src);
-    // createImageBitmap jauh lebih cepat + mematikan smoothing untuk source crop (saves work)
-    const ir = img.naturalWidth/img.naturalHeight;
-    const cr = W/H;
-    let sx=0, sy=0, sw=img.naturalWidth, sh=img.naturalHeight;
-    if (ir > cr) { sw = img.naturalHeight*cr; sx = (img.naturalWidth-sw)/2; }
-    else { sh = img.naturalWidth/cr; sy = (img.naturalHeight-sh)/2; }
-    const c = document.createElement("canvas");
-    c.width = W; c.height = H;
-    const cx = c.getContext("2d", { alpha:false, desynchronized:true })!;
-    cx.fillStyle="#000"; cx.fillRect(0,0,W,H);
-    cx.imageSmoothingEnabled = true;
-    cx.imageSmoothingQuality = "low"; // "high" di mobile SANGAT lambat — bilinear cukup bagus karena kita resize dari gambar AI 1024→480/720p
-    cx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
-    return c;
-  };
-  // Chunk parallel 4
-  for (let i=0;i<sources.length;i+=4) {
-    const chunk = sources.slice(i,i+4).map((s,j)=>loadOne(s,i+j));
-    const res = await Promise.all(chunk);
-    out.push(...res);
-    // yield ke UI thread biar ga block
-    await new Promise(r=>setTimeout(r,0));
-  }
-  return out;
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
+function loadImage(src: string, useCors = true): Promise<HTMLImageElement> {
   return new Promise((resolve,reject)=>{
     const img = new Image();
-    if (/^https?:/.test(src)) img.crossOrigin = "anonymous";
+    if (useCors && /^https?:/.test(src)) img.crossOrigin = "anonymous";
     img.onload = ()=>resolve(img);
     img.onerror = ()=>reject(new Error("Gagal load gambar"));
     img.decoding = "async";
     img.src = src;
   });
+}
+
+/** Uji canvas bisa dibaca (TIDAK tainted) — canvas tainted = HASIL RENDER HITAM total. */
+function canvasReadable(c: HTMLCanvasElement): boolean {
+  try { c.getContext("2d")!.getImageData(0, 0, 1, 1); return true; } catch { return false; }
+}
+
+function drawCoverToCanvas(img: HTMLImageElement, W: number, H: number): HTMLCanvasElement {
+  const ir = img.naturalWidth/img.naturalHeight;
+  const cr = W/H;
+  let sx=0, sy=0, sw=img.naturalWidth, sh=img.naturalHeight;
+  if (ir > cr) { sw = img.naturalHeight*cr; sx = (img.naturalWidth-sw)/2; }
+  else { sh = img.naturalWidth/cr; sy = (img.naturalHeight-sh)/2; }
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const cx = c.getContext("2d", { alpha:false, desynchronized:true })!;
+  cx.fillStyle="#000"; cx.fillRect(0,0,W,H);
+  cx.imageSmoothingEnabled = true;
+  cx.imageSmoothingQuality = "low"; // bilinear cukup — sumber AI umumnya 1024px
+  cx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+  return c;
+}
+
+/** Unsharp mask 3×3 — DI-BAKE SEKALI per gambar (v8.1). Menggantikan filter SVG url(#vsharp)
+ *  per-frame yang BERAT dan RAPUH: di sebagian browser HP filter url() membuat gambar
+ *  tidak tergambar sama sekali → VIDEO HITAM. */
+function sharpenCanvas(c: HTMLCanvasElement) {
+  const W = c.width, H = c.height;
+  if (W * H > 2600 * 1500) return; // di atas ~3.9MP konvolusi JS terlalu berat di HP — lewati aman
+  const ctx = c.getContext("2d")!;
+  const src = ctx.getImageData(0, 0, W, H);
+  const d = src.data;
+  const dst = new Uint8ClampedArray(d.length);
+  const w4 = W * 4;
+  for (let y = 0; y < H; y++) {
+    const yo = y * w4;
+    const up = y > 0 ? -w4 : 0, dn = y < H - 1 ? w4 : 0;
+    for (let x = 0; x < W; x++) {
+      const i = yo + x * 4;
+      const lf = x > 0 ? -4 : 0, rt = x < W - 1 ? 4 : 0;
+      for (let k = 0; k < 3; k++) {
+        const v = 3 * (d[i + k] || 0) - 0.5 * ((d[i + up + k] || 0) + (d[i + dn + k] || 0) + (d[i + lf + k] || 0) + (d[i + rt + k] || 0));
+        dst[i + k] = v < 0 ? 0 : v > 255 ? 255 : v;
+      }
+      dst[i + 3] = d[i + 3] ?? 255;
+    }
+  }
+  src.data.set(dst);
+  ctx.putImageData(src, 0, 0);
+}
+
+async function prepareImages(sources: string[], W:number, H:number, onStage?:(s:string)=>void, sharpen=false): Promise<HTMLCanvasElement[]> {
+  onStage?.("Memproses gambar...");
+  const out: HTMLCanvasElement[] = [];
+  // PARALLEL load (max 4 sekaligus) — boost besar di HP
+  const loadOne = async (src:string, idx:number):Promise<HTMLCanvasElement> => {
+    onStage?.(`Memproses gambar ${idx+1}/${sources.length}...`);
+    let canvas: HTMLCanvasElement | null = null;
+    // 1) jalur utama: muat dengan CORS langsung
+    try {
+      const img = await loadImage(src);
+      const c = drawCoverToCanvas(img, W, H);
+      if (canvasReadable(c)) canvas = c;
+    } catch {}
+    // 2) jalur cadangan: lewat PROXY GAMBAR same-origin (CDN AI tanpa header CORS)
+    if (!canvas && /^https?:/.test(src)) {
+      try {
+        const img = await loadImage(`/api/proxy-img?url=${encodeURIComponent(src)}`);
+        const c = drawCoverToCanvas(img, W, H);
+        if (canvasReadable(c)) canvas = c;
+      } catch {}
+    }
+    if (!canvas) {
+      throw new Error(`Gambar klip ${idx + 1} gagal dimuat (URL kedaluwarsa / diblokir CORS). Coba Render Ulang — atau rakit ulang draf dari Lahan biar gambar disegarkan ya bro.`);
+    }
+    if (sharpen) {
+      onStage?.(`Menajamkan gambar ${idx+1}/${sources.length}...`);
+      sharpenCanvas(canvas);
+    }
+    return canvas;
+  };
+  // Chunk parallel 4 + yield ke UI biar ga block
+  for (let i=0;i<sources.length;i+=4) {
+    const chunk = sources.slice(i,i+4).map((s,j)=>loadOne(s,i+j));
+    const res = await Promise.all(chunk);
+    out.push(...res);
+    await new Promise(r=>setTimeout(r,0));
+  }
+  return out;
 }
 
 // ===== Pre-compute spectrum table (LUT) — inilah boost speed utama =====
@@ -1452,27 +1513,14 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   const { w:rW, h:rH } = applyRatio(prof, ratio||aspectRatio||"16:9");
   // v6: mode latar belakang (cover/blur/warna) dipakai drawBase di semua painter
   setDrawBg(opts.bgMode || "cover", opts.bgColor || "#000000");
-  // v6: filter ketajaman (SVG convolve) bila diminta
-  let sharpNote = false;
-  if (opts.sharpen) {
-    try {
-      if (!document.getElementById("verve-sharp-svg")) {
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("id", "verve-sharp-svg"); svg.setAttribute("width", "0"); svg.setAttribute("height", "0");
-        svg.setAttribute("style", "position:absolute;left:-9999px;top:-9999px");
-        svg.innerHTML = `<filter id="vsharp"><feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0"/></filter>`;
-        document.body.appendChild(svg);
-      }
-    } catch {}
-  }
-  if (opts.sharpen) sharpNote = true;
-  const origVideoFilter = opts.videoFilter;
-  if (sharpNote) opts.videoFilter = [origVideoFilter, "url(#vsharp)"].filter(Boolean).join(" ");
+  // v8.1: ketajaman sekarang DI-BAKE ke tiap gambar SEKALI di prepareImages (sharpenCanvas).
+  // Filter SVG url(#vsharp) lama DIHAPUS — per-frame convolve itu SANGAT BERAT (ramea mengeluh
+  // render siput) dan di beberapa browser HP filter url() menggagalkan drawImage → VIDEO HITAM.
   const canvas = document.createElement("canvas");
   canvas.width = rW; canvas.height = rH;
   const ctx = canvas.getContext("2d",{alpha:false,desynchronized:true})!;
   onStage?.("Menyiapkan aset...");
-  const imgs = await prepareImages(images, rW, rH, onStage);
+  const imgs = await prepareImages(images, rW, rH, onStage, !!opts.sharpen);
   // v6: preload gambar stiker (overlay foto) supaya tergambar di export
   try {
     const stickerUrls: string[] = [];
@@ -1589,35 +1637,57 @@ interface RenderBase {
 
 async function renderWebCodecs(b:any){
   const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
-  onStage?.(`Encoding video (${prof.w}x${prof.h} @ ${fps}fps)...`);
+
+  // v8.1: PROBE dukungan encoder HP dulu (isConfigSupported) — sebelumnya codec dipatok
+  // avc1.42001f (level 3.1) yang secara spesifikasi tidak sah untuk 1080p+, sehingga sebagian
+  // HP menolak diam-diam → file "jadi" tapi video kosong/hitam/aneh di Gallery.
+  const px = canvas.width * canvas.height;
+  const lvl = px <= 1280 * 720 ? "1f" : px <= 1920 * 1080 ? "28" : px <= 2560 * 1440 ? "32" : "34";
+  const candCodecs = [`avc1.4200${lvl}`, `avc1.6400${lvl}`, `avc1.4d00${lvl}`];
+  let vCfg: any = null;
+  for (const codec of candCodecs) {
+    try {
+      const cfg = { codec, width: canvas.width, height: canvas.height, bitrate: prof.videoBitrate, framerate: fps };
+      const s = await (window as any).VideoEncoder.isConfigSupported(cfg);
+      if (s?.supported) { vCfg = cfg; break; }
+    } catch {}
+  }
+  if (!vCfg) {
+    throw new Error(`Encoder HP tidak sanggup ${canvas.width}x${canvas.height}@${fps} — turunkan resolusi ke 1080p/720p ya bro.`);
+  }
+  // Probe encoder audio juga — kalau HP menolak AAC, mux TANPA audio (jangan hasilkan file rusak)
+  let aCfg: any = null;
+  if (audio) {
+    const c = { codec: "mp4a.40.2", sampleRate: audio.sampleRate, numberOfChannels: audio.channels || 2, bitrate: 192_000 };
+    try { const s = await (window as any).AudioEncoder.isConfigSupported(c); if (s?.supported) aCfg = c; } catch {}
+  }
+  onStage?.(`⚡ Mesin MP4 cepat (${canvas.width}x${canvas.height} @${fps}fps${aCfg ? " + audio" : ""})...`);
+  if (audio && !aCfg) onStage?.("⚠️ Encoder audio HP menolak — video tanpa suara. Coba render ulang.");
 
   const muxer = new Mp4Muxer({
     target: new Mp4Muxer.ArrayBufferTarget(),
     fastStart:"in-memory",
     video:{codec:"avc",width:canvas.width,height:canvas.height},
     // STEREO 44100Hz — kompatibel dengan SEMUA HP Android/iOS/WhatsApp/YouTube
-    audio: audio?{codec:"aac",sampleRate:audio.sampleRate,numberOfChannels:audio.channels||2}:undefined,
+    audio: aCfg?{codec:"aac",sampleRate:audio.sampleRate,numberOfChannels:audio.channels||2}:undefined,
     firstTimestampBehavior:"offset",
   });
 
-  let videoResolve!:()=>void;
-  const videoEncDone = new Promise<void>(res=>{videoResolve=res;});
+  let vidChunks = 0;
   const videoEncoder = new (window as any).VideoEncoder({
-    output:(chunk:any,meta:any)=>muxer.addVideoChunk(chunk,meta),
+    output:(chunk:any,meta:any)=>{ muxer.addVideoChunk(chunk,meta); vidChunks++; },
     error:(e:any)=>console.error("[VideoEncoder]",e),
   });
   videoEncoder.configure({
-    codec:"avc1.42001f", // Baseline profile — hardware encoder support paling luas di mobile
-    width:canvas.width, height:canvas.height,
-    bitrate:prof.videoBitrate, bitrateMode:"variable", framerate:fps,
+    ...vCfg,
+    bitrateMode:"variable",
     latencyMode:"realtime",
     hardwareAcceleration:"prefer-hardware",
-    // Keyframe tiap 2 detik — cukup untuk seek
     avc:{format:"avc"},
   });
 
   let audioEncoder:any=null,audioEncDone:Promise<void>|null=null;
-  if (audio){
+  if (audio && aCfg){
     let audioResolve!:()=>void;
     audioEncDone = new Promise<void>(res=>{audioResolve=res;});
     audioEncoder = new (window as any).AudioEncoder({
@@ -1626,7 +1696,7 @@ async function renderWebCodecs(b:any){
     });
     const nCh = audio.channels || 2;
     // AAC-LC stereo 192kbps — kompatibel dengan semua HP, WhatsApp, Reels, YouTube
-    audioEncoder.configure({codec:"mp4a.40.2",sampleRate:audio.sampleRate,numberOfChannels:nCh,bitrate:192_000});
+    audioEncoder.configure(aCfg);
     const frameSize=1024;
     let offset=0;
     const sL = audio.stereoL || audio.data;
@@ -1657,7 +1727,6 @@ async function renderWebCodecs(b:any){
   const keyframeEvery = fps*2;
   const bassRef = {level:0, beat:false};
   const tStart = performance.now();
-  let encodeQueue = 0;
 
   for (let f=0; f<totalFrames; f++){
     const t = f/fps;
@@ -1702,23 +1771,23 @@ async function renderWebCodecs(b:any){
     const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
     videoEncoder.encode(vf,{keyFrame:f%keyframeEvery===0});
     vf.close();
-    encodeQueue++;
 
-    // Adaptive yield: jangan biarkan encoder queue numpuk > 10 frame (backpressure mencegah OOM & jank)
-    // Yield tiap batchSize frame untuk progress + UI tidak mati total
+    // v8.1: backpressure NYATA pakai antrean encoder asli (encodeQueueSize) — mencegah RAM
+    // bengkak & jank di HP; yield rutin ke UI supaya progress jalan & layar tidak beku.
+    while ((videoEncoder as any).encodeQueueSize > 8) {
+      await new Promise(r=>setTimeout(r,1));
+    }
     const yieldEvery = Math.max(1, prof.batchSize*2);
     if (f%yieldEvery===0){
       onProgress?.(f/totalFrames);
-      // Jika encoder masih nge-blok, tunggu sebentar (microtask)
-      if (encodeQueue >= 8) {
-        await new Promise(r=>setTimeout(r,0));
-        encodeQueue = 0;
-      } else {
-        await Promise.resolve();
-      }
+      await new Promise(r=>setTimeout(r,0));
     }
   }
   await videoEncoder.flush(); videoEncoder.close();
+  // v8.1 WATCHDOG: kalau encoder menolak SEMUA frame, JANGAN kirim file busuk ke user
+  if (!vidChunks) {
+    throw new Error("Encoder HP tidak menghasilkan frame video — coba turunkan resolusi/fps (mis. 1080p30) lalu render ulang ya bro.");
+  }
   if (audioEncoder && audioEncDone){ await audioEncDone; audioEncoder.close(); }
   muxer.finalize();
   onProgress?.(1); onStage?.("✅ Selesai!");
@@ -1727,6 +1796,7 @@ async function renderWebCodecs(b:any){
 
 async function renderMediaRecorder(b:any){
   const {canvas,imgs,audio,fps,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
+  onStage?.("⚠️ Mesin cadangan (realtime) — render berjalan sepanjang durasi video; biarkan layar menyala sampai selesai ya bro.");
   const stream:MediaStream = (canvas as any).captureStream(fps);
   let audioDest:MediaStreamAudioDestinationNode|null=null, actx:AudioContext|null=null;
   if (audio){

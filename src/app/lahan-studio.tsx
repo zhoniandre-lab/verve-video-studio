@@ -61,6 +61,11 @@ function shrinkImage(dataUrl: string, w = 768, h = 432, q = 0.78): Promise<strin
       try { resolve(cv.toDataURL("image/jpeg", q)); } catch { resolve(dataUrl); }
     };
     img.onerror = () => resolve(dataUrl);
+    // v8.1: wajib crossOrigin untuk URL remote — tanpa ini toDataURL SELALU dilempar
+    // (canvas tainted) sehingga gambar adegan tersimpan sebagai URL mentah yang bisa
+    // kedaluwarsa / membuat render hitam. Kalau server tak kirim header CORS, kode
+    // tetap jatuh ke URL asli lewat catch — dan recorder punya proxy cadangan.
+    if (/^https?:/.test(dataUrl)) img.crossOrigin = "anonymous";
     img.src = dataUrl;
   });
 }
