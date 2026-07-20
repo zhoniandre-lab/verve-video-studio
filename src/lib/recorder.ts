@@ -1460,10 +1460,11 @@ function roundRect(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,h:num
 }
 
 function supportsWebCodecs(){
+  // v8.1.1: JANGAN cek window.Mp4Muxer — modul diimpor via import() dan TIDAK pernah
+  // menempel di window. Cek itu dulu biang "mesin cadangan terus": selalu false!
   return typeof(window as any).VideoEncoder!=="undefined"
     && typeof(window as any).VideoFrame!=="undefined"
-    && typeof(window as any).AudioData!=="undefined"
-    && (typeof(window as any).MP4Muxer!=="undefined"||typeof(window as any).Mp4Muxer!=="undefined");
+    && typeof(window as any).AudioData!=="undefined";
 }
 
 // ===== Build captions dari array baris lirik (distribusi MERATA ke SELURUH durasi audio/slides)
@@ -1585,18 +1586,23 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
 
   const particles: DrawState["particles"] = [];
 
-  let Mp4Muxer: any = null;
-  try{ const mod = await import("mp4-muxer").catch(()=>null); Mp4Muxer = mod?.Muxer || (window as any).Mp4Muxer || (window as any).MP4Muxer; }catch{}
+  let Mp4Muxer: any = null, MuxTarget: any = null;
+  try{
+    const mod = await import("mp4-muxer").catch(()=>null);
+    Mp4Muxer = mod?.Muxer || (window as any).Mp4Muxer || (window as any).MP4Muxer;
+    // ArrayBufferTarget adalah EKSPOR TERPISAH dari Muxer (bukan properti!) — wajib ditangkap sendiri
+    MuxTarget = mod?.ArrayBufferTarget || null;
+  }catch{}
 
   const sharedV5 = {
     timeline, slideOpts,
     grainAmt: opts.grainAmt || 0,
     clipImgs: null as any, // diisi nanti bila perlu
   };
-  if (Mp4Muxer && supportsWebCodecs()){
+  if (Mp4Muxer && MuxTarget && supportsWebCodecs()){
     return renderWebCodecs({canvas,ctx,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,
       prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",
-      spec, particles, onProgress, onStage, Mp4Muxer,
+      spec, particles, onProgress, onStage, Mp4Muxer, MuxTarget,
       logoImg, logoPos: opts.logoPosition||"center",
       captions: finalCaptions, captionStyle: capStyle,
       showTitle: opts.showTitle,
@@ -1607,7 +1613,12 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
       ...sharedV5,
     } as any);
   }
-  onStage?.("WebCodecs tidak tersedia, pakai MediaRecorder...");
+  // Diagnostik JUJUR kenapa mesin cepat tidak aktif — biar gampang dilaporkan
+  const why = !Mp4Muxer || !MuxTarget ? "modul MP4 gagal dimuat (coba refresh)"
+    : typeof(window as any).VideoEncoder==="undefined" ? "browser belum dukung VideoEncoder"
+    : typeof(window as any).VideoFrame==="undefined" ? "browser belum dukung VideoFrame"
+    : "browser belum dukung AudioData";
+  onStage?.(`Mesin cadangan — ${why}.`);
   return renderMediaRecorder({canvas,imgs,audio,fps,totalDur,slideDur,transDur,
     prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",spec,particles,onProgress,onStage,
     logoImg,logoPos:opts.logoPosition||"center",
@@ -1636,7 +1647,7 @@ interface RenderBase {
 }
 
 async function renderWebCodecs(b:any){
-  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
+  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,MuxTarget,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
 
   // v8.1: PROBE dukungan encoder HP dulu (isConfigSupported) — sebelumnya codec dipatok
   // avc1.42001f (level 3.1) yang secara spesifikasi tidak sah untuk 1080p+, sehingga sebagian
@@ -1665,7 +1676,7 @@ async function renderWebCodecs(b:any){
   if (audio && !aCfg) onStage?.("⚠️ Encoder audio HP menolak — video tanpa suara. Coba render ulang.");
 
   const muxer = new Mp4Muxer({
-    target: new Mp4Muxer.ArrayBufferTarget(),
+    target: new MuxTarget(),
     fastStart:"in-memory",
     video:{codec:"avc",width:canvas.width,height:canvas.height},
     // STEREO 44100Hz — kompatibel dengan SEMUA HP Android/iOS/WhatsApp/YouTube
