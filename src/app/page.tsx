@@ -33,6 +33,128 @@ const MAX_DRAFTS = 12;
 /* ---------------- helpers ---------------- */
 function uid(p = "s"): string { return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 function formatDur(s: number): string { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s / 60), sec = Math.floor(s % 60); return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; }
+
+/* ================= KETERANGAN DARI LIRIK LAGU (v8.2) ================= */
+const CC_SOURCES = [
+  { id: "musik", lb: "Audio musik" },
+  { id: "suara", lb: "Pengisi suara (narasi/rekaman)" },
+  { id: "lirik", lb: "🎵 Lirik lagu (dari Lahan/Suno)" },
+];
+const _r2 = (v: number) => Math.round(v * 100) / 100;
+const normTok = (s: string) => s.toLowerCase().replace(/[^a-z0-9']/g, "");
+interface LyricLine { text: string; words: string[]; pause: number }
+interface LineSpan { start: number; end: number; kws: { w: string; start: number; end: number }[] }
+
+/** Pecah lirik jadi baris nyanyian; baris [Verse]/[Chorus]/kosong dicatat sebagai JEDA (bukan dinyanyikan). */
+function parseLyricLines(src: string): LyricLine[] {
+  const out: LyricLine[] = [];
+  let pause = 0;
+  for (const raw of src.split(/\r?\n/)) {
+    let r = raw.trim();
+    if (!r) { pause += 0.25; continue; }
+    if (/^\[[^\]]+\]$/.test(r)) { pause += 0.35; continue; }
+    r = r.replace(/\[[^\]]*\]/g, "").trim();
+    if (!r) continue;
+    const words = r.split(/\s+/).filter(Boolean);
+    out.push({ text: r, words, pause });
+    pause = 0;
+  }
+  return out;
+}
+
+/** Selaraskan baris lirik ke kata-kata hasil Whisper (jalan pintas monoton + isi celah proporsional). */
+function alignWordsToLines(lines: LyricLine[], aiWords: { w: string; start: number; end: number }[], dur: number): LineSpan[] | null {
+  const AW = aiWords.filter(w => w.w && isFinite(w.start) && isFinite(w.end) && w.end >= w.start);
+  if (AW.length < 3) return null;
+  const nw = AW.map(w => normTok(w.w));
+  const ln = lines.map(L => L.words.map(normTok));
+  const N = lines.length;
+  const spans: (LineSpan | null)[] = new Array(N).fill(null);
+  let wi = 0;
+  for (let i = 0; i < N; i++) {
+    const n = lines[i].words.length || 1;
+    let best = -1, bestScore = 0;
+    const maxShift = Math.min(wi + 10, Math.max(wi, nw.length - n));
+    for (let s = wi; s <= maxShift; s++) {
+      let m = 0;
+      for (let k = 0; k < n; k++) if (nw[s + k] === ln[i][k]) m++;
+      const sc = m / n;
+      if (sc > bestScore) { bestScore = sc; best = s; }
+    }
+    if (best >= 0 && bestScore >= 0.34 && best + n <= AW.length) {
+      const span = AW.slice(best, best + n);
+      const st = span[0].start;
+      const en = Math.max(...span.map(w => w.end));
+      if (en - st > 25) continue; // span ngaco, biarkan null lalu diisi interpolasi
+      spans[i] = { start: st, end: Math.max(en, st + 0.4), kws: span.map(w => ({ w: w.w, start: w.start, end: w.end })) };
+      wi = best + n;
+    }
+  }
+  const good = spans.filter(Boolean).length;
+  if (good < Math.max(2, Math.floor(N * 0.5))) return null; // AI melantur — mending perkiraan penuh
+  // Isi baris kosong (tak ketemu) proporsional di antara anchor
+  let i = 0;
+  while (i < N) {
+    if (spans[i]) { i++; continue; }
+    let j = i; while (j < N && !spans[j]) j++;
+    const t0 = i > 0 ? (spans[i - 1] as LineSpan).end : Math.min(1.0, dur * 0.02);
+    const t1 = j < N ? (spans[j] as LineSpan).start : Math.max(t0 + 1, dur - 0.6);
+    const gs = lines.slice(i, j);
+    const tot = gs.reduce((a, L) => a + L.text.length, 0) || 1;
+    let cur = t0;
+    gs.forEach((L, k) => {
+      const span = Math.max(0.6, (L.text.length / tot) * (t1 - t0));
+      const en = Math.min(t1, cur + span);
+      const wchars = L.words.reduce((a, w) => a + w.length, 0) || 1;
+      let wc = cur;
+      const kws = L.words.map(w => { const wd = (w.length / wchars) * (en - cur); const o = { w, start: wc, end: wc + wd }; wc += wd; return o; });
+      spans[i + k] = { start: cur, end: en, kws };
+      cur = en;
+    });
+    i = j;
+  }
+  // Rapikan: monoton, dalam durasi, kata di dalam baris
+  let prev = 0;
+  for (const s of spans as LineSpan[]) {
+    s.start = Math.max(prev - 0.2, Math.min(s.start, dur - 0.4));
+    s.end = Math.max(s.start + 0.5, Math.min(s.end, dur));
+    prev = s.end;
+    s.kws.forEach(k => {
+      k.start = Math.max(s.start, Math.min(k.start, s.end));
+      k.end = Math.max(k.start + 0.06, Math.min(k.end, s.end));
+    });
+  }
+  return spans as LineSpan[];
+}
+
+/** Perkiraan cerdas tanpa AI: bobot huruf + jeda antar bait. */
+function estimateLyricLines(lines: LyricLine[], dur: number): LineSpan[] {
+  const lead = Math.min(1.2, dur * 0.03), tail = 0.8;
+  const avail = Math.max(3, dur - lead - tail);
+  const totW = lines.reduce((a, L) => a + L.text.length + L.pause * 30, 0) || 1;
+  let cur = lead;
+  return lines.map(L => {
+    const span = Math.max(0.8, ((L.text.length + L.pause * 30) / totW) * avail);
+    const en = Math.min(dur - 0.3, cur + span);
+    const wchars = L.words.reduce((a, w) => a + w.length, 0) || 1;
+    let wc = cur;
+    const kws = L.words.map(w => { const wd = (w.length / wchars) * (en - cur); const o = { w, start: wc, end: wc + wd }; wc += wd; return o; });
+    const o = { start: cur, end: en, kws };
+    cur = en;
+    return o;
+  });
+}
+
+/** Gaya dasar teks karaoke lirik sesuai template keterangan. */
+function lyricTextStyle(ccTpl: string, ccSize: number, ccY: number) {
+  const kara: Record<string, string> = { standar: "#ffd93d", karaoke: "#fde047", tebal: "#ffd93d", neon: "#ec4899", pop: "#fde047", gradien: "#22d3ee" };
+  return {
+    font: "sistem", size: ccSize, color: "#ffffff", bold: true, italic: false,
+    shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5,
+    bg: true, bgColor: "rgba(0,0,0,0.45)", y: ccY, align: "center", anim: "none",
+    karaokeColor: kara[ccTpl] || "#ffd93d",
+  };
+}
 function clampN(v: number, a: number, b: number): number { return Math.max(a, Math.min(b, v)); }
 function proxifyAudioUrl(url: string): string {
   if (!url) return url;
@@ -1355,11 +1477,84 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   async function cekSuno() { if (mTask) pollSuno(mTask); }
 
   /* ---------- KETERANGAN OTOMATIS ---------- */
+  /** Sisipkan teks lepas (start/dur absolut) ke slide yang menaungi waktunya. */
+  function insertFloatingTexts(texts: ClipText[]) {
+    const durs = slides.map(s => {
+      const o = slideOptsById[s.id];
+      return Math.max(0.4, ((o?.dur ?? slideDuration) as number) / Math.max(0.25, (o as any)?.speed || 1));
+    });
+    const starts: number[] = [];
+    let acc = 0;
+    durs.forEach(d => { starts.push(acc); acc += d; });
+    setSlideOptsById(prev => {
+      const next: Record<string, SlideOpt> = { ...prev };
+      for (const t of texts) {
+        let idx = 0;
+        for (let i = 0; i < starts.length; i++) { if (starts[i] + durs[i] > (t.start ?? 0) + 1e-6) { idx = i; break; } idx = i; }
+        const sid = slides[idx]?.id;
+        if (!sid) continue;
+        const o: SlideOpt = { ...(next[sid] || {}) } as SlideOpt;
+        (o as any).texts = [...((o as any).texts || []), t];
+        next[sid] = o;
+      }
+      return next;
+    });
+  }
+
   async function doAutoCaptions() {
     setLoading("cc"); setError("");
     try {
       const tpl = CC_TEMPLATES.find(t => t.id === ccTpl) || CC_TEMPLATES[0];
       setCapStyle(tpl.capStyle as any);
+
+      /* ===== v8.2: DARI LIRIK LAGU — sinkron AI (Whisper HCNSEC) bila bisa, kalau tidak perkiraan cerdas.
+         Hasil: SATU ClipText karaoke per baris, masuk TRACK TEKS (bisa digeser/edit satu-satu). ===== */
+      if (ccFrom === "lirik") {
+        if (!musicUrl) throw new Error("Belum ada musik di track — keterangan lirik butuh lagunya.");
+        const lyrSrc = (mLyrics || "").trim();
+        if (!lyrSrc) throw new Error("Proyek ini belum punya lirik. Bikin lagu lewat Lahan dulu, atau proyek lama belum menyimpan liriknya.");
+        const dur = await getAudioDuration(musicUrl);
+        if (!dur) throw new Error("Durasi lagu tidak terbaca.");
+        const lines = parseLyricLines(lyrSrc);
+        if (!lines.length) throw new Error("Lirik kosong setelah dibersihkan.");
+        let spans: LineSpan[] | null = null;
+        let engine: "ai" | "perkiraan" = "perkiraan";
+        if (/^https?:/.test(musicUrl)) {
+          setStageText("🤖 AI menyelaraskan lirik dengan lagu (Whisper)...");
+          try {
+            const ctl = new AbortController();
+            const to = setTimeout(() => ctl.abort(), 55_000);
+            const r = await fetch("/api/hcnsec/transcribe", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ audio_url: musicUrl, hint: lines.slice(0, 8).map(l => l.text).join(" / ") }),
+              signal: ctl.signal,
+            });
+            clearTimeout(to);
+            const j = await r.json().catch(() => null);
+            if (j?.ok && Array.isArray(j.words) && j.words.length > 3) {
+              spans = alignWordsToLines(lines, j.words, dur);
+              if (spans) engine = "ai";
+            }
+          } catch {}
+        }
+        if (!spans) { setStageText("🧮 Menaksir irama lirik (perkiraan cerdas)..."); spans = estimateLyricLines(lines, dur); }
+        const style = lyricTextStyle(ccTpl, ccSize, ccY);
+        const texts: ClipText[] = spans.map((sp, i) => ({
+          id: uid("lyr"),
+          txt: lines[i].text,
+          ...style,
+          start: _r2(Math.max(0, sp.start)),
+          dur: _r2(Math.max(0.8, sp.end - sp.start)),
+          karaokeWords: sp.kws.map(k => ({ w: k.w, start: _r2(Math.max(0, k.start - sp.start)), end: _r2(Math.max(0.1, k.end - sp.start)) })),
+        } as ClipText));
+        pushHist();
+        insertFloatingTexts(texts);
+        flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? "diselaraskan AI 🤖" : "perkiraan cerdas (geser kalau kurang pas)"}`);
+        setModal(null); setTool(null);
+        setLoading(null); setTimeout(() => setStageText(""), 100);
+        return;
+      }
+
       const srcUrl = ccFrom === "suara" ? (ttsUrl || voiceUrl) : musicUrl;
       if (!srcUrl) throw new Error(ccFrom === "suara" ? "Belum ada suara (TTS/rekaman). Buat di menu Audio dulu." : "Belum ada musik di track.");
       const dur = await getAudioDuration(srcUrl);
@@ -3184,10 +3379,10 @@ function KeteranganSheet({ api: A, onClose }: any) {
   return (
     <SheetShell title="Keterangan otomatis" onClose={onClose}>
       <div className="v6-sheet-body">
-        <div className="v6-cardrow" onClick={() => A.setCcFrom(A.ccFrom === "suara" ? "musik" : "suara")}>
+        <div className="v6-cardrow" onClick={() => { const ids = CC_SOURCES.map(s => s.id); A.setCcFrom(ids[(ids.indexOf(A.ccFrom) + 1) % ids.length]); }}>
           <span style={{ fontSize: 18 }}>⊞</span>
           <div className="tt">Hasilkan dari</div>
-          <span className="val">{A.ccFrom === "suara" ? "Pengisi suara (narasi/rekaman)" : "Audio musik"}</span><span className="arr">›</span>
+          <span className="val">{CC_SOURCES.find(s => s.id === A.ccFrom)?.lb || "Audio musik"}</span><span className="arr">›</span>
         </div>
         <div className="v6-cardrow" onClick={() => {
           const langs = ["id-ID", "en-US", "jv-ID", "su-ID", "ms-MY"];
@@ -3233,7 +3428,7 @@ function KeteranganSheet({ api: A, onClose }: any) {
         {!!A.capWords.length && (
           <div className="v6-okbox">✅ {A.capWords.length} kata keterangan aktif (gaya: {tpl.label}). <b onClick={A.clearCaptions} style={{ cursor: "pointer", textDecoration: "underline" }}>Hapus</b></div>
         )}
-        <div className="v6-note">📌 <b>Narasi AI (Teks-ke-audio)</b>: keterangan dibuat AKURAT dari teks aslinya, sinkron kata demi kata. <b>Musik/rekaman</b>: ditranskrip live pakai pengenal suara browser (paling lancar di Chrome, hasilnya eksperimental tapi nyata).</div>
+        <div className="v6-note">📌 <b>🎵 Lirik lagu (baru)</b>: lirik dari Lahan/Suno disinkronkan ke lagu — AI Whisper dulu, kalau sibuk pakai perkiraan cerdas. Hasilnya masuk <b>TRACK TEKS</b> per baris dengan kata menyala satu-satu — bisa digeser/edit. <b>Narasi AI</b>: akurat dari teks aslinya. <b>Musik/rekaman</b>: transkrip live browser (eksperimental).</div>
       </div>
     </SheetShell>
   );
