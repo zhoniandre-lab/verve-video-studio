@@ -138,7 +138,7 @@ async function decodeAudio(url: string, onStage?:(s:string)=>void) {
   try {
     const ac = new AbortController();
     const t = setTimeout(()=>ac.abort(), 120_000);
-    const r = await fetch(url, { signal: ac.signal, cache: "no-store" });
+    const r = await fetch(url, { signal: ac.signal, cache: "force-cache" });
     clearTimeout(t);
     if (!r.ok) throw new Error(`Gagal ambil audio (HTTP ${r.status}). Coba render ulang ya bro.`);
     const buf = await r.arrayBuffer();
@@ -1562,7 +1562,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   // Warning: jika musik lebih pendek dari total slide (tanpa TTS)
   if (audio && audio.duration < totalDur - 0.5) {
     onStage?.(`⚠️ Musik (${audio.duration.toFixed(0)}d) lebih pendek dari durasi video (${totalDur.toFixed(0)}d). Akhir video akan hening.`);
-    await new Promise(r=>setTimeout(r,1500));
+    await new Promise(r=>setTimeout(r,800));
   }
 
   const fps = prof.fps;
@@ -1586,6 +1586,28 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
 
   const particles: DrawState["particles"] = [];
 
+  // v8.1.2: VINYET DI-BAKE SEKALI ke tiap gambar (mode cover) — sebelumnya digambar ulang
+  // FULLSCREEN tiap frame (10.000+ drawImage per render!). Mode blur/color tetap overlay per-frame.
+  const vigStr = typeof opts.vignetteStrength === "number" ? opts.vignetteStrength : 0.75;
+  let vigOverlay: HTMLCanvasElement | null = null;
+  if (vigStr > 0.01) {
+    vigOverlay = document.createElement("canvas");
+    vigOverlay.width = rW; vigOverlay.height = rH;
+    const vg = vigOverlay.getContext("2d", { alpha: true })!;
+    const vgr = vg.createRadialGradient(rW/2, rH/2, Math.min(rW,rH)*0.3, rW/2, rH/2, Math.max(rW,rH)*0.8);
+    vgr.addColorStop(0, "rgba(0,0,0,0)"); vgr.addColorStop(1, "rgba(0,0,0,0.7)");
+    vg.fillStyle = vgr; vg.fillRect(0, 0, rW, rH);
+    if ((opts.bgMode || "cover") === "cover") {
+      for (const c of imgs) {
+        const ix = c.getContext("2d")!;
+        ix.globalAlpha = vigStr;
+        ix.drawImage(vigOverlay, 0, 0);
+        ix.globalAlpha = 1;
+      }
+      vigOverlay = null; // sudah ke-bake — tak perlu overlay per-frame lagi
+    }
+  }
+
   let Mp4Muxer: any = null, MuxTarget: any = null;
   try{
     const mod = await import("mp4-muxer").catch(()=>null);
@@ -1602,7 +1624,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   if (Mp4Muxer && MuxTarget && supportsWebCodecs()){
     return renderWebCodecs({canvas,ctx,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,
       prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",
-      spec, particles, onProgress, onStage, Mp4Muxer, MuxTarget,
+      spec, particles, onProgress, onStage, Mp4Muxer, MuxTarget, vigOverlay,
       logoImg, logoPos: opts.logoPosition||"center",
       captions: finalCaptions, captionStyle: capStyle,
       showTitle: opts.showTitle,
@@ -1620,7 +1642,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     : "browser belum dukung AudioData";
   onStage?.(`Mesin cadangan — ${why}.`);
   return renderMediaRecorder({canvas,imgs,audio,fps,totalDur,slideDur,transDur,
-    prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",spec,particles,onProgress,onStage,
+    prof,rgb,vizStyle,vizColor,title,transition:transition||"zoom",spec,particles,onProgress,onStage,vigOverlay,
     logoImg,logoPos:opts.logoPosition||"center",
     captions:finalCaptions,captionStyle:capStyle,showTitle:opts.showTitle,
     videoFilter: opts.videoFilter,
@@ -1726,13 +1748,8 @@ async function renderWebCodecs(b:any){
     audioEncoder.flush().then(audioResolve);
   }
 
-  // Pre-render vignette sekali awal (bukan tiap frame)
-  const vigC = document.createElement("canvas");
-  vigC.width = canvas.width; vigC.height = canvas.height;
-  const vg = vigC.getContext("2d",{alpha:true})!;
-  const vgr = vg.createRadialGradient(canvas.width/2,canvas.height/2,Math.min(canvas.width,canvas.height)*0.3,canvas.width/2,canvas.height/2,Math.max(canvas.width,canvas.height)*0.8);
-  vgr.addColorStop(0,"rgba(0,0,0,0)"); vgr.addColorStop(1,"rgba(0,0,0,0.7)");
-  vg.fillStyle=vgr; vg.fillRect(0,0,canvas.width,canvas.height);
+  // v8.1.2: vinyet DATANG dari renderSlideshow (sudah di-bake ke gambar mode cover,
+  // atau overlay siap pakai untuk mode blur/color) — tak ada lagi pre-render duplikat di sini.
 
   const perSlide = slideDur+transDur;
   const keyframeEvery = fps*2;
@@ -1769,7 +1786,7 @@ async function renderWebCodecs(b:any){
       time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,
       rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
-      phase:t*0.5,_canvas:canvas,_transition:transition,_vignette:vigC,
+      phase:t*0.5,_canvas:canvas,_transition:transition,_vignette:(b as any).vigOverlay,
       showTitle:showTitle!==false, showCaption: !!captions?.length,
       logoImg,logoPos,captions,captionStyle,
       videoFilter: b.videoFilter,
@@ -1858,6 +1875,7 @@ async function renderMediaRecorder(b:any){
     drawFrame({time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
       phase:t*0.5,_canvas:canvas,_transition:transition,showTitle:showTitle!==false,
+      _vignette:(b as any).vigOverlay,
       logoImg,logoPos,captions,captionStyle,showCaption:!!captions?.length,
       videoFilter: b.videoFilter,
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,

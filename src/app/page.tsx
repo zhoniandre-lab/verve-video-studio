@@ -1679,6 +1679,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const gf = buildClipFilter(filterPreset, qualitySharp ? { ...adj } : adj);
       const resMap: Record<number, [number, number]> = { 480: [854, 480], 720: [1280, 720], 1080: [1920, 1080], 1440: [2560, 1440], 2160: [3840, 2160] };
       const [w, h] = resMap[exRes] || [1280, 720];
+      const rt0 = performance.now();
+      const renderEta = (p: number): string => {
+        const dt = (performance.now() - rt0) / 1000;
+        const eta = Math.ceil((dt / Math.max(p, 0.01)) * (1 - p));
+        return formatDur(Math.max(0, Math.min(eta, 5999)));
+      };
       const blob = await renderSlideshow({
         images: useSlides.map(s => s.imageUrl),
         audioUrl: audioUrl || undefined,
@@ -1699,7 +1705,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         bgMode, bgColor,
         sharpen: qualitySharp,
         mobileOptimized: isMobile,
-        onProgress: (p: number) => { setProgress(p); if (p > 0.02 && p < 0.98) setStageText(`Rendering ${Math.round(p * 100)}%`); },
+        onProgress: (p: number) => { setProgress(p); if (p > 0.02 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); },
         onStage: (s: string) => setStageText(s),
       } as any);
       // v8.1 SANITY: file super-kecil untuk durasi panjang = render busuk (frame kosong)
@@ -3409,6 +3415,11 @@ function EksporSheet({ api: A, onClose }: any) {
               </div>
             </div>
             <div className="v6-xp-est">Perkiraan ukuran file: <b style={{ color: "#fff" }}>{A.estMB.toFixed(A.estMB > 80 ? 0 : 1)} MB</b> · durasi {formatDur(A.clipsTotal)}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="v6-chip" style={{ flex: 1, padding: "9px 4px", borderColor: "rgba(34,197,94,.5)" }} onClick={() => { A.setExRes(720); A.setExFps(24); A.setExMbps(8); }}>⚡ Mode Ngebut 720p·24·8</button>
+              <button className="v6-chip" style={{ flex: 1, padding: "9px 4px" }} onClick={() => { A.setExRes(1080); A.setExFps(30); A.setExMbps(12); }}>💎 Tajam 1080p·30·12</button>
+            </div>
+            <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 6, lineHeight: 1.5 }}>Untuk video lagu, Mode Ngebut selesai ≈ 2–3× lebih cepat & tetap mulus buat YouTube/Reels. Render offline tetap butuh waktu nyata per durasi video — jangan kunci layar ya bro.</div>
             {A.estMB > 800 && <div className="v6-risk">🐘 Estimasi {A.estMB.toFixed(0)} MB itu RAKSASA buat HP (memori penuh, render lambat). Turunkan bitrate ke 8–12 Mbps — buat video lagu tetap kinclong.</div>}
             {A.exRes >= 1440 && <div className="v6-risk">⚠️ Render 2K/4K di HP butuh waktu & RAM besar. Kalau gagal, turunkan ke 1080p ya bro.</div>}
             <button className="v6-bigcta" onClick={A.doRender} disabled={A.loading === "render"}>
