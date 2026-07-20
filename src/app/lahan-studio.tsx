@@ -139,7 +139,7 @@ const GAYA_VISUAL = [
 /** kode style untuk mesin gambar hcnsec (IMAGE_STYLES ids) */
 const GAYA_TO_STYLE = ["cinematic", "oil", "anime", "3d"];
 
-const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu"];
+const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"];
 
 /** Perintah konsistensi yang disuntik ke prompt (untuk preview/salin di langkah Visual). */
 function composeVisualPrompt(scene: string, chars: CharCard[], gaya: string): string {
@@ -169,7 +169,7 @@ function injectCharacter(sceneVisual: string, chars: CharCard[], gaya: string): 
   );
 }
 
-export default function LahanStudio({ onExit }: { onExit: () => void }) {
+export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void; gotoEditor?: (id?: string, cmd?: { tool?: string; newProject?: number; applyAdjust?: number }) => void }) {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
   const [angles, setAngles] = useState<string[]>([]);
@@ -204,6 +204,10 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   const [keyPanel, setKeyPanel] = useState(false);
   const [creditInfo, setCreditInfo] = useState<Record<string, string>>({});
   const [checkingCredit, setCheckingCredit] = useState(false);
+  /* ---- GABUNG & PREVIEW (langkah 9) ---- */
+  const pvAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [pvPlaying, setPvPlaying] = useState(false);
+  const [pvT, setPvT] = useState(0);
   const launchKeyRef = useRef("");
   const [toast, setToast] = useState("");
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
@@ -279,7 +283,18 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   useEffect(() => () => {
     pollStop.current = true;
     if (pollTimer.current) clearTimeout(pollTimer.current);
+    if (pvAudioRef.current) pvAudioRef.current.pause();
   }, []);
+
+  /* ticker pratinjau gabungan */
+  useEffect(() => {
+    if (!pvPlaying) return;
+    const it = setInterval(() => {
+      const a = pvAudioRef.current;
+      if (a) setPvT(a.currentTime);
+    }, 200);
+    return () => clearInterval(it);
+  }, [pvPlaying]);
 
   /* ticker detik berjalan selama polling */
   useEffect(() => {
@@ -307,6 +322,11 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   const naskahLines = useMemo(() => naskah.split("\n").map((l) => l.trim()).filter(Boolean), [naskah]);
   const estDurSec = useMemo(() => Math.round(naskah.split(/\s+/).filter(Boolean).length / 2.6), [naskah]);
   const boardDone = board ? board.scenes.filter((s) => s.status === "done").length : 0;
+  /* ---- garis waktu gabungan (pembagian rata mengikuti durasi lagu) ---- */
+  const doneScenes = useMemo(() => (board ? board.scenes.filter((s) => s.status === "done" && !!s.url) : []), [board]);
+  const totalDur = song?.duration && song.duration > 0 ? Math.round(song.duration) : Math.max(1, doneScenes.length) * 6;
+  const perScene = totalDur / Math.max(1, doneScenes.length);
+  const pvIdx = Math.max(0, Math.min(doneScenes.length - 1, Math.floor(pvT / perScene)));
 
   /* ---------- aksi: sudut & riset ---------- */
   async function fetchSuggest() {
@@ -757,6 +777,85 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     startPolling(t);
   }
 
+  /* ================= GABUNG OTOMATIS → STUDIO EDIT ================= */
+  function togglePreview() {
+    const a = pvAudioRef.current;
+    if (!a) return;
+    if (pvPlaying) {
+      a.pause();
+      setPvPlaying(false);
+    } else {
+      setPvT(a.currentTime || 0);
+      void a.play().then(() => setPvPlaying(true)).catch(() => setPvPlaying(false));
+    }
+  }
+  function seekPreview(i: number) {
+    const t = i * perScene + 0.01;
+    const a = pvAudioRef.current;
+    if (a) a.currentTime = t;
+    setPvT(t);
+  }
+
+  function uidL(p = "lh"): string {
+    return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  /** Bangun draf studio PENUH: gambar→Track 1, lagu→jalur musik, lirik→lapisan teks per klip. */
+  function masukStudio() {
+    if (!board || !song) return;
+    if (!doneScenes.length) {
+      setErr({ code: "merge", msg: "Belum ada adegan bergambar — kembali ke langkah Adegan dulu bro." });
+      return;
+    }
+    const per = Math.round((totalDur / doneScenes.length) * 100) / 100;
+    const builtSlides = doneScenes.map((sc) => ({ id: uidL("c"), imageUrl: sc.url as string }));
+    const slideOptsById: Record<string, unknown> = {};
+    builtSlides.forEach((sl, i) => {
+      const sc = doneScenes[i];
+      const cap = (sc.lyric_line || sc.scene_desc || "").trim().slice(0, 80);
+      slideOptsById[sl.id] = {
+        dur: per,
+        trans: "dissolve",
+        texts: cap
+          ? [{
+              id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
+              bold: true, italic: false, shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5,
+              bg: true, bgColor: "rgba(0,0,0,0.45)", y: 0.84, align: "center", anim: "none",
+            }]
+          : [],
+      };
+    });
+    const draft = {
+      v: 6, id: uidL("d"), title: selTitle.slice(0, 80), updatedAt: Date.now(),
+      slides: builtSlides, slideOptsById,
+      ratio: "16:9", slideDuration: per, transition: "dissolve", transitionDur: 0.6,
+      bgMode: "cover", bgColor: "#000000",
+      musicUrl: song.url, musicName: (song.title || selTitle).slice(0, 60),
+      musicDur: Math.round((song.duration || 0) * 100) / 100 || 0,
+      musicOff: 0, musicVol: 1, musicFadeIn: 0, musicFadeOut: 0,
+      ttsUrl: "", ttsText: "", voiceUrl: "", ttsDur: 0, voiceDur: 0, ttsOff: 0, voiceOff: 0, voiceVol: 1,
+      filterPreset: "none", qualitySharp: false, audMuted: false,
+      capWords: [], capStyle: "capcut", ccTpl: "standar", ccSize: 0.055, ccY: 0.78,
+      niche: "cerita jadi lagu",
+      coverThumb: (builtSlides[0]?.imageUrl || "").slice(0, 40000),
+      adj: { b: 0, c: 6, s: 4, e: 0, tem: 4, hue: 0, fade: 0, vig: 12, grain: 0 },
+      mTitle: selTitle, mLyrics: lyrics, mStyle, mGenre: genre, mMood: mood,
+      mModel: "suno-v5", mVocal: vocal === "instrumental" ? "instrumental" : "vocal",
+    };
+    try {
+      const arr = JSON.parse(localStorage.getItem("verve_drafts_v1") || "[]");
+      arr.unshift(draft);
+      while (arr.length > 12) arr.pop();
+      localStorage.setItem("verve_drafts_v1", JSON.stringify(arr));
+      if (pvAudioRef.current) { pvAudioRef.current.pause(); setPvPlaying(false); }
+      flash("🎬 Proyek gabungan terkirim ke Studio!");
+      if (gotoEditor) gotoEditor(draft.id);
+      else flash("📁 Draf tersimpan — buka dari tab Proyek");
+    } catch (e) {
+      setErr({ code: "merge", msg: "Gagal simpan draf gabungan (storage penuh? hapus draf lama): " + (e instanceof Error ? e.message : String(e)) });
+    }
+  }
+
   const canGo = (k: number): boolean =>
     k === 1 ||
     (k === 2 && topic.trim().length >= 3) ||
@@ -765,7 +864,8 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     (k === 5 && !!selTitle) ||
     (k === 6 && !!selTitle) ||
     (k === 7 && naskah.trim().length >= 10) ||
-    (k === 8 && naskah.trim().length >= 10);
+    (k === 8 && naskah.trim().length >= 10) ||
+    (k === 9 && doneScenes.length > 0 && !!song);
 
   /* ================= RENDER ================= */
   return (
@@ -1304,7 +1404,53 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
             </div>
           )}
 
-          <p className="lh-note" style={{ textAlign: "center" }}>v8.0: lagu + adegan + narasi digabung otomatis → tombol <b>Masuk Studio Edit</b> (elemen terpisah ke jalurnya masing-masing).</p>
+          {song && board && (
+            <button className="lh-btn" onClick={() => setStep(9)}>Gabung Jadi Video 🎬</button>
+          )}
+          <p className="lh-note" style={{ textAlign: "center" }}>Langkah terakhir: lagu + adegan digabung otomatis → tombol <b>Masuk Studio Edit</b> (elemen terpisah ke jalurnya masing-masing).</p>
+        </>
+      )}
+
+      {/* ============ LANGKAH 9: GABUNG OTOMATIS → STUDIO EDIT ============ */}
+      {step === 9 && board && song && (
+        <>
+          <div className="lh-card">
+            <div className="lh-h1">Video utuh 🎬</div>
+            <p className="lh-sub">Lagu + {doneScenes.length} adegan digabung otomatis: tiap adegan dapat ±{perScene.toFixed(1)} detik mengikuti durasi lagu {fmtClock(totalDur)}. Jujur bro — pembagiannya rata; sinkron halus per ketukan/emosi bisa kau poles di Studio (ada penanda BPM).</p>
+            <div className="lh-kv"><span>✅ Adegan</span><b>{doneScenes.length}/{board.scenes.length} bergambar</b></div>
+            <div className="lh-kv"><span>✅ Lagu</span><b>{song.title || selTitle} · {song.duration ? fmtClock(Math.round(song.duration)) : "-"}</b></div>
+            <div className="lh-kv"><span>✅ Lirik karaoke</span><b>tiap adegan jadi lapisan teks sendiri di Studio</b></div>
+          </div>
+
+          <div className="lh-card">
+            <div className="lh-h2">▶ Pratinjau gabungan</div>
+            <div className="lh-player">
+              {doneScenes[pvIdx] && <img key={pvIdx} className="lh-pv-img" src={doneScenes[pvIdx].url} alt={`adegan ${doneScenes[pvIdx].scene}`} />}
+              {!!doneScenes[pvIdx]?.lyric_line && (
+                <div className="lh-pv-cap"><span>🎵 {doneScenes[pvIdx].lyric_line}</span></div>
+              )}
+            </div>
+            <div className="lh-pv-bar"><i style={{ width: `${Math.min(100, (pvT / Math.max(1, totalDur)) * 100)}%` }} /></div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+              <button className="lh-btn" style={{ flex: 1, marginTop: 0 }} onClick={togglePreview}>{pvPlaying ? "⏸ Jeda" : "▶ Putar"}</button>
+              <span className="lh-note" style={{ margin: 0 }}>{fmtClock(Math.floor(pvT))} / {fmtClock(totalDur)}</span>
+            </div>
+            <div className="lh-dotnav">
+              {doneScenes.map((s, i) => (
+                <button key={i} className={i === pvIdx ? "on" : ""} onClick={() => seekPreview(i)}>{i + 1}</button>
+              ))}
+            </div>
+            <audio ref={pvAudioRef} src={song.url} preload="auto" onEnded={() => setPvPlaying(false)} />
+          </div>
+
+          <div className={`lh-card lh-verdict ${doneScenes.length === board.scenes.length ? "ok" : "warn"}`}>
+            <div className="lh-vscore">🎬</div>
+            <div>
+              <b>{doneScenes.length === board.scenes.length ? "Siap masuk Studio Edit" : `Baru ${doneScenes.length}/${board.scenes.length} adegan bergambar`}</b>
+              <p>Masuk Studio: gambar → <b>Track 1</b> · lagu → <b>jalur musik</b> (gelombang asli + BPM) · lirik tiap adegan → <b>lapisan teks terpisah</b> (bisa kau geser/edit hapus satu-satu). Belum cocok = edit, cocok = ekspor.</p>
+            </div>
+          </div>
+          <button className="lh-btn" onClick={masukStudio}>🎬 MASUK STUDIO EDIT</button>
         </>
       )}
 
