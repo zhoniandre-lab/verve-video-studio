@@ -667,6 +667,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
   useEffect(() => { drawFrameRefCb.current = drawFrame; }, [drawFrame]);
 
+  // REPAINT LANGSUNG saat ada edit visual & preview sedang berhenti
+  // (tanpa ini, geser gambar/zoom/stiker/filter baru muncul setelah play/seek → terasa "telat & bocor")
+  useEffect(() => {
+    if (playing) return;
+    const id = requestAnimationFrame(() => { try { drawFrameRefCb.current(curTRef.current); } catch {} });
+    return () => cancelAnimationFrame(id);
+  }, [slideOptsById, slides, filterPreset, adj, qualitySharp, ratio, bgMode, bgColor, capWords, capStyle, ccSize, ccY, playing]); // eslint-disable-line
+
   const tick = useCallback(() => {
     // jika master audio selesai tapi klip masih panjang → lanjut jam manual
     const aud0 = clockRef.current.audio;
@@ -990,31 +998,31 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
   function trimSlide(id: string, targetEffDur: number) {
     const sp = slideOptsById[id]?.speed || 1;
-    setOpt(id, { dur: clampN(targetEffDur, 0.4, 60) * sp });
+    setOpt(id, { dur: clampN(targetEffDur, 0.4, 600) * sp }); // sampai 10 menit — ngikutin lagu panjang
   }
 
   /* ---------- MEDIA ---------- */
-  function cropToRatio(img: HTMLImageElement, ar: number, maxSide = 1280): string {
-    const w = img.naturalWidth, h = img.naturalHeight; const ir = w / h;
-    let cw = w, ch = h;
-    if (ir > ar) cw = h * ar; else ch = w / ar;
-    const outW = ar >= 1 ? maxSide : Math.round(maxSide * ar);
-    const outH = ar >= 1 ? Math.round(maxSide / ar) : maxSide;
+  /* Pertahankan kualitas asli: TANPA crop paksa (mesin gambar sudah cover-fit saat preview/ekspor),
+     hanya turun resolusi kalau foto kelewat raksasa (hemat RAM HP). PNG/WebP dipertahankan (transparansi). */
+  function fitMax(img: HTMLImageElement, maxSide = 2048, mime: string = "image/jpeg", q = 0.92): string {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const sc = Math.min(1, maxSide / Math.max(w, h));
+    const outW = Math.max(1, Math.round(w * sc)), outH = Math.max(1, Math.round(h * sc));
     const c = document.createElement("canvas"); c.width = outW; c.height = outH;
     const cx = c.getContext("2d")!;
-    cx.fillStyle = "#000"; cx.fillRect(0, 0, outW, outH);
-    cx.drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, outW, outH);
-    return c.toDataURL("image/jpeg", 0.88);
+    if (mime === "image/jpeg") { cx.fillStyle = "#000"; cx.fillRect(0, 0, outW, outH); }
+    cx.drawImage(img, 0, 0, outW, outH);
+    return c.toDataURL(mime, q);
   }
   function addImageFiles(files: FileList | null, replaceId?: string) {
     if (!files || !files.length) return;
     pushHist();
-    const ar = ratio === "9:16" ? 9 / 16 : ratio === "1:1" ? 1 : 16 / 9;
     Promise.all(Array.from(files).slice(0, 14).map(f => new Promise<Slide>((res) => {
       const r = new FileReader();
       r.onload = () => {
         const img = new Image();
-        img.onload = () => res({ id: uid("up"), imageUrl: cropToRatio(img, ar) });
+        const mime = (f.type === "image/png" || f.type === "image/webp") ? f.type : "image/jpeg";
+        img.onload = () => res({ id: uid("up"), imageUrl: fitMax(img, 2048, mime) });
         img.onerror = () => res({ id: uid("bad"), imageUrl: "" });
         img.src = r.result as string;
       };
@@ -1042,8 +1050,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!res.ok || data.error) throw new Error(data.error || `Error ${res.status}`);
       const durl: string = data.url;
       const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = () => rej(new Error("gagal memuat")); im.src = durl; });
-      const ar = ratio === "9:16" ? 9 / 16 : ratio === "1:1" ? 1 : 16 / 9;
-      const cropped = cropToRatio(img, ar);
+      const cropped = fitMax(img, 2048);
       pushHist();
       if (replaceId) setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: cropped } : s));
       else setSlides(c => [...c, { id: uid("ai"), imageUrl: cropped }]);
@@ -1486,8 +1493,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           const data = await res.json().catch(() => ({}));
           if (!res.ok || data.error) continue;
           const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = rej; im.src = data.url; });
-          const ar = ratio === "9:16" ? 9 / 16 : ratio === "1:1" ? 1 : 16 / 9;
-          newSlides.push({ id: uid("ai"), imageUrl: cropToRatio(img, ar) });
+          newSlides.push({ id: uid("ai"), imageUrl: fitMax(img, 2048) });
         } catch {}
       }
       if (!newSlides.length) throw new Error("Semua gambar gagal dibuat — coba style Studio atau upload manual.");
@@ -1619,7 +1625,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (panClipRef.current) {
       const pc = panClipRef.current;
       const dxPx = e.clientX - pc.x0, dyPx = e.clientY - pc.y0;
-      if (pc.moved || Math.hypot(dxPx, dyPx) > 9) {
+      if (pc.moved || Math.hypot(dxPx, dyPx) > 4) {
         pc.moved = true;
         const ntx = clampN(pc.tx0 + dxPx / pc.w, -0.6, 0.6);
         const nty = clampN(pc.ty0 + dyPx / pc.h, -0.6, 0.6);
@@ -1747,7 +1753,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             pushHist();
             const per = d / slides.length;
             const upd: Record<string, SlideOpt> = { ...slideOptsById };
-            slides.forEach(s => { upd[s.id] = { ...(upd[s.id] || {}), dur: clampN(per, 0.4, 60) * (upd[s.id]?.speed || 1) }; });
+            slides.forEach(s => { upd[s.id] = { ...(upd[s.id] || {}), dur: clampN(per, 0.4, 600) * (upd[s.id]?.speed || 1) }; });
             setSlideOptsById(upd);
             flash(`🤖 ${slides.length} klip otomatis pas durasi audio (${formatDur(d)})`);
           });
@@ -1861,7 +1867,7 @@ function TimelineV6(p: any) {
   const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
   const contentW = Math.max(320, total * PXS + halfW * 2 + 16);
-  const dragRef = useRef<{ kind: "trim" | "reorder"; i: number; startX: number; startDur: number; to?: number; moved?: boolean } | null>(null);
+  const dragRef = useRef<{ kind: "trim" | "reorder"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r" } | null>(null);
   const scrubHoldRef = useRef(false);
   const [, force] = useState(0);
 
@@ -1918,17 +1924,19 @@ function TimelineV6(p: any) {
     dragRef.current = null;
     if (d && d.kind === "reorder" && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
-  function onHdlDown(e: React.PointerEvent, i: number) {
+  function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
     e.stopPropagation();
     const sid = slides[i].id;
     p.onSel(sid);
-    dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1 };
+    dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1, side };
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   }
   function onHdlMove(e: React.PointerEvent) {
     const d = dragRef.current;
     if (!d || d.kind !== "trim") return;
-    const nd = clampN(d.startDur + (e.clientX - d.startX) / PXS, 0.4, 90);
+    const dxT = (e.clientX - d.startX) / PXS;
+    // handle kanan: tarik kanan = tambah panjang; handle kiri: tarik kiri = tambah panjang (ke belakang)
+    const nd = clampN(d.startDur + (d.side === "l" ? -dxT : dxT), 0.4, 600);
     p.onTrim(slides[d.i].id, nd);
   }
   function onHdlUp() { dragRef.current = null; }
@@ -2004,8 +2012,8 @@ function TimelineV6(p: any) {
                       {s.imageUrl ? <img src={s.imageUrl} alt="" draggable={false} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
                       <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                       {sel && <>
-                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i)} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❮</span>
-                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i)} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❯</span>
+                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❮</span>
+                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❯</span>
                       </>}
                       {i < slides.length - 1 && (() => {
                         const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
@@ -2287,8 +2295,8 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
       <SheetShell title="Pangkas klip" onClose={close} onOk={close}>
         <div className="v6-sheet-body">
           <div className="v6-slider-row">
-            <div className="lr"><span>⏱ Durasi klip terpilih</span><b style={{ color: "var(--v6-teal)" }}>{dur.toFixed(1)} detik</b></div>
-            <input type="range" min={0.4} max={20} step={0.1} value={dur} onChange={e => A.setOpt(A.selId, { dur: Number(e.target.value) })} />
+            <div className="lr"><span>⏱ Durasi klip terpilih</span><b style={{ color: "var(--v6-teal)" }}>{dur >= 60 ? formatDur(dur) : `${dur.toFixed(1)} detik`}</b></div>
+            <input type="range" min={0.4} max={300} step={0.1} value={dur} onChange={e => A.setOpt(A.selId, { dur: Number(e.target.value) })} />
           </div>
           <div className="v6-slider-row">
             <div className="lr"><span>⏱ Durasi default klip baru</span><b>{A.slideDuration} detik</b></div>
