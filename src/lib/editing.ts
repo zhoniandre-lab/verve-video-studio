@@ -74,6 +74,12 @@ export const TRANSITIONS: CatItem[] = [
   { id: "circle",     label: "Iris Bulat",   emoji: "⭕", cat: "Efek" },
   { id: "blinds",     label: "Tirai",        emoji: "🪟", cat: "Efek" },
   { id: "shake",      label: "Guncang",      emoji: "📳", cat: "Efek" },
+  { id: "aimorph",    label: "Morph Cair",   emoji: "🧬", cat: "AI ✨" },
+  { id: "airadial",   label: "Radial Zoom",  emoji: "🎯", cat: "AI ✨" },
+  { id: "aipartikel", label: "Partikel",     emoji: "✨", cat: "AI ✨" },
+  { id: "aiholo",     label: "Hologram",     emoji: "📡", cat: "AI ✨" },
+  { id: "aiink",      label: "Tinta Menyebar", emoji: "🖋️", cat: "AI ✨" },
+  { id: "aichroma",   label: "Kroma Zoom",   emoji: "🌈", cat: "AI ✨" },
 ];
 // Alias id lama → id baru (kompatibilitas draft lama)
 export const TRANS_ALIAS: Record<string, string> = {
@@ -520,6 +526,107 @@ export function paintTransition(
       const jy = (rnd(Math.floor(absT * 60), 7) - 0.5) * 2 * amp;
       if (t < 0.5) drawBase(ctx, cur, W, H, { ...curP, dx: curP.dx + jx, dy: curP.dy + jy });
       else drawBase(ctx, nxt, W, H, { ...nxtP, dx: nxtP.dx + jx, dy: nxtP.dy + jy });
+      break;
+    }
+    /* -------- TRANSISI AI ✨ (orisinal VERVE) -------- */
+    case "aimorph": { // morph cair: irisan bergelombang saling silang
+      const rows = isMobile ? 14 : 22;
+      const amp = Math.sin(t * Math.PI) * W * 0.07;
+      for (let r2 = 0; r2 < rows; r2++) {
+        const y0 = (H / rows) * r2, hh = H / rows + 1;
+        const ph = r2 * 0.9;
+        const offC = Math.sin(ph + t * 5) * amp;
+        const offN = Math.cos(ph - t * 5) * amp;
+        ctx.save(); ctx.beginPath(); ctx.rect(0, y0, W, hh); ctx.clip();
+        drawBase(ctx, cur, W, H, { ...curP, alpha: curP.alpha * (1 - t), dx: curP.dx + offC / W });
+        drawBase(ctx, nxt, W, H, { ...nxtP, alpha: nxtP.alpha * t, dx: nxtP.dx + offN / W });
+        ctx.restore();
+      }
+      break;
+    }
+    case "airadial": { // zoom radial dengan ghost bertingkat (fake radial blur)
+      const passes = 5;
+      ctx.save();
+      for (let k = passes; k >= 0; k--) {
+        const f = k / passes;
+        drawBase(ctx, cur, W, H, { ...curP, zoom: curP.zoom * (1 + t * 0.5 * f), alpha: curP.alpha * (1 - t) * (0.55 / (passes + 1) + (k === 0 ? 0.45 * (1 - t) : 0)) });
+      }
+      for (let k = passes; k >= 0; k--) {
+        const f = k / passes;
+        drawBase(ctx, nxt, W, H, { ...nxtP, zoom: nxtP.zoom * (1 + (1 - t) * 0.5 * f), alpha: nxtP.alpha * t * (0.55 / (passes + 1) + (k === 0 ? 0.45 * t : 0)) });
+      }
+      ctx.restore();
+      break;
+    }
+    case "aipartikel": { // gambar lama pecah jadi partikel kotak melayang
+      drawBase(ctx, nxt, W, H, { ...nxtP, alpha: nxtP.alpha * Math.min(1, t * 1.5) });
+      if (t < 0.98 && cur) {
+        const iw = (cur as any).naturalWidth || (cur as any).width || 0;
+        const ih = (cur as any).naturalHeight || (cur as any).height || 0;
+        if (iw && ih) {
+          const cols = isMobile ? 8 : 12, rowsP = isMobile ? 10 : 14;
+          const cw = W / cols, chh = H / rowsP;
+          ctx.save();
+          for (let i = 0; i < cols * rowsP; i++) {
+            const cx = i % cols, cy = Math.floor(i / cols);
+            const rr = rnd(i, 3);
+            const a = Math.max(0, 1 - t * (0.85 + rr * 0.9));
+            if (a <= 0.02) continue;
+            ctx.globalAlpha = a * curP.alpha;
+            const dx2 = (rnd(i, 11) - 0.5) * W * 0.3 * t * t;
+            const dy2 = t * t * (0.25 + rr * 1.1) * H * 0.38;
+            ctx.drawImage(cur, (iw / cols) * cx, (ih / rowsP) * cy, iw / cols, ih / rowsP, cw * cx + dx2, chh * cy + dy2, cw + 0.5, chh + 0.5);
+          }
+          ctx.restore();
+        }
+      }
+      break;
+    }
+    case "aiholo": { // hologram: gambar baru muncul per garis pindai + kedip
+      drawBase(ctx, cur, W, H, { ...curP, alpha: curP.alpha * (1 - t) });
+      const lines = isMobile ? 26 : 42;
+      const flick = 0.72 + 0.28 * rnd(Math.floor(absT * 40), 5);
+      ctx.save();
+      ctx.beginPath();
+      for (let r2 = 0; r2 < lines; r2++) {
+        if ((r2 / lines) < t) ctx.rect(0, (H / lines) * r2, W, Math.max(1, H / lines - 1.5));
+      }
+      ctx.clip();
+      drawBase(ctx, nxt, W, H, { ...nxtP, alpha: nxtP.alpha * flick * (0.4 + 0.6 * t) });
+      ctx.restore();
+      ctx.fillStyle = `rgba(25,194,184,${(Math.sin(t * Math.PI) * 0.16).toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+      const sy = H * t;
+      ctx.fillStyle = `rgba(180,255,248,${(Math.sin(t * Math.PI) * 0.5).toFixed(3)})`;
+      ctx.fillRect(0, Math.max(0, sy - 2), W, Math.min(3, H));
+      break;
+    }
+    case "aiink": { // tinta menyebar: blot membesar membuka gambar baru
+      drawBase(ctx, cur, W, H, curP);
+      const blobs = isMobile ? 8 : 12;
+      const maxR = Math.sqrt(W * W + H * H) * 0.55;
+      ctx.save(); ctx.beginPath();
+      for (let b = 0; b < blobs; b++) {
+        const bx = rnd(b, 1) * W, by = rnd(b, 2) * H;
+        const delay = 0.1 + rnd(b, 3) * 0.4;
+        const tt2 = Math.max(0, Math.min(1, (t - delay) / (1 - delay)));
+        if (tt2 <= 0) continue;
+        const br = Math.max(0.1, maxR * easeIO(tt2));
+        ctx.moveTo(bx + br, by); ctx.arc(bx, by, br, 0, TAU);
+      }
+      ctx.clip();
+      drawBase(ctx, nxt, W, H, nxtP);
+      ctx.restore();
+      break;
+    }
+    case "aichroma": { // kroma zoom: zoom + split warna RGB halus
+      const amp = Math.sin(t * Math.PI);
+      drawBase(ctx, cur, W, H, { ...curP, zoom: curP.zoom * (1 + t * 0.12), alpha: curP.alpha * (1 - t) });
+      drawBase(ctx, nxt, W, H, { ...nxtP, zoom: nxtP.zoom * (1.08 - 0.08 * t), alpha: nxtP.alpha * t });
+      ctx.save();
+      drawBase(ctx, nxt, W, H, { ...nxtP, dx: nxtP.dx + amp * 0.022, alpha: amp * 0.32, filter: "saturate(2.2) hue-rotate(-50deg)" });
+      drawBase(ctx, nxt, W, H, { ...nxtP, dx: nxtP.dx - amp * 0.022, alpha: amp * 0.32, filter: "saturate(2.2) hue-rotate(50deg)" });
+      ctx.restore();
       break;
     }
     default:

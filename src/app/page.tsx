@@ -1638,7 +1638,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
       {/* ============ TIMELINE ============ */}
       <TimelineV6
-        slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT}
+        slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT} playing={playing}
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
@@ -1771,11 +1771,36 @@ const PXS = 56; // px per detik
 function TimelineV6(p: any) {
   const { slides, slideOptsById, timeline, selId, curT, musicUrl, musicName, ttsUrl, voiceUrl } = p;
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollX, setScrollX] = useState(0);
+  const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
-  const contentW = Math.max(320, total * PXS + 140);
+  const contentW = Math.max(320, total * PXS + halfW * 2 + 16);
   const dragRef = useRef<{ kind: "trim" | "reorder"; i: number; startX: number; startDur: number; to?: number; moved?: boolean } | null>(null);
+  const scrubHoldRef = useRef(false);
   const [, force] = useState(0);
+
+  // ukur setengah lebar viewport → konten diberi ruang kiri-kanan supaya detik 0 & akhir bisa tepat di garis tengah
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    const fit = () => setHalfW(el.clientWidth / 2);
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // saat diputar: KONTEN yang bergerak di bawah garis penanda (garis tetap diam di tengah, ala CapCut)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !p.playing || scrubHoldRef.current) return;
+    const target = clampN(curT * PXS, 0, Math.max(0, contentW - el.clientWidth));
+    if (Math.abs(el.scrollLeft - target) > 0.5) el.scrollLeft = target;
+  }, [curT, p.playing, contentW]);
+
+  // saat tidak diputar: geser konten = geser waktu (garis tengah sebagai penanda posisi)
+  function onTlScroll(e: any) {
+    if (p.playing) return;
+    const sl = e.target.scrollLeft;
+    p.onSeek(clampN(sl / PXS, 0, Math.max(0, total - 0.01)));
+  }
 
   function clipW(i: number): number { return Math.max(30, (timeline?.durs?.[i] || 0) * PXS); }
 
@@ -1824,10 +1849,10 @@ function TimelineV6(p: any) {
   function rulerDown(e: React.PointerEvent) {
     const el = scrollRef.current; if (!el || !total) return;
     const r = el.getBoundingClientRect();
-    const x = e.clientX - r.left + el.scrollLeft - 0;
+    const x = e.clientX - r.left + el.scrollLeft - halfW;
     p.onSeek(clampN(x / PXS, 0, Math.max(0, total - 0.01)));
     const move = (ev: PointerEvent) => {
-      const xx = ev.clientX - r.left + el.scrollLeft;
+      const xx = ev.clientX - r.left + el.scrollLeft - halfW;
       p.onSeek(clampN(xx / PXS, 0, Math.max(0, total - 0.01)));
     };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
@@ -1835,7 +1860,6 @@ function TimelineV6(p: any) {
   }
 
   const secs = Math.ceil(total) + 1;
-  const playX = curT * PXS - scrollX;
 
   const hasAudio = !!(musicUrl || ttsUrl || voiceUrl);
   const clipTexts = slides.map((s: Slide) => ({ s, t: slideOptsById[s.id]?.text })).filter((x: any) => x.t && x.t.txt?.trim());
@@ -1856,10 +1880,17 @@ function TimelineV6(p: any) {
           </button>
         </div>
 
-        {/* tracks */}
-        <div className="v6e-tl-scrollwrap" ref={scrollRef} onScroll={(e: any) => setScrollX(e.target.scrollLeft)} style={{ flex: 1, position: "relative" }}>
-          <div style={{ position: "relative", width: contentW, paddingRight: 8 }}>
-            {/* ruler detik */}
+        {/* tracks (garis penanda DIAM di tengah — konten yang bergerak di bawahnya) */}
+        <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          <div className="v6e-tl-scrollwrap" ref={scrollRef} onScroll={onTlScroll}
+            onPointerDown={() => { scrubHoldRef.current = true; }}
+            onPointerUp={() => { scrubHoldRef.current = false; }}
+            onPointerCancel={() => { scrubHoldRef.current = false; }}
+            style={{ position: "absolute", inset: 0 }}>
+            <div style={{ position: "relative", width: contentW, display: "flex" }}>
+              <div style={{ width: halfW, flex: "0 0 auto" }} />
+              <div style={{ position: "relative", flex: "0 0 auto" }}>
+                {/* ruler detik */}
             <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none" }} onPointerDown={rulerDown}>
               {Array.from({ length: secs + 1 }).map((_, i) => (
                 <span key={i} style={{ position: "absolute", left: i * PXS, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
@@ -1889,9 +1920,14 @@ function TimelineV6(p: any) {
                         <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i)} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❮</span>
                         <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i)} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❯</span>
                       </>}
-                      {i < slides.length - 1 && canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve") !== "none" && (
-                        <span className="v6e-trans-chip" onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>🔀</span>
-                      )}
+                      {i < slides.length - 1 && (() => {
+                        const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
+                        const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
+                        return (
+                          <span className={`v6e-trans-chip ${tr === "none" ? "off" : ""}`} title="Transisi — ketuk untuk ganti"
+                            onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>{em}</span>
+                        );
+                      })()}
                     </div>
                     <div style={{ width: 4 }} />
                   </div>
@@ -1936,11 +1972,12 @@ function TimelineV6(p: any) {
               ))}
             </div>
 
-            {/* playhead */}
-            {total > 0 && playX >= -2 && (
-              <div className="v6e-playhead" style={{ left: playX }} />
-            )}
+              </div>
+              <div style={{ width: halfW, flex: "0 0 auto" }} />
+            </div>
           </div>
+          {/* garis penanda tetap di tengah layar */}
+          {total > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
         </div>
       </div>
     </div>
@@ -2201,7 +2238,7 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
     return (
       <SheetShell title="Transisi" onClose={close} onOk={close} tall>
         <div className="v6-sheet-body">
-          <ChipRow items={[{ id: "semua", label: "Semua" }, ...["Dasar", "Geser", "Zoom", "Cahaya", "Efek"].map(x => ({ id: x, label: x }))]} cur={sheetTab || "semua"} onPick={setSheetTab} />
+          <ChipRow items={[{ id: "semua", label: "Semua" }, ...["AI ✨", "Dasar", "Geser", "Zoom", "Cahaya", "Efek"].map(x => ({ id: x, label: x }))]} cur={sheetTab || "semua"} onPick={setSheetTab} />
           <div className="v6-grid4">
             {TRANSITIONS.filter((t: any) => !sheetTab || sheetTab === "semua" || t.cat === sheetTab).map((t: any) => (
               <button key={t.id} className={`v6-gcell ${cur === t.id ? "on" : ""}`} onClick={() => A.setOpt(A.selId, { trans: t.id })}>
@@ -2213,6 +2250,9 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
             <div className="lr"><span>⏱ Durasi transisi</span><b style={{ color: "var(--v6-teal)" }}>{td.toFixed(1)}d</b></div>
             <input type="range" min={0.15} max={2.5} step={0.05} value={td} onChange={e => A.setOpt(A.selId, { transDur: Number(e.target.value) })} />
           </div>
+          {sheetTab === "AI ✨" && (
+            <div className="v6-note">🧬 <b>Transisi AI ✨</b> = efek lanjutan 100% buatan VERVE (morph cair, partikel, hologram, tinta…) — dirender langsung di HP, bukan template curian. Cobain aja, gratis semua!</div>
+          )}
           <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => {
             A.pushHist();
             const upd: Record<string, any> = {};
