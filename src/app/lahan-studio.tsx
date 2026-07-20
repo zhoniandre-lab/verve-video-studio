@@ -821,12 +821,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       slideOptsById[sl.id] = {
         dur: per,
         trans: "dissolve",
-        texts: cap
+          texts: cap
           ? [{
               id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
               bold: true, italic: false, shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5,
               bg: true, bgColor: "rgba(0,0,0,0.45)", y: 0.84, align: "center", anim: "none",
-            }]
+              lahanPill: true, // v8.2.1: penanda caption bawaan adegan (untuk tombol 🧹 di Keterangan otomatis)
+            } as any]
           : [],
       };
     });

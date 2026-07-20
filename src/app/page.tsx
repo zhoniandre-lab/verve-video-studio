@@ -748,6 +748,19 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [slides, slideOptsById, slideDuration, transitionDur, transition]);
   const timelineRef = useRef<Timeline | null>(null); useEffect(() => { timelineRef.current = timeline; }, [timeline]);
   const clipsTotal = timeline?.total || 0;
+
+  // v8.2.1: pindai teks lirik karaoke (id prefix lyr_) + caption bawaan adegan (MENEMPEL di klip — biang rasa "teks gabung sama lagu")
+  const lyrScan = useMemo(() => {
+    const list: any[] = [];
+    let legacy = 0;
+    Object.values(slideOptsById || {}).forEach((o: any) => (o?.texts || []).forEach((t: any) => {
+      if (/^lyr_/.test(t?.id || "")) list.push(t);
+      else if (t && t.start == null && !(t.karaokeWords?.length) && t.bg === true && typeof t.y === "number" && Math.abs(t.y - 0.84) < 0.02) legacy++;
+    }));
+    list.sort((a, b) => (a.start || 0) - (b.start || 0));
+    return { list, legacy };
+  }, [slideOptsById]);
+  const [lyrOff, setLyrOff] = useState(0);
   const selIndex = useMemo(() => slides.findIndex(s => s.id === selId), [slides, selId]);
   const selOpt = selId ? slideOptsById[selId] : undefined;
 
@@ -1549,7 +1562,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         } as ClipText));
         pushHist();
         insertFloatingTexts(texts);
-        flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? "diselaraskan AI 🤖" : "perkiraan cerdas (geser kalau kurang pas)"}`);
+        flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? "diselaraskan AI 🤖" : "perkiraan cerdas"}. Baris pertama mulai ${formatDur(texts[0]?.start || 0)} — poles di ⚓ panel ini`);
         setModal(null); setTool(null);
         setLoading(null); setTimeout(() => setStageText(""), 100);
         return;
@@ -1628,6 +1641,51 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setLoading(null); setTimeout(() => setStageText(""), 100);
   }
   function clearCaptions() { pushHist(); setCapWords([]); flash("Keterangan dihapus"); }
+
+  /** v8.2.1: geser waktu lirik karaoke — SEMUA sekaligus (onlyId kosong) atau SATU baris. Musik & klip TIDAK ikut. */
+  function nudgeLyrics(delta: number, onlyId?: string) {
+    pushHist();
+    setSlideOptsById(prev => {
+      const next: Record<string, SlideOpt> = { ...prev };
+      for (const sid of Object.keys(next)) {
+        const o: any = next[sid];
+        if (!o?.texts?.length) continue;
+        let changed = false;
+        const texts = o.texts.map((t: any) => {
+          if (!/^lyr_/.test(t?.id || "")) return t;
+          if (onlyId && t.id !== onlyId) return t;
+          changed = true;
+          return { ...t, start: Math.max(0, Math.round(((t.start || 0) + delta) * 100) / 100) };
+        });
+        if (changed) next[sid] = { ...o, texts };
+      }
+      return next;
+    });
+    if (!onlyId) setLyrOff(v => Math.round((v + delta) * 10) / 10);
+  }
+
+  /** v8.2.1: bersihkan caption bawaan adegan yang MENEMPEL di klip (dari Lahan v8.0) — lirik karaoke baru aman. */
+  function clearLegacyPills() {
+    const n = lyrScan.legacy;
+    if (!n) return;
+    if (!confirm(`Hapus ${n} tulisan caption bawaan adegan (yang menempel di tiap klip)? Lirik karaoke baru TIDAK ikut terhapus.\n\nCaption bawaan memang menyatu dengan klipnya — itu yang bikin terasa "lirik gabung sama lagu".`)) return;
+    pushHist();
+    setSlideOptsById(prev => {
+      const next: Record<string, SlideOpt> = { ...prev };
+      for (const sid of Object.keys(next)) {
+        const o: any = next[sid];
+        if (!o?.texts?.length) continue;
+        const keep = o.texts.filter((t: any) => !(t.start == null && !(t.karaokeWords?.length) && t.bg === true && typeof t.y === "number" && Math.abs(t.y - 0.84) < 0.02));
+        if (keep.length !== o.texts.length) {
+          const o2 = { ...o, texts: keep };
+          if (!keep.length) delete o2.texts;
+          next[sid] = o2;
+        }
+      }
+      return next;
+    });
+    flash("🧹 Caption bawaan adegan dibersihkan — lirik kini bebas dari klip");
+  }
 
   /* ---------- AKHIRAN (outro) ---------- */
   function makeOutroImage(txt: string): string {
@@ -2417,6 +2475,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             ratio, setRatio, bgMode, setBgMode, bgColor, setBgColor,
             ccFrom, setCcFrom, ccLang, setCcLang, ccTpl, setCcTpl, ccSize, setCcSize, ccY, setCcY,
             capWords, capStyle, doAutoCaptions, clearCaptions,
+            lyrOff, lyrList: lyrScan.list, legacyPills: lyrScan.legacy, nudgeLyrics, clearLegacyPills,
             addSticker, delSticker, uploadOverlayImg, moveSticker,
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
@@ -3427,6 +3486,35 @@ function KeteranganSheet({ api: A, onClose }: any) {
         </button>
         {!!A.capWords.length && (
           <div className="v6-okbox">✅ {A.capWords.length} kata keterangan aktif (gaya: {tpl.label}). <b onClick={A.clearCaptions} style={{ cursor: "pointer", textDecoration: "underline" }}>Hapus</b></div>
+        )}
+        {!!A.lyrList?.length && (
+          <div style={{ marginTop: 12, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}>
+            <b style={{ fontSize: 12.5 }}>⚓ Geser waktu lirik</b>
+            <div style={{ fontSize: 10.5, color: "#9aa0ab", marginTop: 3, lineHeight: 1.5 }}>Lirik muncul kecepatan / telat? Geser <b>SEMUA baris sekaligus</b> di sini — musik & klip TIDAK ikut berubah.</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 9, alignItems: "center" }}>
+              <button className="v6-chip" style={{ flex: 1 }} onClick={() => A.nudgeLyrics(-0.5)}>−0.5</button>
+              <button className="v6-chip" style={{ flex: 1 }} onClick={() => A.nudgeLyrics(-0.1)}>−0.1</button>
+              <b style={{ flex: 1.4, textAlign: "center", fontSize: 12.5, color: "#22d3ee" }}>{A.lyrOff > 0 ? "+" : ""}{Number(A.lyrOff || 0).toFixed(1)} dtk</b>
+              <button className="v6-chip" style={{ flex: 1 }} onClick={() => A.nudgeLyrics(0.1)}>+0.1</button>
+              <button className="v6-chip" style={{ flex: 1 }} onClick={() => A.nudgeLyrics(0.5)}>+0.5</button>
+            </div>
+            <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 9 }}>Per baris (geser halus ±0,3 dtk — baris lain diam):</div>
+            <div style={{ marginTop: 6, maxHeight: 210, overflowY: "auto", display: "grid", gap: 5 }}>
+              {A.lyrList.map((L: any, i: number) => (
+                <div key={L.id || i} style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,.04)", borderRadius: 10, padding: "5px 8px" }}>
+                  <span style={{ fontSize: 9.5, color: "#8b8b98", width: 34, flex: "0 0 auto" }}>{formatDur(L.start || 0)}</span>
+                  <span style={{ flex: 1, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{L.txt}</span>
+                  <button className="v6-chip" style={{ padding: "2px 9px", flex: "0 0 auto" }} onClick={() => A.nudgeLyrics(-0.3, L.id)}>◀</button>
+                  <button className="v6-chip" style={{ padding: "2px 9px", flex: "0 0 auto" }} onClick={() => A.nudgeLyrics(0.3, L.id)}>▶</button>
+                </div>
+              ))}
+            </div>
+            {!!A.legacyPills && (
+              <button className="v6-chip" style={{ marginTop: 10, width: "100%", borderColor: "rgba(239,68,68,.4)" }} onClick={A.clearLegacyPills}>
+                🧹 Bersihkan {A.legacyPills} caption bawaan adegan (nempel di klip — inilah yang bikin lirik terasa "gabung sama lagu")
+              </button>
+            )}
+          </div>
         )}
         <div className="v6-note">📌 <b>🎵 Lirik lagu (baru)</b>: lirik dari Lahan/Suno disinkronkan ke lagu — AI Whisper dulu, kalau sibuk pakai perkiraan cerdas. Hasilnya masuk <b>TRACK TEKS</b> per baris dengan kata menyala satu-satu — bisa digeser/edit. <b>Narasi AI</b>: akurat dari teks aslinya. <b>Musik/rekaman</b>: transkrip live browser (eksperimental).</div>
       </div>
