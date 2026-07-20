@@ -1198,7 +1198,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 
 /* ---------- TIMELINE ---------- */
 .v6e-tl { flex:0 0 auto; background:#000; padding:2px 0 4px; }
-.v6e-tl-scrollwrap { overflow-x:auto; overflow-y:auto; scrollbar-width:none; max-height:min(46dvh,432px); overscroll-behavior:contain; }
+.v6e-tl-scrollwrap { overflow-x:auto; overflow-y:auto; scrollbar-width:none; max-height:min(36dvh,320px); overscroll-behavior:contain; }
 .v6e-tl-scrollwrap::-webkit-scrollbar { display:none; }
 .v6e-tl-inner { display:flex; align-items:stretch; }
 .v6e-tl-rail { flex:0 0 auto; width:64px; display:flex; flex-direction:column; gap:6px; padding:0 6px; }
@@ -1554,3 +1554,7 @@ b.ok, b.warn, b.err { color:inherit; }
 
 /* ===== v8.4 TRACK BEBAS — jalur yang sedang "diangkat" untuk dipindah ===== */
 .v6e-lanerow.lanelift, .v6e-track.lanelift { outline:2px dashed rgba(34,211,238,.65); outline-offset:1px; border-radius:10px; position:relative; z-index:6; }
+
+/* ===== v8.5: sorotan target jatuh saat objek diseret antar-baris ===== */
+.v6e-lanerow.dropr { background:rgba(34,211,238,.09); outline:1.5px dashed rgba(34,211,238,.55); outline-offset:-1px; border-radius:10px; }
+.v6e-lanerow.dropr.bad { background:rgba(239,68,68,.12); outline-color:rgba(239,68,68,.65); }

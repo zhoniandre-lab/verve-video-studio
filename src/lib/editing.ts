@@ -22,10 +22,12 @@ export interface ClipText {
   x?: number;          // 0.05..0.95 (posisi horizontal bebas — default: ikut align)
   start?: number | null; // detik ABSOLUT di timeline (undefined/null = ikut klip)
   dur?: number;        // detik tampil saat mode lepas (default: durasi klip)
+  row?: number;        // v8.5: baris jalur pilihan pengguna di track (undefined = padat otomatis)
 }
 export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; opacity?: number;
   start?: number | null;  // detik ABSOLUT di timeline (undefined/null = ikut klip)
   dur?: number;           // detik tampil saat mode lepas (default: durasi klip)
+  row?: number;           // v8.5: baris jalur pilihan pengguna di track
 }
 export interface SlideOpt {
   dur?: number;              // detik (hold time, tanpa transisi)

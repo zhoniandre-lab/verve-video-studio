@@ -1872,6 +1872,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const clipStart = timeline?.starts?.[i] || 0;
     setTextObj2(sid, tid, { dur: Math.round(clampN(sec, 0.5, 600) * 10) / 10, start: cur.start ?? clipStart });
   }
+  // v8.5: objek pindah BARIS jalur — berbagi jalur BOLEH, yang dilarang cuma NUMPUK waktu dengan objek lain
+  function moveTextRow(sid: string, tid: string, row: number) {
+    const r = Math.max(0, Math.round(row));
+    setTextObj2(sid, tid, { row: r } as Partial<ClipText>);
+    flash("🔤 Teks pindah ke jalur " + (r + 1));
+  }
+  function moveStickerRow(sid: string, stid: string, row: number) {
+    const r = Math.max(0, Math.round(row));
+    const list = slideOptsById[sid]?.stickers || [];
+    setOpt(sid, { stickers: list.map(x => x.id === stid ? { ...x, row: r } : x) } as Partial<SlideOpt>);
+    flash("😀 Stiker pindah ke jalur " + (r + 1));
+  }
   // geser chip STIKER di track → stiker punya waktu mulai sendiri (lepas dari klip)
   function moveStickerStart(sid: string, stid: string, sec: number) {
     const i = slides.findIndex(x => x.id === sid);
@@ -2450,6 +2462,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onAudioMoved={(k: string) => flash(`${k === "m" ? "🎵 Musik" : k === "t" ? "🗣️ Narasi" : "🎙️ Rekaman"} digeser — mulai di ${formatDur((k === "m" ? musicOff : k === "t" ? ttsOff : voiceOff))}`)}
         onTextStart={moveTextStart} onTextDur={moveTextDur}
         onTextMoved={(sid: string, tid: string = "") => { setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
+        onTextRow={moveTextRow} onStickerRow={moveStickerRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
@@ -2600,6 +2613,31 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
    ================================================================== */
 const PXS = 56; // px per detik (default — skala bisa dizoom cubit di timeline)
 const TL_MIN_PXS = 0.6, TL_MAX_PXS = 140; // batas zoom skala timeline (0.6px/d → proyek 1 jam muat di layar)
+/* v8.5 PEMADAT JALUR: objek boleh berbagi baris KALAU waktunya tidak numpuk — ala CapCut.
+   Baris 0 diisi dulu; objek dengan row pilihan pengguna dihormati; celah kosong dirapikan. */
+function packRows(items: { st: number; dd: number; row?: number }[]): number[] {
+  const rowsInt: { st: number; end: number }[][] = [];
+  const res = new Array<number>(items.length).fill(-1);
+  const ord = items.map((_, i) => i).sort((a, b) => ((items[a].row != null ? 0 : 1) - (items[b].row != null ? 0 : 1)) || (items[a].st - items[b].st));
+  for (const i of ord) {
+    const it = items[i]; const end = it.st + it.dd;
+    if (it.row != null && isFinite(it.row)) {
+      const r = Math.max(0, Math.round(it.row));
+      while (rowsInt.length <= r) rowsInt.push([]);
+      rowsInt[r].push({ st: it.st, end }); res[i] = r; continue;
+    }
+    let r = 0;
+    for (;;) {
+      if (r >= rowsInt.length) rowsInt.push([]);
+      if (!rowsInt[r].some(iv => it.st < iv.end - 0.04 && iv.st < end - 0.04)) { rowsInt[r].push({ st: it.st, end }); res[i] = r; break; }
+      r++;
+    }
+  }
+  const used = [...new Set(res)].sort((a, b) => a - b);
+  const remap = new Map(used.map((r, i2) => [r, i2]));
+  return res.map(r => remap.get(r) ?? 0);
+}
+
 function TimelineV6(p: any) {
   const { slides, slideOptsById, timeline, selId, curT, musicUrl, musicName, ttsUrl, voiceUrl } = p;
   const PXS0 = clampN(Number(p.pxs) || PXS, TL_MIN_PXS, TL_MAX_PXS);
@@ -2624,6 +2662,13 @@ function TimelineV6(p: any) {
   const [lanePreview, setLanePreview] = useState<string[] | null>(null);
   const laneRowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const dispOrderRef = useRef<string[]>([]);
+  // v8.5: objek pindah antar-BARIS + sorotan target jatuh (teal=boleh, merah=numpuk)
+  const txtRowEls = useRef<Map<number, HTMLElement>>(new Map());
+  const stkRowEls = useRef<Map<number, HTMLElement>>(new Map());
+  const txtPoolRef = useRef<any[]>([]);
+  const stkPoolRef = useRef<any[]>([]);
+  const rowDropRef = useRef<any>(null);
+  const [rowDrop, setRowDrop] = useState<any>(null);
 
   // ukur setengah lebar viewport → konten diberi ruang kiri-kanan supaya detik 0 & akhir bisa tepat di garis tengah
   useEffect(() => {
@@ -2766,18 +2811,34 @@ function TimelineV6(p: any) {
   function laneIdOfDrag(d: any): string {
     if (d.kind === "reorder" || d.kind === "trim") return "vid";
     if (d.kind === "aud") return "aud:" + d.audioKind;
-    if (d.kind === "txt" || d.kind === "txtd") return "txt:" + (d.tid ? `${d.sid}::${d.tid}` : d.sid);
-    return "stk:" + d.stid;
+    if (d.kind === "txt" || d.kind === "txtd") return "txg"; // v8.5: teks = 1 GRUP jalur padat
+    return "stg";                                            // stiker = 1 GRUP jalur padat
   }
   function maybePromoteLane(e: React.PointerEvent, d: any): boolean {
     if (!d.armed || laneLiftRef.current) return false;
     if (!(d.kind === "reorder" || d.kind === "aud" || d.kind === "txt" || d.kind === "stk")) return false;
     const dy = e.clientY - (d.startY || 0); const dx = e.clientX - d.startX;
-    const vertikal = Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;      // niat jelas vertikal
-    const tahanLama = (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10; // tahan lama tanpa gerak
+    // klip & audio: geser vertikal = ANGKAT jalur; teks & stiker: vertikal = pindah BARIS objek (lihat applyObjRow)
+    const vertikal = (d.kind === "reorder" || d.kind === "aud") && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;
+    const tahanLama = (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // tahan lama diam → angkat jalur/grup
     if (!vertikal && !tahanLama) return false;
     startLaneLift(laneIdOfDrag(d), e.clientY);
     return true;
+  }
+  // v8.5: baris tujuan saat objek diseret vertikal + VALIDASI tabrakan waktu (asal tak numpuk = boleh!)
+  function applyObjRow(e: React.PointerEvent, d: any, g: "t" | "s") {
+    const els = (g === "t" ? txtRowEls : stkRowEls).current;
+    const list = [...els.entries()].sort((a, b) => a[0] - b[0]);
+    if (!list.length) return;
+    let to = list[list.length - 1][0] + 1; // default: di bawah baris terakhir → jalur BARU
+    for (const [r, el] of list) { const rc = el.getBoundingClientRect(); if (e.clientY <= rc.top + rc.height / 2) { to = r; break; } }
+    const stNow = clampN((d.st0 || 0) + (d.lastX - d.startX) / PXS0, 0, 7190);
+    const ddNow = d.dur0 || 3;
+    const pool = g === "t" ? txtPoolRef.current : stkPoolRef.current;
+    const bad = (pool || []).some((it: any) => it.key !== d.key && it.row === to && stNow < it.st + it.dd - 0.04 && it.st < stNow + ddNow - 0.04);
+    d.rowTo = to; d.rowBad = bad;
+    const cur = rowDropRef.current;
+    if (!cur || cur.r !== to || cur.bad !== bad || cur.g !== g) { const nv = { g, r: to, bad }; rowDropRef.current = nv; setRowDrop(nv); }
   }
   function startLaneLift(id: string, y: number) {
     clearTimeout(armTRef.current); dragRef.current = null; stopEdge();
@@ -2813,9 +2874,9 @@ function TimelineV6(p: any) {
     if (d.kind === "trim") applyTrim(d, e.clientX);
     else if (d.kind === "reorder") applyReorder(d, e.clientX);
     else if (d.kind === "aud") applyAud(d, e.clientX);
-    else if (d.kind === "txt") applyTxt(d, e.clientX);
+    else if (d.kind === "txt") { applyTxt(d, e.clientX); applyObjRow(e, d, "t"); }
     else if (d.kind === "txtd") applyTxtD(d, e.clientX);
-    else if (d.kind === "stk") applyStk(d, e.clientX);
+    else if (d.kind === "stk") { applyStk(d, e.clientX); applyObjRow(e, d, "s"); }
     else if (d.kind === "stkd") applyStkD(d, e.clientX);
   }
   function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
@@ -2893,7 +2954,7 @@ function TimelineV6(p: any) {
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = t.dur ?? (timeline?.durs?.[i] || 3);
-    const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, st0, dur0 };
+    const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, key: sid + "|" + (tid || ""), st0, dur0 };
     dragRef.current = d;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
@@ -2911,7 +2972,13 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
+    if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); }
+    if (d?.kind === "txt" && d.armed && d.rowTo != null) {
+      suppressClickRef.current = true;
+      if (d.rowBad) p.onRowBad?.(); // NUMPUK = ditolak, objek balik ke jalur asal
+      else { const cur = txtPoolRef.current.find((x: any) => x.key === d.key); if (!cur || cur.row !== d.rowTo) p.onTextRow?.(d.sid, d.tid || "", d.rowTo); }
+    }
   }
 
   // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
@@ -2920,7 +2987,7 @@ function TimelineV6(p: any) {
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = st.dur ?? (timeline?.durs?.[i] || 3);
-    const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, st0, dur0 };
+    const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, key: stid, st0, dur0 };
     dragRef.current = d;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
@@ -2938,7 +3005,13 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
+    if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); }
+    if (d?.kind === "stk" && d.armed && d.rowTo != null) {
+      suppressClickRef.current = true;
+      if (d.rowBad) p.onRowBad?.();
+      else { const cur = stkPoolRef.current.find((x: any) => x.key === d.key); if (!cur || cur.row !== d.rowTo) p.onStickerRow?.(d.sid, d.stid, d.rowTo); }
+    }
   }
 
   function rulerDown(e: React.PointerEvent) {
@@ -2974,8 +3047,8 @@ function TimelineV6(p: any) {
   if (musicUrl) laneIds.push("aud:m");
   if (ttsUrl) laneIds.push("aud:t");
   if (voiceUrl) laneIds.push("aud:v");
-  clipTexts.forEach(({ s, tid }: any) => laneIds.push("txt:" + (tid ? `${s.id}::${tid}` : s.id)));
-  clipStiks.forEach(({ st }: any) => laneIds.push("stk:" + st.id));
+  if (clipTexts.length) laneIds.push("txg");  // v8.5: teks = 1 grup jalur padat
+  if (clipStiks.length) laneIds.push("stg");   // stiker = 1 grup jalur padat
   const savedLanes: string[] = Array.isArray(p.laneOrder) ? p.laneOrder : [];
   const laneOrd: string[] = savedLanes.filter((x: string) => laneIds.includes(x));
   laneIds.forEach((x: string) => { if (!laneOrd.includes(x)) laneOrd.push(x); }); // jalur baru → nempel di bawah, bebas dipindah
@@ -3138,44 +3211,74 @@ function TimelineV6(p: any) {
                         </div>
                       );
                     })}
-                    {/* jalur teks (tiap lapisan teks = 1 jalur) */}
-                    {textItems.map(({ s, t, tid, st, dd, free }: any) => {
-                      const dd4 = dragRef.current as any;
-                      const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
-                      const enc = tid ? `${s.id}::${tid}` : s.id;
-                      const isSel = p.selTextSid === enc;
-                      const isLyr = /^lyr_/.test(t?.id || tid || "");
+                    {/* JALUR TEKS (1 grup padat) — objek BOLEH berbagi baris asal waktu tak numpuk, ala CapCut */}
+                    {textItems.length > 0 && (() => {
+                      const pack = packRows(textItems.map((x: any) => ({ st: x.st, dd: x.dd, row: x.t?.row })));
+                      txtPoolRef.current = textItems.map((x: any, ii: number) => ({ key: x.s.id + "|" + (x.tid || ""), st: x.st, dd: x.dd, row: pack[ii] }));
+                      const nRows = Math.max(...pack) + 1;
                       return (
-                        <div key={`${s.id}:${tid}`} ref={laneRowRef("txt:" + enc)} className={`v6e-lanerow ${laneLift === "txt:" + enc ? "lanelift" : ""}`} style={{ position: "relative", height: 46, marginBottom: 5, order: laneIdx["txt:" + enc] ?? 0 }}>
-                          <div className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Jalur teks — tahan&geser → pindah waktu · geser ↑↓ = PINDAH JALUR · ⋮ ujung = durasi · ketuk = pilih"
-                            onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
-                            onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
-                            style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
-                            {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
-                            <span className="txtdur" title="Tarik untuk ubah durasi teks"
-                              onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
-                          </div>
+                        <div ref={laneRowRef("txg")} className={`v6e-lanerow ${laneLift === "txg" ? "lanelift" : ""}`} style={{ order: laneIdx["txg"] ?? 0, height: "auto", marginBottom: 0, position: "relative" }}>
+                          {Array.from({ length: nRows }).map((_, r) => (
+                            <div key={r}
+                              ref={(el) => { if (el) txtRowEls.current.set(r, el); else txtRowEls.current.delete(r); }}
+                              className={`v6e-lanerow ${rowDrop && rowDrop.g === "t" && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
+                              style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                              {textItems.map(({ s, t, tid, st, dd, free }: any, ii: number) => {
+                                if (pack[ii] !== r) return null;
+                                const dd4 = dragRef.current as any;
+                                const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
+                                const enc = tid ? `${s.id}::${tid}` : s.id;
+                                const isSel = p.selTextSid === enc;
+                                const isLyr = /^lyr_/.test(t?.id || tid || "");
+                                return (
+                                  <div key={`${s.id}:${tid}`} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur (BOLEH berbagi asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh jalur teks"
+                                    onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
+                                    onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
+                                    style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
+                                    {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
+                                    <span className="txtdur" title="Tarik untuk ubah durasi teks"
+                                      onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ))}
                         </div>
                       );
-                    })}
-                    {/* jalur stiker (tiap stiker = 1 jalur) */}
-                    {stikItems.map(({ s, st, t0, dd, free }: any) => {
-                      const dd5 = dragRef.current as any;
-                      const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
-                      const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
+                    })()}
+                    {/* JALUR STIKER (1 grup padat) — aturan sama: berbagi boleh, numpuk tidak */}
+                    {stikItems.length > 0 && (() => {
+                      const pack = packRows(stikItems.map((x: any) => ({ st: x.t0, dd: x.dd, row: x.st?.row })));
+                      stkPoolRef.current = stikItems.map((x: any, ii: number) => ({ key: x.st.id, st: x.t0, dd: x.dd, row: pack[ii] }));
+                      const nRows = Math.max(...pack) + 1;
                       return (
-                        <div key={st.id} ref={laneRowRef("stk:" + st.id)} className={`v6e-lanerow ${laneLift === "stk:" + st.id ? "lanelift" : ""}`} style={{ position: "relative", height: 46, marginBottom: 5, order: laneIdx["stk:" + st.id] ?? 0 }}>
-                          <div className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Jalur stiker — tahan&geser → pindah waktu · geser ↑↓ = PINDAH JALUR · ⋮ ujung = durasi · ketuk = pilih"
-                            onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
-                            onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
-                            style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0 }}>
-                            {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
-                            <span className="txtdur" title="Tarik untuk ubah durasi stiker"
-                              onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}>⋮</span>
-                          </div>
+                        <div ref={laneRowRef("stg")} className={`v6e-lanerow ${laneLift === "stg" ? "lanelift" : ""}`} style={{ order: laneIdx["stg"] ?? 0, height: "auto", marginBottom: 0, position: "relative" }}>
+                          {Array.from({ length: nRows }).map((_, r) => (
+                            <div key={r}
+                              ref={(el) => { if (el) stkRowEls.current.set(r, el); else stkRowEls.current.delete(r); }}
+                              className={`v6e-lanerow ${rowDrop && rowDrop.g === "s" && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
+                              style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                              {stikItems.map(({ s, st, t0, dd, free }: any, ii: number) => {
+                                if (pack[ii] !== r) return null;
+                                const dd5 = dragRef.current as any;
+                                const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
+                                const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
+                                return (
+                                  <div key={st.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur (BOLEH berbagi asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh jalur stiker"
+                                    onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
+                                    onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
+                                    style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0 }}>
+                                    {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
+                                    <span className="txtdur" title="Tarik untuk ubah durasi stiker"
+                                      onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}>⋮</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ))}
                         </div>
                       );
-                    })}
+                    })()}
                     {/* jalur tambah elemen: bebas pilih jenis apa pun */}
                     <div style={{ position: "relative", height: 42, order: 9999 }}>
                       <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
