@@ -866,6 +866,57 @@ export function paintClipText(ctx: CanvasRenderingContext2D, W: number, H: numbe
   ctx.restore();
 }
 
+/* -------- KOTAK SELEKSI TEKS (preview saja — TIDAK ikut ekspor) --------
+   Mengukur blok teks persis seperti paintClipText lalu menggambar bingkai
+   putih bergaya CapCut (garis putus + titik sudut) di sekelilingnya. */
+export function paintTextSelectBox(ctx: CanvasRenderingContext2D, W: number, H: number, ct: ClipText) {
+  if (!ct || !ct.txt || !ct.txt.trim()) return;
+  const stack = TEXT_FONTS.find(f => f.id === ct.font)?.stack || TEXT_FONTS[0].stack;
+  const fs = Math.max(10, ct.size * H);
+  ctx.save();
+  ctx.font = `${ct.italic ? "italic " : ""}${ct.bold ? "900" : "500"} ${fs.toFixed(1)}px ${stack}`;
+  const maxW = W * 0.88;
+  const words = ct.txt.split(/\s+/).filter(Boolean);
+  const rows: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const t2 = cur ? cur + " " + w : w;
+    if (ctx.measureText(t2).width > maxW && cur) { rows.push(cur); cur = w; } else cur = t2;
+  }
+  if (cur || !rows.length) rows.push(cur);
+  let bw = 0;
+  for (const r of rows) bw = Math.max(bw, ctx.measureText(r).width);
+  const blockH = rows.length * fs * 1.28;
+  let xAnchor = W / 2;
+  if (ct.align === "left") xAnchor = W * 0.07;
+  else if (ct.align === "right") xAnchor = W * 0.93;
+  if (typeof ct.x === "number" && isFinite(ct.x)) xAnchor = ct.x * W;
+  let bx = xAnchor - bw / 2;
+  if (ct.align === "left") bx = xAnchor;
+  else if (ct.align === "right") bx = xAnchor - bw;
+  const cy = ct.y * H;
+  const pad = fs * 0.34;
+  const rx = bx - pad, ry = cy - blockH / 2 - pad, rw = bw + pad * 2, rh = blockH + pad * 2;
+  // bayangan tosca halus + garis putus putih
+  ctx.shadowColor = "rgba(20,184,166,.9)"; ctx.shadowBlur = 7;
+  ctx.globalAlpha = 0.95; ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1.5, W / 640);
+  ctx.setLineDash([fs * 0.32, fs * 0.22]);
+  const rr = fs * 0.22;
+  ctx.beginPath();
+  if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(rx, ry, rw, rh, rr);
+  else ctx.rect(rx, ry, rw, rh);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  // titik pegangan di 4 sudut
+  ctx.fillStyle = "#19c2b8";
+  for (const [cx, cyy] of [[rx, ry], [rx + rw, ry], [rx, ry + rh], [rx + rw, ry + rh]]) {
+    ctx.beginPath(); ctx.arc(cx, cyy, Math.max(3, W / 220), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /* Efek overlay dipakai juga oleh Spectrum Studio */
 export const paintEffect = paintEffectOverlay;
 

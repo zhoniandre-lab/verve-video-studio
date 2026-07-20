@@ -1229,7 +1229,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
   color:#c7c7d2; font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; }
 .v6e-track-addbtn i { font-style:normal; font-size:15px; }
 .v6e-audioclip { display:flex; align-items:center; height:52px; border-radius:9px; overflow:hidden; background:linear-gradient(90deg,#0f766e,#14b8a6);
-  color:#04211f; padding:0 10px; gap:8px; cursor:pointer; flex:0 0 auto; }
+  color:#04211f; padding:0 10px; gap:8px; cursor:pointer; flex:0 0 auto; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .v6e-audioclip .wv { display:flex; align-items:center; gap:2px; height:22px; }
 .v6e-audioclip .wv i { width:2.5px; background:rgba(4,33,31,.65); border-radius:2px; }
 .v6e-audioclip .nm { font-size:11px; font-weight:800; white-space:nowrap; }
@@ -1254,7 +1254,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 /* item track "terangkat" saat tekan-tahan (siap diseret bebas) */
 .v6e-clip.lift, .v6e-audioclip.lift, .v6e-textchip.lift { transform:scale(1.03); box-shadow:0 8px 22px rgba(0,0,0,.55); z-index:7;
   outline:2px solid var(--v6-teal); transition:transform .12s; }
-.v6e-textchip.asbtn { cursor:pointer; user-select:none; }
+.v6e-textchip.asbtn { cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
 .v6e-textchip.free { border-color:var(--v6-teal); background:rgba(25,194,184,.16); }
 .v6e-textchip .txtdur { position:absolute; right:0; top:0; bottom:0; width:14px; display:flex; align-items:center; justify-content:center;
   font-size:9px; color:rgba(255,255,255,.75); background:rgba(255,255,255,.14); border-radius:0 9px 9px 0; touch-action:none; }
