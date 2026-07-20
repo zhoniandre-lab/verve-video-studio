@@ -422,13 +422,19 @@ interface DrawState {
   // v5 per-klip
   clipT?: number; clipDur?: number; transId?: string;
   timeline?: Timeline | null; slideOpts?: SlideOpt[] | null; grainAmt?: number;
+  // v8.7 cache bingkai: gambar hanya lapisan tertentu (A=dunia klip · OV1=glow+spektrum · B=judul/logo/caption · OV2=stiker-spektrum+progress)
+  only?: "all"|"A"|"OV1"|"B"|"OV2";
 }
 
 function drawFrame(s: DrawState) {
   const { W,H,bars,rgb,style,imgs,slideIdx,isTransition,nextIdx,transT,slideT,bass,beat } = s;
   const ctx = s._canvas.getContext("2d", { alpha: false, desynchronized: true })!;
   const useV5 = !!(s.slideOpts && s.timeline);
+  const __G = s.only || "all";
+  const gA = __G === "all" || __G === "A", gO1 = __G === "all" || __G === "OV1";
+  const gB = __G === "all" || __G === "B", gO2 = __G === "all" || __G === "OV2";
 
+  if (gA) {
   // Reset filter di awal frame (v5: filter dikelola per-klip di paintClips)
   ctx.filter = useV5 ? "none" : (s.videoFilter || "none");
 
@@ -498,11 +504,17 @@ function drawFrame(s: DrawState) {
     } else drawImg(nxt,t,1);
   }
 
+  } // gA — lapisan dunia klip
+
+  if (gO1) {
   // Glow wash tipis (solid color dengan alpha variasi bass — jauhi gradient)
   ctx.fillStyle = `rgba(${rgb[0]|0},${rgb[1]|0},${rgb[2]|0},${(0.05+bass*0.10).toFixed(3)})`;
   ctx.fillRect(0,0,W,H);
 
   drawSpectrum(ctx, s);
+  } // gO1 — lapisan hidup (tiap frame)
+
+  if (gB) {
   drawCaptions(ctx, s);
 
   if (s.title && s.showTitle) {
@@ -530,13 +542,16 @@ function drawFrame(s: DrawState) {
 
   // ===== TEXT LAYERS (multi-teks CapCut-style) =====
   drawTextLayers(ctx, s);
+  } // gB — lapisan teks/judul/logo
 
+  if (gO2) {
   // ===== SPECTRUM STICKER (di atas text — subscribe/like/bell/disc/wave) =====
   drawSpectrumSticker(ctx, s);
 
   // Progress bar
   ctx.fillStyle="rgba(255,255,255,0.12)"; ctx.fillRect(0,H-3,W,3);
   ctx.fillStyle=rgba(rgb,0.9); ctx.fillRect(0,H-3,W*(s.time/s.totalDur),3);
+  } // gO2
 }
 
 // ===== Caption CapCut-style =====
@@ -1694,7 +1709,7 @@ async function renderWebCodecs(b:any){
     const c = { codec: "mp4a.40.2", sampleRate: audio.sampleRate, numberOfChannels: audio.channels || 2, bitrate: 192_000 };
     try { const s = await (window as any).AudioEncoder.isConfigSupported(c); if (s?.supported) aCfg = c; } catch {}
   }
-  onStage?.(`⚡ Mesin MP4 cepat (${canvas.width}x${canvas.height} @${fps}fps${aCfg ? " + audio" : ""})...`);
+  onStage?.(`⚡ Mesin MP4 NGEBUT v8.7 (${canvas.width}x${canvas.height} @${fps}fps${aCfg ? " + audio" : ""}) — cache bingkai aktif`);
   if (audio && !aCfg) onStage?.("⚠️ Encoder audio HP menolak — video tanpa suara. Coba render ulang.");
 
   const muxer = new Mp4Muxer({
@@ -1756,6 +1771,38 @@ async function renderWebCodecs(b:any){
   const bassRef = {level:0, beat:false};
   const tStart = performance.now();
 
+  /* ===== v8.7 CACHE BINGKAI: 90–99% frame slideshow IDENTIK.
+     Lapisan A (dunia klip: gambar+kenburns+teks karaoke) dicache di canvas sendiri —
+     dilukis ulang HANYA saat kuncinya berubah (slide baru / bucket zoom 1/96 slide
+     (≈0,03% — tak kasat mata) / pulsa beat / status teks-karaoke). Lapisan hidup
+     (glow bass + spektrum + stiker-spektrum + progress) tetap digambar TIAP frame
+     → gerakan hasil IDENTIK, tanpa kompromi kualitas. Transisi/efek/animasi/grain/
+     caption lama otomatis jatuh ke jalur lukis-penuh (perilaku persis seperti dulu). ===== */
+  const useV5fast = !!(timeline && slideOpts) && !(grainAmt > 0);
+  const dynSlides = new Set<number>();
+  const tdesc: any[] = [];
+  if (slideOpts) (slideOpts as any[]).forEach((o, si) => {
+    if (!o) return;
+    if (o.loop && o.loop !== "none") dynSlides.add(si);
+    if (o.effect && o.effect !== "none") dynSlides.add(si);
+    const grab = (ct: any) => {
+      if (!ct || !String(ct.txt || "").trim()) return;
+      if (ct.anim && ct.anim !== "none") dynSlides.add(si);
+      tdesc.push({ si, id: ct.id || "", abs0: (ct.start != null ? ct.start : null), dur: (ct.dur && ct.dur > 0 ? ct.dur : null), words: ct.karaokeWords || null });
+    };
+    if (o.text) grab(o.text);
+    (o.texts || []).forEach(grab);
+    (o.stickers || []).forEach((st2: any) => { if (typeof st2.emoji === "string" && st2.emoji[0] === "@") dynSlides.add(si); });
+  });
+  const hasBComplex = !!(captions && captions.length) || !!((b as any).textLayers && (b as any).textLayers.length);
+  const animDurOf = (o: any) => (o && typeof o.animDur === "number" && o.animDur > 0 ? o.animDur : 0.6);
+  const mctx: CanvasRenderingContext2D = canvas.getContext("2d", { alpha: false })!;
+  const cvA = document.createElement("canvas"); cvA.width = canvas.width; cvA.height = canvas.height;
+  const cvB = document.createElement("canvas"); cvB.width = canvas.width; cvB.height = canvas.height;
+  const bctx = cvB.getContext("2d")!;
+  let keyA = "", keyB = "";
+  let fastFrames = 0, paintFrames = 0;
+
   for (let f=0; f<totalFrames; f++){
     const t = f/fps;
     let slideIdx:number,localT:number,inTrans:boolean,transT:number,nextIdx:number,frameDur:number,transId:string,clipT:number;
@@ -1776,13 +1823,18 @@ async function renderWebCodecs(b:any){
       frameDur = slideDur; clipT = localT; transId = transition || "zoom";
     }
     const slideT = Math.min(1, localT/frameDur);
+    const optCur = slideOpts ? (slideOpts as any)[slideIdx] : null;
+    const aDur = animDurOf(optCur);
+    const fastOk = useV5fast && !inTrans && !hasBComplex && !dynSlides.has(slideIdx)
+      && !(optCur?.animIn && clipT < aDur)
+      && !(optCur?.animOut && (frameDur - clipT) < aDur);
 
     const bars = spec.bars[f];
     const bass = spec.bassLevels[f];
     const beat = !!spec.beats[f];
     bassRef.level = bass; bassRef.beat = beat;
 
-    drawFrame({
+    const st:any = {
       time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,
       rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
@@ -1794,7 +1846,30 @@ async function renderWebCodecs(b:any){
       spectrumSticker: b.spectrumSticker,
       textLayers: b.textLayers,
       clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt,
-    } as any);
+    };
+
+    if (fastOk) {
+      let kA = slideIdx + "." + Math.round(Math.min(1, Math.max(0, slideT)) * 96) + "." + (beat ? 1 : 0);
+      for (let di = 0; di < tdesc.length; di++) {
+        const d = tdesc[di];
+        const st0 = d.abs0 != null ? d.abs0 : (timeline?.starts?.[d.si] ?? 0);
+        const dd = d.dur ?? (timeline?.durs?.[d.si] ?? frameDur);
+        if (t < st0 || t >= st0 + dd) continue;
+        kA += "|t" + d.si + "." + (d.id || di);
+        if (d.words) { const rel = t - st0; let wi = -1; for (let w = 0; w < d.words.length; w++) { if (d.words[w].start <= rel) wi = w; else break; } kA += ":" + wi; }
+      }
+      if (kA !== keyA) { keyA = kA; paintFrames++; drawFrame({ ...st, _canvas: cvA, only: "A" }); }
+      mctx.drawImage(cvA, 0, 0);
+      drawFrame({ ...st, _canvas: canvas, only: "OV1" });
+      const kB = Math.round(Math.min(1, slideT * 2) * 24) + "";
+      if (kB !== keyB) { keyB = kB; bctx.clearRect(0, 0, canvas.width, canvas.height); drawFrame({ ...st, _canvas: cvB, only: "B" }); }
+      mctx.drawImage(cvB, 0, 0);
+      drawFrame({ ...st, _canvas: canvas, only: "OV2" });
+      fastFrames++;
+    } else {
+      paintFrames++;
+      drawFrame({ ...st, _canvas: canvas, only: "all" });
+    }
 
     const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
     videoEncoder.encode(vf,{keyFrame:f%keyframeEvery===0});
@@ -1811,6 +1886,7 @@ async function renderWebCodecs(b:any){
       await new Promise(r=>setTimeout(r,0));
     }
   }
+  try { console.log(`[v8.7 cache-bingkai] ${fastFrames}/${totalFrames} frame kilat · ${paintFrames}x lukis ulang`); } catch {}
   await videoEncoder.flush(); videoEncoder.close();
   // v8.1 WATCHDOG: kalau encoder menolak SEMUA frame, JANGAN kirim file busuk ke user
   if (!vidChunks) {
