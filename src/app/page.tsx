@@ -635,6 +635,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ---------- UI panels ---------- */
   const [tool, setTool] = useState<string | null>(null);
   const [clipBar, setClipBar] = useState(false);
+  // v8.4: susunan jalur track BEBAS & tersimpan permanen (aturan #6 — track bukan denah mati)
+  const [laneOrder, setLaneOrder] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem("verve_laneorder_v1") || "[]"); return Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : []; } catch { return []; } });
+  const saveLaneOrder = useCallback((o: string[]) => { setLaneOrder(o); try { localStorage.setItem("verve_laneorder_v1", JSON.stringify(o)); } catch {} }, []);
   const [sheetTab, setSheetTab] = useState("");
   const [modal, setModal] = useState<string | null>(null); // rekam|tts|musik|kamera|wizard|sampul|videoai|ganti|gambarai
   const [loading, setLoading] = useState<string | null>(null);
@@ -2436,6 +2439,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       <TimelineV6
         slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT} playing={playing}
         selTextSid={selTextSid} selStik={selStik}
+        laneOrder={laneOrder} onLaneOrder={(o: string[]) => { saveLaneOrder(o); flash("⠿ Susunan jalur disimpan — track kini ngikut tatananmu"); }}
         pxs={tlPxs} onZoom={(v: number) => setTlPxs(clampN(v, 0.6, 140))}
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
         musicDur={musicDur} ttsDur={ttsDur} voiceDur={voiceDur}
@@ -2604,7 +2608,7 @@ function TimelineV6(p: any) {
   const total = timeline?.total || 0;
   // total tampilan: ikut elemen terpanjang (video ATAU audio — lagu 5 menit = track 5 menit)
   const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
-  const contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
+  let contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
   const dragRef = useRef<{ kind: "trim" | "reorder" | "aud" | "txt" | "txtd" | "stk" | "stkd"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number; sid?: string; tid?: string; stid?: string; st0?: number; dur0?: number } | null>(null);
   const scrubHoldRef = useRef(false);
   // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
@@ -2613,6 +2617,13 @@ function TimelineV6(p: any) {
   const zoomAnchorRef = useRef<{ t: number; vx: number } | null>(null);
   const suppressSeekRef = useRef(false);
   const [, force] = useState(0);
+  // v8.4 ANGKAT JALUR: tekan-tahan objek lalu seret VERTIKAL (atau tahan lama diam) = SELURUH jalurnya ikut jari, bebas dipindah ke mana saja
+  const laneLiftRef = useRef<{ id: string } | null>(null);
+  const [laneLift, setLaneLift] = useState<string>("");
+  const lanePreviewRef = useRef<string[] | null>(null);
+  const [lanePreview, setLanePreview] = useState<string[] | null>(null);
+  const laneRowRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const dispOrderRef = useRef<string[]>([]);
 
   // ukur setengah lebar viewport → konten diberi ruang kiri-kanan supaya detik 0 & akhir bisa tepat di garis tengah
   useEffect(() => {
@@ -2750,9 +2761,55 @@ function TimelineV6(p: any) {
     else edgeDirRef.current = dir;
   }
   function stopEdge() { edgeDirRef.current = 0; cancelAnimationFrame(edgeRafRef.current); }
+
+  /* ---- v8.4 JALUR BEBAS: promosi drag objek → angkat & pindahkan SELURUH jalur ---- */
+  function laneIdOfDrag(d: any): string {
+    if (d.kind === "reorder" || d.kind === "trim") return "vid";
+    if (d.kind === "aud") return "aud:" + d.audioKind;
+    if (d.kind === "txt" || d.kind === "txtd") return "txt:" + (d.tid ? `${d.sid}::${d.tid}` : d.sid);
+    return "stk:" + d.stid;
+  }
+  function maybePromoteLane(e: React.PointerEvent, d: any): boolean {
+    if (!d.armed || laneLiftRef.current) return false;
+    if (!(d.kind === "reorder" || d.kind === "aud" || d.kind === "txt" || d.kind === "stk")) return false;
+    const dy = e.clientY - (d.startY || 0); const dx = e.clientX - d.startX;
+    const vertikal = Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;      // niat jelas vertikal
+    const tahanLama = (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10; // tahan lama tanpa gerak
+    if (!vertikal && !tahanLama) return false;
+    startLaneLift(laneIdOfDrag(d), e.clientY);
+    return true;
+  }
+  function startLaneLift(id: string, y: number) {
+    clearTimeout(armTRef.current); dragRef.current = null; stopEdge();
+    laneLiftRef.current = { id }; lanePreviewRef.current = null;
+    setLaneLift(id); setLanePreview(null); suppressClickRef.current = true;
+    try { (navigator as any).vibrate?.(12); } catch {}
+    const move = (ev: PointerEvent) => laneLiftDrag(ev.clientY);
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); commitLaneLift(); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    laneLiftDrag(y);
+  }
+  function laneLiftDrag(y: number) {
+    const st = laneLiftRef.current; if (!st) return;
+    const base = (dispOrderRef.current || []).filter((x: string) => x !== st.id);
+    let over = 0;
+    base.forEach((lid: string) => { const el = laneRowRefs.current.get(lid); if (!el) return; const r = el.getBoundingClientRect(); if (r.top + r.height / 2 < y) over++; });
+    const next = [...base]; next.splice(over, 0, st.id);
+    lanePreviewRef.current = next; setLanePreview(next);
+  }
+  function commitLaneLift() {
+    const st = laneLiftRef.current; const prev = lanePreviewRef.current;
+    laneLiftRef.current = null; lanePreviewRef.current = null;
+    setLaneLift(""); setLanePreview(null);
+    if (st && prev && typeof p.onLaneOrder === "function") p.onLaneOrder(prev);
+  }
+  const laneRowRef = (lid: string) => (el: HTMLElement | null) => { if (el) laneRowRefs.current.set(lid, el); else laneRowRefs.current.delete(lid); };
   function dragUpdate(e: React.PointerEvent, d: any) {
     d.lastX = e.clientX; updEdge(e.clientX);
     if (!d.armed) return;
+    if (maybePromoteLane(e, d)) return; // vertikal / tahan lama → angkat jalur
     if (d.kind === "trim") applyTrim(d, e.clientX);
     else if (d.kind === "reorder") applyReorder(d, e.clientX);
     else if (d.kind === "aud") applyAud(d, e.clientX);
@@ -2773,7 +2830,7 @@ function TimelineV6(p: any) {
     p.onSel(sid);
     const target = e.target as HTMLElement;
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
-    const d: any = { kind: "reorder", i, startX: e.clientX, startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
+    const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
     armDrag(d, target, e.pointerId, 300); // tekan-tahan 0,3d → klip "terangkat" & bisa diseret
   }
@@ -2810,7 +2867,7 @@ function TimelineV6(p: any) {
   // seret balok audio (tekan-tahan → geser posisi mulai)
   function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
-    const d: any = { kind: "aud", i: 0, startX: e.clientX, startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, off0 };
+    const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, off0 };
     dragRef.current = d;
     armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
   }
@@ -2836,7 +2893,7 @@ function TimelineV6(p: any) {
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = t.dur ?? (timeline?.durs?.[i] || 3);
-    const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, st0, dur0 };
+    const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, st0, dur0 };
     dragRef.current = d;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
@@ -2863,7 +2920,7 @@ function TimelineV6(p: any) {
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = st.dur ?? (timeline?.durs?.[i] || 3);
-    const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, st0, dur0 };
+    const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, st0, dur0 };
     dragRef.current = d;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
@@ -2912,6 +2969,31 @@ function TimelineV6(p: any) {
   });
   const clipStiks = slides.flatMap((s: Slide) => (slideOptsById[s.id]?.stickers || []).map((st: any) => ({ s, st })));
 
+  /* ---- v8.4 SUSUNAN JALUR BEBAS: semua jalur (video/audio/teks/stiker) satu sistem urutan ---- */
+  const laneIds: string[] = ["vid"];
+  if (musicUrl) laneIds.push("aud:m");
+  if (ttsUrl) laneIds.push("aud:t");
+  if (voiceUrl) laneIds.push("aud:v");
+  clipTexts.forEach(({ s, tid }: any) => laneIds.push("txt:" + (tid ? `${s.id}::${tid}` : s.id)));
+  clipStiks.forEach(({ st }: any) => laneIds.push("stk:" + st.id));
+  const savedLanes: string[] = Array.isArray(p.laneOrder) ? p.laneOrder : [];
+  const laneOrd: string[] = savedLanes.filter((x: string) => laneIds.includes(x));
+  laneIds.forEach((x: string) => { if (!laneOrd.includes(x)) laneOrd.push(x); }); // jalur baru → nempel di bawah, bebas dipindah
+  const dispOrder: string[] = lanePreview || laneOrd;
+  dispOrderRef.current = dispOrder;
+  const laneIdx: Record<string, number> = {};
+  dispOrder.forEach((x: string, i: number) => { laneIdx[x] = i; });
+  // lebar kolom konten: ikut elemen terpanjang (klip / audio / teks / stiker)
+  let maxEndAll = dispTotal;
+  clipTexts.forEach(({ s, t }: any) => { const i = slides.findIndex((x: Slide) => x.id === s.id); maxEndAll = Math.max(maxEndAll, (t.start ?? (timeline?.starts?.[i] || 0)) + (t.dur ?? (timeline?.durs?.[i] || 3))); });
+  clipStiks.forEach(({ s, st }: any) => { const i = slides.findIndex((x: Slide) => x.id === s.id); maxEndAll = Math.max(maxEndAll, (st.start ?? (timeline?.starts?.[i] || 0)) + (st.dur ?? (timeline?.durs?.[i] || 3))); });
+  if (musicUrl) maxEndAll = Math.max(maxEndAll, (p.musicOff || 0) + (p.musicDur || 4));
+  if (ttsUrl) maxEndAll = Math.max(maxEndAll, (p.ttsOff || 0) + (p.ttsDur || 4));
+  if (voiceUrl) maxEndAll = Math.max(maxEndAll, (p.voiceOff || 0) + (p.voiceDur || 4));
+  const clipsTotW = slides.reduce((a: number, _s: Slide, i: number) => a + clipW(i) + 4, 0) + 170;
+  const colW = Math.max(320, maxEndAll * PXS0 + 96, clipsTotW);
+  contentW = Math.max(contentW, colW + halfW * 2);
+
   return (
     <div className="v6e-tl">
       <div className="v6e-tl-inner">
@@ -2932,12 +3014,12 @@ function TimelineV6(p: any) {
         <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
           <div className="v6e-tl-scrollwrap" ref={scrollRef} onScroll={onTlScroll}
             onPointerDown={onWrapDown} onPointerMove={onWrapMove} onPointerUp={onWrapUp} onPointerCancel={onWrapUp}
-            style={{ position: "absolute", inset: 0, touchAction: "pan-x pan-y" }}>
+            style={{ position: "relative", touchAction: "pan-x pan-y" }}>
             <div style={{ position: "relative", width: contentW, display: "flex" }}>
               <div style={{ width: halfW, flex: "0 0 auto" }} />
-              <div style={{ position: "relative", flex: "0 0 auto" }}>
+              <div style={{ position: "relative", flex: "0 0 auto", display: "flex", flexDirection: "column", width: colW }}>
                 {/* ruler waktu (adaptif ikut zoom) */}
-                <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none" }} onPointerDown={rulerDown}>
+                <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
                   {Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep; return (
                     <span key={k} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
                       {formatDur(sec)}
@@ -2953,8 +3035,8 @@ function TimelineV6(p: any) {
                   }) : null}
                 </div>
 
-            {/* TRACK 1: video */}
-            <div className="v6e-track">
+            {/* JALUR VIDEO — ikut susunan bebas, bisa diangkat & dipindah juga */}
+            <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0 }}>
               {slides.map((s: Slide, i: number) => {
                 const sel = s.id === selId;
                 const isOutro = s.id.startsWith("outro");
@@ -2998,12 +3080,12 @@ function TimelineV6(p: any) {
 
             {/* TRACKS ELEMEN: jalur GENERIK tak terbatas — tiap elemen (audio/teks/stiker)
                 punya jalur sendiri-sendiri, bebas diisi apa pun, jumlah jalur mengikuti isi */}
-            <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
+            <div className="v6e-track-add" style={{ display: "contents" }}>
               {(() => {
                 const hasAny = hasAudio || !!clipTexts.length || !!clipStiks.length;
                 if (!hasAny) {
                   return (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", order: 9999 }}>
                       <button className="v6e-track-addbtn" onClick={p.onAddAudio}><i>🎵</i> ＋ Audio</button>
                       <button className="v6e-track-addbtn" onClick={p.onAddText}><i>🔤</i> ＋ Teks</button>
                       <button className="v6e-track-addbtn" onClick={p.onAddSticker}><i>😀</i> ＋ Stiker</button>
@@ -3022,17 +3104,15 @@ function TimelineV6(p: any) {
                   const i = slides.findIndex((x: Slide) => x.id === s.id);
                   return { s, st, t0: st.start ?? (timeline?.starts?.[i] || 0), dd: st.dur ?? (timeline?.durs?.[i] || 3), free: st.start != null };
                 });
-                const maxEnd = Math.max(dispTotal, ...rows.map((r: any) => r.off + (r.dur || 4)), ...textItems.map((x: any) => x.st + x.dd), ...stikItems.map((x: any) => x.t0 + x.dd));
-                const laneW = maxEnd * PXS0 + 96;
                 return (
-                  <div style={{ position: "relative", width: laneW }}>
+                  <>
                     {/* jalur audio (tiap elemen audio = 1 jalur) */}
                     {rows.map((r: any) => {
                       const dd3 = dragRef.current as any;
                       const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === r.key;
                       const wpx = Math.max(90, (r.dur || 4) * PXS0);
                       return (
-                        <div key={r.key} style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                        <div key={r.key} ref={laneRowRef("aud:" + r.key)} className={`v6e-lanerow ${laneLift === "aud:" + r.key ? "lanelift" : ""}`} style={{ position: "relative", height: 46, marginBottom: 5, order: laneIdx["aud:" + r.key] ?? 0 }}>
                           <div className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={r.nm}
                             onPointerDown={(e) => onAudDown(e, r.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
                             onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
@@ -3066,8 +3146,8 @@ function TimelineV6(p: any) {
                       const isSel = p.selTextSid === enc;
                       const isLyr = /^lyr_/.test(t?.id || tid || "");
                       return (
-                        <div key={`${s.id}:${tid}`} style={{ position: "relative", height: 46, marginBottom: 5 }}>
-                          <div className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Jalur teks — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
+                        <div key={`${s.id}:${tid}`} ref={laneRowRef("txt:" + enc)} className={`v6e-lanerow ${laneLift === "txt:" + enc ? "lanelift" : ""}`} style={{ position: "relative", height: 46, marginBottom: 5, order: laneIdx["txt:" + enc] ?? 0 }}>
+                          <div className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Jalur teks — tahan&geser → pindah waktu · geser ↑↓ = PINDAH JALUR · ⋮ ujung = durasi · ketuk = pilih"
                             onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
                             onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
                             style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
@@ -3084,8 +3164,8 @@ function TimelineV6(p: any) {
                       const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
                       const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
                       return (
-                        <div key={st.id} style={{ position: "relative", height: 46, marginBottom: 5 }}>
-                          <div className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Jalur stiker — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
+                        <div key={st.id} ref={laneRowRef("stk:" + st.id)} className={`v6e-lanerow ${laneLift === "stk:" + st.id ? "lanelift" : ""}`} style={{ position: "relative", height: 46, marginBottom: 5, order: laneIdx["stk:" + st.id] ?? 0 }}>
+                          <div className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Jalur stiker — tahan&geser → pindah waktu · geser ↑↓ = PINDAH JALUR · ⋮ ujung = durasi · ketuk = pilih"
                             onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
                             onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
                             style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0 }}>
@@ -3097,13 +3177,13 @@ function TimelineV6(p: any) {
                       );
                     })}
                     {/* jalur tambah elemen: bebas pilih jenis apa pun */}
-                    <div style={{ position: "relative", height: 42 }}>
+                    <div style={{ position: "relative", height: 42, order: 9999 }}>
                       <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
                       <button className="v6e-track-addbtn" style={{ position: "absolute", left: 46, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru, mulai di posisi penanda)">🔤</button>
                       <button className="v6e-track-addbtn" style={{ position: "absolute", left: 92, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru, mulai di posisi penanda)">😀</button>
                       {hasAudio && <button className="v6e-track-addbtn" style={{ position: "absolute", left: 138, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onDelAudio} title="Hapus semua audio">🗑</button>}
                     </div>
-                  </div>
+                  </>
                 );
               })()}
             </div>

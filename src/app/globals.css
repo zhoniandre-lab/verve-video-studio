@@ -1198,7 +1198,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 
 /* ---------- TIMELINE ---------- */
 .v6e-tl { flex:0 0 auto; background:#000; padding:2px 0 4px; }
-.v6e-tl-scrollwrap { overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+.v6e-tl-scrollwrap { overflow-x:auto; overflow-y:auto; scrollbar-width:none; max-height:min(46dvh,432px); overscroll-behavior:contain; }
 .v6e-tl-scrollwrap::-webkit-scrollbar { display:none; }
 .v6e-tl-inner { display:flex; align-items:stretch; }
 .v6e-tl-rail { flex:0 0 auto; width:64px; display:flex; flex-direction:column; gap:6px; padding:0 6px; }
@@ -1551,3 +1551,6 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6e-textchip.lyr.sel{outline-color:#67e8f9}
 .v6e-stagedel{position:absolute;top:10px;right:10px;z-index:40;width:42px;height:42px;border-radius:13px;border:1px solid rgba(255,255,255,.25);background:rgba(220,38,38,.93);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.45);backdrop-filter:blur(4px);cursor:pointer}
 .v6e-stagedel:active{transform:scale(.9)}
+
+/* ===== v8.4 TRACK BEBAS — jalur yang sedang "diangkat" untuk dipindah ===== */
+.v6e-lanerow.lanelift, .v6e-track.lanelift { outline:2px dashed rgba(34,211,238,.65); outline-offset:1px; border-radius:10px; position:relative; z-index:6; }
