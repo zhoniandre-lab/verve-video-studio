@@ -1220,7 +1220,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!f) return;
     if (f.size > 18 * 1024 * 1024) return setErr({ message: "File musik terlalu besar (maks 18MB)" });
     const r = new FileReader();
-    r.onload = () => { const u = r.result as string; setMusicUrl(u); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash("🎵 Musik ditambahkan"); getAudioDuration(u).then(setMusicDur); };
+    r.onload = () => { const u = r.result as string; setMusicUrl(u); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash(`🎵 Musik ditambahkan mulai ${formatDur(curTRef.current)}`); getAudioDuration(u).then(setMusicDur); };
     r.readAsDataURL(f);
   }
   async function mixAudioUrls(parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number; off?: number }[]): Promise<string | null> {
@@ -1279,10 +1279,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!buf) throw new Error("Audio di video ini tidak bisa dibaca (codec tak didukung).");
       const wav = bufferToWav(buf);
       const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
-      setMusicUrl(url); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40));
+      setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40));
       getAudioDuration(url).then(setMusicDur);
       actx.close();
-      flash("🎬 Audio dari video berhasil diekstrak");
+      flash(`🎬 Audio diekstrak — mulai ${formatDur(curTRef.current)}`);
     } catch (e: any) { setErr(e); }
     setLoading(null); setTimeout(() => setStageText(""), 100);
   }
@@ -1328,7 +1328,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
         if (url) {
           clearInterval(itv);
-          setMusicUrl(url); setMusicName(mTitle || "Lagu AI");
+          setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(mTitle || "Lagu AI");
           getAudioDuration(url).then(setMusicDur);
           setMStatus("selesai"); setMTask("");
           try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
@@ -1492,19 +1492,27 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       return;
     }
     const o = slideOptsById[sid];
+    // TEKS BARU selalu lahir sebagai TEKS LEPAS mulai di POSISI PENANDA (rol) — bukan nempel di awal klip
+    const startAt = Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100;
     if (!o?.text) {
-      setOpt(sid, { text: { ...DEFAULT_TEXT, txt: "" } });
+      setOpt(sid, { text: { ...DEFAULT_TEXT, txt: "", start: startAt, dur: 3 } });
       setTextEditingId(sid); setTextEditingTid("");
+      setSelTextSid(sid);
+      flash(`🔤 Teks baru mulai di ${formatDur(startAt)} — jalur baru dibuat, geser sesukamu!`);
     } else if (o.text.txt?.trim()) {
-      // lapisan utama sudah berisi → buat LAPISAN BARU (maks 8 teks per klip)
+      // lapisan utama sudah berisi → buat LAPISAN BARU (maks 8 teks per klip, jalur total tak terbatas)
       const layers = (o.texts || []).filter(x => x.txt?.trim()).length + 1;
       if (layers >= 8) { flash("🚫 Maksimal 8 lapisan teks per klip bro"); return; }
-      const nt: ClipText = { ...DEFAULT_TEXT, id: uid("tx"), txt: "", y: Math.max(0.08, (o.text.y ?? 0.82) - 0.16 * layers) };
+      const nt: ClipText = { ...DEFAULT_TEXT, id: uid("tx"), txt: "", y: Math.max(0.08, (o.text.y ?? 0.82) - 0.16 * layers), start: startAt, dur: 3 };
       setOpt(sid, { texts: [...(o.texts || []), nt] } as Partial<SlideOpt>);
       setTextEditingId(sid); setTextEditingTid(nt.id!);
-      flash(`🔤 Lapisan teks #${layers + 1} — satu klip bisa banyak teks!`);
+      setSelTextSid(selTextEncode(sid, nt.id!));
+      flash(`🔤 Lapisan teks #${layers + 1} mulai di ${formatDur(startAt)}!`);
     } else {
+      // lapisan utama ada tapi masih kosong → pakai, jadikan lepas di penanda kalau belum punya waktu
+      setOpt(sid, { text: { ...o.text, start: o.text.start ?? startAt, dur: o.text.dur ?? 3 } });
       setTextEditingId(sid); setTextEditingTid("");
+      setSelTextSid(sid);
     }
     setTool("teksedit"); setClipBar(false);
   }
@@ -1538,10 +1546,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     if (!sid) { flash("Tambahkan klip dulu"); return; }
     const cur = slideOptsById[sid]?.stickers || [];
-    const st: StickerItem = { id: uid("st"), emoji, x: 0.5, y: emoji.startsWith("@") ? 0.72 : 0.4, size: emoji.startsWith("@") ? 0.07 : 0.12, rot: 0, img };
+    const startAt = Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100; // lahir di posisi penanda
+    const st: StickerItem = { id: uid("st"), emoji, x: 0.5, y: emoji.startsWith("@") ? 0.72 : 0.4, size: emoji.startsWith("@") ? 0.07 : 0.12, rot: 0, img, start: startAt, dur: 3 };
     setOpt(sid, { stickers: [...cur, st] } as Partial<SlideOpt>);
     setSelStik({ sid, stid: st.id }); // langsung terpilih → bisa digeser/di-cubit saat itu juga
-    flash(img ? "🖼️ Overlay foto ditambahkan — seret/cubit di layar!" : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan — seret/cubit di layar!`);
+    flash(img ? `🖼️ Overlay foto ditambahkan mulai ${formatDur(startAt)}` : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan mulai ${formatDur(startAt)} — jalur baru dibuat!`);
   }
   function moveSticker(sid: string, stid: string, x: number, y: number) {
     const stks = (slideOptsById[sid]?.stickers || []).map(s => s.id === stid ? { ...s, x: clampN(x, 0.05, 0.95), y: clampN(y, 0.05, 0.95) } : s);
@@ -2212,7 +2221,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       )}
 
       {/* modal-modul */}
-      {modal === "rekam" && <RekamModal onClose={() => setModal(null)} onUse={(u: string) => { setVoiceUrl(u); setModal(null); flash("🎙️ Rekaman masuk track audio"); getAudioDuration(u).then(setVoiceDur); }} />}
+      {modal === "rekam" && <RekamModal onClose={() => setModal(null)} onUse={(u: string) => { setVoiceUrl(u); setVoiceOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setModal(null); flash(`🎙️ Rekaman masuk jalur audio mulai ${formatDur(curTRef.current)}`); getAudioDuration(u).then(setVoiceDur); }} />}
       {modal === "tts" && <TtsModal initial={ttsText} onClose={() => setModal(null)} onGen={doTTS} loading={loading} voice={ttsVoice} setVoice={setTtsVoice} />}
       {modal === "musik" && <MusikModal
         onClose={() => setModal(null)} sunoKey={sunoKey} setSunoKey={setSunoKey} sunoProv={sunoProv} setSunoProv={setSunoProv}
@@ -2648,72 +2657,72 @@ function TimelineV6(p: any) {
               <button className="v6e-addclip" onClick={p.onAddClip}>＋</button>
             </div>
 
-            {/* TRACK 2: audio — balok sepanjang DURASI ASLI audio (lahan kerja di track) */}
+            {/* TRACKS ELEMEN: jalur GENERIK tak terbatas — tiap elemen (audio/teks/stiker)
+                punya jalur sendiri-sendiri, bebas diisi apa pun, jumlah jalur mengikuti isi */}
             <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
-              {!hasAudio ? (
-                <button className="v6e-track-addbtn" onClick={p.onAddAudio}><i>🎵</i> ＋ Tambahkan audio</button>
-              ) : (() => {
+              {(() => {
+                const hasAny = hasAudio || !!clipTexts.length || !!clipStiks.length;
+                if (!hasAny) {
+                  return (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button className="v6e-track-addbtn" onClick={p.onAddAudio}><i>🎵</i> ＋ Audio</button>
+                      <button className="v6e-track-addbtn" onClick={p.onAddText}><i>🔤</i> ＋ Teks</button>
+                      <button className="v6e-track-addbtn" onClick={p.onAddSticker}><i>😀</i> ＋ Stiker</button>
+                    </div>
+                  );
+                }
                 const rows: { key: "m" | "t" | "v"; grad: string; col: string; icon: string; nm: string; dur: number; off: number }[] = [];
                 if (musicUrl) rows.push({ key: "m", grad: "linear-gradient(90deg,#0f766e,#14b8a6)", col: "#04211f", icon: "♪", nm: musicName || "Musik", dur: p.musicDur || 0, off: p.musicOff || 0 });
                 if (ttsUrl) rows.push({ key: "t", grad: "linear-gradient(90deg,#7c3aed,#a855f7)", col: "#fff", icon: "🗣️", nm: "Narasi AI", dur: p.ttsDur || 0, off: p.ttsOff || 0 });
                 if (voiceUrl) rows.push({ key: "v", grad: "linear-gradient(90deg,#b91c1c,#ef4444)", col: "#fff", icon: "🎙️", nm: "Rekaman", dur: p.voiceDur || 0, off: p.voiceOff || 0 });
-                const rowH = rows.length > 1 ? 30 : 46;
-                const wOf = (r: any) => Math.max(90, (r.dur || 4) * PXS0);
-                const maxW = Math.max(...rows.map((r: any) => r.off * PXS0 + wOf(r)));
-                return (
-                  <div style={{ position: "relative", width: maxW + 8 + 96, height: rows.length * rowH + (rows.length - 1) * 5 }}>
-                    {rows.map((r, k) => {
-                      const dd = dragRef.current as any;
-                      const lifting = dd?.kind === "aud" && dd.armed && dd.audioKind === r.key;
-                      return (
-                        <div key={r.key} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={r.nm}
-                          onPointerDown={(e) => onAudDown(e, r.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
-                          onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
-                          style={{ position: "absolute", left: r.off * PXS0, top: k * (rowH + 5), width: wOf(r), height: rowH, background: r.grad, color: r.col, overflow: "hidden" }}>
-                          <i style={{ fontStyle: "normal" }}>{r.icon}</i>
-                          <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
-                            (() => {
-                              const pk: number[] | null = (r.key === "m" ? p.musicPeaks : r.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
-                              if (pk && pk.length) {
-                                const bars = Math.max(24, Math.min(190, Math.floor(wOf(r) / 4.2)));
-                                return Array.from({ length: bars }).map((_, k2) => {
-                                  const v = pk[Math.min(pk.length - 1, Math.floor(k2 / bars * pk.length))];
-                                  return <i key={k2} style={{ height: Math.max(3, Math.round(v * Math.max(8, rowH - 12))) }} />;
-                                });
-                              }
-                              return Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % Math.max(8, rowH - 14)) }} />);
-                            })()
-                          }</span>
-                          <span className="nm" style={rowH < 40 ? { fontSize: 9.5 } : undefined}>
-                            {r.nm}{r.key === "m" && p.musicBpm ? ` · 🥁${p.musicBpm}` : ""}{r.dur ? ` · ${formatDur(r.dur)}` : ""}{r.off > 0.05 ? ` · ▶${formatDur(r.off)}` : ""}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    <div style={{ position: "absolute", left: maxW + 8, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                      <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0, height: 42 }} onClick={p.onAddAudio}>＋</button>
-                      <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0, height: 42 }} onClick={p.onDelAudio} title="Hapus audio">🗑</button>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* TRACK 3+: teks — TIAP lapisan punya JALUR sendiri, jumlah jalur TAK DIBATASI */}
-            <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
-              {!clipTexts.length ? (
-                <button className="v6e-track-addbtn" onClick={p.onAddText}><i>🔤</i> ＋ Tambahkan teks</button>
-              ) : (() => {
-                const items = clipTexts.map(({ s, t, tid }: any) => {
+                const textItems = clipTexts.map(({ s, t, tid }: any) => {
                   const i = slides.findIndex((x: Slide) => x.id === s.id);
                   return { s, t, tid, st: t.start ?? (timeline?.starts?.[i] || 0), dd: t.dur ?? (timeline?.durs?.[i] || 3), free: t.start != null };
                 });
-                const laneW = Math.max(dispTotal, ...items.map((x: any) => x.st + x.dd)) * PXS0 + 96;
+                const stikItems = clipStiks.map(({ s, st }: any) => {
+                  const i = slides.findIndex((x: Slide) => x.id === s.id);
+                  return { s, st, t0: st.start ?? (timeline?.starts?.[i] || 0), dd: st.dur ?? (timeline?.durs?.[i] || 3), free: st.start != null };
+                });
+                const maxEnd = Math.max(dispTotal, ...rows.map((r: any) => r.off + (r.dur || 4)), ...textItems.map((x: any) => x.st + x.dd), ...stikItems.map((x: any) => x.t0 + x.dd));
+                const laneW = maxEnd * PXS0 + 96;
                 return (
                   <div style={{ position: "relative", width: laneW }}>
-                    {items.map(({ s, t, tid, st, dd, free }: any) => {
-                      const dd2 = dragRef.current as any;
-                      const lifting = (dd2?.kind === "txt" || dd2?.kind === "txtd") && dd2.armed && dd2.sid === s.id && (dd2.tid || "") === tid;
+                    {/* jalur audio (tiap elemen audio = 1 jalur) */}
+                    {rows.map((r: any) => {
+                      const dd3 = dragRef.current as any;
+                      const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === r.key;
+                      const wpx = Math.max(90, (r.dur || 4) * PXS0);
+                      return (
+                        <div key={r.key} style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                          <div className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={r.nm}
+                            onPointerDown={(e) => onAudDown(e, r.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
+                            onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
+                            style={{ position: "absolute", left: r.off * PXS0, top: 3, width: wpx, height: 40, background: r.grad, color: r.col, overflow: "hidden" }}>
+                            <i style={{ fontStyle: "normal" }}>{r.icon}</i>
+                            <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
+                              (() => {
+                                const pk: number[] | null = (r.key === "m" ? p.musicPeaks : r.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
+                                if (pk && pk.length) {
+                                  const bars = Math.max(24, Math.min(190, Math.floor(wpx / 4.2)));
+                                  return Array.from({ length: bars }).map((_, k2) => {
+                                    const v = pk[Math.min(pk.length - 1, Math.floor(k2 / bars * pk.length))];
+                                    return <i key={k2} style={{ height: Math.max(3, Math.round(v * 28)) }} />;
+                                  });
+                                }
+                                return Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % 26) }} />);
+                              })()
+                            }</span>
+                            <span className="nm" style={{ fontSize: 11 }}>
+                              {r.nm}{r.key === "m" && p.musicBpm ? ` · 🥁${p.musicBpm}` : ""}{r.dur ? ` · ${formatDur(r.dur)}` : ""}{r.off > 0.05 ? ` · ▶${formatDur(r.off)}` : ""}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* jalur teks (tiap lapisan teks = 1 jalur) */}
+                    {textItems.map(({ s, t, tid, st, dd, free }: any) => {
+                      const dd4 = dragRef.current as any;
+                      const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
                       return (
                         <div key={`${s.id}:${tid}`} style={{ position: "relative", height: 46, marginBottom: 5 }}>
                           <div className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""}`} title="Jalur teks — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
@@ -2727,29 +2736,10 @@ function TimelineV6(p: any) {
                         </div>
                       );
                     })}
-                    <div style={{ position: "relative", height: 42 }}>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru)">＋</button>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* TRACK 4+: stiker — TIAP stiker punya JALUR sendiri, jumlah jalur TAK DIBATASI */}
-            <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
-              {!clipStiks.length ? (
-                <button className="v6e-track-addbtn" onClick={p.onAddSticker}><i>😀</i> ＋ Tambahkan stiker</button>
-              ) : (() => {
-                const items = clipStiks.map(({ s, st }: any) => {
-                  const i = slides.findIndex((x: Slide) => x.id === s.id);
-                  return { s, st, t0: st.start ?? (timeline?.starts?.[i] || 0), dd: st.dur ?? (timeline?.durs?.[i] || 3), free: st.start != null };
-                });
-                const laneW = Math.max(dispTotal, ...items.map((x: any) => x.t0 + x.dd)) * PXS0 + 96;
-                return (
-                  <div style={{ position: "relative", width: laneW }}>
-                    {items.map(({ s, st, t0, dd, free }: any) => {
-                      const dd2 = dragRef.current as any;
-                      const lifting = (dd2?.kind === "stk" || dd2?.kind === "stkd") && dd2.armed && dd2.stid === st.id;
+                    {/* jalur stiker (tiap stiker = 1 jalur) */}
+                    {stikItems.map(({ s, st, t0, dd, free }: any) => {
+                      const dd5 = dragRef.current as any;
+                      const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
                       return (
                         <div key={st.id} style={{ position: "relative", height: 46, marginBottom: 5 }}>
                           <div className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""}`} title="Jalur stiker — tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
@@ -2763,8 +2753,12 @@ function TimelineV6(p: any) {
                         </div>
                       );
                     })}
+                    {/* jalur tambah elemen: bebas pilih jenis apa pun */}
                     <div style={{ position: "relative", height: 42 }}>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru)">＋</button>
+                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
+                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 46, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru, mulai di posisi penanda)">🔤</button>
+                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 92, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru, mulai di posisi penanda)">😀</button>
+                      {hasAudio && <button className="v6e-track-addbtn" style={{ position: "absolute", left: 138, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onDelAudio} title="Hapus semua audio">🗑</button>}
                     </div>
                   </div>
                 );
