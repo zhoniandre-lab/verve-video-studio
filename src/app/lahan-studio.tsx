@@ -9,7 +9,7 @@
  * naskah, storyboard, DAN tiap prompt gambar adegan — biar visual konsisten WAW.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type AnalyzedVideo,
@@ -18,6 +18,7 @@ import {
   detectAudienceIntent, audienceCard, dominantEmotion, watchActivity,
   solutionFor, monetizationHint, deviceAdvice, DATA_GAPS,
 } from "@/lib/brain/audience";
+import { getAudioPeaks } from "@/lib/waveform";
 
 const LAHAN_KEY = "verve_lahan_v1";
 const BRAIN_KEY = "verve_brain_v1";
@@ -74,10 +75,27 @@ type Scene = {
 };
 type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
 
+type SongTask = { id: string; title: string; ts: number };
+type SongResult = { url: string; title: string; duration?: number; image?: string };
+
+const SUNO_PROVIDERS = [
+  { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
+  { id: "apiframe", label: "apiframe.ai" },
+  { id: "sunor", label: "Sunor.cc" },
+  { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
+];
+const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
+const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
+/** Interval polling cerdas (detik): rapat di awal, makin jarang makin lama — total sabar ±6 mnt (putaran 2 s.d. 9 mnt) */
+const POLL_DELTAS = [5, 8, 10, 12, 15, 15, 20, 20, 25, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30];
+
 type LahanState = {
   step: number; topic: string; angles: string[]; selKeyword: string;
   angle: Angle | null; researchAt: string; selTitle: string;
   naskah: string; board: Board | null;
+  lyrics: string; lyricMode: "auto" | "manual"; mStyle: string;
+  genre: string; mood: string; vocal: string;
+  task: SongTask | null; song: SongResult | null;
 };
 
 const DEFAULT_CHARS: CharCard[] = [
@@ -100,7 +118,7 @@ const GAYA_VISUAL = [
 /** kode style untuk mesin gambar hcnsec (IMAGE_STYLES ids) */
 const GAYA_TO_STYLE = ["cinematic", "oil", "anime", "3d"];
 
-const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan"];
+const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu"];
 
 /** Perintah konsistensi yang disuntik ke prompt (untuk preview/salin di langkah Visual). */
 function composeVisualPrompt(scene: string, chars: CharCard[], gaya: string): string {
@@ -141,8 +159,24 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   const [naskah, setNaskah] = useState("");
   const [board, setBoard] = useState<Board | null>(null);
   const [genAllBusy, setGenAllBusy] = useState(false);
-  const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board">("");
+  const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board" | "lyrics" | "song">("");
   const [err, setErr] = useState<{ code: string; msg: string } | null>(null);
+  /* ---- SUNO ---- */
+  const [lyrics, setLyrics] = useState("");
+  const [lyricMode, setLyricMode] = useState<"auto" | "manual">("auto");
+  const [mStyle, setMStyle] = useState("");
+  const [genre, setGenre] = useState(GENRES[0]);
+  const [mood, setMood] = useState(MOODS[0]);
+  const [vocal, setVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
+  const [sunoKey, setSunoKey] = useState("");
+  const [sunoProv, setSunoProv] = useState("kie");
+  const [task, setTask] = useState<SongTask | null>(null);
+  const [song, setSong] = useState<SongResult | null>(null);
+  const [peaks, setPeaks] = useState<number[] | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "antre" });
+  const pollStop = useRef(false);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toast, setToast] = useState("");
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
   const [gaya, setGaya] = useState(0);
@@ -169,7 +203,19 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
       setSelTitle(j.selTitle || "");
       setNaskah(j.naskah || "");
       setBoard(j.board || null);
+      setLyrics(j.lyrics || "");
+      setLyricMode(j.lyricMode === "manual" ? "manual" : "auto");
+      setMStyle(j.mStyle || "");
+      setGenre(j.genre && GENRES.includes(j.genre) ? j.genre : GENRES[0]);
+      setMood(j.mood && MOODS.includes(j.mood) ? j.mood : MOODS[0]);
+      setVocal((["auto", "male", "female", "instrumental"] as const).includes(j.vocal as never) ? (j.vocal as never) : "auto");
+      setTask(j.task || null);
+      setSong(j.song || null);
     } catch { /* draf korup → mulai bersih */ }
+    try {
+      setSunoKey(localStorage.getItem("verve_suno_key") || "");
+      setSunoProv(localStorage.getItem("verve_suno_provider") || "kie");
+    } catch { /* abaikan */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -189,7 +235,7 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
       if (board && !withImages) {
         slimBoard = { ...board, scenes: board.scenes.map((s) => ({ ...s, url: undefined, status: s.status === "done" ? "idle" : s.status })) };
       }
-      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard };
+      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song };
       localStorage.setItem(LAHAN_KEY, JSON.stringify(payload));
     };
     try {
@@ -197,7 +243,20 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     } catch {
       try { save(false); } catch { /* storage penuh total — sesi jalan terus */ }
     }
-  }, [step, topic, angles, selKeyword, angle, researchAt, selTitle, naskah, board]);
+  }, [step, topic, angles, selKeyword, angle, researchAt, selTitle, naskah, board, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song]);
+
+  /* bersihkan timer saat keluar layar — task tetap tersimpan di draf (bisa dipantau ulang) */
+  useEffect(() => () => {
+    pollStop.current = true;
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+  }, []);
+
+  /* ticker detik berjalan selama polling */
+  useEffect(() => {
+    if (!polling || !task) return;
+    const it = setInterval(() => setPollUi((p) => ({ ...p, elapsed: Math.round((Date.now() - task.ts) / 1000) })), 1000);
+    return () => clearInterval(it);
+  }, [polling, task]);
 
   /* ---------- intent audiens (niche terkunci story_song) ---------- */
   const intentId = topic.trim() ? detectAudienceIntent(topic + " cerita jadi lagu") : "story_song";
@@ -277,6 +336,8 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     if (!confirm("Mulai lahan baru? Draf riset, naskah & adegan sekarang dihapus.")) return;
     setStep(1); setTopic(""); setAngles([]); setSelKeyword(""); setAngle(null);
     setResearchAt(""); setSelTitle(""); setNaskah(""); setBoard(null);
+    setLyrics(""); setLyricMode("auto"); setMStyle(""); setTask(null); setSong(null); setPeaks(null);
+    cancelPolling();
     try { localStorage.removeItem(LAHAN_KEY); } catch { /* abaikan */ }
   }
 
@@ -398,6 +459,177 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
   }
 
+  /* ================= SUNO (dengan pengerasan anti-macet) ================= */
+  function sunoHeaders(): Record<string, string> {
+    const h: Record<string, string> = { "Content-Type": "application/json" };
+    if (sunoKey.trim()) { h["X-Suno-Key"] = sunoKey.trim(); h["X-Suno-Provider"] = sunoProv; }
+    return h;
+  }
+  function fmtClock(sec: number): string {
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function manualLyrics() {
+    setLyricMode("manual");
+    if (!lyrics.trim()) {
+      const fromBoard = (board?.scenes || []).map((s) => s.lyric_line).filter(Boolean).join("\n");
+      if (fromBoard) setLyrics(fromBoard);
+    }
+  }
+
+  async function genLyrics() {
+    if (!selTitle) return;
+    setErr(null);
+    setBusy("lyrics");
+    try {
+      const r = await fetch("/api/hcnsec/lyrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: selTitle, keyword: selKeyword, niche: "Cerita jadi lagu / lagu emosional", genre, mood }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setLyrics(j.lyrics || "");
+      if (j.style_prompt_suno) setMStyle(j.style_prompt_suno);
+      setLyricMode("auto");
+      flash("✨ Lirik jadi — cek & poles sesukamu");
+    } catch (e) {
+      setErr({ code: "lyrics", msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function clearPollTimer() {
+    if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null; }
+  }
+
+  async function checkOnce(id: string): Promise<"done" | "pending"> {
+    const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store" });
+    const pd = await r.json().catch(() => ({}));
+    const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
+    if (url) {
+      finishSong({ url, title: pd.title || selTitle || "Lagu AI", duration: pd.duration, image: pd.image_url });
+      return "done";
+    }
+    if (pd.status === "error" || pd.error) throw new Error(pd.error || "Provider gagal generate");
+    return "pending";
+  }
+
+  function finishSong(res: SongResult) {
+    pollStop.current = true;
+    clearPollTimer();
+    setPolling(false);
+    setTask(null);
+    setSong(res);
+    flash("✅ Lagu jadi! Auto-terpasang di lahan");
+    void getAudioPeaks(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(res.url)}`, 96)
+      .then((p) => setPeaks(p && p.length ? p : null))
+      .catch(() => setPeaks(null));
+  }
+
+  function startPolling(t: SongTask, round = 1) {
+    clearPollTimer();
+    pollStop.current = false;
+    setPolling(true);
+    setErr(null);
+    setPollUi({ attempt: 0, elapsed: Math.round((Date.now() - t.ts) / 1000), last: "antre" });
+    let idx = 0;
+    const limitMs = round === 1 ? 6 * 60 * 1000 : 9 * 60 * 1000; // sabar 6 mnt, auto-lanjut s.d. 9 mnt
+    const tick = async () => {
+      if (pollStop.current) return;
+      try {
+        const st = await checkOnce(t.id);
+        if (st === "done") return;
+      } catch (e) {
+        setPolling(false);
+        setErr({ code: "suno", msg: e instanceof Error ? e.message : String(e) });
+        return;
+      }
+      idx++;
+      const elapsed = Date.now() - t.ts;
+      setPollUi({ attempt: idx, elapsed: Math.round(elapsed / 1000), last: "pending" });
+      if (elapsed > limitMs) {
+        if (round === 1) {
+          // AUTO-LANJUT putaran 2 (cuma polling — tidak membakar kredit generate baru)
+          setPollUi({ attempt: idx, elapsed: Math.round(elapsed / 1000), last: "auto-lanjut putaran 2" });
+          pollTimer.current = setTimeout(() => { if (!pollStop.current) startPolling(t, 2); }, 20000);
+          return;
+        }
+        setPolling(false);
+        setErr({ code: "suno_sibuk", msg: "Provider masih sibuk >9 menit. Task tersimpan aman — lagu sering jadi di belakang; tap 🔍 Cek manual sebentar lagi." });
+        return;
+      }
+      pollTimer.current = setTimeout(tick, POLL_DELTAS[Math.min(idx, POLL_DELTAS.length - 1)] * 1000);
+    };
+    pollTimer.current = setTimeout(tick, POLL_DELTAS[0] * 1000);
+  }
+
+  function cancelPolling() {
+    pollStop.current = true;
+    clearPollTimer();
+    setPolling(false);
+  }
+
+  async function launchSong() {
+    if (!selTitle) return;
+    const instrumental = vocal === "instrumental";
+    const lyr = lyrics.trim();
+    if (!instrumental && lyr.length < 30) {
+      setErr({ code: "suno", msg: "Lirik masih terlalu pendek (min 30 karakter) — generate lirik AI dulu atau pilih 🎼 Instrumental." });
+      return;
+    }
+    setErr(null);
+    setBusy("song");
+    const styleStr = (mStyle.trim() || [genre, mood, "indonesian, emotional, high quality"].join(", ")).slice(0, 480);
+    const payload = {
+      title: selTitle.slice(0, 80),
+      prompt: styleStr,
+      lyrics: instrumental ? undefined : lyr,
+      genre, tags: styleStr,
+      custom: lyr.length > 30, instrumental,
+      vocalGender: instrumental ? undefined : vocal === "auto" ? undefined : vocal,
+      _raw_title: selTitle.slice(0, 80), _raw_lyrics: lyr, _raw_style: styleStr,
+    };
+    try {
+      // auto-retry SEKALI kalau server provider 5xx / jaringan putus (bukan salah key/kredit)
+      let r: Response | null = null;
+      let j: Record<string, string> = {};
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          r = await fetch("/api/hcnsec/music", { method: "POST", headers: sunoHeaders(), body: JSON.stringify(payload) });
+          j = await r.json().catch(() => ({}));
+        } catch (e) {
+          if (attempt === 2) throw e;
+          await new Promise((res) => setTimeout(res, 3000));
+          continue;
+        }
+        if (r.ok || r.status === 401 || r.status === 402) break;
+        if (attempt < 2) await new Promise((res) => setTimeout(res, 3000));
+      }
+      if (!r || !r.ok || j.error) throw Object.assign(new Error(j.error || `HTTP ${r ? r.status : "?"}`), { code: j.status });
+      const id = j.id || j.taskId || j.task_id || j.audio_url;
+      if (j.audio_url) { // provider langsung kasih audio tanpa polling
+        const dur = Number(j.duration);
+        finishSong({ url: j.audio_url, title: j.title || selTitle, duration: isFinite(dur) && dur > 0 ? dur : undefined, image: j.image_url });
+        return;
+      }
+      if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
+      const t: SongTask = { id, title: selTitle, ts: Date.now() };
+      setSong(null);
+      setPeaks(null);
+      setTask(t);
+      flash("⏳ Lagu diolah — polling sabar jalan (lagu sering jadi di menit 2–5)");
+      startPolling(t);
+    } catch (e) {
+      const er = e as Error & { code?: string };
+      setErr({ code: er.code === "need_key" ? "need_key" : er.code === "quota_error" ? "quota" : "suno", msg: er.message });
+    } finally {
+      setBusy("");
+    }
+  }
+
   const canGo = (k: number): boolean =>
     k === 1 ||
     (k === 2 && topic.trim().length >= 3) ||
@@ -405,7 +637,8 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     (k === 4 && !!angle) ||
     (k === 5 && !!selTitle) ||
     (k === 6 && !!selTitle) ||
-    (k === 7 && naskah.trim().length >= 10);
+    (k === 7 && naskah.trim().length >= 10) ||
+    (k === 8 && naskah.trim().length >= 10);
 
   /* ================= RENDER ================= */
   return (
@@ -772,10 +1005,136 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
                 <div className="lh-kv"><span>Adegan siap</span><b className={boardDone === board.scenes.length ? "ok" : "warn"}>{boardDone}/{board.scenes.length}</b></div>
                 <div className="lh-kv"><span>Gaya visual</span><b>{GAYA_VISUAL[gaya].split(",")[0]}</b></div>
                 <div className="lh-kv"><span>Karakter</span><b>{chars.filter((c) => c.nama.trim()).map((c) => c.nama).join(", ") || "-"}</b></div>
-                <p className="lh-note">Berikutnya di <b>v7.9</b>: lagu Suno (lirik 2 pilihan + kredit jujur + polling sabar) → lalu <b>v8.0</b>: lagu & adegan otomatis nyatu → tombol <b>Masuk Studio Edit</b>.</p>
+                <p className="lh-note">Berikutnya: <b>🎵 Panggung Lagu</b> (lirik 2 pilihan + kredit jujur + polling sabar anti-macet) → lalu <b>v8.0</b>: lagu & adegan otomatis nyatu → tombol <b>Masuk Studio Edit</b>.</p>
               </div>
+
+              <button className="lh-btn" onClick={() => setStep(8)}>Lanjut: Panggung Lagu 🎵</button>
             </>
           )}
+        </>
+      )}
+
+      {/* ============ LANGKAH 8: LAGU (SUNO) ============ */}
+      {step === 8 && (
+        <>
+          <div className="lh-card">
+            <div className="lh-h1">Panggung lagu 🎵</div>
+            <p className="lh-sub">Judul: <b>{selTitle}</b> — lagu diolah Suno lewat provider pilihanmu. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
+            <div className="lh-duo">
+              <select className="lh-sel" value={sunoProv} onChange={(e) => { setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch { /* abaikan */ } }}>
+                {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              <input className="lh-in" style={{ marginTop: 0 }} type="password" placeholder="Tempel API key…" value={sunoKey} onChange={(e) => { setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch { /* abaikan */ } }} />
+            </div>
+            <p className="lh-note">💳 <b>Kredit jujur</b>: 1 lagu = 1 panggilan API dari akun provider-mu. Saldo pasti hanya terlihat di dashboard provider mereka — VERVE tidak mengarang angka kredit. Key habis → buka situs provider → menu API → generate key baru → tempel ulang di sini.</p>
+          </div>
+
+          {err && (err.code === "need_key" || err.code === "quota") && (
+            <div className="lh-card lh-errcard">
+              <b>{err.code === "need_key" ? "🔑 Butuh API key" : "💳 Kredit provider habis"}</b>
+              <p>{err.msg}</p>
+              <p className="lh-note">Saran: daftar Kie.ai (gratis & lancar dari Indo) → API → generate key → tempel di kolom atas.</p>
+            </div>
+          )}
+
+          <div className="lh-card">
+            <div className="lh-h2">📝 Lirik lagu</div>
+            <div className="lh-tabs">
+              <button className={`lh-tab ${lyricMode === "auto" ? "on" : ""}`} onClick={() => setLyricMode("auto")}>✨ Generate lirik (AI)</button>
+              <button className={`lh-tab ${lyricMode === "manual" ? "on" : ""}`} onClick={manualLyrics}>✍️ Tulis sendiri</button>
+            </div>
+            {lyricMode === "auto" && (
+              <>
+                <div className="lh-duo">
+                  <select className="lh-sel" value={genre} onChange={(e) => setGenre(e.target.value)}>
+                    {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <select className="lh-sel" value={mood} onChange={(e) => setMood(e.target.value)}>
+                    {MOODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <button className="lh-btn sec" disabled={busy === "lyrics"} onClick={genLyrics}>
+                  {busy === "lyrics" ? "⏳ Pujangga AI menulis..." : "✨ Generate lirik dari judul & niche"}
+                </button>
+              </>
+            )}
+            <textarea
+              className="lh-ta"
+              rows={10}
+              value={lyrics}
+              onChange={(e) => setLyrics(e.target.value)}
+              placeholder={"[Intro]\n...\n[Verse 1]\n...\n[Chorus]\n..."}
+            />
+            {!!lyrics.trim() && <p className="lh-note">{lyrics.split("\n").filter(Boolean).length} baris · {lyrics.trim().length} karakter — boleh diedit bebas</p>}
+          </div>
+
+          <div className="lh-card">
+            <div className="lh-h2">🎚 Gaya musik & vokal</div>
+            <input className="lh-in" value={mStyle} onChange={(e) => setMStyle(e.target.value)} placeholder="contoh: sad indonesian pop ballad, piano, strings, emotional female vocal" />
+            <div className="lh-chips">
+              {(["auto", "male", "female", "instrumental"] as const).map((v) => (
+                <button key={v} className={`lh-chip ${vocal === v ? "on" : ""}`} onClick={() => setVocal(v)}>
+                  {v === "auto" ? "👫 Auto" : v === "male" ? "👨 Pria" : v === "female" ? "👩 Wanita" : "🎼 Instrumental"}
+                </button>
+              ))}
+            </div>
+            <button className="lh-btn" disabled={polling || busy === "song"} onClick={launchSong}>
+              {busy === "song" ? "⏳ Mengirim ke dapur lagu..." : "🎵 Generate Lagu"}
+            </button>
+            {vocal !== "instrumental" && lyrics.trim().length < 30 && (
+              <p className="lh-note">⚠️ Lirik masih terlalu pendek (min 30 karakter) — generate lirik AI/tulis sendiri dulu, atau pilih 🎼 Instrumental.</p>
+            )}
+          </div>
+
+          {task && !song && (
+            <div className="lh-card lh-verdict warn">
+              <div className="lh-vscore">⏳</div>
+              <div style={{ flex: 1 }}>
+                <b>{polling ? `Mengolah lagu… ${fmtClock(pollUi.elapsed)}` : "Task tersimpan — tidak sedang dipantau"}</b>
+                <div className="lh-pollbar"><i style={{ width: `${Math.min(100, (pollUi.elapsed / 540) * 100)}%` }} /></div>
+                <p>
+                  {polling
+                    ? `Cek #${pollUi.attempt} · polling cerdas (rapat di awal, renggang kemudian) · batas sabar 9 menit. Lagu sering jadi di menit 2–5, aman ditinggal — task tersimpan di draf.`
+                    : "Kamu keluar saat lagu diolah / polling dihentikan. Task aman tersimpan."}
+                </p>
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  {polling
+                    ? <button className="lh-mini" onClick={cancelPolling}>✋ Batal pantau</button>
+                    : <button className="lh-mini ok" onClick={() => task && startPolling(task)}>▶ Lanjut pantau</button>}
+                  <button className="lh-mini" onClick={() => task && void checkOnce(task.id).catch((e) => setErr({ code: "suno", msg: e instanceof Error ? e.message : String(e) }))}>🔍 Cek manual</button>
+                  <button className="lh-mini" onClick={() => { cancelPolling(); setTask(null); }}>🗑 Lepaskan</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {song && (
+            <div className="lh-card">
+              <div className="lh-h2">✅ Lagu jadi: {song.title || selTitle}</div>
+              {!!peaks?.length && (
+                <div className="lh-wave">{peaks.map((p, i) => <i key={i} style={{ height: `${Math.max(8, Math.round(p * 100))}%` }} />)}</div>
+              )}
+              <audio
+                className="lh-audio"
+                controls
+                preload="metadata"
+                src={song.url}
+                onLoadedMetadata={(e) => {
+                  if (!song.duration) {
+                    const d = e.currentTarget.duration;
+                    if (isFinite(d)) setSong((s) => (s ? { ...s, duration: d } : s));
+                  }
+                }}
+              />
+              <div className="lh-kv"><span>Durasi</span><b>{song.duration ? `${Math.round(song.duration)} detik` : "terbaca saat diputar…"}</b></div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} onClick={() => { setSong(null); setPeaks(null); }}>↻ Buat ulang</button>
+                <button className="lh-btn" style={{ flex: 2, marginTop: 0 }} onClick={() => flash("📌 Lagu terpasang di lahan — digabung ke video di v8.0")}>✅ Pakai lagu ini</button>
+              </div>
+            </div>
+          )}
+
+          <p className="lh-note" style={{ textAlign: "center" }}>v8.0: lagu + adegan + narasi digabung otomatis → tombol <b>Masuk Studio Edit</b> (elemen terpisah ke jalurnya masing-masing).</p>
         </>
       )}
 
