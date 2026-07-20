@@ -1,18 +1,17 @@
 "use client";
 
 /**
- * LAHAN AWALAN v1 — mesin produksi AI VERVE (niche: Cerita Jadi Lagu).
- * Alur: Niat → Sudut → Riset Kompetitor → Judul Juara → Cerita & Visual WAW.
+ * LAHAN AWALAN v2 — mesin produksi AI VERVE (niche: Cerita Jadi Lagu).
+ * Alur: Niat → Sudut → Riset → Judul → Visual (prompt engine) → Cerita → Adegan.
  *
- * Otak: VERVE Brain (src/lib/brain/*) — skor dari HITUNGAN NYATA (views, umur,
- * pola judul kompetitor), bukan ngarang. Semua skor bisa diaudit via reasons[].
- * Prompt Engine langkah 5 = "script di dalam script": kartu karakter + gaya
- * visual disuntik ke TIAP prompt adegan agar visual karakter konsisten & WAW.
+ * Otak: VERVE Brain (src/lib/brain/*) — skor dari HITUNGAN NYATA, bukan ngarang.
+ * "Script di dalam script": kartu karakter + gaya visual disuntik ke prompt
+ * naskah, storyboard, DAN tiap prompt gambar adegan — biar visual konsisten WAW.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  analyzeAngle, buildCandidates, scoreTitleV2, uniq, cap,
+  analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type AnalyzedVideo,
 } from "@/lib/brain/yie-score";
 import {
@@ -44,18 +43,41 @@ function loadBrain(): BrainMemory {
     return { researches: [], results: [] };
   }
 }
+/** Kompres gambar ke 768×432 jpeg (cover 16:9) — hemat localStorage & siap jadi slide video. */
+function shrinkImage(dataUrl: string, w = 768, h = 432, q = 0.78): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      const cx = cv.getContext("2d");
+      if (!cx) return resolve(dataUrl);
+      const ir = img.width / img.height, tr = w / h;
+      let sw = img.width, sh = img.height, sx = 0, sy = 0;
+      if (ir > tr) { sw = img.height * tr; sx = (img.width - sw) / 2; }
+      else { sh = img.width / tr; sy = (img.height - sh) / 2; }
+      cx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+      try { resolve(cv.toDataURL("image/jpeg", q)); } catch { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
-/* ---------- tipe state wizard ---------- */
+/* ---------- tipe ---------- */
 type CharCard = { nama: string; peran: string; usia: string; ciri: string; pakaian: string; suasana: string };
 
+type Scene = {
+  scene: number; scene_desc: string; lyric_line: string; visual_prompt: string; mood: string;
+  status: "idle" | "loading" | "done" | "error";
+  url?: string; err?: string;
+};
+type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
+
 type LahanState = {
-  step: number;
-  topic: string;
-  angles: string[];
-  selKeyword: string;
-  angle: Angle | null;
-  researchAt: string;
-  selTitle: string;
+  step: number; topic: string; angles: string[]; selKeyword: string;
+  angle: Angle | null; researchAt: string; selTitle: string;
+  naskah: string; board: Board | null;
 };
 
 const DEFAULT_CHARS: CharCard[] = [
@@ -75,10 +97,12 @@ const GAYA_VISUAL = [
   "Anime film sedih kualitas layar lebar, pencahayaan senja, palet warm, detail ekspresi halus",
   "3D animasi lembut, lighting golden hour, render halus kualitas film pendek",
 ];
+/** kode style untuk mesin gambar hcnsec (IMAGE_STYLES ids) */
+const GAYA_TO_STYLE = ["cinematic", "oil", "anime", "3d"];
 
-const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual"];
+const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan"];
 
-/** Kompos "script di dalam script": perintah konsistensi yang disuntik ke tiap prompt adegan. */
+/** Perintah konsistensi yang disuntik ke prompt (untuk preview/salin di langkah Visual). */
 function composeVisualPrompt(scene: string, chars: CharCard[], gaya: string): string {
   const charBlock = chars
     .filter((c) => c.nama.trim())
@@ -93,6 +117,18 @@ function composeVisualPrompt(scene: string, chars: CharCard[], gaya: string): st
     `rasio 16:9; kualitas layak tonton.`
   );
 }
+/** Versi Inggris-kompak yang disuntik ke prompt gambar mesin (konsistensi karakter). */
+function injectCharacter(sceneVisual: string, chars: CharCard[], gaya: string): string {
+  const block = chars
+    .filter((c) => c.nama.trim())
+    .map((c) => `${c.nama} (${c.peran}): ${c.usia}; ${c.ciri}; always wearing ${c.pakaian}; signature setting ${c.suasana}`)
+    .join(" | ");
+  return (
+    `the exact same main character in every single scene (${block}), ` +
+    `${sceneVisual}, story emotion: haru, rindu, penyesalan, ` +
+    `consistent art direction: ${gaya}`
+  );
+}
 
 export default function LahanStudio({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState(1);
@@ -102,7 +138,10 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   const [angle, setAngle] = useState<Angle | null>(null);
   const [researchAt, setResearchAt] = useState("");
   const [selTitle, setSelTitle] = useState("");
-  const [busy, setBusy] = useState<"" | "suggest" | "research" | "score">("");
+  const [naskah, setNaskah] = useState("");
+  const [board, setBoard] = useState<Board | null>(null);
+  const [genAllBusy, setGenAllBusy] = useState(false);
+  const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board">("");
   const [err, setErr] = useState<{ code: string; msg: string } | null>(null);
   const [toast, setToast] = useState("");
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
@@ -128,31 +167,42 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
       setAngle(j.angle || null);
       setResearchAt(j.researchAt || "");
       setSelTitle(j.selTitle || "");
+      setNaskah(j.naskah || "");
+      setBoard(j.board || null);
     } catch { /* draf korup → mulai bersih */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    try {
+    const save = (withImages: boolean) => {
       let slimAngle: Angle | null = angle;
       if (angle) {
-        const slim = (v: AnalyzedVideo): AnalyzedVideo => ({ ...v });
         slimAngle = {
           ...angle,
-          videos: angle.videos.slice(0, 30).map(slim),
-          qualified: angle.qualified.slice(0, 30).map(slim),
-          rejected: angle.rejected.slice(0, 10).map(slim),
-          rawVideos: angle.rawVideos.slice(0, 30).map(slim),
+          videos: angle.videos.slice(0, 30),
+          qualified: angle.qualified.slice(0, 30),
+          rejected: angle.rejected.slice(0, 10),
+          rawVideos: angle.rawVideos.slice(0, 30),
         };
       }
-      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle };
+      let slimBoard: Board | null = board;
+      if (board && !withImages) {
+        slimBoard = { ...board, scenes: board.scenes.map((s) => ({ ...s, url: undefined, status: s.status === "done" ? "idle" : s.status })) };
+      }
+      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard };
       localStorage.setItem(LAHAN_KEY, JSON.stringify(payload));
-    } catch { /* storage penuh → abaikan, transaksi tetap jalan */ }
-  }, [step, topic, angles, selKeyword, angle, researchAt, selTitle]);
+    };
+    try {
+      save(true);
+    } catch {
+      try { save(false); } catch { /* storage penuh total — sesi jalan terus */ }
+    }
+  }, [step, topic, angles, selKeyword, angle, researchAt, selTitle, naskah, board]);
 
-  /* ---------- intent audiens (live dari topik; niche terkunci story_song) ---------- */
+  /* ---------- intent audiens (niche terkunci story_song) ---------- */
   const intentId = topic.trim() ? detectAudienceIntent(topic + " cerita jadi lagu") : "story_song";
-  const card = audienceCard(intentId === "general" ? "story_song" : intentId);
+  const intentEff = intentId === "general" ? "story_song" : intentId;
+  const card = audienceCard(intentEff);
 
   /* ---------- kandidat judul + skor ---------- */
   const scored: ScoredTitle[] = useMemo(() => {
@@ -165,7 +215,11 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
 
   const verdict = angle ? (angle.score >= 70 ? { t: "GAS 🔥", c: "ok", d: "Sudut ini layak ditanam. Lanjut tanam cerita!" } : angle.score >= 45 ? { t: "PERTIMBANGKAN 🧐", c: "warn", d: "Bisa jalan, tapi pakai judul yang benar-benar beda dari kompetitor." } : { t: "TAHAN DULU ✋", c: "err", d: "Sinyal pasar lemah/terlalu padat. Coba sudut lain (long-tail)." }) : null;
 
-  /* ---------- aksi ---------- */
+  const naskahLines = useMemo(() => naskah.split("\n").map((l) => l.trim()).filter(Boolean), [naskah]);
+  const estDurSec = useMemo(() => Math.round(naskah.split(/\s+/).filter(Boolean).length / 2.6), [naskah]);
+  const boardDone = board ? board.scenes.filter((s) => s.status === "done").length : 0;
+
+  /* ---------- aksi: sudut & riset ---------- */
   async function fetchSuggest() {
     if (topic.trim().length < 3) { setErr({ code: "topik", msg: "Tulis niat/topik dulu minimal 3 huruf ya bro." }); return; }
     setErr(null);
@@ -175,7 +229,6 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || j.message || `HTTP ${r.status}`);
       const list: string[] = Array.isArray(j.suggestions) ? j.suggestions : [];
-      // Niche terkunci: pastikan varian "cerita jadi lagu" selalu tersedia
       const extra = /cerita jadi lagu/i.test(topic) ? [] : [`${topic.trim()} | cerita jadi lagu`];
       setAngles(uniq([topic.trim(), ...extra, ...list]).slice(0, 30));
       flash("🔍 Sudut ketemu dari YouTube autocomplete");
@@ -221,9 +274,128 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   }
 
   function resetLahan() {
-    if (!confirm("Mulai lahan baru? Draf riset sekarang dihapus.")) return;
-    setStep(1); setTopic(""); setAngles([]); setSelKeyword(""); setAngle(null); setResearchAt(""); setSelTitle("");
+    if (!confirm("Mulai lahan baru? Draf riset, naskah & adegan sekarang dihapus.")) return;
+    setStep(1); setTopic(""); setAngles([]); setSelKeyword(""); setAngle(null);
+    setResearchAt(""); setSelTitle(""); setNaskah(""); setBoard(null);
     try { localStorage.removeItem(LAHAN_KEY); } catch { /* abaikan */ }
+  }
+
+  /* ---------- aksi: cerita ---------- */
+  async function writeNaskah() {
+    if (!selTitle) return;
+    setErr(null);
+    setBusy("cerita");
+    try {
+      const r = await fetch("/api/hcnsec/cerita", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: selTitle,
+          keyword: selKeyword,
+          niche: "Cerita jadi lagu / lagu emosional",
+          chars: chars.filter((c) => c.nama.trim()).map((c) => ({ nama: c.nama, peran: c.peran, usia: c.usia, ciri: c.ciri })),
+          audience: { emotion: dominantEmotion(intentEff), fears: card.fears, desires: card.desires, cta: card.ctas[0] },
+          lines: Math.max(6, Math.min(10, angle ? 6 + Math.floor(angle.total / 8) : 8)),
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setNaskah((j.lines as string[]).join("\n"));
+      setBoard(null);
+      flash("📝 Naskah jadi — baca, edit sesukamu, lalu susun adegan");
+    } catch (e) {
+      setErr({ code: "cerita", msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /* ---------- aksi: storyboard & gambar ---------- */
+  async function buildBoard() {
+    if (!selTitle) return;
+    setErr(null);
+    setBusy("board");
+    try {
+      const sceneCount = Math.max(4, Math.min(10, naskahLines.length || 6));
+      const charLine = chars.filter((c) => c.nama.trim()).map((c) => `${c.nama} (${c.usia})`).join(", ");
+      const r = await fetch("/api/hcnsec/storyboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: selTitle,
+          keyword: `${selKeyword} | karakter wajib konsisten: ${charLine || "sesuai judul"} | arah gaya: ${GAYA_VISUAL[gaya]}`,
+          niche: "Cerita jadi lagu / lagu emosional",
+          slides: sceneCount,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const scenes: Scene[] = (j.scenes || []).map((s: { scene: number; scene_desc?: string; lyric_line?: string; visual_prompt?: string; mood?: string }) => ({
+        scene: s.scene,
+        scene_desc: s.scene_desc || "",
+        lyric_line: s.lyric_line || "",
+        visual_prompt: s.visual_prompt || "",
+        mood: s.mood || "haru",
+        status: "idle",
+      }));
+      if (!scenes.length) throw new Error("Adegan kosong dari AI, coba lagi.");
+      setBoard({ style_visual: j.style_visual || "cinematic", color_grade: j.color_grade || "#f59e0b", scenes });
+      flash(`🎬 ${scenes.length} adegan tersusun — tinggal digambar`);
+    } catch (e) {
+      setErr({ code: "board", msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function genScene(i: number, sc: Scene) {
+    setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, status: "loading", err: undefined } : s)) }));
+    try {
+      const r = await fetch("/api/hcnsec/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          _storyScene: {
+            visual_prompt: injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya]),
+            scene_desc: sc.scene_desc,
+            mood: sc.mood,
+          },
+          _mood: sc.mood,
+          style: GAYA_TO_STYLE[gaya] || "cinematic",
+          title: selTitle,
+          keyword: selKeyword,
+          niche: "cerita jadi lagu",
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const url = await shrinkImage(j.url);
+      setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "done", url } : s)) }));
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "error", err: msg } : s)) }));
+      return false;
+    }
+  }
+
+  async function genAllScenes() {
+    if (!board || genAllBusy) return;
+    setGenAllBusy(true);
+    let ok = 0;
+    for (let i = 0; i < board.scenes.length; i++) {
+      const sc = board.scenes[i];
+      if (sc.status === "done") { ok++; continue; }
+      const good = await genScene(i, sc);
+      if (good) ok++;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    setGenAllBusy(false);
+    flash(ok === board.scenes.length ? `✅ ${ok}/${board.scenes.length} adegan siap!` : `⚠️ ${ok}/${board.scenes.length} jadi — ulangi yang gagal`);
+  }
+
+  function updateScene(i: number, patch: Partial<Scene>) {
+    setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
   }
 
   const canGo = (k: number): boolean =>
@@ -231,7 +403,9 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     (k === 2 && topic.trim().length >= 3) ||
     (k === 3 && !!selKeyword) ||
     (k === 4 && !!angle) ||
-    (k === 5 && !!selTitle);
+    (k === 5 && !!selTitle) ||
+    (k === 6 && !!selTitle) ||
+    (k === 7 && naskah.trim().length >= 10);
 
   /* ================= RENDER ================= */
   return (
@@ -297,11 +471,11 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
             <div className="lh-kv"><span>Niche</span><b>{card.label}</b></div>
             <div className="lh-kv"><span>Penonton</span><b>{card.audience}</b></div>
             <div className="lh-kv"><span>Usia · perangkat</span><b>{card.age} · {card.device}</b></div>
-            <div className="lh-kv"><span>Emosi utama</span><b>{dominantEmotion(intentId === "general" ? "story_song" : intentId)}</b></div>
-            <div className="lh-kv"><span>Nonton sambil</span><b>{watchActivity(intentId === "general" ? "story_song" : intentId)}</b></div>
+            <div className="lh-kv"><span>Emosi utama</span><b>{dominantEmotion(intentEff)}</b></div>
+            <div className="lh-kv"><span>Nonton sambil</span><b>{watchActivity(intentEff)}</b></div>
             <div className="lh-kv"><span>Jam upload</span><b>{card.upload}</b></div>
-            <div className="lh-kv"><span>Solusi konten</span><b>{solutionFor(intentId === "general" ? "story_song" : intentId)}</b></div>
-            <div className="lh-kv"><span>Cuan ke depan</span><b>{monetizationHint(intentId === "general" ? "story_song" : intentId)}</b></div>
+            <div className="lh-kv"><span>Solusi konten</span><b>{solutionFor(intentEff)}</b></div>
+            <div className="lh-kv"><span>Cuan ke depan</span><b>{monetizationHint(intentEff)}</b></div>
           </div>
         </>
       )}
@@ -460,18 +634,18 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
             ))}
           </div>
           {selTitle && (
-            <button className="lh-btn" onClick={() => setStep(5)}>Lanjut: Cerita & Visual WAW 🎬</button>
+            <button className="lh-btn" onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
           )}
         </>
       )}
 
-      {/* ============ LANGKAH 5: CERITA & VISUAL WAW (PROMPT ENGINE) ============ */}
+      {/* ============ LANGKAH 5: MESIN VISUAL WAW (PROMPT ENGINE) ============ */}
       {step === 5 && (
         <>
           <div className="lh-card">
             <div className="lh-h1">Mesin visual WAW 🎬</div>
             <p className="lh-sub">Judul terkunci: <b>{selTitle}</b></p>
-            <p className="lh-sub">Di sinilah “script di dalam script” bekerja: <b>kartu karakter + gaya visual</b> disuntik ke TIAP prompt adegan — jadi wajah, pakaian & suasana <b>konsisten</b> dari adegan 1 sampai akhir. Inilah yang bikin orang bilang <i>“kok cerdas banget software-nya”</i>.</p>
+            <p className="lh-sub">Di sinilah “script di dalam script” bekerja: <b>kartu karakter + gaya visual</b> di bawah ini disuntik ke prompt naskah, storyboard, dan TIAP gambar adegan — jadi wajah, pakaian & suasana <b>konsisten</b> dari adegan 1 sampai akhir.</p>
           </div>
 
           <div className="lh-card">
@@ -505,28 +679,108 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
             <div className="lh-h2">📜 Contoh perintah terinjeksi (adegan 1)</div>
             <pre className="lh-prompt">{composeVisualPrompt(`Opening: ${selTitle} — suasana awal cerita, ekspresi utama rindu`, chars, GAYA_VISUAL[gaya])}</pre>
             <button className="lh-btn sec" onClick={() => { void navigator.clipboard?.writeText(composeVisualPrompt(`Opening: ${selTitle}`, chars, GAYA_VISUAL[gaya])).then(() => flash("📋 Prompt tersalin")); }}>📋 Salin prompt</button>
-            <p className="lh-note">Generate gambar per adegan + lagu Suno + gabung otomatis & masuk Studio Edit = <b>update v7.8</b>. Fondasi prompt-nya sudah siap di sini.</p>
+            <p className="lh-note">Jujur bro: konsistensi karakter AI itu ~90-95% — kartu karakter + tombol ↻ ulangi per adegan adalah obatnya. Detail kartu makin spesifik = hasil makin akur.</p>
+          </div>
+
+          <button className="lh-btn" onClick={() => setStep(6)}>Lanjut: Naskah Cerita 📝</button>
+        </>
+      )}
+
+      {/* ============ LANGKAH 6: NASKAH CERITA ============ */}
+      {step === 6 && (
+        <>
+          <div className="lh-card">
+            <div className="lh-h1">Naskah cerita 📝</div>
+            <p className="lh-sub">Untuk judul: <b>{selTitle}</b></p>
+            <p className="lh-sub">AI menulis pakai perintah khusus: <b>hook 3 detik</b>, alur emosi (pembuka → konflik → klimaks haru → pesan), karakter konsisten, kalimat yang bisa dinyanyikan, dan CTA dari kartu audiens. Hasilnya bisa kau edit bebas — kau tetap sutradaranya.</p>
+            <button className="lh-btn" disabled={busy === "cerita"} onClick={writeNaskah}>
+              {busy === "cerita" ? "⏳ AI lagi nulis..." : naskah ? "✨ Tulis ulang naskah (AI)" : "✨ Tulis Naskah (AI)"}
+            </button>
           </div>
 
           <div className="lh-card">
-            <div className="lh-h2">📦 Paket upload (dari otak)</div>
-            {(() => {
-              const s = scored.find((x) => x.title === selTitle);
-              if (!s) return <p className="lh-note">Skor judul tidak ditemukan — ulangi langkah Judul.</p>;
-              return (
-                <>
-                  <div className="lh-kv"><span>Hook thumbnail</span><b>{s.hook}</b></div>
-                  <div className="lh-kv"><span>Skor</span><b className={scoreTone(s.score)}>{s.score}/100 · {s.strategy}</b></div>
-                  <div className="lh-kv"><span>Deskripsi</span><b style={{ whiteSpace: "pre-wrap", fontWeight: 500 }}>{s.desc.slice(0, 300)}…</b></div>
-                </>
-              );
-            })()}
+            <div className="lh-h2">📖 Naskah (bisa diedit)</div>
+            <textarea
+              className="lh-ta"
+              rows={Math.max(8, Math.min(14, naskahLines.length + 2))}
+              placeholder={"Baris 1 = hook pembuka...\nTiap baris = satu adegan...\nTulis/sendiri atau generate AI di atas."}
+              value={naskah}
+              onChange={(e) => setNaskah(e.target.value)}
+            />
+            <p className="lh-note">{naskahLines.length} adegan · ±{estDurSec} detik narasi (kecepatan baca normal) · {naskah.split(/\s+/).filter(Boolean).length} kata</p>
+            <div className="lh-kv"><span>Cek hook</span><b>{naskahLines[0] ? (naskahLines[0].length > 5 ? `“${naskahLines[0]}” — bayangkan ini muncul 3 detik pertama, cukup bikin berhenti scroll?` : "…") : "Belum ada naskah"}</b></div>
+            <div className="lh-kv"><span>Saran audiens</span><b>{solutionFor(intentEff)}</b></div>
           </div>
+
+          {naskah.trim().length >= 10 && (
+            <button className="lh-btn" onClick={() => setStep(7)}>Susun Jadi Adegan 🎬</button>
+          )}
+        </>
+      )}
+
+      {/* ============ LANGKAH 7: STORYBOARD & GAMBAR ADEGAN ============ */}
+      {step === 7 && (
+        <>
+          <div className="lh-card">
+            <div className="lh-h1">Adegan & gambar 🎬</div>
+            <p className="lh-sub">Naskah dipotong jadi adegan, tiap adegan digambar AI dengan <b>kartu karakter + gaya visual terinjeksi</b> — biar karakter nyambung antar adegan. Yang kurang pas tinggal <b>↻ ulangi</b> adegan itu saja.</p>
+            {!board ? (
+              <button className="lh-btn" disabled={busy === "board"} onClick={buildBoard}>
+                {busy === "board" ? "⏳ Sutradara AI menyusun..." : "🎬 Susun Storyboard (AI)"}
+              </button>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="lh-btn sec" style={{ flex: 1 }} disabled={busy === "board" || genAllBusy} onClick={buildBoard}>↻ Susun ulang</button>
+                <button className="lh-btn" style={{ flex: 2 }} disabled={genAllBusy} onClick={genAllScenes}>
+                  {genAllBusy ? `⏳ Menggambar ${boardDone}/${board.scenes.length}...` : boardDone === board.scenes.length ? `✅ ${board.scenes.length}/${board.scenes.length} siap` : `🖼 Generate SEMUA (${boardDone}/${board.scenes.length})`}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {board && (
+            <>
+              {board.scenes.map((sc, i) => (
+                <div key={i} className="lh-card lh-scene">
+                  <div className="lh-scene-head">
+                    <span className="lh-scene-no">{sc.scene}</span>
+                    <span className="lh-chip" style={{ borderColor: board.color_grade }}>{sc.mood}</span>
+                    <div style={{ flex: 1 }} />
+                    {sc.status === "done" && <span className="lh-mini ok">✅</span>}
+                    {sc.status === "loading" && <span className="lh-mini">⏳</span>}
+                    {sc.status === "error" && <span className="lh-mini">❌</span>}
+                  </div>
+                  {sc.url && <img className="lh-scene-img" src={sc.url} alt={`adegan ${sc.scene}`} />}
+                  {sc.status === "error" && <p className="lh-note" style={{ color: "#ff9b9b" }}>{sc.err}</p>}
+                  <textarea className="lh-ta" rows={2} value={sc.scene_desc} onChange={(e) => updateScene(i, { scene_desc: e.target.value })} />
+                  {!!sc.lyric_line && <p className="lh-lyric">🎵 “{sc.lyric_line}”</p>}
+                  <details className="lh-details">
+                    <summary>prompt gambar (sudah terinjeksi karakter) ▾</summary>
+                    <pre className="lh-prompt">{injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya])}</pre>
+                    <textarea className="lh-ta" rows={2} value={sc.visual_prompt} onChange={(e) => updateScene(i, { visual_prompt: e.target.value })} />
+                  </details>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} disabled={sc.status === "loading" || genAllBusy} onClick={() => void genScene(i, sc)}>
+                      {sc.status === "loading" ? "⏳ Menggambar..." : sc.status === "done" ? "↻ Ulangi adegan ini" : "🖼 Generate gambar"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              <div className="lh-card">
+                <div className="lh-h2">📊 Status ladang</div>
+                <div className="lh-kv"><span>Adegan siap</span><b className={boardDone === board.scenes.length ? "ok" : "warn"}>{boardDone}/{board.scenes.length}</b></div>
+                <div className="lh-kv"><span>Gaya visual</span><b>{GAYA_VISUAL[gaya].split(",")[0]}</b></div>
+                <div className="lh-kv"><span>Karakter</span><b>{chars.filter((c) => c.nama.trim()).map((c) => c.nama).join(", ") || "-"}</b></div>
+                <p className="lh-note">Berikutnya di <b>v7.9</b>: lagu Suno (lirik 2 pilihan + kredit jujur + polling sabar) → lalu <b>v8.0</b>: lagu & adegan otomatis nyatu → tombol <b>Masuk Studio Edit</b>.</p>
+              </div>
+            </>
+          )}
         </>
       )}
 
       <p className="lh-note" style={{ textAlign: "center", marginTop: 14 }}>
-        🧠 VERVE Brain v1 · port mesin riset milik sendiri · skor bisa diaudit, tanpa mengarang angka
+        🧠 VERVE Brain + Prompt Engine · kartu karakter disuntik ke tiap adegan · skor & prompt bisa diaudit
       </p>
       {toast && <div className="lh-toast">{toast}</div>}
     </div>

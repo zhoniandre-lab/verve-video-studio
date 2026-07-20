@@ -1499,3 +1499,12 @@ b.ok, b.warn, b.err { color:inherit; }
 /* banner lahan di home */
 .lh-banner { background:linear-gradient(135deg,#17331f 0%,#0e2433 55%,#14213d 100%); border:1px solid rgba(25,194,184,.25); }
 .lh-banner .v6-promo-badge { background:rgba(25,194,184,.16); color:#8ff0e4; }
+
+/* lahan v7.8 — adegan/storyboard */
+.lh-scene { display:flex; flex-direction:column; gap:8px; }
+.lh-scene-head { display:flex; align-items:center; gap:8px; }
+.lh-scene-no { width:26px; height:26px; border-radius:50%; background:var(--v6-teal); color:#04211f; font-size:12px; font-weight:900; display:flex; align-items:center; justify-content:center; }
+.lh-scene-img { width:100%; border-radius:12px; border:1px solid var(--v6-line); display:block; }
+.lh-lyric { font-size:11px; color:#a9e6df; font-style:italic; margin:0; }
+.lh-details summary { font-size:10.5px; color:#8b8b98; cursor:pointer; font-weight:700; padding:4px 0; }
+.lh-scene .lh-ta { margin-top:0; font-size:11.5px; }
