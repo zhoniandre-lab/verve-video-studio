@@ -1538,33 +1538,45 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
   const dragSt = useRef<{ sid: string; stid: string } | null>(null);
   const dragTx = useRef<{ sid: string } | null>(null);
-  /* ---- PINCH ZOOM & PAN preview (besar-kecil + geser pakai jari, ala CapCut) ---- */
-  const [stageTr, setStageTr] = useState<{ s: number; x: number; y: number }>({ s: 1, x: 0, y: 0 });
-  const stageTrRef = useRef(stageTr); useEffect(() => { stageTrRef.current = stageTr; }, [stageTr]);
+  /* ---- GESER & CUBIT GAMBAR di dalam bingkai rasio (ala CapCut) ----
+     1 jari = geser posisi gambar, 2 jari = zoom gambar.
+     Nilai tersimpan per-klip (tx/ty/tz di slideOpts) → terkunci & ikut terekspor. */
   const ptrsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchRef = useRef<{ d0: number; s0: number; x0: number; y0: number; mx0: number; my0: number } | null>(null);
-  const panRef = useRef<{ x0: number; y0: number; tx0: number; ty0: number } | null>(null);
+  const pinchRef = useRef<{ sid: string; d0: number; tz0: number } | null>(null);
+  const panClipRef = useRef<{ sid: string; x0: number; y0: number; tx0: number; ty0: number; w: number; h: number; moved: boolean } | null>(null);
   const lastTapRef = useRef(0);
-  function pinchInfo(): { d: number; mx: number; my: number } | null {
-    const pts = [...ptrsRef.current.values()];
-    if (pts.length < 2) return null;
-    return { d: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), mx: (pts[0].x + pts[1].x) / 2, my: (pts[0].y + pts[1].y) / 2 };
+  function clipAtPlayhead(): string | null {
+    const tl = timelineRef.current;
+    if (!tl || !slidesRef.current.length) return null;
+    const L = locate(tl, Math.min(curTRef.current, Math.max(0, tl.total - 0.001)));
+    return slidesRef.current[L.idx]?.id || null;
   }
-  function resetStageZoom() { setStageTr({ s: 1, x: 0, y: 0 }); pinchRef.current = null; panRef.current = null; }
+  function resetClipTransform(sid?: string | null) {
+    const id = sid || selId || clipAtPlayhead();
+    if (!id) return;
+    setOpt(id, { tx: 0, ty: 0, tz: 1 });
+    flash("↺ Posisi & ukuran gambar dikembalikan");
+  }
+  function pinchDist(): number | null {
+    const pts = [...ptrsRef.current.values()];
+    return pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : null;
+  }
   function onStageDown(e: React.PointerEvent) {
-    // daftarkan jari dulu (multi-touch)
     ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     if (ptrsRef.current.size >= 2) {
-      // jari ke-2 turun → mulai jepit (pinch), batalkan drag lain
-      const inf = pinchInfo();
-      if (inf) pinchRef.current = { d0: Math.max(10, inf.d), s0: stageTrRef.current.s, x0: stageTrRef.current.x, y0: stageTrRef.current.y, mx0: inf.mx, my0: inf.my };
-      dragSt.current = null; dragTx.current = null; panRef.current = null;
+      // jari ke-2 → mulai cubit zoom GAMBAR klip
+      const sid = clipAtPlayhead(); const d = pinchDist();
+      if (sid && d) {
+        pinchRef.current = { sid, d0: Math.max(10, d), tz0: slideOptsById[sid]?.tz ?? 1 };
+        setSelId(sid);
+      }
+      dragSt.current = null; dragTx.current = null; panClipRef.current = null;
       return;
     }
-    // ketuk ganda cepat → reset zoom
+    // ketuk ganda cepat → reset transform klip
     const nowT = performance.now();
-    if (nowT - lastTapRef.current < 320 && stageTrRef.current.s !== 1) { resetStageZoom(); lastTapRef.current = 0; return; }
+    const dtap = nowT - lastTapRef.current < 320;
     lastTapRef.current = nowT;
     const pt = stagePoint(e); if (!pt) return;
     const tl = timelineRef.current;
@@ -1572,6 +1584,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const L = locate(tl, Math.min(curT, Math.max(0, tl.total - 0.001)));
     const sid = slidesRef.current[L.idx]?.id;
     if (!sid) return;
+    if (dtap) { resetClipTransform(sid); return; }
     // drag TEKS (posisi vertikal) kalau sentuh area teks
     const cts = slideOptsById[sid]?.text;
     if (cts?.txt?.trim() && Math.abs(pt.y - cts.y) < 0.07) {
@@ -1587,37 +1600,31 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         return;
       }
     }
-    // sedang zoom → 1 jari = geser (pan) tampilan
-    if (stageTrRef.current.s > 1.02) {
-      panRef.current = { x0: e.clientX, y0: e.clientY, tx0: stageTrRef.current.x, ty0: stageTrRef.current.y };
-      return;
-    }
-    // tap kosong → pilih klip di playhead
-    setSelId(sid);
+    // siapkan geser gambar (kalau jari bergerak) — kalau diam = tap pilih klip
+    const r = canvasRef.current!.getBoundingClientRect();
+    panClipRef.current = { sid, x0: e.clientX, y0: e.clientY, tx0: slideOptsById[sid]?.tx ?? 0, ty0: slideOptsById[sid]?.ty ?? 0, w: r.width || 1, h: r.height || 1, moved: false };
   }
   function onStageMove(e: React.PointerEvent) {
     if (ptrsRef.current.has(e.pointerId)) ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    // mode jepit: besar-kecil + ikut jari tengah
+    // cubit: zoom gambar klip
     if (pinchRef.current && ptrsRef.current.size >= 2) {
-      const inf = pinchInfo();
-      if (inf) {
-        const ns = clampN(pinchRef.current.s0 * (inf.d / pinchRef.current.d0), 0.6, 5);
-        let nx = pinchRef.current.x0 + (inf.mx - pinchRef.current.mx0);
-        let ny = pinchRef.current.y0 + (inf.my - pinchRef.current.my0);
-        const lim = 420 * ns; nx = clampN(nx, -lim, lim); ny = clampN(ny, -lim, lim);
-        setStageTr({ s: Number(ns.toFixed(3)), x: Math.round(nx), y: Math.round(ny) });
+      const d = pinchDist();
+      if (d) {
+        const nz = clampN(pinchRef.current.tz0 * (d / pinchRef.current.d0), 0.5, 6);
+        setOpt(pinchRef.current.sid, { tz: Number(nz.toFixed(3)) });
       }
       return;
     }
-    // mode geser saat zoom
-    if (panRef.current) {
-      const s = stageTrRef.current.s;
-      const lim = 420 * s;
-      setStageTr({
-        s,
-        x: clampN(Math.round(panRef.current.tx0 + (e.clientX - panRef.current.x0)), -lim, lim),
-        y: clampN(Math.round(panRef.current.ty0 + (e.clientY - panRef.current.y0)), -lim, lim),
-      });
+    // geser: posisi gambar klip di dalam bingkai
+    if (panClipRef.current) {
+      const pc = panClipRef.current;
+      const dxPx = e.clientX - pc.x0, dyPx = e.clientY - pc.y0;
+      if (pc.moved || Math.hypot(dxPx, dyPx) > 9) {
+        pc.moved = true;
+        const ntx = clampN(pc.tx0 + dxPx / pc.w, -0.6, 0.6);
+        const nty = clampN(pc.ty0 + dyPx / pc.h, -0.6, 0.6);
+        setOpt(pc.sid, { tx: Number(ntx.toFixed(3)), ty: Number(nty.toFixed(3)) });
+      }
       return;
     }
     const pt = stagePoint(e); if (!pt) return;
@@ -1633,7 +1640,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   function onStageUp(e?: any) {
     if (e?.pointerId !== undefined) ptrsRef.current.delete(e.pointerId);
     if (ptrsRef.current.size < 2) pinchRef.current = null;
-    if (ptrsRef.current.size === 0) panRef.current = null;
+    if (ptrsRef.current.size === 0 && panClipRef.current) {
+      const pc = panClipRef.current;
+      panClipRef.current = null;
+      if (pc.moved) { setSelId(pc.sid); flash("📐 Posisi gambar dikunci ke klip ini ✓"); persistSnapshot(); }
+      else setSelId(pc.sid); // tap = pilih klip
+    }
     dragSt.current = null; dragTx.current = null;
   }
 
@@ -1659,7 +1671,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
            style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
            onClick={fullStage ? () => setFullStage(false) : undefined}>
-        <div className="v6e-stage" style={{ transform: `translate(${stageTr.x}px, ${stageTr.y}px) scale(${stageTr.s})`, transformOrigin: "center center", willChange: "transform" }}>
+        <div className="v6e-stage">
           <canvas ref={canvasRef}
             onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
             style={{ touchAction: "none" }} />
@@ -1672,11 +1684,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             </div>
           )}
         </div>
-        {stageTr.s !== 1 && (
-          <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetStageZoom(); }} title="Reset zoom (atau ketuk 2×)">
-            ⟲ {Math.round(stageTr.s * 100)}%
-          </button>
-        )}
+        {(() => {
+          const o = selOpt as any;
+          const hasTr = o && ((o.tx ?? 0) !== 0 || (o.ty ?? 0) !== 0 || (o.tz ?? 1) !== 1);
+          return hasTr ? (
+            <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetClipTransform(selId); }} title="Kembalikan posisi & ukuran gambar (atau ketuk 2×)">
+              ⟲ {Math.round((o.tz ?? 1) * 100)}%
+            </button>
+          ) : null;
+        })()}
       </div>
 
       {/* ============ CONTROL ROW ============ */}

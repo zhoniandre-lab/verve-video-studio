@@ -31,6 +31,9 @@ export interface SlideOpt {
   effect?: string;           // id EFFECTS | ""
   filter?: string;           // id FILTERS | ""
   loop?: string;             // id ANIM_LOOP (animasi berulang "Kombinasi")
+  tx?: number;               // geser gambar X (fraksi lebar bingkai) — kunci per-klip
+  ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
+  tz?: number;               // zoom gambar (1 = normal, 0.5..6)
   text?: ClipText | null;
   stickers?: StickerItem[];
 }
@@ -899,7 +902,10 @@ export function paintClips(
 
   // params klip aktif
   const curP = baseP(filter);
-  curP.zoom = p.kbZoom ?? 1;
+  // transform manual per-klip (cubit/geser gambar di preview ala CapCut — dikunci ke klip)
+  curP.dx += opt.tx ?? 0;
+  curP.dy += opt.ty ?? 0;
+  curP.zoom = (p.kbZoom ?? 1) * Math.max(0.1, opt.tz && opt.tz > 0 ? opt.tz : 1);
   if (opt.effect === "pulse") curP.zoom *= 1 + 0.028 * Math.sin(p.absT * 6.2) + (p.beat ? 0.02 : 0);
   if (opt.effect === "shake") {
     const seed = Math.floor(p.absT * 24);
@@ -924,6 +930,10 @@ export function paintClips(
   }
 
   const nxtP = baseP(joinFilters(buildClipFilter(p.optNxt?.filter || "", null), p.globalFilter));
+  // klip berikutnya juga bawa transform manualnya sendiri
+  nxtP.dx += (p.optNxt?.tx ?? 0);
+  nxtP.dy += (p.optNxt?.ty ?? 0);
+  nxtP.zoom = Math.max(0.1, (p.optNxt?.tz && p.optNxt.tz > 0) ? p.optNxt.tz : 1);
 
   // gambar klip (+transisi)
   if (p.inTrans && nxt && p.transId !== "none") {
