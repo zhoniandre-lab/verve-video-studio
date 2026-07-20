@@ -524,7 +524,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const actxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const barsRef = useRef<Float32Array>(new Float32Array(48));
-  const clockRef = useRef<{ audio: HTMLAudioElement | null; t0: number; base: number }>({ audio: null, t0: 0, base: 0 });
+  const clockRef = useRef<{ audio: HTMLAudioElement | null; t0: number; base: number; running: boolean }>({ audio: null, t0: 0, base: 0, running: false });
   const slidesRef = useRef(slides); useEffect(() => { slidesRef.current = slides; }, [slides]);
   const curTRef = useRef(0); useEffect(() => { curTRef.current = curT; }, [curT]);
   const durTRef = useRef(0); useEffect(() => { durTRef.current = durT; }, [durT]);
@@ -616,12 +616,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     imgsRef.current.set(url, img);
     return img.complete && img.naturalWidth ? img : null;
   }
+  const playingRef = useRef(false);
+  // getClockT dibuat stabil (ref-based) — jangan tangkap state `playing`/`curT`
+  // supaya loop rAF tidak membawa closure basi (bug: proyek tanpa audio macet di 00:00)
   const getClockT = useCallback((): number => {
     const c = clockRef.current;
     if (c.audio) return c.audio.currentTime;
-    if (playing) return c.base + (performance.now() - c.t0) / 1000;
-    return curT;
-  }, [playing, curT]);
+    if (c.running) return c.base + (performance.now() - c.t0) / 1000;
+    return curTRef.current;
+  }, []);
 
   const drawFrame = useCallback((t: number) => {
     const cv = canvasRef.current; if (!cv) return;
@@ -654,13 +657,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     // captions
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
     // indikator PiP mini style (jam kecil kiri atas — elemen gaya hidup)
-    if (pipRef.current && playing) {
+    if (pipRef.current && playingRef.current) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.fillRect(8, 8, 54, 18);
       ctx.fillStyle = "#fff"; ctx.font = "700 10px ui-monospace,monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.fillText("● REC", 13, 17);
     }
-  }, [playing]);
+  }, []);
 
   useEffect(() => { drawFrameRefCb.current = drawFrame; }, [drawFrame]);
 
@@ -668,7 +671,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     // jika master audio selesai tapi klip masih panjang → lanjut jam manual
     const aud0 = clockRef.current.audio;
     if (aud0 && aud0.ended) {
-      clockRef.current = { audio: null, t0: performance.now(), base: aud0.duration || 0 };
+      clockRef.current = { audio: null, t0: performance.now(), base: aud0.duration || 0, running: true };
     }
     const t = getClockT();
     const tl = timelineRef.current;
@@ -681,7 +684,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setCurT(t);
     drawFrame(t);
     rafRef.current = requestAnimationFrame(tick);
-  }, [getClockT, drawFrame]); // eslint-disable-line
+  }, [getClockT, drawFrame]); // eslint-disable-line — stopPreview stabil ([]), dipanggil saat runtime
 
   const stopPreview = useCallback((ended = false) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null;
@@ -689,6 +692,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     voiceEls.current.forEach(a => { try { a.pause(); } catch {} });
     voiceEls.current = [];
     clockRef.current.audio = null;
+    clockRef.current.running = false;
+    playingRef.current = false;
     setPlaying(false);
     if (!ended) {/* tetap di posisi */}
   }, []);
@@ -739,6 +744,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } catch {}
     clockRef.current.audio = master;
     clockRef.current.base = seekTo; clockRef.current.t0 = performance.now();
+    clockRef.current.running = true;   // <-- kunci: jam manual mulai berjalan (proyek tanpa audio pun bisa play)
+    playingRef.current = true;
     if (master) {
       try { master.currentTime = seekTo; master.play().catch(() => {}); } catch {}
       voiceEls.current.forEach(a => { try { a.currentTime = seekTo; a.play().catch(() => {}); } catch {} });
@@ -1531,7 +1538,34 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
   const dragSt = useRef<{ sid: string; stid: string } | null>(null);
   const dragTx = useRef<{ sid: string } | null>(null);
+  /* ---- PINCH ZOOM & PAN preview (besar-kecil + geser pakai jari, ala CapCut) ---- */
+  const [stageTr, setStageTr] = useState<{ s: number; x: number; y: number }>({ s: 1, x: 0, y: 0 });
+  const stageTrRef = useRef(stageTr); useEffect(() => { stageTrRef.current = stageTr; }, [stageTr]);
+  const ptrsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ d0: number; s0: number; x0: number; y0: number; mx0: number; my0: number } | null>(null);
+  const panRef = useRef<{ x0: number; y0: number; tx0: number; ty0: number } | null>(null);
+  const lastTapRef = useRef(0);
+  function pinchInfo(): { d: number; mx: number; my: number } | null {
+    const pts = [...ptrsRef.current.values()];
+    if (pts.length < 2) return null;
+    return { d: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), mx: (pts[0].x + pts[1].x) / 2, my: (pts[0].y + pts[1].y) / 2 };
+  }
+  function resetStageZoom() { setStageTr({ s: 1, x: 0, y: 0 }); pinchRef.current = null; panRef.current = null; }
   function onStageDown(e: React.PointerEvent) {
+    // daftarkan jari dulu (multi-touch)
+    ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+    if (ptrsRef.current.size >= 2) {
+      // jari ke-2 turun → mulai jepit (pinch), batalkan drag lain
+      const inf = pinchInfo();
+      if (inf) pinchRef.current = { d0: Math.max(10, inf.d), s0: stageTrRef.current.s, x0: stageTrRef.current.x, y0: stageTrRef.current.y, mx0: inf.mx, my0: inf.my };
+      dragSt.current = null; dragTx.current = null; panRef.current = null;
+      return;
+    }
+    // ketuk ganda cepat → reset zoom
+    const nowT = performance.now();
+    if (nowT - lastTapRef.current < 320 && stageTrRef.current.s !== 1) { resetStageZoom(); lastTapRef.current = 0; return; }
+    lastTapRef.current = nowT;
     const pt = stagePoint(e); if (!pt) return;
     const tl = timelineRef.current;
     if (!tl || !slidesRef.current.length) return;
@@ -1542,7 +1576,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const cts = slideOptsById[sid]?.text;
     if (cts?.txt?.trim() && Math.abs(pt.y - cts.y) < 0.07) {
       dragTx.current = { sid };
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       return;
     }
     const stks = slideOptsById[sid]?.stickers || [];
@@ -1551,14 +1584,42 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const rx = (s.size + 0.03) * (canvasRef.current!.height / canvasRef.current!.width) * 2;
       if (Math.abs(pt.x - s.x) < Math.max(0.09, rx) && Math.abs(pt.y - s.y) < s.size + 0.06) {
         dragSt.current = { sid, stid: s.id };
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
         return;
       }
+    }
+    // sedang zoom → 1 jari = geser (pan) tampilan
+    if (stageTrRef.current.s > 1.02) {
+      panRef.current = { x0: e.clientX, y0: e.clientY, tx0: stageTrRef.current.x, ty0: stageTrRef.current.y };
+      return;
     }
     // tap kosong → pilih klip di playhead
     setSelId(sid);
   }
   function onStageMove(e: React.PointerEvent) {
+    if (ptrsRef.current.has(e.pointerId)) ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // mode jepit: besar-kecil + ikut jari tengah
+    if (pinchRef.current && ptrsRef.current.size >= 2) {
+      const inf = pinchInfo();
+      if (inf) {
+        const ns = clampN(pinchRef.current.s0 * (inf.d / pinchRef.current.d0), 0.6, 5);
+        let nx = pinchRef.current.x0 + (inf.mx - pinchRef.current.mx0);
+        let ny = pinchRef.current.y0 + (inf.my - pinchRef.current.my0);
+        const lim = 420 * ns; nx = clampN(nx, -lim, lim); ny = clampN(ny, -lim, lim);
+        setStageTr({ s: Number(ns.toFixed(3)), x: Math.round(nx), y: Math.round(ny) });
+      }
+      return;
+    }
+    // mode geser saat zoom
+    if (panRef.current) {
+      const s = stageTrRef.current.s;
+      const lim = 420 * s;
+      setStageTr({
+        s,
+        x: clampN(Math.round(panRef.current.tx0 + (e.clientX - panRef.current.x0)), -lim, lim),
+        y: clampN(Math.round(panRef.current.ty0 + (e.clientY - panRef.current.y0)), -lim, lim),
+      });
+      return;
+    }
     const pt = stagePoint(e); if (!pt) return;
     if (dragTx.current) {
       const sid = dragTx.current.sid;
@@ -1569,7 +1630,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!dragSt.current) return;
     moveSticker(dragSt.current.sid, dragSt.current.stid, pt.x, pt.y);
   }
-  function onStageUp() { dragSt.current = null; dragTx.current = null; }
+  function onStageUp(e?: any) {
+    if (e?.pointerId !== undefined) ptrsRef.current.delete(e.pointerId);
+    if (ptrsRef.current.size < 2) pinchRef.current = null;
+    if (ptrsRef.current.size === 0) panRef.current = null;
+    dragSt.current = null; dragTx.current = null;
+  }
 
   return (
     <div className="v6e-root">
@@ -1593,7 +1659,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
            style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
            onClick={fullStage ? () => setFullStage(false) : undefined}>
-        <div className="v6e-stage">
+        <div className="v6e-stage" style={{ transform: `translate(${stageTr.x}px, ${stageTr.y}px) scale(${stageTr.s})`, transformOrigin: "center center", willChange: "transform" }}>
           <canvas ref={canvasRef}
             onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
             style={{ touchAction: "none" }} />
@@ -1606,6 +1672,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             </div>
           )}
         </div>
+        {stageTr.s !== 1 && (
+          <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetStageZoom(); }} title="Reset zoom (atau ketuk 2×)">
+            ⟲ {Math.round(stageTr.s * 100)}%
+          </button>
+        )}
       </div>
 
       {/* ============ CONTROL ROW ============ */}
