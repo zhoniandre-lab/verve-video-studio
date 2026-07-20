@@ -455,6 +455,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [musicDur, setMusicDur] = useState(0); // detik — panel track audio sepanjang durasi asli
   const [ttsDur, setTtsDur] = useState(0);
   const [voiceDur, setVoiceDur] = useState(0);
+  const [musicOff, setMusicOff] = useState(0); // detik — posisi mulai audio di timeline (tekan-tahan & geser di track)
+  const [ttsOff, setTtsOff] = useState(0);
+  const [voiceOff, setVoiceOff] = useState(0);
   const [audMuted, setAudMuted] = useState(false);
   const [musicVol, setMusicVol] = useState(1);        // 0..1.5
   const [voiceVol, setVoiceVol] = useState(1);        // 0..1.5 (tts+rekaman)
@@ -501,6 +504,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [exRes, setExRes] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").r || 1080; } catch { return 1080; } });
   const [exFps, setExFps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").f || 30; } catch { return 30; } });
   const [exMbps, setExMbps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").m || 10; } catch { return 10; } });
+  const offRef = useRef({ music: 0, tts: 0, voice: 0 });
+  useEffect(() => { offRef.current = { music: musicOff, tts: ttsOff, voice: voiceOff }; }, [musicOff, ttsOff, voiceOff]);
+  const durAudRef = useRef({ music: 0, tts: 0, voice: 0 });
+  useEffect(() => { durAudRef.current = { music: musicDur, tts: ttsDur, voice: voiceDur }; }, [musicDur, ttsDur, voiceDur]);
+  // elemen audio yang dikelola jam manual (mode offset) saat preview
+  const tlAudRef = useRef<{ a: HTMLAudioElement; off: number; dur: number }[]>([]);
   // ingat pengaturan ekspor terakhir
   useEffect(() => { try { localStorage.setItem("verve_export_v1", JSON.stringify({ r: exRes, f: exFps, m: exMbps, s: qualitySharp ? 1 : 0 })); } catch {} }, [exRes, exFps, exMbps, qualitySharp]);
   /* ---------- suno ---------- */
@@ -691,7 +700,19 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const total = tl?.total || 0;
     const aud = clockRef.current.audio;
     const audioDur = aud && isFinite(aud.duration) ? aud.duration : 0;
-    const totalAll = Math.max(total, audioDur);
+    // kelola elemen audio ber-offset: hidup saat masuk jendelanya, diam di luar
+    let offsetEnd = 0;
+    for (const e of tlAudRef.current) {
+      const ed = isFinite(e.a.duration) ? e.a.duration : e.dur;
+      offsetEnd = Math.max(offsetEnd, isFinite(ed) && ed < 1e8 ? e.off + ed : 0);
+      const local = t - e.off;
+      const inWin = local >= 0 && (ed >= 1e8 || local < ed);
+      try {
+        if (inWin && e.a.paused) { e.a.currentTime = local; e.a.play().catch(() => {}); }
+        else if (!inWin && !e.a.paused) { e.a.pause(); }
+      } catch {}
+    }
+    const totalAll = Math.max(total, audioDur, offsetEnd);
     setDurT(totalAll);
     if (totalAll > 0 && t >= totalAll - 0.02) { stopPreview(true); setCurT(0); drawFrame(0); return; }
     setCurT(t);
@@ -706,6 +727,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     voiceEls.current = [];
     clockRef.current.audio = null;
     clockRef.current.running = false;
+    tlAudRef.current.forEach(e => { try { e.a.pause(); } catch {} });
+    tlAudRef.current = [];
     playingRef.current = false;
     setPlaying(false);
     if (!ended) {/* tetap di posisi */}
@@ -717,6 +740,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const tt = clampN(t, 0, Math.max(0, total - 0.001));
     if (clockRef.current.audio) try { clockRef.current.audio.currentTime = tt; } catch {}
     voiceEls.current.forEach(a => { try { a.currentTime = tt; } catch {} });
+    tlAudRef.current.forEach(e => {
+      const local = tt - e.off;
+      try {
+        e.a.currentTime = Math.max(0, local);
+        if (local >= 0 && playingRef.current) e.a.play().catch(() => {});
+        else if (local < 0) e.a.pause();
+      } catch {}
+    });
     clockRef.current.base = tt; clockRef.current.t0 = performance.now();
     setCurT(tt); drawFrame(tt);
   }, [drawFrame]);
@@ -755,6 +786,21 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (!master) master = a;
       });
     } catch {}
+    // mode OFFSET: tiap audio punya posisi mulai sendiri → pakai jam manual yang mengelola semua elemen
+    const offs = offRef.current;
+    const useOffsets = offs.music > 0.01 || offs.tts > 0.01 || offs.voice > 0.01;
+    tlAudRef.current = [];
+    if (useOffsets || !master) {
+      if (musicUrl && musicEl.current) tlAudRef.current.push({ a: musicEl.current, off: offs.music, dur: durAudRef.current.music || 1e9 });
+      const offs2 = [offs.tts, offs.voice]; const durs2 = [durAudRef.current.tts, durAudRef.current.voice]; let vi = 0;
+      [ttsUrl, voiceUrl].forEach(u => {
+        if (!u) return;
+        const a = voiceEls.current[vi];
+        if (a) tlAudRef.current.push({ a, off: offs2[vi] ?? 0, dur: durs2[vi] || 1e9 });
+        vi++;
+      });
+      master = null; // jam manual yang jaga (lihat tick)
+    }
     clockRef.current.audio = master;
     clockRef.current.base = seekTo; clockRef.current.t0 = performance.now();
     clockRef.current.running = true;   // <-- kunci: jam manual mulai berjalan (proyek tanpa audio pun bisa play)
@@ -762,6 +808,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (master) {
       try { master.currentTime = seekTo; master.play().catch(() => {}); } catch {}
       voiceEls.current.forEach(a => { try { a.currentTime = seekTo; a.play().catch(() => {}); } catch {} });
+    } else {
+      // mulai elemen sesuai offsetnya masing-masing
+      tlAudRef.current.forEach(e => {
+        const local = seekTo - e.off;
+        try {
+          if (local >= 0 && local < e.dur) { e.a.currentTime = local; e.a.play().catch(() => {}); }
+          else e.a.pause();
+        } catch {}
+      });
     }
     setPlaying(true);
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -798,7 +853,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const thumb = thumbOverride ?? (coverThumb || (first.startsWith("data:") ? first.slice(0, 40000) : first));
     return { v: 6, id: draftId || uid("d"), title: projTitle.slice(0, 80), updatedAt: Date.now(),
       slides: compactSlides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor,
-      musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", musicDur, ttsDur, voiceDur, filterPreset, adj, qualitySharp,
+      musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", musicDur, ttsDur, voiceDur, musicOff, ttsOff, voiceOff, filterPreset, adj, qualitySharp,
       musicVol, voiceVol, musicFadeIn, musicFadeOut,
       capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb: thumb, audMuted,
       mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal };
@@ -812,6 +867,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setBgMode(d.bgMode || "cover"); setBgColor(d.bgColor || "#000000");
     setMusicUrl(d.musicUrl || ""); setMusicName(d.musicName || "");
     setMusicDur(d.musicDur || 0); setTtsDur(d.ttsDur || 0); setVoiceDur(d.voiceDur || 0);
+    setMusicOff(d.musicOff || 0); setTtsOff(d.ttsOff || 0); setVoiceOff(d.voiceOff || 0);
     setTtsUrl(d.ttsUrl || ""); setTtsText(d.ttsText || ""); setVoiceUrl(d.voiceUrl || "");
     setFilterPreset(d.filterPreset || "none"); setAdj({ ...DEFAULT_ADJUST, ...(d.adj || {}) });
     setQualitySharp(!!d.qualitySharp);
@@ -1083,14 +1139,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     r.onload = () => { const u = r.result as string; setMusicUrl(u); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash("🎵 Musik ditambahkan"); getAudioDuration(u).then(setMusicDur); };
     r.readAsDataURL(f);
   }
-  async function mixAudioUrls(parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number }[]): Promise<string | null> {
+  async function mixAudioUrls(parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number; off?: number }[]): Promise<string | null> {
     try {
       setStageText("Menggabungkan audio...");
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       const actx = new AC();
       const bufs = await Promise.all(parts.map(p => fetch(p.url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b.slice(0)))));
-      const maxLen = Math.max(...bufs.map(b => b.length));
       const sr = bufs[0].sampleRate; const ch = Math.min(2, bufs[0].numberOfChannels);
+      const offs = parts.map(p => Math.max(0, Math.round((p.off || 0) * sr)));
+      const maxLen = Math.max(...bufs.map((b, i) => offs[i] + b.length));
       const out = actx.createBuffer(ch, maxLen, sr);
       for (let c = 0; c < ch; c++) {
         const od = out.getChannelData(c);
@@ -1099,6 +1156,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           const p = parts[bi]; const g = p.gain;
           const fi = Math.max(0, p.fadeIn || 0), fo = Math.max(0, p.fadeOut || 0);
           const durS = d.length / sr;
+          const o0 = offs[bi];
           for (let i = 0; i < d.length; i++) {
             let v = g;
             if (fi > 0 || fo > 0) {
@@ -1106,7 +1164,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               if (fi > 0 && t < fi) v *= t / fi;
               if (fo > 0 && t > durS - fo) v *= Math.max(0, (durS - t) / fo);
             }
-            od[i] = Math.max(-1, Math.min(1, od[i] + d[i] * v));
+            od[o0 + i] = Math.max(-1, Math.min(1, od[o0 + i] + d[i] * v));
           }
         }
       }
@@ -1401,13 +1459,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     try {
       await ensureFontsLoaded().catch(() => {});
       const duck = (ttsUrl || voiceUrl) ? 0.4 : 1; // musik diturunkan tipis kalau ada suara
-      const parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number }[] = [];
-      if (musicUrl) parts.push({ url: proxifyAudioUrl(musicUrl), gain: musicVol * duck, fadeIn: musicFadeIn, fadeOut: musicFadeOut });
-      if (ttsUrl) parts.push({ url: proxifyAudioUrl(ttsUrl), gain: voiceVol });
-      if (voiceUrl) parts.push({ url: proxifyAudioUrl(voiceUrl), gain: voiceVol });
+      const parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number; off?: number }[] = [];
+      if (musicUrl) parts.push({ url: proxifyAudioUrl(musicUrl), gain: musicVol * duck, fadeIn: musicFadeIn, fadeOut: musicFadeOut, off: musicOff });
+      if (ttsUrl) parts.push({ url: proxifyAudioUrl(ttsUrl), gain: voiceVol, off: ttsOff });
+      if (voiceUrl) parts.push({ url: proxifyAudioUrl(voiceUrl), gain: voiceVol, off: voiceOff });
       let audioUrl: string | null = null;
       const single = parts.length === 1 ? parts[0] : null;
-      const singleClean = single && Math.abs(single.gain - 1) < 0.01 && !single.fadeIn && !single.fadeOut;
+      const singleClean = single && Math.abs(single.gain - 1) < 0.01 && !single.fadeIn && !single.fadeOut && !(single.off && single.off > 0.01);
       if (singleClean) audioUrl = single!.url;
       else if (parts.length >= 1) audioUrl = await mixAudioUrls(parts);
 
@@ -1744,13 +1802,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         pxs={tlPxs} onZoom={(v: number) => setTlPxs(clampN(v, 5, 140))}
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
         musicDur={musicDur} ttsDur={ttsDur} voiceDur={voiceDur}
+        musicOff={musicOff} ttsOff={ttsOff} voiceOff={voiceOff}
+        onAudioOff={(k: "m" | "t" | "v", sec: number) => { const v = Math.round(sec * 100) / 100; if (k === "m") setMusicOff(v); else if (k === "t") setTtsOff(v); else setVoiceOff(v); }}
+        onAudioMoved={(k: string) => flash(`${k === "m" ? "🎵 Musik" : k === "t" ? "🗣️ Narasi" : "🎙️ Rekaman"} digeser — mulai di ${formatDur((k === "m" ? musicOff : k === "t" ? ttsOff : voiceOff))}`)}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
-        onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); flash("🗑 Track audio dikosongkan"); }}
+        onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); flash("🗑 Track audio dikosongkan"); }}
         onAddText={() => startTextEdit()}
         onEditText={(sid: string) => startTextEdit(sid)}
         onAddOutro={addOutro}
@@ -1818,7 +1879,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
-            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
+            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
@@ -1882,7 +1943,7 @@ function TimelineV6(p: any) {
   // total tampilan: ikut elemen terpanjang (video ATAU audio — lagu 5 menit = track 5 menit)
   const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
   const contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
-  const dragRef = useRef<{ kind: "trim" | "reorder"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r" } | null>(null);
+  const dragRef = useRef<{ kind: "trim" | "reorder" | "aud"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number } | null>(null);
   const scrubHoldRef = useRef(false);
   // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
   const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -1940,6 +2001,7 @@ function TimelineV6(p: any) {
         zoomAnchorRef.current = { t: (el.scrollLeft + vx - halfW) / PXS0, vx };
       }
       dragRef.current = null; // batalkan drag klip/trim saat mencubit
+      clearTimeout(armTRef.current);
     }
   }
   function onWrapMove(e: React.PointerEvent) {
@@ -1962,49 +2024,124 @@ function TimelineV6(p: any) {
 
   function clipW(i: number): number { return Math.max(30, (timeline?.durs?.[i] || 0) * PXS0); }
 
+  /* ---- TEKAN-TAHAN & SERET (klip reorder / trim / audio offset) + AUTO-SCROLL tepi ---- */
+  const armTRef = useRef<any>(null);
+  const edgeDirRef = useRef(0);
+  const edgeRafRef = useRef(0);
+  const suppressClickRef = useRef(false);
+
+  function applyReorder(d: any, clientX: number) {
+    const dx = clientX - d.startX;
+    if (Math.abs(dx) > 8) d.moved = true;
+    if (!d.moved) return;
+    const w = clipW(d.i) + 4;
+    const to = clampN(d.i + Math.round(dx / w), 0, slides.length - 1);
+    if (to !== d.to) { d.to = to; force(v => v + 1); }
+  }
+  function applyTrim(d: any, clientX: number) {
+    const dxT = (clientX - d.startX) / PXS0;
+    const nd = clampN(d.startDur + (d.side === "l" ? -dxT : dxT), 0.4, 600);
+    p.onTrim(slides[d.i].id, nd);
+  }
+  function applyAud(d: any, clientX: number) {
+    const dxT = (clientX - d.startX) / PXS0;
+    p.onAudioOff(d.audioKind, clampN(d.off0 + dxT, 0, 7200));
+  }
+  // jari mentok ke tepi layar → timeline ikut jalan terus (perpanjang/pindah tanpa angkat jari)
+  function edgeLoop() {
+    const el = scrollRef.current; const dir = edgeDirRef.current; const d = dragRef.current as any;
+    if (!el || !dir || !d || !d.armed) { edgeDirRef.current = 0; return; }
+    const ds = dir * 13;
+    el.scrollLeft += ds;
+    d.startX -= ds; // dx terus tumbuh walau jari diam → durasi/offset jalan terus
+    if (d.kind === "trim") applyTrim(d, d.lastX);
+    else if (d.kind === "reorder") applyReorder(d, d.lastX);
+    else if (d.kind === "aud") applyAud(d, d.lastX);
+    edgeRafRef.current = requestAnimationFrame(edgeLoop);
+  }
+  function updEdge(clientX: number) {
+    const el = scrollRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const dir = clientX > r.right - 34 ? 1 : clientX < r.left + 34 ? -1 : 0;
+    if (dir && !edgeDirRef.current) { edgeDirRef.current = dir; cancelAnimationFrame(edgeRafRef.current); edgeRafRef.current = requestAnimationFrame(edgeLoop); }
+    else edgeDirRef.current = dir;
+  }
+  function stopEdge() { edgeDirRef.current = 0; cancelAnimationFrame(edgeRafRef.current); }
+  function dragUpdate(e: React.PointerEvent, d: any) {
+    d.lastX = e.clientX; updEdge(e.clientX);
+    if (!d.armed) return;
+    if (d.kind === "trim") applyTrim(d, e.clientX);
+    else if (d.kind === "reorder") applyReorder(d, e.clientX);
+    else if (d.kind === "aud") applyAud(d, e.clientX);
+  }
+  function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
+    clearTimeout(armTRef.current);
+    armTRef.current = setTimeout(() => {
+      if (dragRef.current === d) { d.armed = true; if (el) { try { el.setPointerCapture?.(pid); } catch {} } force(v => v + 1); }
+    }, ms);
+  }
+
   function onClipDown(e: React.PointerEvent, i: number) {
     const sid = slides[i].id;
     p.onSel(sid);
     const target = e.target as HTMLElement;
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
-    dragRef.current = { kind: "reorder", i, startX: e.clientX, startDur: 0, to: i, moved: false };
-    target.setPointerCapture?.(e.pointerId);
+    const d: any = { kind: "reorder", i, startX: e.clientX, startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
+    dragRef.current = d;
+    armDrag(d, target, e.pointerId, 300); // tekan-tahan 0,3d → klip "terangkat" & bisa diseret
   }
   function onClipMove(e: React.PointerEvent) {
-    const d = dragRef.current;
-    if (!d) return;
-    if (d.kind === "reorder") {
-      const dx = e.clientX - d.startX;
-      if (Math.abs(dx) > 14) d.moved = true;
-      if (d.moved) {
-        const w = clipW(d.i) + 4;
-        let to = d.i + Math.round(dx / w);
-        to = clampN(to, 0, slides.length - 1);
-        if (to !== d.to) { d.to = to; force(v => v + 1); }
-      }
+    const d = dragRef.current as any;
+    if (!d || d.kind !== "reorder") return;
+    if (!d.armed) {
+      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline
+      return;
     }
+    dragUpdate(e, d);
   }
   function onClipUp() {
-    const d = dragRef.current;
+    clearTimeout(armTRef.current);
+    const d = dragRef.current as any;
     dragRef.current = null;
-    if (d && d.kind === "reorder" && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
+    stopEdge();
+    if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
     e.stopPropagation();
     const sid = slides[i].id;
     p.onSel(sid);
-    dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1, side };
+    dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1, side, armed: true, lastX: e.clientX } as any;
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   }
   function onHdlMove(e: React.PointerEvent) {
-    const d = dragRef.current;
+    const d = dragRef.current as any;
     if (!d || d.kind !== "trim") return;
-    const dxT = (e.clientX - d.startX) / PXS0;
-    // handle kanan: tarik kanan = tambah panjang; handle kiri: tarik kiri = tambah panjang (ke belakang)
-    const nd = clampN(d.startDur + (d.side === "l" ? -dxT : dxT), 0.4, 600);
-    p.onTrim(slides[d.i].id, nd);
+    dragUpdate(e, d);
   }
-  function onHdlUp() { dragRef.current = null; }
+  function onHdlUp() { dragRef.current = null; stopEdge(); }
+
+  // seret balok audio (tekan-tahan → geser posisi mulai)
+  function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
+    const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
+    const d: any = { kind: "aud", i: 0, startX: e.clientX, startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, off0 };
+    dragRef.current = d;
+    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
+  }
+  function onAudMove(e: React.PointerEvent) {
+    const d = dragRef.current as any;
+    if (!d || d.kind !== "aud") return;
+    if (!d.armed) {
+      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      return;
+    }
+    dragUpdate(e, d);
+  }
+  function onAudUp() {
+    clearTimeout(armTRef.current);
+    const d = dragRef.current as any;
+    dragRef.current = null; stopEdge();
+    if (d?.kind === "aud" && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); }
+  }
 
   function rulerDown(e: React.PointerEvent) {
     const el = scrollRef.current; if (!el || !dispTotal) return;
@@ -2069,10 +2206,11 @@ function TimelineV6(p: any) {
                 const isOutro = s.id.startsWith("outro");
                 const d = dragRef.current;
                 const ghost = d?.kind === "reorder" && d.moved && d.to === i && d.i !== i;
+                const lifting = d?.kind === "reorder" && (d as any).armed && d.i === i;
                 return (
                   <div key={s.id} style={{ display: "flex", alignItems: "center", position: "relative" }}>
                     <div
-                      className={`v6e-clip ${sel ? "sel" : ""}`}
+                      className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
                       style={{ width: clipW(i), opacity: ghost ? 0.35 : 1 }}
                       onPointerDown={(e) => onClipDown(e, i)}
                       onPointerMove={onClipMove} onPointerUp={onClipUp}
@@ -2109,23 +2247,31 @@ function TimelineV6(p: any) {
               {!hasAudio ? (
                 <button className="v6e-track-addbtn" onClick={p.onAddAudio}><i>🎵</i> ＋ Tambahkan audio</button>
               ) : (() => {
-                const rows: { key: string; grad: string; col: string; icon: string; nm: string; dur: number }[] = [];
-                if (musicUrl) rows.push({ key: "m", grad: "linear-gradient(90deg,#0f766e,#14b8a6)", col: "#04211f", icon: "♪", nm: musicName || "Musik", dur: p.musicDur || 0 });
-                if (ttsUrl) rows.push({ key: "t", grad: "linear-gradient(90deg,#7c3aed,#a855f7)", col: "#fff", icon: "🗣️", nm: "Narasi AI", dur: p.ttsDur || 0 });
-                if (voiceUrl) rows.push({ key: "v", grad: "linear-gradient(90deg,#b91c1c,#ef4444)", col: "#fff", icon: "🎙️", nm: "Rekaman", dur: p.voiceDur || 0 });
+                const rows: { key: "m" | "t" | "v"; grad: string; col: string; icon: string; nm: string; dur: number; off: number }[] = [];
+                if (musicUrl) rows.push({ key: "m", grad: "linear-gradient(90deg,#0f766e,#14b8a6)", col: "#04211f", icon: "♪", nm: musicName || "Musik", dur: p.musicDur || 0, off: p.musicOff || 0 });
+                if (ttsUrl) rows.push({ key: "t", grad: "linear-gradient(90deg,#7c3aed,#a855f7)", col: "#fff", icon: "🗣️", nm: "Narasi AI", dur: p.ttsDur || 0, off: p.ttsOff || 0 });
+                if (voiceUrl) rows.push({ key: "v", grad: "linear-gradient(90deg,#b91c1c,#ef4444)", col: "#fff", icon: "🎙️", nm: "Rekaman", dur: p.voiceDur || 0, off: p.voiceOff || 0 });
                 const rowH = rows.length > 1 ? 30 : 46;
                 const wOf = (r: any) => Math.max(90, (r.dur || 4) * PXS0);
-                const maxW = Math.max(...rows.map(wOf));
+                const maxW = Math.max(...rows.map((r: any) => r.off * PXS0 + wOf(r)));
                 return (
                   <div style={{ position: "relative", width: maxW + 8 + 96, height: rows.length * rowH + (rows.length - 1) * 5 }}>
-                    {rows.map((r, k) => (
-                      <div key={r.key} className="v6e-audioclip" onClick={p.onAddAudio} title={r.nm}
-                        style={{ position: "absolute", left: 0, top: k * (rowH + 5), width: wOf(r), height: rowH, background: r.grad, color: r.col, overflow: "hidden" }}>
-                        <i style={{ fontStyle: "normal" }}>{r.icon}</i>
-                        <span className="wv">{Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % Math.max(8, rowH - 14)) }} />)}</span>
-                        <span className="nm" style={rowH < 40 ? { fontSize: 9.5 } : undefined}>{r.nm}{r.dur ? ` · ${formatDur(r.dur)}` : ""}</span>
-                      </div>
-                    ))}
+                    {rows.map((r, k) => {
+                      const dd = dragRef.current as any;
+                      const lifting = dd?.kind === "aud" && dd.armed && dd.audioKind === r.key;
+                      return (
+                        <div key={r.key} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={r.nm}
+                          onPointerDown={(e) => onAudDown(e, r.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
+                          onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
+                          style={{ position: "absolute", left: r.off * PXS0, top: k * (rowH + 5), width: wOf(r), height: rowH, background: r.grad, color: r.col, overflow: "hidden" }}>
+                          <i style={{ fontStyle: "normal" }}>{r.icon}</i>
+                          <span className="wv">{Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % Math.max(8, rowH - 14)) }} />)}</span>
+                          <span className="nm" style={rowH < 40 ? { fontSize: 9.5 } : undefined}>
+                            {r.nm}{r.dur ? ` · ${formatDur(r.dur)}` : ""}{r.off > 0.05 ? ` · ▶${formatDur(r.off)}` : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
                     <div style={{ position: "absolute", left: maxW + 8, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6 }}>
                       <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0, height: 42 }} onClick={p.onAddAudio}>＋</button>
                       <button className="v6e-track-addbtn" style={{ minWidth: 42, width: 42, padding: 0, height: 42 }} onClick={p.onDelAudio} title="Hapus audio">🗑</button>
@@ -2288,6 +2434,7 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
             <div className="v6-note">💡 Perubahan volume langsung terdengar di pratinjau ▷ — fade otomatis diterapkan saat ekspor.</div>
           </div>
         )}
+        <div className="v6-note">✋ <b>Tekan-tahan balok audio di track</b> lalu geser kiri/kanan — posisi mulainya bebas (misal narasi mulai detik ke-5). Offset ikut tersimpan & dipakai saat ekspor.</div>
         <div className="v6-note">💡 Rekam suara asli, narasi AI, lagu AI (Suno) sampai musik upload — semua muncul di <b>track audio</b> dan bisa dimix otomatis saat ekspor. Tile 🏁 <b>Akhiran</b> ada di ujung track 1.</div>
       </div>
     </SheetShell>

@@ -1251,6 +1251,9 @@ body:has(.cc2-root) { background: var(--v-bg); }
 .v6e-playhead-fixed::before { content:""; position:absolute; top:-4px; left:50%; transform:translateX(-50%);
   border-left:6px solid transparent; border-right:6px solid transparent; border-top:7px solid #fff; }
 .v6e-trans-chip.off { background:rgba(255,255,255,.35); color:#111; }
+/* item track "terangkat" saat tekan-tahan (siap diseret bebas) */
+.v6e-clip.lift, .v6e-audioclip.lift { transform:scale(1.03); box-shadow:0 8px 22px rgba(0,0,0,.55); z-index:7;
+  outline:2px solid var(--v6-teal); transition:transform .12s; }
 .v6e-trans-chip { border:1.5px solid rgba(0,0,0,.25); box-shadow:0 1px 5px rgba(0,0,0,.4); }
 
 /* ---------- TOOLBAR BAWAH ---------- */
