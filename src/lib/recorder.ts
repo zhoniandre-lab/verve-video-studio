@@ -15,7 +15,7 @@
 import type { VizStyle } from "./types";
 import {
   buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
-  setDrawBg, preloadStickerImages, paintFloatingTexts,
+  setDrawBg, preloadStickerImages, paintFloatingTexts, paintFloatingStickers,
 } from "./editing";
 import type { SlideOpt, Timeline } from "./editing";
 
@@ -404,7 +404,8 @@ function drawFrame(s: DrawState) {
       grain: s.grainAmt || 0,
       kbZoom: zoomBase,
     });
-    // teks lepas waktu (start/dur sendiri — digeser di track)
+    // stiker & teks lepas waktu (start/dur sendiri — digeser di track)
+    paintFloatingStickers(ctx, W, H, optsArr, s.time);
     paintFloatingTexts(ctx, W, H, optsArr, s.time);
   }
 

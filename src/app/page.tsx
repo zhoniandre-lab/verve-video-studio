@@ -8,7 +8,7 @@ import {
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
   ADJUST_DEFS, DEFAULT_ADJUST, DEFAULT_TEXT, buildClipFilter, canonicalTrans, effDur,
   buildTimeline, locate, paintClips, paintClipText, CC_TEMPLATES, paintPreviewCaptions,
-  ensureFontsLoaded, setDrawBg, paintFloatingTexts, paintTextSelectBox,
+  ensureFontsLoaded, setDrawBg, paintFloatingTexts, paintTextSelectBox, paintFloatingStickers, paintStickerSelectBox,
 } from "@/lib/editing";
 import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } from "@/lib/editing";
 
@@ -444,6 +444,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [selTextSid, setSelTextSidState] = useState<string>("");
   const selTextSidRef = useRef<string>("");
   const setSelTextSid = useCallback((v: string) => { selTextSidRef.current = v; setSelTextSidState(v); }, []);
+  // stiker yang sedang TERPILIH di layar (bingkai) — geser 1 jari, cubit = ukuran, putar 2 jari = rotasi
+  const [selStik, setSelStikState] = useState<{ sid: string; stid: string } | null>(null);
+  const selStikRef = useRef<{ sid: string; stid: string } | null>(null);
+  const setSelStik = useCallback((v: { sid: string; stid: string } | null) => { selStikRef.current = v; setSelStikState(v); }, []);
   const [ratio, setRatio] = useState<"16:9" | "9:16" | "1:1">("9:16");
   const [slideDuration, setSlideDuration] = useState(3);
   const [transition, setTransition] = useState("dissolve");
@@ -626,6 +630,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!slides.some(s => s.id === selTextSid) || !slideOptsById[selTextSid]?.text?.txt?.trim()) setSelTextSid("");
     else if (selId && selId !== selTextSid) setSelTextSid("");
   }, [slides, slideOptsById, selTextSid, selId, setSelTextSid]);
+  // bersihkan seleksi stiker kalau klip/stikernya hilang atau pindah klip — saling eksklusif dgn teks
+  useEffect(() => {
+    if (!selStik) return;
+    const alive = slides.some(s => s.id === selStik.sid) && (slideOptsById[selStik.sid]?.stickers || []).some(x => x.id === selStik.stid);
+    if (!alive) setSelStik(null);
+    else if (selId && selId !== selStik.sid) setSelStik(null);
+  }, [slides, slideOptsById, selStik, selId, setSelStik]);
+  useEffect(() => { if (selStik && selTextSid) setSelTextSid(""); }, [selStik]); // eslint-disable-line
+  useEffect(() => { if (selTextSid && selStik) setSelStik(null); }, [selTextSid]); // eslint-disable-line
 
   /* ---------- PREVIEW (canvas + rAF + audio clock) ---------- */
   const drawFrameRefCb = useRef<(t: number) => void>(() => {});
@@ -680,8 +693,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } as any);
     // captions
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
-    // teks lepas waktu (punya start/dur sendiri — digeser di track)
+    // stiker & teks lepas waktu (punya start/dur sendiri — digeser di track)
+    paintFloatingStickers(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt);
     paintFloatingTexts(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt);
+    // bingkai seleksi stiker (preview saja — tidak ikut diekspor)
+    const sst = selStikRef.current;
+    const sstk = sst ? (optsRef.current[sst.sid]?.stickers || []).find(x => x.id === sst.stid) : null;
+    if (sst && sstk) {
+      let vis = false;
+      if (sstk.start != null) { const dd = sstk.dur && sstk.dur > 0 ? sstk.dur : 3; vis = tt >= sstk.start && tt < sstk.start + dd; }
+      else vis = sl[L.idx]?.id === sst.sid;
+      if (vis) paintStickerSelectBox(ctx, W, H, sstk);
+    }
     // bingkai seleksi teks (preview saja — tidak ikut diekspor)
     const sts = selTextSidRef.current;
     const sct = sts ? optsRef.current[sts]?.text : null;
@@ -708,7 +731,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (playing) return;
     const id = requestAnimationFrame(() => { try { drawFrameRefCb.current(curTRef.current); } catch {} });
     return () => cancelAnimationFrame(id);
-  }, [slideOptsById, slides, filterPreset, adj, qualitySharp, ratio, bgMode, bgColor, capWords, capStyle, ccSize, ccY, playing, selTextSid]); // eslint-disable-line
+  }, [slideOptsById, slides, filterPreset, adj, qualitySharp, ratio, bgMode, bgColor, capWords, capStyle, ccSize, ccY, playing, selTextSid, selStik]); // eslint-disable-line
 
   const tick = useCallback(() => {
     // jika master audio selesai tapi klip masih panjang → lanjut jam manual
@@ -1442,7 +1465,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const cur = slideOptsById[sid]?.stickers || [];
     const st: StickerItem = { id: uid("st"), emoji, x: 0.5, y: emoji.startsWith("@") ? 0.72 : 0.4, size: emoji.startsWith("@") ? 0.07 : 0.12, rot: 0, img };
     setOpt(sid, { stickers: [...cur, st] } as Partial<SlideOpt>);
-    flash(img ? "🖼️ Overlay foto ditambahkan (seret di layar!)" : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan — seret di layar!`);
+    setSelStik({ sid, stid: st.id }); // langsung terpilih → bisa digeser/di-cubit saat itu juga
+    flash(img ? "🖼️ Overlay foto ditambahkan — seret/cubit di layar!" : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan — seret/cubit di layar!`);
   }
   function moveSticker(sid: string, stid: string, x: number, y: number) {
     const stks = (slideOptsById[sid]?.stickers || []).map(s => s.id === stid ? { ...s, x: clampN(x, 0.05, 0.95), y: clampN(y, 0.05, 0.95) } : s);
@@ -1461,6 +1485,34 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const i = slides.findIndex(x => x.id === sid);
     const clipStart = timeline?.starts?.[i] || 0;
     setOpt(sid, { text: { ...cur, dur: Math.round(clampN(sec, 0.5, 600) * 10) / 10, start: cur.start ?? clipStart } });
+  }
+  // geser chip STIKER di track → stiker punya waktu mulai sendiri (lepas dari klip)
+  function moveStickerStart(sid: string, stid: string, sec: number) {
+    const i = slides.findIndex(x => x.id === sid);
+    const clipDur = timeline?.durs?.[i] || 3;
+    const list = slideOptsById[sid]?.stickers || [];
+    setOpt(sid, { stickers: list.map(x => x.id === stid ? { ...x, start: Math.round(clampN(sec, 0, 7190) * 100) / 100, dur: x.dur ?? clipDur } : x) } as Partial<SlideOpt>);
+  }
+  // tarik ujung kanan chip stiker → durasi tampilnya
+  function moveStickerDur(sid: string, stid: string, sec: number) {
+    const i = slides.findIndex(x => x.id === sid);
+    const clipStart = timeline?.starts?.[i] || 0;
+    const list = slideOptsById[sid]?.stickers || [];
+    setOpt(sid, { stickers: list.map(x => x.id === stid ? { ...x, dur: Math.round(clampN(sec, 0.3, 600) * 10) / 10, start: x.start ?? clipStart } : x) } as Partial<SlideOpt>);
+  }
+  // ketuk chip stiker di track → PILIH stikernya di layar (bingkai); ketuk chip lagi → buka panel stiker
+  function onStickerChipTap(sid: string, stid: string) {
+    const already = selStikRef.current;
+    if (already && already.sid === sid && already.stid === stid && selId === sid) { setTool("stiker"); setSheetTab(""); setClipBar(false); return; }
+    const st = (slideOptsById[sid]?.stickers || []).find(x => x.id === stid);
+    if (!st) return;
+    setSelStik({ sid, stid });
+    if (selId !== sid) setSelId(sid);
+    const i = slides.findIndex(s => s.id === sid);
+    const t0 = st.start ?? (timeline?.starts?.[i] || 0);
+    const dd = st.dur ?? (timeline?.durs?.[i] || 3);
+    seekPreview(t0 + Math.max(0.01, Math.min(dd / 2, dd - 0.05)));
+    flash("😀 Stiker dipilih — seret 1 jari utk geser · cubit = ukuran · putar 2 jari = rotasi · ketuk chip lagi utk kelola");
   }
   function delSticker(sid: string, stid: string) {
     setOpt(sid, { stickers: (slideOptsById[sid]?.stickers || []).filter(s => s.id !== stid) } as Partial<SlideOpt>);
@@ -1658,9 +1710,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!r.width || !r.height) return null;
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   }
-  const dragSt = useRef<{ sid: string; stid: string } | null>(null);
+  const dragSt = useRef<{ sid: string; stid: string; x0: number; y0: number; moved: boolean; wasSel: boolean } | null>(null);
   const dragTx = useRef<{ sid: string; x0: number; y0: number; moved: boolean; wasSel: boolean } | null>(null);
   const pinchTxtRef = useRef<{ sid: string; d0: number; s0: number } | null>(null);
+  const pinchStikRef = useRef<{ sid: string; stid: string; d0: number; size0: number; ang0: number; rot0: number } | null>(null);
   /* ---- GESER & CUBIT GAMBAR di dalam bingkai rasio (ala CapCut) ----
      1 jari = geser posisi gambar, 2 jari = zoom gambar.
      Nilai tersimpan per-klip (tx/ty/tz di slideOpts) → terkunci & ikut terekspor. */
@@ -1684,16 +1737,25 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const pts = [...ptrsRef.current.values()];
     return pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : null;
   }
+  function pinchAngle(): number | null {
+    const pts = [...ptrsRef.current.values()];
+    return pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : null;
+  }
   function onStageDown(e: React.PointerEvent) {
     ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     if (ptrsRef.current.size >= 2) {
-      // jari ke-2 → cubit: TEKS terpilih = ubah ukuran huruf, selain itu = zoom GAMBAR klip
+      // jari ke-2 → cubit: TEKS terpilih = ukuran huruf · STIKER terpilih = ukuran + PUTARAN · selain itu = zoom GAMBAR klip
       const d = pinchDist();
       const tsid = selTextSidRef.current;
       const tct = tsid ? slideOptsById[tsid]?.text : null;
+      const ssel = selStikRef.current;
+      const sstk = ssel ? (slideOptsById[ssel.sid]?.stickers || []).find(x => x.id === ssel.stid) : null;
       if (tsid && tct?.txt?.trim() && d) {
         pinchTxtRef.current = { sid: tsid, d0: Math.max(10, d), s0: tct.size || 0.055 };
+      } else if (ssel && sstk && d) {
+        const a0 = pinchAngle() ?? 0;
+        pinchStikRef.current = { sid: ssel.sid, stid: ssel.stid, d0: Math.max(10, d), size0: sstk.size || 0.12, ang0: a0, rot0: sstk.rot || 0 };
       } else {
         const sid = clipAtPlayhead();
         if (sid && d) {
@@ -1722,6 +1784,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         flash("↺ Ukuran teks dikembalikan");
         return;
       }
+      const ssel0 = selStikRef.current;
+      const sstk0 = ssel0 ? (slideOptsById[ssel0.sid]?.stickers || []).find(x => x.id === ssel0.stid) : null;
+      if (ssel0 && sstk0) {
+        const list = slideOptsById[ssel0.sid]?.stickers || [];
+        setOpt(ssel0.sid, { stickers: list.map(x => x.id === ssel0.stid ? { ...x, size: 0.12, rot: 0 } : x) } as Partial<SlideOpt>);
+        flash("↺ Ukuran & putaran stiker dikembalikan");
+        return;
+      }
       resetClipTransform(sid); return;
     }
     // TEKS TERPILIH → geser 1 jari DI MANA PUN di layar menggerakkan teksnya
@@ -1729,6 +1799,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const tct0 = tsid0 ? slideOptsById[tsid0]?.text : null;
     if (tsid0 && tct0?.txt?.trim()) {
       dragTx.current = { sid: tsid0, x0: e.clientX, y0: e.clientY, moved: false, wasSel: true };
+      return;
+    }
+    // STIKER TERPILIH → geser 1 jari DI MANA PUN di layar menggerakkan stikernya
+    const sselG = selStikRef.current;
+    const sstkG = sselG ? (slideOptsById[sselG.sid]?.stickers || []).find(x => x.id === sselG.stid) : null;
+    if (sselG && sstkG) {
+      dragSt.current = { sid: sselG.sid, stid: sselG.stid, x0: e.clientX, y0: e.clientY, moved: false, wasSel: true };
       return;
     }
     // drag TEKS (posisi bebas atas-bawah-kiri-kanan) kalau sentuh area teks → sekalian memilihnya
@@ -1739,12 +1816,24 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       dragTx.current = { sid, x0: e.clientX, y0: e.clientY, moved: false, wasSel: false };
       return;
     }
-    const stks = slideOptsById[sid]?.stickers || [];
-    for (let i = stks.length - 1; i >= 0; i--) {
-      const s = stks[i];
+    // drag STIKER — cek semua stiker yang sedang terlihat (ikut klip aktif + lepas waktu) → sekalian memilihnya
+    const tNow = Math.min(curT, Math.max(0, tl.total - 0.001));
+    const visStks: { sid: string; s: any }[] = [];
+    (slideOptsById[sid]?.stickers || []).forEach((s: any) => { if (s.start == null) visStks.push({ sid, s }); });
+    for (const sl0 of slidesRef.current) {
+      for (const s of (slideOptsById[sl0.id]?.stickers || []) as any[]) {
+        if (s.start == null) continue;
+        const dd = s.dur && s.dur > 0 ? s.dur : 3;
+        if (tNow >= s.start && tNow < s.start + dd) visStks.push({ sid: sl0.id, s });
+      }
+    }
+    for (let i = visStks.length - 1; i >= 0; i--) {
+      const it = visStks[i]; const s = it.s;
       const rx = (s.size + 0.03) * (canvasRef.current!.height / canvasRef.current!.width) * 2;
       if (Math.abs(pt.x - s.x) < Math.max(0.09, rx) && Math.abs(pt.y - s.y) < s.size + 0.06) {
-        dragSt.current = { sid, stid: s.id };
+        setSelStik({ sid: it.sid, stid: s.id });
+        if (selId !== it.sid) setSelId(it.sid);
+        dragSt.current = { sid: it.sid, stid: s.id, x0: e.clientX, y0: e.clientY, moved: false, wasSel: false };
         return;
       }
     }
@@ -1763,6 +1852,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const ns = clampN(pz.s0 * (d / pz.d0), 0.018, 0.16);
         setOpt(pz.sid, { text: { ...cur, size: Number(ns.toFixed(3)) } });
       }
+      return;
+    }
+    // cubit + putar: UKURAN & ROTASI STIKER terpilih (2 jari)
+    if (pinchStikRef.current && ptrsRef.current.size >= 2) {
+      const pz = pinchStikRef.current;
+      const d = pinchDist(); const a = pinchAngle();
+      const list = slideOptsById[pz.sid]?.stickers || [];
+      setOpt(pz.sid, { stickers: list.map(x => x.id === pz.stid ? {
+        ...x,
+        size: d ? Number(clampN(pz.size0 * (d / pz.d0), 0.03, 0.6).toFixed(3)) : x.size,
+        rot: a !== null ? Math.round((((pz.rot0 + (a - pz.ang0) * 180 / Math.PI) + 540) % 360 - 180) * 10) / 10 : x.rot,
+      } : x) } as Partial<SlideOpt>);
       return;
     }
     // cubit: zoom gambar klip
@@ -1795,13 +1896,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       return;
     }
     if (!dragSt.current) return;
-    moveSticker(dragSt.current.sid, dragSt.current.stid, pt.x, pt.y);
+    const g2 = dragSt.current;
+    if (!g2.moved && Math.hypot(e.clientX - g2.x0, e.clientY - g2.y0) > 3) g2.moved = true;
+    moveSticker(g2.sid, g2.stid, pt.x, pt.y);
   }
   function onStageUp(e?: any) {
     if (e?.pointerId !== undefined) ptrsRef.current.delete(e.pointerId);
     const hadTxtPinch = !!pinchTxtRef.current;
-    if (ptrsRef.current.size < 2) { pinchRef.current = null; pinchTxtRef.current = null; }
+    const hadStikPinch = !!pinchStikRef.current;
+    if (ptrsRef.current.size < 2) { pinchRef.current = null; pinchTxtRef.current = null; pinchStikRef.current = null; }
     if (ptrsRef.current.size === 0 && hadTxtPinch) { flash("🔠 Ukuran teks dikunci ✓"); persistSnapshot(); }
+    if (ptrsRef.current.size === 0 && hadStikPinch) { flash("😀 Ukuran & putaran stiker dikunci ✓"); persistSnapshot(); }
     if (ptrsRef.current.size === 0 && panClipRef.current) {
       const pc = panClipRef.current;
       panClipRef.current = null;
@@ -1813,6 +1918,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (g && ptrsRef.current.size === 0) {
       if (!g.moved && g.wasSel) setSelTextSid("");
       else if (g.moved) { flash("🔤 Posisi teks dikunci ✓"); persistSnapshot(); }
+    }
+    // stiker: pola sama — tap = lepas seleksi, geser = simpan
+    const g2 = dragSt.current;
+    if (g2 && ptrsRef.current.size === 0) {
+      if (!g2.moved && g2.wasSel) setSelStik(null);
+      else if (g2.moved) { flash("😀 Posisi stiker dikunci ✓"); persistSnapshot(); }
     }
     dragSt.current = null; dragTx.current = null;
   }
@@ -1911,6 +2022,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); flash("🗑 Track audio dikosongkan"); }}
         onAddText={() => startTextEdit()}
         onEditText={(sid: string) => onTextChipTap(sid)}
+        onStickerStart={moveStickerStart} onStickerDur={moveStickerDur}
+        onStickerMoved={(sid: string, stid: string) => { setSelStik({ sid, stid }); if (selId !== sid) setSelId(sid); const st = (slideOptsById[sid]?.stickers || []).find((x: any) => x.id === stid); flash("😀 Stiker ditaruh mulai " + formatDur(st?.start ?? 0) + (st?.dur ? " · " + formatDur(st.dur) : "") + " — ketuk chip utk kelola"); }}
+        onStickerChipTap={(sid: string, stid: string) => onStickerChipTap(sid, stid)}
+        onAddSticker={() => { setTool("stiker"); setSheetTab(""); setClipBar(false); }}
         onAddOutro={addOutro}
         onTrans={(sid: string) => { setSelId(sid); setClipBar(true); onClipTool("transisi"); }}
         onMute={() => setAudMuted(v => !v)} audMuted={audMuted}
@@ -2040,7 +2155,7 @@ function TimelineV6(p: any) {
   // total tampilan: ikut elemen terpanjang (video ATAU audio — lagu 5 menit = track 5 menit)
   const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
   const contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
-  const dragRef = useRef<{ kind: "trim" | "reorder" | "aud" | "txt" | "txtd"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number; sid?: string; st0?: number; dur0?: number } | null>(null);
+  const dragRef = useRef<{ kind: "trim" | "reorder" | "aud" | "txt" | "txtd" | "stk" | "stkd"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number; sid?: string; stid?: string; st0?: number; dur0?: number } | null>(null);
   const scrubHoldRef = useRef(false);
   // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
   const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -2152,6 +2267,14 @@ function TimelineV6(p: any) {
     const dxT = (clientX - d.startX) / PXS0;
     p.onTextDur(d.sid, clampN((d.dur0 || 3) + dxT, 0.5, 600));
   }
+  function applyStk(d: any, clientX: number) {
+    const dxT = (clientX - d.startX) / PXS0;
+    p.onStickerStart(d.sid, d.stid, clampN((d.st0 || 0) + dxT, 0, 7190));
+  }
+  function applyStkD(d: any, clientX: number) {
+    const dxT = (clientX - d.startX) / PXS0;
+    p.onStickerDur(d.sid, d.stid, clampN((d.dur0 || 3) + dxT, 0.3, 600));
+  }
   // jari mentok ke tepi layar → timeline ikut jalan terus (perpanjang/pindah tanpa angkat jari)
   function edgeLoop() {
     const el = scrollRef.current; const dir = edgeDirRef.current; const d = dragRef.current as any;
@@ -2164,6 +2287,8 @@ function TimelineV6(p: any) {
     else if (d.kind === "aud") applyAud(d, d.lastX);
     else if (d.kind === "txt") applyTxt(d, d.lastX);
     else if (d.kind === "txtd") applyTxtD(d, d.lastX);
+    else if (d.kind === "stk") applyStk(d, d.lastX);
+    else if (d.kind === "stkd") applyStkD(d, d.lastX);
     edgeRafRef.current = requestAnimationFrame(edgeLoop);
   }
   function updEdge(clientX: number) {
@@ -2182,6 +2307,8 @@ function TimelineV6(p: any) {
     else if (d.kind === "aud") applyAud(d, e.clientX);
     else if (d.kind === "txt") applyTxt(d, e.clientX);
     else if (d.kind === "txtd") applyTxtD(d, e.clientX);
+    else if (d.kind === "stk") applyStk(d, e.clientX);
+    else if (d.kind === "stkd") applyStkD(d, e.clientX);
   }
   function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
     clearTimeout(armTRef.current);
@@ -2279,6 +2406,33 @@ function TimelineV6(p: any) {
     if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid); }
   }
 
+  // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
+  function onStkDown(e: React.PointerEvent, sid: string, stid: string, mode: "move" | "dur", st: any) {
+    e.stopPropagation();
+    const i = slides.findIndex((x: Slide) => x.id === sid);
+    const st0 = st.start ?? (timeline?.starts?.[i] || 0);
+    const dur0 = st.dur ?? (timeline?.durs?.[i] || 3);
+    const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, st0, dur0 };
+    dragRef.current = d;
+    if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
+  }
+  function onStkMove(e: React.PointerEvent) {
+    const d = dragRef.current as any;
+    if (!d || (d.kind !== "stk" && d.kind !== "stkd")) return;
+    if (!d.armed) {
+      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      return;
+    }
+    dragUpdate(e, d);
+  }
+  function onStkUp() {
+    clearTimeout(armTRef.current);
+    const d = dragRef.current as any;
+    dragRef.current = null; stopEdge();
+    if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); }
+  }
+
   function rulerDown(e: React.PointerEvent) {
     const el = scrollRef.current; if (!el || !dispTotal) return;
     const r = el.getBoundingClientRect();
@@ -2298,6 +2452,7 @@ function TimelineV6(p: any) {
 
   const hasAudio = !!(musicUrl || ttsUrl || voiceUrl);
   const clipTexts = slides.map((s: Slide) => ({ s, t: slideOptsById[s.id]?.text })).filter((x: any) => x.t && x.t.txt?.trim());
+  const clipStiks = slides.flatMap((s: Slide) => (slideOptsById[s.id]?.stickers || []).map((st: any) => ({ s, st })));
 
   return (
     <div className="v6e-tl">
@@ -2444,6 +2599,38 @@ function TimelineV6(p: any) {
                       );
                     })}
                     <button className="v6e-track-addbtn" style={{ position: "absolute", left: maxEnd * PXS0 + 8, top: 3, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText}>＋</button>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* TRACK 4: stiker — chip bebas digeser ke detik mana pun & ditarik durasinya */}
+            <div className="v6e-track-add" style={{ height: "auto", minHeight: 54 }}>
+              {!clipStiks.length ? (
+                <button className="v6e-track-addbtn" onClick={p.onAddSticker}><i>😀</i> ＋ Tambahkan stiker</button>
+              ) : (() => {
+                const items = clipStiks.map(({ s, st }: any) => {
+                  const i = slides.findIndex((x: Slide) => x.id === s.id);
+                  return { s, st, t0: st.start ?? (timeline?.starts?.[i] || 0), dd: st.dur ?? (timeline?.durs?.[i] || 3), free: st.start != null };
+                });
+                const maxEnd = Math.max(...items.map((x: any) => x.t0 + x.dd), 1);
+                return (
+                  <div style={{ position: "relative", width: maxEnd * PXS0 + 56, height: 46 }}>
+                    {items.map(({ s, st, t0, dd, free }: any) => {
+                      const dd2 = dragRef.current as any;
+                      const lifting = (dd2?.kind === "stk" || dd2?.kind === "stkd") && dd2.armed && dd2.stid === st.id;
+                      return (
+                        <div key={st.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""}`} title="Tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi · ketuk untuk pilih di layar"
+                          onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
+                          onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
+                          style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20 }}>
+                          {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
+                          <span className="txtdur" title="Tarik untuk ubah durasi stiker"
+                            onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}>⋮</span>
+                        </div>
+                      );
+                    })}
+                    <button className="v6e-track-addbtn" style={{ position: "absolute", left: maxEnd * PXS0 + 8, top: 3, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddSticker}>＋</button>
                   </div>
                 );
               })()}
@@ -3528,6 +3715,7 @@ function SampulModal({ slides, slideOptsById, timeline, ratio, getImage, onClose
         clipT: L.clipT, clipDur: L.clipDur, inTrans: false, transT: 0, transId: "none",
         optCur: opt, optNxt: null, globalFilter: "none", absT: t, isMobile: true, beat: false, grain: 0, kbZoom: 1,
       } as any);
+      paintFloatingStickers(ctx, W, H, slides.map((x: Slide) => slideOptsById[x.id]), t);
       paintFloatingTexts(ctx, W, H, slides.map((x: Slide) => slideOptsById[x.id]), t);
       if (txt.trim()) {
         const ct: ClipText = { ...DEFAULT_TEXT, txt, size: 0.085, y: 0.85, karaokeWords: undefined };

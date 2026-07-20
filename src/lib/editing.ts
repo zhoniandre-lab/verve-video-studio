@@ -22,7 +22,10 @@ export interface ClipText {
   start?: number | null; // detik ABSOLUT di timeline (undefined/null = ikut klip)
   dur?: number;        // detik tampil saat mode lepas (default: durasi klip)
 }
-export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; opacity?: number; }
+export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; opacity?: number;
+  start?: number | null;  // detik ABSOLUT di timeline (undefined/null = ikut klip)
+  dur?: number;           // detik tampil saat mode lepas (default: durasi klip)
+}
 export interface SlideOpt {
   dur?: number;              // detik (hold time, tanpa transisi)
   trans?: string;            // id TRANSITIONS (ke klip berikutnya)
@@ -1022,7 +1025,8 @@ export function paintClips(
 
   // stiker + teks (memudar saat transisi keluar) — v6: stiker animasi/gambar
   const fadeMul = p.inTrans ? 1 - p.transT : 1;
-  paintStickersV6(ctx, W, H, opt.stickers, fadeMul, p.absT);
+  // stiker ber-start/dur sendiri (lepas) digambar di pass paintFloatingStickers
+  paintStickersV6(ctx, W, H, opt.stickers?.filter((s: StickerItem) => s.start == null), fadeMul, p.absT);
   // teks ber-start/dur sendiri (lepas) digambar di pass paintFloatingTexts
   if (opt.text && opt.text.start == null) paintClipText(ctx, W, H, opt.text, p.clipT, p.clipDur, p.absT, fadeMul);
 
@@ -1043,6 +1047,50 @@ export function paintFloatingTexts(
     if (t < ct.start || t >= ct.start + dur) continue;
     paintClipText(ctx, W, H, ct, t - ct.start, dur, t, 1);
   }
+}
+
+/* -------- STIKER LEPAS WAKTU (bisa digeser ke detik mana pun di track) -------- */
+export function paintFloatingStickers(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  optsList: (SlideOpt | null | undefined)[], t: number,
+) {
+  for (const o of optsList) {
+    const arr = o?.stickers;
+    if (!arr || !arr.length) continue;
+    for (const s of arr) {
+      if (s.start == null) continue;
+      const dur = s.dur && s.dur > 0 ? s.dur : 3;
+      if (t < s.start || t >= s.start + dur) continue;
+      paintStickersV6(ctx, W, H, [s], 1, t);
+    }
+  }
+}
+
+/* -------- KOTAK SELEKSI STIKER (preview saja — TIDAK ikut ekspor) -------- */
+export function paintStickerSelectBox(ctx: CanvasRenderingContext2D, W: number, H: number, st: StickerItem) {
+  if (!st) return;
+  const px = Math.max(10, st.size * H);
+  const r = px * 1.35;
+  const cx = st.x * W, cy = st.y * H;
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (st.rot) ctx.rotate(st.rot * Math.PI / 180);
+  ctx.shadowColor = "rgba(20,184,166,.9)"; ctx.shadowBlur = 7;
+  ctx.globalAlpha = 0.95; ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1.5, W / 640);
+  ctx.setLineDash([Math.max(4, px * 0.3), Math.max(3, px * 0.2)]);
+  const rr = px * 0.2;
+  ctx.beginPath();
+  if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(-r, -r, r * 2, r * 2, rr);
+  else ctx.rect(-r, -r, r * 2, r * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#19c2b8";
+  for (const [dx, dy] of [[-r, -r], [r, -r], [-r, r], [r, r]]) {
+    ctx.beginPath(); ctx.arc(dx, dy, Math.max(3, W / 220), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /* =====================================================================
