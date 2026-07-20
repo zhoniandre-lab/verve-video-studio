@@ -15,7 +15,7 @@
 import type { VizStyle } from "./types";
 import {
   buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
-  setDrawBg, preloadStickerImages,
+  setDrawBg, preloadStickerImages, paintFloatingTexts,
 } from "./editing";
 import type { SlideOpt, Timeline } from "./editing";
 
@@ -404,6 +404,8 @@ function drawFrame(s: DrawState) {
       grain: s.grainAmt || 0,
       kbZoom: zoomBase,
     });
+    // teks lepas waktu (start/dur sendiri — digeser di track)
+    paintFloatingTexts(ctx, W, H, optsArr, s.time);
   }
 
   // Vignette PRA-RENDERED (dibuat sekali di setup) — tidak buat radial gradient tiap frame

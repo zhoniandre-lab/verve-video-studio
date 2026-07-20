@@ -8,7 +8,7 @@ import {
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
   ADJUST_DEFS, DEFAULT_ADJUST, DEFAULT_TEXT, buildClipFilter, canonicalTrans, effDur,
   buildTimeline, locate, paintClips, paintClipText, CC_TEMPLATES, paintPreviewCaptions,
-  ensureFontsLoaded, setDrawBg,
+  ensureFontsLoaded, setDrawBg, paintFloatingTexts,
 } from "@/lib/editing";
 import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } from "@/lib/editing";
 
@@ -670,6 +670,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } as any);
     // captions
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
+    // teks lepas waktu (punya start/dur sendiri — digeser di track)
+    paintFloatingTexts(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt);
     // indikator PiP mini style (jam kecil kiri atas — elemen gaya hidup)
     if (pipRef.current && playingRef.current) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
@@ -1413,6 +1415,20 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const stks = (slideOptsById[sid]?.stickers || []).map(s => s.id === stid ? { ...s, x: clampN(x, 0.05, 0.95), y: clampN(y, 0.05, 0.95) } : s);
     setOpt(sid, { stickers: stks } as Partial<SlideOpt>);
   }
+  // geser chip TEKS di track → teks punya waktu mulai sendiri (lepas dari klip)
+  function moveTextStart(sid: string, sec: number) {
+    const cur = slideOptsById[sid]?.text; if (!cur) return;
+    const i = slides.findIndex(x => x.id === sid);
+    const clipDur = timeline?.durs?.[i] || 3;
+    setOpt(sid, { text: { ...cur, start: Math.round(clampN(sec, 0, 7190) * 100) / 100, dur: cur.dur ?? clipDur } });
+  }
+  // tarik ujung kanan chip teks → durasi tampilnya
+  function moveTextDur(sid: string, sec: number) {
+    const cur = slideOptsById[sid]?.text; if (!cur) return;
+    const i = slides.findIndex(x => x.id === sid);
+    const clipStart = timeline?.starts?.[i] || 0;
+    setOpt(sid, { text: { ...cur, dur: Math.round(clampN(sec, 0.5, 600) * 10) / 10, start: cur.start ?? clipStart } });
+  }
   function delSticker(sid: string, stid: string) {
     setOpt(sid, { stickers: (slideOptsById[sid]?.stickers || []).filter(s => s.id !== stid) } as Partial<SlideOpt>);
   }
@@ -1658,9 +1674,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const sid = slidesRef.current[L.idx]?.id;
     if (!sid) return;
     if (dtap) { resetClipTransform(sid); return; }
-    // drag TEKS (posisi vertikal) kalau sentuh area teks
+    // drag TEKS (posisi bebas atas-bawah-kiri-kanan) kalau sentuh area teks
     const cts = slideOptsById[sid]?.text;
-    if (cts?.txt?.trim() && Math.abs(pt.y - cts.y) < 0.07) {
+    if (cts?.txt?.trim() && Math.abs(pt.y - cts.y) < 0.08 && Math.abs(pt.x - (cts.x ?? 0.5)) < 0.32) {
       dragTx.current = { sid };
       return;
     }
@@ -1704,7 +1720,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (dragTx.current) {
       const sid = dragTx.current.sid;
       const cur = slideOptsById[sid]?.text || { ...DEFAULT_TEXT };
-      setOpt(sid, { text: { ...cur, y: clampN(pt.y, 0.06, 0.94) } });
+      setOpt(sid, { text: { ...cur, x: Math.round(clampN(pt.x, 0.05, 0.95) * 1000) / 1000, y: Math.round(clampN(pt.y, 0.06, 0.94) * 1000) / 1000 } });
       return;
     }
     if (!dragSt.current) return;
@@ -1805,6 +1821,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         musicOff={musicOff} ttsOff={ttsOff} voiceOff={voiceOff}
         onAudioOff={(k: "m" | "t" | "v", sec: number) => { const v = Math.round(sec * 100) / 100; if (k === "m") setMusicOff(v); else if (k === "t") setTtsOff(v); else setVoiceOff(v); }}
         onAudioMoved={(k: string) => flash(`${k === "m" ? "🎵 Musik" : k === "t" ? "🗣️ Narasi" : "🎙️ Rekaman"} digeser — mulai di ${formatDur((k === "m" ? musicOff : k === "t" ? ttsOff : voiceOff))}`)}
+        onTextStart={moveTextStart} onTextDur={moveTextDur}
+        onTextMoved={(sid: string) => { const t = slideOptsById[sid]?.text; flash(`🔤 Teks ditaruh mulai ${formatDur(t?.start ?? 0)}${t?.dur ? ` · ${formatDur(t.dur)}` : ""}`); }}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
@@ -1943,7 +1961,7 @@ function TimelineV6(p: any) {
   // total tampilan: ikut elemen terpanjang (video ATAU audio — lagu 5 menit = track 5 menit)
   const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
   const contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
-  const dragRef = useRef<{ kind: "trim" | "reorder" | "aud"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number } | null>(null);
+  const dragRef = useRef<{ kind: "trim" | "reorder" | "aud" | "txt" | "txtd"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number; sid?: string; st0?: number; dur0?: number } | null>(null);
   const scrubHoldRef = useRef(false);
   // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
   const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -2047,6 +2065,14 @@ function TimelineV6(p: any) {
     const dxT = (clientX - d.startX) / PXS0;
     p.onAudioOff(d.audioKind, clampN(d.off0 + dxT, 0, 7200));
   }
+  function applyTxt(d: any, clientX: number) {
+    const dxT = (clientX - d.startX) / PXS0;
+    p.onTextStart(d.sid, clampN((d.st0 || 0) + dxT, 0, 7190));
+  }
+  function applyTxtD(d: any, clientX: number) {
+    const dxT = (clientX - d.startX) / PXS0;
+    p.onTextDur(d.sid, clampN((d.dur0 || 3) + dxT, 0.5, 600));
+  }
   // jari mentok ke tepi layar → timeline ikut jalan terus (perpanjang/pindah tanpa angkat jari)
   function edgeLoop() {
     const el = scrollRef.current; const dir = edgeDirRef.current; const d = dragRef.current as any;
@@ -2057,6 +2083,8 @@ function TimelineV6(p: any) {
     if (d.kind === "trim") applyTrim(d, d.lastX);
     else if (d.kind === "reorder") applyReorder(d, d.lastX);
     else if (d.kind === "aud") applyAud(d, d.lastX);
+    else if (d.kind === "txt") applyTxt(d, d.lastX);
+    else if (d.kind === "txtd") applyTxtD(d, d.lastX);
     edgeRafRef.current = requestAnimationFrame(edgeLoop);
   }
   function updEdge(clientX: number) {
@@ -2073,6 +2101,8 @@ function TimelineV6(p: any) {
     if (d.kind === "trim") applyTrim(d, e.clientX);
     else if (d.kind === "reorder") applyReorder(d, e.clientX);
     else if (d.kind === "aud") applyAud(d, e.clientX);
+    else if (d.kind === "txt") applyTxt(d, e.clientX);
+    else if (d.kind === "txtd") applyTxtD(d, e.clientX);
   }
   function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
     clearTimeout(armTRef.current);
@@ -2141,6 +2171,33 @@ function TimelineV6(p: any) {
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
     if (d?.kind === "aud" && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); }
+  }
+
+  // seret chip TEKS di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi)
+  function onTxtDown(e: React.PointerEvent, sid: string, mode: "move" | "dur", t: any) {
+    e.stopPropagation();
+    const i = slides.findIndex((x: Slide) => x.id === sid);
+    const st0 = t.start ?? (timeline?.starts?.[i] || 0);
+    const dur0 = t.dur ?? (timeline?.durs?.[i] || 3);
+    const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, st0, dur0 };
+    dragRef.current = d;
+    if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
+  }
+  function onTxtMove(e: React.PointerEvent) {
+    const d = dragRef.current as any;
+    if (!d || (d.kind !== "txt" && d.kind !== "txtd")) return;
+    if (!d.armed) {
+      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      return;
+    }
+    dragUpdate(e, d);
+  }
+  function onTxtUp() {
+    clearTimeout(armTRef.current);
+    const d = dragRef.current as any;
+    dragRef.current = null; stopEdge();
+    if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid); }
   }
 
   function rulerDown(e: React.PointerEvent) {
@@ -2288,16 +2345,25 @@ function TimelineV6(p: any) {
               ) : (() => {
                 const items = clipTexts.map(({ s, t }: any) => {
                   const i = slides.findIndex((x: Slide) => x.id === s.id);
-                  return { s, t, st: timeline?.starts?.[i] || 0, dd: timeline?.durs?.[i] || 3 };
+                  return { s, t, st: t.start ?? (timeline?.starts?.[i] || 0), dd: t.dur ?? (timeline?.durs?.[i] || 3), free: t.start != null };
                 });
                 const maxEnd = Math.max(...items.map((x: any) => x.st + x.dd), 1);
                 return (
                   <div style={{ position: "relative", width: maxEnd * PXS0 + 56, height: 46 }}>
-                    {items.map(({ s, t, st, dd }: any) => (
-                      <button key={s.id} className="v6e-textchip" style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap" }} onClick={() => p.onEditText(s.id)}>
-                        “{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
-                      </button>
-                    ))}
+                    {items.map(({ s, t, st, dd, free }: any) => {
+                      const dd2 = dragRef.current as any;
+                      const lifting = (dd2?.kind === "txt" || dd2?.kind === "txtd") && dd2.armed && dd2.sid === s.id;
+                      return (
+                        <div key={s.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""}`} title="Tekan-tahan & geser untuk pindah waktu · tarik ⋮ di ujung untuk durasi"
+                          onPointerDown={(e) => onTxtDown(e, s.id, "move", t)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
+                          onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id); }}
+                          style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap" }}>
+                          “{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
+                          <span className="txtdur" title="Tarik untuk ubah durasi teks"
+                            onPointerDown={(e) => onTxtDown(e, s.id, "dur", t)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
+                        </div>
+                      );
+                    })}
                     <button className="v6e-track-addbtn" style={{ position: "absolute", left: maxEnd * PXS0 + 8, top: 3, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText}>＋</button>
                   </div>
                 );
@@ -3028,6 +3094,18 @@ function TextEditSheet({ slideId, text, onChange, onDone, onDelete }: any) {
                 <input type="range" min={0.025} max={0.09} step={0.005} value={ct.size} onChange={e => onChange({ size: Number(e.target.value) })} /></div>
               <div className="v6-slider-row"><div className="lr"><span>Posisi vertikal</span><b>{Math.round(ct.y * 100)}%</b></div>
                 <input type="range" min={0.08} max={0.92} step={0.01} value={ct.y} onChange={e => onChange({ y: Number(e.target.value) })} /></div>
+              <div className="v6-slider-row"><div className="lr"><span>Posisi horizontal</span><b>{Math.round((ct.x ?? 0.5) * 100)}%</b></div>
+                <input type="range" min={0.05} max={0.95} step={0.01} value={ct.x ?? 0.5} onChange={e => onChange({ x: Number(e.target.value) })} /></div>
+              {ct.start != null && (
+                <div style={{ background: "rgba(25,194,184,.08)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 12, padding: "8px 10px", marginTop: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "var(--v6-teal)", marginBottom: 6 }}>⏱ TEKS LEPAS — punya waktu sendiri (digeser di track)</div>
+                  <div className="v6-slider-row"><div className="lr"><span>Mulai di detik</span><b style={{ color: "var(--v6-teal)" }}>{formatDur(ct.start)}</b></div>
+                    <input type="range" min={0} max={600} step={0.1} value={ct.start} onChange={e => onChange({ start: Number(e.target.value) })} /></div>
+                  <div className="v6-slider-row"><div className="lr"><span>Durasi tampil</span><b>{formatDur(ct.dur ?? 3)}</b></div>
+                    <input type="range" min={0.5} max={120} step={0.1} value={ct.dur ?? 3} onChange={e => onChange({ dur: Number(e.target.value) })} /></div>
+                  <button className="v6-btn ghost" style={{ width: "100%", marginTop: 2 }} onClick={() => onChange({ start: null, dur: undefined })}>↩ Kembali ikuti klip (teks nempel klip lagi)</button>
+                </div>
+              )}
               <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
                 <button className={`v6-chip ${ct.bold ? "on" : ""}`} onClick={() => onChange({ bold: !ct.bold })}><b>B</b> Tebal</button>
                 <button className={`v6-chip ${ct.italic ? "on" : ""}`} onClick={() => onChange({ italic: !ct.italic })}><i>I</i> Miring</button>
@@ -3371,6 +3449,7 @@ function SampulModal({ slides, slideOptsById, timeline, ratio, getImage, onClose
         clipT: L.clipT, clipDur: L.clipDur, inTrans: false, transT: 0, transId: "none",
         optCur: opt, optNxt: null, globalFilter: "none", absT: t, isMobile: true, beat: false, grain: 0, kbZoom: 1,
       } as any);
+      paintFloatingTexts(ctx, W, H, slides.map((x: Slide) => slideOptsById[x.id]), t);
       if (txt.trim()) {
         const ct: ClipText = { ...DEFAULT_TEXT, txt, size: 0.085, y: 0.85, karaokeWords: undefined };
         paintClipTextSafe(ctx, W, H, ct);

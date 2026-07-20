@@ -1252,8 +1252,12 @@ body:has(.cc2-root) { background: var(--v-bg); }
   border-left:6px solid transparent; border-right:6px solid transparent; border-top:7px solid #fff; }
 .v6e-trans-chip.off { background:rgba(255,255,255,.35); color:#111; }
 /* item track "terangkat" saat tekan-tahan (siap diseret bebas) */
-.v6e-clip.lift, .v6e-audioclip.lift { transform:scale(1.03); box-shadow:0 8px 22px rgba(0,0,0,.55); z-index:7;
+.v6e-clip.lift, .v6e-audioclip.lift, .v6e-textchip.lift { transform:scale(1.03); box-shadow:0 8px 22px rgba(0,0,0,.55); z-index:7;
   outline:2px solid var(--v6-teal); transition:transform .12s; }
+.v6e-textchip.asbtn { cursor:pointer; user-select:none; }
+.v6e-textchip.free { border-color:var(--v6-teal); background:rgba(25,194,184,.16); }
+.v6e-textchip .txtdur { position:absolute; right:0; top:0; bottom:0; width:14px; display:flex; align-items:center; justify-content:center;
+  font-size:9px; color:rgba(255,255,255,.75); background:rgba(255,255,255,.14); border-radius:0 9px 9px 0; touch-action:none; }
 .v6e-trans-chip { border:1.5px solid rgba(0,0,0,.25); box-shadow:0 1px 5px rgba(0,0,0,.4); }
 
 /* ---------- TOOLBAR BAWAH ---------- */

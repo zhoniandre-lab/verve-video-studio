@@ -4,7 +4,7 @@
    encode pakai gifenc (pure JS). Singkat: maks ~8 detik • 384-480px.
    ===================================================================== */
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
-import { buildTimeline, locate, canonicalTrans, effDur, paintClips, buildClipFilter, setDrawBg } from "./editing";
+import { buildTimeline, locate, canonicalTrans, effDur, paintClips, buildClipFilter, setDrawBg, paintFloatingTexts } from "./editing";
 import type { SlideOpt } from "./editing";
 import { preloadStickerImages } from "./editing";
 
@@ -93,6 +93,7 @@ export async function renderGif(opts: GifOptions): Promise<Blob> {
       globalFilter, absT: t, isMobile: true, beat: false,
       grain: opts.grainAmt || 0, kbZoom,
     } as any);
+    paintFloatingTexts(ctx, W, H, slideOpts as any, t);
 
     const data = ctx.getImageData(0, 0, W, H);
     const palette = quantize(data.data, 256);

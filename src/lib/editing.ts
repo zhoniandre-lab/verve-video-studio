@@ -18,6 +18,9 @@ export interface ClipText {
   anim: string;        // id TEXT_ANIMS
   karaokeWords?: { w: string; start: number; end: number }[]; // timing kata (keterangan otomatis)
   karaokeColor?: string;
+  x?: number;          // 0.05..0.95 (posisi horizontal bebas — default: ikut align)
+  start?: number | null; // detik ABSOLUT di timeline (undefined/null = ikut klip)
+  dur?: number;        // detik tampil saat mode lepas (default: durasi klip)
 }
 export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; opacity?: number; }
 export interface SlideOpt {
@@ -801,6 +804,7 @@ export function paintClipText(ctx: CanvasRenderingContext2D, W: number, H: numbe
   let xAnchor = W / 2;
   if (ct.align === "left") xAnchor = W * 0.07;
   else if (ct.align === "right") xAnchor = W * 0.93;
+  if (typeof ct.x === "number" && isFinite(ct.x)) xAnchor = ct.x * W; // posisi bebas hasil drag
   ctx.textAlign = ct.align;
 
   if (ct.bg) {
@@ -968,10 +972,26 @@ export function paintClips(
   // stiker + teks (memudar saat transisi keluar) — v6: stiker animasi/gambar
   const fadeMul = p.inTrans ? 1 - p.transT : 1;
   paintStickersV6(ctx, W, H, opt.stickers, fadeMul, p.absT);
-  if (opt.text) paintClipText(ctx, W, H, opt.text, p.clipT, p.clipDur, p.absT, fadeMul);
+  // teks ber-start/dur sendiri (lepas) digambar di pass paintFloatingTexts
+  if (opt.text && opt.text.start == null) paintClipText(ctx, W, H, opt.text, p.clipT, p.clipDur, p.absT, fadeMul);
 
   // grain global
   paintGrain(ctx, W, H, p.grain, p.absT, p.isMobile);
+}
+
+/* -------- TEKS LEPAS WAKTU (bisa digeser ke detik mana pun di track) --------
+   Dipanggil sekali per frame SETELAH paintClips, dengan daftar opts semua klip. */
+export function paintFloatingTexts(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  optsList: (SlideOpt | null | undefined)[], t: number,
+) {
+  for (const o of optsList) {
+    const ct = o?.text;
+    if (!ct || !ct.txt || !ct.txt.trim() || ct.start == null) continue;
+    const dur = ct.dur && ct.dur > 0 ? ct.dur : 3;
+    if (t < ct.start || t >= ct.start + dur) continue;
+    paintClipText(ctx, W, H, ct, t - ct.start, dur, t, 1);
+  }
 }
 
 /* =====================================================================
