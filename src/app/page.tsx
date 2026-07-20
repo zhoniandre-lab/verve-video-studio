@@ -4,6 +4,7 @@ import { renderSlideshow, downloadBlob } from "@/lib/recorder";
 import { renderGif } from "@/lib/gif";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
+import LahanStudio from "./lahan-studio";
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -22,7 +23,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
 
 interface Slide { id: string; imageUrl: string; }
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
-type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip";
+type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan";
 
 const DRAFTS_KEY = "verve_drafts_v1";
 const SESSION_KEY = "verve_session_v6";
@@ -98,7 +99,7 @@ export default function Page() {
     setScreen("editor");
   }
 
-  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip";
+  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan";
   return (
     <div className="v6-root">
       <div className="v6-app">
@@ -109,6 +110,7 @@ export default function Page() {
         {screen === "saya" && <SayaPage refresh={refreshDrafts} />}
         {screen === "editor" && <EditorScreen onExit={() => { setScreen("home"); }} openDraftId={openDraft} cmd={editorCmd} onSaved={refreshDrafts} />}
         {screen === "spectrum" && <SpectrumStudio onExit={() => setScreen("home")} />}
+        {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
         {screen === "transkrip" && <TranskripPage onExit={() => setScreen("home")} />}
         {!inSub && (
@@ -152,6 +154,13 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
         <div className="v6-promo-title">Bikin Video Musik<br />Spectrum + Auto Lirik</div>
         <div className="v6-promo-sub">Ala tools PC, tapi cukup dari HP. Overlay hujan, salju, karaoke lirik, mastering ringan.</div>
         <button className="v6-promo-go" onClick={() => go("spectrum")}>Coba sekarang ›</button>
+      </div>
+
+      <div className="v6-promo lh-banner" style={{ marginTop: 10 }}>
+        <span className="v6-promo-badge">🌱 BARU · Lahan Awalan</span>
+        <div className="v6-promo-title">Cerita Jadi Lagu<br />Niat → Riset → Judul Juara → Visual WAW</div>
+        <div className="v6-promo-sub">Otak riset YouTube nyata (bukan ngarang): sudut dari autocomplete, kompetitor dihitung, judul diskor & bisa diaudit. Prompt karakter khusus bikin visual konsisten & cerdas.</div>
+        <button className="v6-promo-go" onClick={() => go("lahan")}>Tanam ide sekarang ›</button>
       </div>
 
       <div className="v6-cards2">
