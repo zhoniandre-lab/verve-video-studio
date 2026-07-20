@@ -638,6 +638,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   // v8.4: susunan jalur track BEBAS & tersimpan permanen (aturan #6 — track bukan denah mati)
   const [laneOrder, setLaneOrder] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem("verve_laneorder_v1") || "[]"); return Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : []; } catch { return []; } });
   const saveLaneOrder = useCallback((o: string[]) => { setLaneOrder(o); try { localStorage.setItem("verve_laneorder_v1", JSON.stringify(o)); } catch {} }, []);
+  // v8.6: balok audio pun bebas pindah jalur — pilihannya disimpan permanen juga
+  const [audRow, setAudRow] = useState<Record<string, number>>(() => { try { const v = JSON.parse(localStorage.getItem("verve_audrow_v1") || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; } });
+  const moveAudRow = useCallback((k: string, r: number) => {
+    const rr = Math.max(0, Math.round(r));
+    setAudRow(prev => { const nx = { ...prev, [k]: rr }; try { localStorage.setItem("verve_audrow_v1", JSON.stringify(nx)); } catch {} return nx; });
+    flash("🎵 Audio pindah ke jalur " + (rr + 1));
+  }, []);
   const [sheetTab, setSheetTab] = useState("");
   const [modal, setModal] = useState<string | null>(null); // rekam|tts|musik|kamera|wizard|sampul|videoai|ganti|gambarai
   const [loading, setLoading] = useState<string | null>(null);
@@ -2462,7 +2469,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onAudioMoved={(k: string) => flash(`${k === "m" ? "🎵 Musik" : k === "t" ? "🗣️ Narasi" : "🎙️ Rekaman"} digeser — mulai di ${formatDur((k === "m" ? musicOff : k === "t" ? ttsOff : voiceOff))}`)}
         onTextStart={moveTextStart} onTextDur={moveTextDur}
         onTextMoved={(sid: string, tid: string = "") => { setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
-        onTextRow={moveTextRow} onStickerRow={moveStickerRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
+        onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
         onSel={(id: string) => { setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
@@ -2662,11 +2669,9 @@ function TimelineV6(p: any) {
   const [lanePreview, setLanePreview] = useState<string[] | null>(null);
   const laneRowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const dispOrderRef = useRef<string[]>([]);
-  // v8.5: objek pindah antar-BARIS + sorotan target jatuh (teal=boleh, merah=numpuk)
-  const txtRowEls = useRef<Map<number, HTMLElement>>(new Map());
-  const stkRowEls = useRef<Map<number, HTMLElement>>(new Map());
-  const txtPoolRef = useRef<any[]>([]);
-  const stkPoolRef = useRef<any[]>([]);
+  // v8.6: SATU kolam jalur bebas utk SEMUA objek + sorotan target jatuh (teal=boleh, merah=numpuk)
+  const elmRowEls = useRef<Map<number, HTMLElement>>(new Map());
+  const elmPoolRef = useRef<any[]>([]);
   const rowDropRef = useRef<any>(null);
   const [rowDrop, setRowDrop] = useState<any>(null);
 
@@ -2810,35 +2815,46 @@ function TimelineV6(p: any) {
   /* ---- v8.4 JALUR BEBAS: promosi drag objek → angkat & pindahkan SELURUH jalur ---- */
   function laneIdOfDrag(d: any): string {
     if (d.kind === "reorder" || d.kind === "trim") return "vid";
-    if (d.kind === "aud") return "aud:" + d.audioKind;
-    if (d.kind === "txt" || d.kind === "txtd") return "txg"; // v8.5: teks = 1 GRUP jalur padat
-    return "stg";                                            // stiker = 1 GRUP jalur padat
+    return "elm"; // v8.6: selain jalur video, SEMUA objek elemen = satu kolam bebas
   }
   function maybePromoteLane(e: React.PointerEvent, d: any): boolean {
     if (!d.armed || laneLiftRef.current) return false;
     if (!(d.kind === "reorder" || d.kind === "aud" || d.kind === "txt" || d.kind === "stk")) return false;
     const dy = e.clientY - (d.startY || 0); const dx = e.clientX - d.startX;
-    // klip & audio: geser vertikal = ANGKAT jalur; teks & stiker: vertikal = pindah BARIS objek (lihat applyObjRow)
-    const vertikal = (d.kind === "reorder" || d.kind === "aud") && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;
-    const tahanLama = (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // tahan lama diam → angkat jalur/grup
+    // klip: geser vertikal = ANGKAT jalur video; SEMUA objek elemen (audio/teks/stiker): vertikal = pindah BARIS
+    const vertikal = d.kind === "reorder" && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;
+    const tahanLama = (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // tahan lama diam → angkat jalur makro
     if (!vertikal && !tahanLama) return false;
     startLaneLift(laneIdOfDrag(d), e.clientY);
     return true;
   }
-  // v8.5: baris tujuan saat objek diseret vertikal + VALIDASI tabrakan waktu (asal tak numpuk = boleh!)
-  function applyObjRow(e: React.PointerEvent, d: any, g: "t" | "s") {
-    const els = (g === "t" ? txtRowEls : stkRowEls).current;
-    const list = [...els.entries()].sort((a, b) => a[0] - b[0]);
+  // v8.6: baris tujuan saat objek diseret vertikal di KOLAM BEBAS + VALIDASI tabrakan waktu semua jenis objek
+  function applyObjRow(e: React.PointerEvent, d: any) {
+    const list = [...elmRowEls.current.entries()].sort((a, b) => a[0] - b[0]);
     if (!list.length) return;
-    let to = list[list.length - 1][0] + 1; // default: di bawah baris terakhir → jalur BARU
+    let to = list[list.length - 1][0] + 1; // di bawah baris terakhir → jalur BARU
     for (const [r, el] of list) { const rc = el.getBoundingClientRect(); if (e.clientY <= rc.top + rc.height / 2) { to = r; break; } }
-    const stNow = clampN((d.st0 || 0) + (d.lastX - d.startX) / PXS0, 0, 7190);
-    const ddNow = d.dur0 || 3;
-    const pool = g === "t" ? txtPoolRef.current : stkPoolRef.current;
-    const bad = (pool || []).some((it: any) => it.key !== d.key && it.row === to && stNow < it.st + it.dd - 0.04 && it.st < stNow + ddNow - 0.04);
+    const stNow = clampN(((d.kind === "aud" ? d.off0 : d.st0) || 0) + (d.lastX - d.startX) / PXS0, 0, 7190);
+    const ddNow = d.dur0 || (elmPoolRef.current.find((x: any) => x.key === d.key)?.dd) || 3;
+    const bad = (elmPoolRef.current || []).some((it: any) => it.key !== d.key && it.row === to && stNow < it.st + it.dd - 0.04 && it.st < stNow + ddNow - 0.04);
     d.rowTo = to; d.rowBad = bad;
     const cur = rowDropRef.current;
-    if (!cur || cur.r !== to || cur.bad !== bad || cur.g !== g) { const nv = { g, r: to, bad }; rowDropRef.current = nv; setRowDrop(nv); }
+    if (!cur || cur.r !== to || cur.bad !== bad) { const nv = { r: to, bad }; rowDropRef.current = nv; setRowDrop(nv); }
+    // jari mendekati tepi atas/bawah → daftar jalur ikut menggulir (tak perlu angkat jari)
+    const el2 = scrollRef.current;
+    if (el2) { const r2 = el2.getBoundingClientRect(); if (e.clientY > r2.bottom - 30) el2.scrollTop += 15; else if (e.clientY < r2.top + 30) el2.scrollTop -= 15; }
+  }
+  // lepas jari → sahkan pindah jalur (atau tolak sopan kalau NUMPUK)
+  function commitObjRow(d: any) {
+    if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
+    if (!d || !d.armed || !(d.kind === "aud" || d.kind === "txt" || d.kind === "stk") || d.rowTo == null) return;
+    suppressClickRef.current = true;
+    if (d.rowBad) { p.onRowBad?.(); return; }
+    const cur = elmPoolRef.current.find((x: any) => x.key === d.key);
+    if (cur && cur.row === d.rowTo) return;
+    if (d.kind === "aud") p.onAudRow?.(d.audioKind, d.rowTo);
+    else if (d.kind === "txt") p.onTextRow?.(d.sid, d.tid || "", d.rowTo);
+    else p.onStickerRow?.(d.sid, d.stid, d.rowTo);
   }
   function startLaneLift(id: string, y: number) {
     clearTimeout(armTRef.current); dragRef.current = null; stopEdge();
@@ -2873,10 +2889,10 @@ function TimelineV6(p: any) {
     if (maybePromoteLane(e, d)) return; // vertikal / tahan lama → angkat jalur
     if (d.kind === "trim") applyTrim(d, e.clientX);
     else if (d.kind === "reorder") applyReorder(d, e.clientX);
-    else if (d.kind === "aud") applyAud(d, e.clientX);
-    else if (d.kind === "txt") { applyTxt(d, e.clientX); applyObjRow(e, d, "t"); }
+    else if (d.kind === "aud") { applyAud(d, e.clientX); applyObjRow(e, d); }
+    else if (d.kind === "txt") { applyTxt(d, e.clientX); applyObjRow(e, d); }
     else if (d.kind === "txtd") applyTxtD(d, e.clientX);
-    else if (d.kind === "stk") { applyStk(d, e.clientX); applyObjRow(e, d, "s"); }
+    else if (d.kind === "stk") { applyStk(d, e.clientX); applyObjRow(e, d); }
     else if (d.kind === "stkd") applyStkD(d, e.clientX);
   }
   function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
@@ -2928,7 +2944,7 @@ function TimelineV6(p: any) {
   // seret balok audio (tekan-tahan → geser posisi mulai)
   function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
-    const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, off0 };
+    const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
     armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
   }
@@ -2946,6 +2962,7 @@ function TimelineV6(p: any) {
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
     if (d?.kind === "aud" && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); }
+    commitObjRow(d);
   }
 
   // seret chip TEKS di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi) — per lapisan (tid)
@@ -2972,13 +2989,8 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); }
-    if (d?.kind === "txt" && d.armed && d.rowTo != null) {
-      suppressClickRef.current = true;
-      if (d.rowBad) p.onRowBad?.(); // NUMPUK = ditolak, objek balik ke jalur asal
-      else { const cur = txtPoolRef.current.find((x: any) => x.key === d.key); if (!cur || cur.row !== d.rowTo) p.onTextRow?.(d.sid, d.tid || "", d.rowTo); }
-    }
+    commitObjRow(d);
   }
 
   // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
@@ -3005,13 +3017,8 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); }
-    if (d?.kind === "stk" && d.armed && d.rowTo != null) {
-      suppressClickRef.current = true;
-      if (d.rowBad) p.onRowBad?.();
-      else { const cur = stkPoolRef.current.find((x: any) => x.key === d.key); if (!cur || cur.row !== d.rowTo) p.onStickerRow?.(d.sid, d.stid, d.rowTo); }
-    }
+    commitObjRow(d);
   }
 
   function rulerDown(e: React.PointerEvent) {
@@ -3047,8 +3054,7 @@ function TimelineV6(p: any) {
   if (musicUrl) laneIds.push("aud:m");
   if (ttsUrl) laneIds.push("aud:t");
   if (voiceUrl) laneIds.push("aud:v");
-  if (clipTexts.length) laneIds.push("txg");  // v8.5: teks = 1 grup jalur padat
-  if (clipStiks.length) laneIds.push("stg");   // stiker = 1 grup jalur padat
+  if (musicUrl || ttsUrl || voiceUrl || clipTexts.length || clipStiks.length) laneIds.push("elm"); // v8.6: SATU kolam bebas semua objek
   const savedLanes: string[] = Array.isArray(p.laneOrder) ? p.laneOrder : [];
   const laneOrd: string[] = savedLanes.filter((x: string) => laneIds.includes(x));
   laneIds.forEach((x: string) => { if (!laneOrd.includes(x)) laneOrd.push(x); }); // jalur baru → nempel di bawah, bebas dipindah
@@ -3179,96 +3185,89 @@ function TimelineV6(p: any) {
                 });
                 return (
                   <>
-                    {/* jalur audio (tiap elemen audio = 1 jalur) */}
-                    {rows.map((r: any) => {
-                      const dd3 = dragRef.current as any;
-                      const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === r.key;
-                      const wpx = Math.max(90, (r.dur || 4) * PXS0);
+                    {/* KOLAM BEBAS (v8.6): musik/narasi/rekaman/teks/lirik/stiker SEMUA bisa taruh di jalur mana pun — yang dilarang cuma NUMPUK waktu */}
+                    {(() => {
+                      const pool: any[] = [];
+                      rows.forEach((r: any) => pool.push({ id: "aud:" + r.key, kind: "aud", st: r.off, dd: r.dur || 4, row: (p.audRow || {})[r.key], payload: r, key: "aud:" + r.key }));
+                      textItems.forEach((x: any) => pool.push({ id: "txt:" + x.s.id + "|" + (x.tid || ""), kind: "txt", st: x.st, dd: x.dd, row: x.t?.row, payload: x, key: x.s.id + "|" + (x.tid || "") }));
+                      stikItems.forEach((x: any) => pool.push({ id: "stk:" + x.st.id, kind: "stk", st: x.t0, dd: x.dd, row: x.st?.row, payload: x, key: x.st.id }));
+                      if (!pool.length) return null;
+                      const pack = packRows(pool.map((x: any) => ({ st: x.st, dd: x.dd, row: x.row })));
+                      elmPoolRef.current = pool.map((x: any, ii: number) => ({ key: x.key, st: x.st, dd: x.dd, row: pack[ii], kind: x.kind }));
+                      const nRows = Math.max(...pack) + 1;
                       return (
-                        <div key={r.key} ref={laneRowRef("aud:" + r.key)} className={`v6e-lanerow ${laneLift === "aud:" + r.key ? "lanelift" : ""}`} style={{ position: "relative", height: 46, marginBottom: 5, order: laneIdx["aud:" + r.key] ?? 0 }}>
-                          <div className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={r.nm}
-                            onPointerDown={(e) => onAudDown(e, r.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
-                            onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
-                            style={{ position: "absolute", left: r.off * PXS0, top: 3, width: wpx, height: 40, background: r.grad, color: r.col, overflow: "hidden" }}>
-                            <i style={{ fontStyle: "normal" }}>{r.icon}</i>
-                            <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
-                              (() => {
-                                const pk: number[] | null = (r.key === "m" ? p.musicPeaks : r.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
-                                if (pk && pk.length) {
-                                  const bars = Math.max(24, Math.min(190, Math.floor(wpx / 4.2)));
-                                  return Array.from({ length: bars }).map((_, k2) => {
-                                    const v = pk[Math.min(pk.length - 1, Math.floor(k2 / bars * pk.length))];
-                                    return <i key={k2} style={{ height: Math.max(3, Math.round(v * 28)) }} />;
-                                  });
+                        <div ref={laneRowRef("elm")} className={`v6e-lanerow ${laneLift === "elm" ? "lanelift" : ""}`} style={{ order: laneIdx["elm"] ?? 0, height: "auto", marginBottom: 0, position: "relative" }}>
+                          {Array.from({ length: nRows }).map((_, r) => (
+                            <div key={r}
+                              ref={(el) => { if (el) elmRowEls.current.set(r, el); else elmRowEls.current.delete(r); }}
+                              className={`v6e-lanerow ${rowDrop && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
+                              style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                              {pool.map((it: any, ii: number) => {
+                                if (pack[ii] !== r) return null;
+                                /* ---- balok AUDIO ---- */
+                                if (it.kind === "aud") {
+                                  const rd = it.payload;
+                                  const dd3 = dragRef.current as any;
+                                  const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === rd.key;
+                                  const wpx = Math.max(90, (rd.dur || 4) * PXS0);
+                                  return (
+                                    <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — tahan&geser: ⇄ maju/mundur · ⇅ pindah jalur (BEBAS!)"}
+                                      onPointerDown={(e) => onAudDown(e, rd.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
+                                      onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
+                                      style={{ position: "absolute", left: rd.off * PXS0, top: 3, width: wpx, height: 40, background: rd.grad, color: rd.col, overflow: "hidden" }}>
+                                      <i style={{ fontStyle: "normal" }}>{rd.icon}</i>
+                                      <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
+                                        (() => {
+                                          const pk: number[] | null = (rd.key === "m" ? p.musicPeaks : rd.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
+                                          if (pk && pk.length) {
+                                            const bars = Math.max(24, Math.min(190, Math.floor(wpx / 4.2)));
+                                            return Array.from({ length: bars }).map((_, k2) => {
+                                              const v = pk[Math.min(pk.length - 1, Math.floor(k2 / bars * pk.length))];
+                                              return <i key={k2} style={{ height: Math.max(3, Math.round(v * 28)) }} />;
+                                            });
+                                          }
+                                          return Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % 26) }} />);
+                                        })()
+                                      }</span>
+                                      <span className="nm" style={{ fontSize: 11 }}>
+                                        {rd.nm}{rd.key === "m" && p.musicBpm ? ` · 🥁${p.musicBpm}` : ""}{rd.dur ? ` · ${formatDur(rd.dur)}` : ""}{rd.off > 0.05 ? ` · ▶${formatDur(rd.off)}` : ""}
+                                      </span>
+                                      <b className="v6e-chipvs">⇅</b>
+                                    </div>
+                                  );
                                 }
-                                return Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % 26) }} />);
-                              })()
-                            }</span>
-                            <span className="nm" style={{ fontSize: 11 }}>
-                              {r.nm}{r.key === "m" && p.musicBpm ? ` · 🥁${p.musicBpm}` : ""}{r.dur ? ` · ${formatDur(r.dur)}` : ""}{r.off > 0.05 ? ` · ▶${formatDur(r.off)}` : ""}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {/* JALUR TEKS (1 grup padat) — objek BOLEH berbagi baris asal waktu tak numpuk, ala CapCut */}
-                    {textItems.length > 0 && (() => {
-                      const pack = packRows(textItems.map((x: any) => ({ st: x.st, dd: x.dd, row: x.t?.row })));
-                      txtPoolRef.current = textItems.map((x: any, ii: number) => ({ key: x.s.id + "|" + (x.tid || ""), st: x.st, dd: x.dd, row: pack[ii] }));
-                      const nRows = Math.max(...pack) + 1;
-                      return (
-                        <div ref={laneRowRef("txg")} className={`v6e-lanerow ${laneLift === "txg" ? "lanelift" : ""}`} style={{ order: laneIdx["txg"] ?? 0, height: "auto", marginBottom: 0, position: "relative" }}>
-                          {Array.from({ length: nRows }).map((_, r) => (
-                            <div key={r}
-                              ref={(el) => { if (el) txtRowEls.current.set(r, el); else txtRowEls.current.delete(r); }}
-                              className={`v6e-lanerow ${rowDrop && rowDrop.g === "t" && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
-                              style={{ position: "relative", height: 46, marginBottom: 5 }}>
-                              {textItems.map(({ s, t, tid, st, dd, free }: any, ii: number) => {
-                                if (pack[ii] !== r) return null;
-                                const dd4 = dragRef.current as any;
-                                const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
-                                const enc = tid ? `${s.id}::${tid}` : s.id;
-                                const isSel = p.selTextSid === enc;
-                                const isLyr = /^lyr_/.test(t?.id || tid || "");
-                                return (
-                                  <div key={`${s.id}:${tid}`} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur (BOLEH berbagi asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh jalur teks"
-                                    onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
-                                    onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
-                                    style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
-                                    {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
-                                    <span className="txtdur" title="Tarik untuk ubah durasi teks"
-                                      onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                    {/* JALUR STIKER (1 grup padat) — aturan sama: berbagi boleh, numpuk tidak */}
-                    {stikItems.length > 0 && (() => {
-                      const pack = packRows(stikItems.map((x: any) => ({ st: x.t0, dd: x.dd, row: x.st?.row })));
-                      stkPoolRef.current = stikItems.map((x: any, ii: number) => ({ key: x.st.id, st: x.t0, dd: x.dd, row: pack[ii] }));
-                      const nRows = Math.max(...pack) + 1;
-                      return (
-                        <div ref={laneRowRef("stg")} className={`v6e-lanerow ${laneLift === "stg" ? "lanelift" : ""}`} style={{ order: laneIdx["stg"] ?? 0, height: "auto", marginBottom: 0, position: "relative" }}>
-                          {Array.from({ length: nRows }).map((_, r) => (
-                            <div key={r}
-                              ref={(el) => { if (el) stkRowEls.current.set(r, el); else stkRowEls.current.delete(r); }}
-                              className={`v6e-lanerow ${rowDrop && rowDrop.g === "s" && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
-                              style={{ position: "relative", height: 46, marginBottom: 5 }}>
-                              {stikItems.map(({ s, st, t0, dd, free }: any, ii: number) => {
-                                if (pack[ii] !== r) return null;
+                                /* ---- chip TEKS / LIRIK ---- */
+                                if (it.kind === "txt") {
+                                  const { s, t, tid, st, dd, free } = it.payload;
+                                  const dd4 = dragRef.current as any;
+                                  const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
+                                  const enc = tid ? `${s.id}::${tid}` : s.id;
+                                  const isSel = p.selTextSid === enc;
+                                  const isLyr = /^lyr_/.test(t?.id || tid || "");
+                                  return (
+                                    <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur BEBAS (asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh kolam"
+                                      onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
+                                      onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
+                                      style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
+                                      {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
+                                      <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
+                                      <span className="txtdur" title="Tarik untuk ubah durasi teks"
+                                        onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
+                                    </div>
+                                  );
+                                }
+                                /* ---- chip STIKER ---- */
+                                const { s, st, t0, dd, free } = it.payload;
                                 const dd5 = dragRef.current as any;
                                 const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
                                 const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
                                 return (
-                                  <div key={st.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur (BOLEH berbagi asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh jalur stiker"
+                                  <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur BEBAS (asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh kolam"
                                     onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
                                     onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
                                     style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0 }}>
                                     {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
+                                    <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                     <span className="txtdur" title="Tarik untuk ubah durasi stiker"
                                       onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}>⋮</span>
                                   </div>

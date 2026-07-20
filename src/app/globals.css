@@ -1558,3 +1558,6 @@ b.ok, b.warn, b.err { color:inherit; }
 /* ===== v8.5: sorotan target jatuh saat objek diseret antar-baris ===== */
 .v6e-lanerow.dropr { background:rgba(34,211,238,.09); outline:1.5px dashed rgba(34,211,238,.55); outline-offset:-1px; border-radius:10px; }
 .v6e-lanerow.dropr.bad { background:rgba(239,68,68,.12); outline-color:rgba(239,68,68,.65); }
+
+/* ===== v8.6: lencana penanda objek bisa diseret vertikal bebas ===== */
+.v6e-chipvs { margin-left:auto; font-size:11px; font-weight:800; opacity:.55; padding-left:6px; flex:0 0 auto; }
