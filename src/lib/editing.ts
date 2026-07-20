@@ -18,6 +18,7 @@ export interface ClipText {
   anim: string;        // id TEXT_ANIMS
   karaokeWords?: { w: string; start: number; end: number }[]; // timing kata (keterangan otomatis)
   karaokeColor?: string;
+  id?: string;         // id lapisan (utk teks tambahan di SlideOpt.texts)
   x?: number;          // 0.05..0.95 (posisi horizontal bebas — default: ikut align)
   start?: number | null; // detik ABSOLUT di timeline (undefined/null = ikut klip)
   dur?: number;        // detik tampil saat mode lepas (default: durasi klip)
@@ -40,7 +41,8 @@ export interface SlideOpt {
   tx?: number;               // geser gambar X (fraksi lebar bingkai) — kunci per-klip
   ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
   tz?: number;               // zoom gambar (1 = normal, 0.5..6)
-  text?: ClipText | null;
+  text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
+  texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
   stickers?: StickerItem[];
 }
 export interface AdjustState {
@@ -1027,8 +1029,10 @@ export function paintClips(
   const fadeMul = p.inTrans ? 1 - p.transT : 1;
   // stiker ber-start/dur sendiri (lepas) digambar di pass paintFloatingStickers
   paintStickersV6(ctx, W, H, opt.stickers?.filter((s: StickerItem) => s.start == null), fadeMul, p.absT);
-  // teks ber-start/dur sendiri (lepas) digambar di pass paintFloatingTexts
-  if (opt.text && opt.text.start == null) paintClipText(ctx, W, H, opt.text, p.clipT, p.clipDur, p.absT, fadeMul);
+  // teks ber-start/dur sendiri (lepas) digambar di pass paintFloatingTexts — semua lapisan
+  for (const ct of allClipTexts(opt)) {
+    if (ct.start == null) paintClipText(ctx, W, H, ct, p.clipT, p.clipDur, p.absT, fadeMul);
+  }
 
   // grain global
   paintGrain(ctx, W, H, p.grain, p.absT, p.isMobile);
@@ -1036,16 +1040,24 @@ export function paintClips(
 
 /* -------- TEKS LEPAS WAKTU (bisa digeser ke detik mana pun di track) --------
    Dipanggil sekali per frame SETELAH paintClips, dengan daftar opts semua klip. */
+export function allClipTexts(o: SlideOpt | null | undefined): ClipText[] {
+  const out: ClipText[] = [];
+  const t = o?.text;
+  if (t && t.txt && t.txt.trim()) out.push(t);
+  for (const x of o?.texts || []) if (x && x.txt && x.txt.trim()) out.push(x);
+  return out;
+}
 export function paintFloatingTexts(
   ctx: CanvasRenderingContext2D, W: number, H: number,
   optsList: (SlideOpt | null | undefined)[], t: number,
 ) {
   for (const o of optsList) {
-    const ct = o?.text;
-    if (!ct || !ct.txt || !ct.txt.trim() || ct.start == null) continue;
-    const dur = ct.dur && ct.dur > 0 ? ct.dur : 3;
-    if (t < ct.start || t >= ct.start + dur) continue;
-    paintClipText(ctx, W, H, ct, t - ct.start, dur, t, 1);
+    for (const ct of allClipTexts(o)) {
+      if (ct.start == null) continue;
+      const dur = ct.dur && ct.dur > 0 ? ct.dur : 3;
+      if (t < ct.start || t >= ct.start + dur) continue;
+      paintClipText(ctx, W, H, ct, t - ct.start, dur, t, 1);
+    }
   }
 }
 
