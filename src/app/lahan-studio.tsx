@@ -77,6 +77,27 @@ type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
 
 type SongTask = { id: string; title: string; ts: number };
 type SongResult = { url: string; title: string; duration?: number; image?: string };
+type SunoKey = { key: string; provider: string };
+
+const SUNO_KEYS_KEY = "verve_suno_keys_v1";
+/** Link resmi buat ambil/generate API key — satu klik, kayak panel Kampung Music */
+const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
+  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key)" },
+  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
+  sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
+  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
+};
+function detectProvClient(k: string, fallback: string): string {
+  const s = k.toLowerCase().trim();
+  if (s.startsWith("kie") || s.startsWith("sk-kie")) return "kie";
+  if (s.startsWith("afk_") || s.startsWith("af_")) return "apiframe";
+  if (s.startsWith("snr_") || s.startsWith("sunor_")) return "sunor";
+  if (/^[a-f0-9]{24,}$/i.test(k.trim())) return "kie";
+  return fallback;
+}
+function maskKey(k: string): string {
+  return k.length > 10 ? `${k.slice(0, 7)}…${k.slice(-3)}` : "••••";
+}
 
 const SUNO_PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
@@ -177,6 +198,13 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "antre" });
   const pollStop = useRef(false);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* ---- pool multi-key (satu per baris) + rotasi otomatis ---- */
+  const [keyPool, setKeyPool] = useState<SunoKey[]>([]);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyPanel, setKeyPanel] = useState(false);
+  const [creditInfo, setCreditInfo] = useState<Record<string, string>>({});
+  const [checkingCredit, setCheckingCredit] = useState(false);
+  const launchKeyRef = useRef("");
   const [toast, setToast] = useState("");
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
   const [gaya, setGaya] = useState(0);
@@ -215,6 +243,8 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
     try {
       setSunoKey(localStorage.getItem("verve_suno_key") || "");
       setSunoProv(localStorage.getItem("verve_suno_provider") || "kie");
+      const rawKeys = localStorage.getItem(SUNO_KEYS_KEY);
+      if (rawKeys) setKeyPool(JSON.parse(rawKeys));
     } catch { /* abaikan */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -460,10 +490,74 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
   }
 
   /* ================= SUNO (dengan pengerasan anti-macet) ================= */
-  function sunoHeaders(): Record<string, string> {
+  function sunoHeaders(keyOverride?: string): Record<string, string> {
+    const k = (keyOverride ?? (launchKeyRef.current || keysForProvider()[0]?.key || "")).trim();
     const h: Record<string, string> = { "Content-Type": "application/json" };
-    if (sunoKey.trim()) { h["X-Suno-Key"] = sunoKey.trim(); h["X-Suno-Provider"] = sunoProv; }
+    if (k) { h["X-Suno-Key"] = k; h["X-Suno-Provider"] = sunoProv; }
     return h;
+  }
+
+  /* ---- pool multi-key (model Kampung Music: satu kunci per baris + rotasi otomatis) ---- */
+  function savePool(next: SunoKey[]) {
+    setKeyPool(next);
+    try { localStorage.setItem(SUNO_KEYS_KEY, JSON.stringify(next)); } catch { /* abaikan */ }
+  }
+  function keysForProvider(): SunoKey[] {
+    const pooled = keyPool.filter((k) => k.provider === sunoProv);
+    if (pooled.length) return pooled;
+    if (sunoKey.trim()) return [{ key: sunoKey.trim(), provider: sunoProv }];
+    return [];
+  }
+  function addKeysFromDraft() {
+    const lines = keyDraft.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    const next = [...keyPool];
+    let added = 0;
+    lines.forEach((k) => {
+      if (next.some((x) => x.key === k)) return;
+      next.push({ key: k, provider: detectProvClient(k, sunoProv) });
+      added++;
+    });
+    savePool(next);
+    setKeyDraft("");
+    const first = next.filter((x) => x.provider === sunoProv)[0];
+    if (first) {
+      setSunoKey(first.key);
+      try { localStorage.setItem("verve_suno_key", first.key); } catch { /* abaikan */ }
+    }
+    flash(added ? `🔑 ${added} kunci ditambah` : "Semua kunci sudah ada di daftar");
+  }
+  function removeKey(key: string) { savePool(keyPool.filter((k) => k.key !== key)); }
+  function clearKeysCurrentProv() {
+    savePool(keyPool.filter((k) => k.provider !== sunoProv));
+    setCreditInfo({});
+    flash("🗑 Kunci provider ini dihapus semua");
+  }
+
+  async function cekKredit() {
+    const keys = keysForProvider().map((k) => k.key);
+    if (!keys.length) { setErr({ code: "key", msg: "Belum ada kunci tersimpan — tambah dulu lewat kolom atas." }); return; }
+    setCheckingCredit(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/hcnsec/music-credit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: sunoProv, keys }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const map: Record<string, string> = {};
+      (j.results || []).forEach((res: { key: string; status: string; credit?: number; msg?: string }) => {
+        map[res.key] = res.status === "ok" ? `💳 ${res.credit}` : (res.msg || "tidak terekspos");
+      });
+      setCreditInfo(map);
+      flash("💳 Cek kredit selesai — angka cuma tampil kalau provider memang mengekspos");
+    } catch (e) {
+      setErr({ code: "credit", msg: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setCheckingCredit(false);
+    }
   }
   function fmtClock(sec: number): string {
     const m = Math.floor(sec / 60), s = sec % 60;
@@ -580,6 +674,12 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
       setErr({ code: "suno", msg: "Lirik masih terlalu pendek (min 30 karakter) — generate lirik AI dulu atau pilih 🎼 Instrumental." });
       return;
     }
+    const keys = keysForProvider();
+    if (sunoProv !== "aimusic" && !keys.length) {
+      setKeyPanel(true);
+      setErr({ code: "need_key", msg: "Belum ada API key. Di panel 🔑 Setelan API Key di atas: tap link provider untuk ambil key → tempel satu per baris → Tambah." });
+      return;
+    }
     setErr(null);
     setBusy("song");
     const styleStr = (mStyle.trim() || [genre, mood, "indonesian, emotional, high quality"].join(", ")).slice(0, 480);
@@ -592,42 +692,69 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
       vocalGender: instrumental ? undefined : vocal === "auto" ? undefined : vocal,
       _raw_title: selTitle.slice(0, 80), _raw_lyrics: lyr, _raw_style: styleStr,
     };
-    try {
-      // auto-retry SEKALI kalau server provider 5xx / jaringan putus (bukan salah key/kredit)
-      let r: Response | null = null;
-      let j: Record<string, string> = {};
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          r = await fetch("/api/hcnsec/music", { method: "POST", headers: sunoHeaders(), body: JSON.stringify(payload) });
-          j = await r.json().catch(() => ({}));
-        } catch (e) {
-          if (attempt === 2) throw e;
-          await new Promise((res) => setTimeout(res, 3000));
-          continue;
-        }
-        if (r.ok || r.status === 401 || r.status === 402) break;
-        if (attempt < 2) await new Promise((res) => setTimeout(res, 3000));
-      }
-      if (!r || !r.ok || j.error) throw Object.assign(new Error(j.error || `HTTP ${r ? r.status : "?"}`), { code: j.status });
-      const id = j.id || j.taskId || j.task_id || j.audio_url;
-      if (j.audio_url) { // provider langsung kasih audio tanpa polling
-        const dur = Number(j.duration);
-        finishSong({ url: j.audio_url, title: j.title || selTitle, duration: isFinite(dur) && dur > 0 ? dur : undefined, image: j.image_url });
+    // ROTASI OTOMATIS: kunci habis/ditolak → langsung pindah kunci berikutnya
+    const tries = Math.max(1, keys.length);
+    let lastErr: (Error & { code?: string }) | null = null;
+    for (let ki = 0; ki < tries; ki++) {
+      try {
+        await launchWithKey(payload, keys[ki]?.key || "", ki, tries);
+        setBusy("");
         return;
+      } catch (e) {
+        const er = e as Error & { code?: string };
+        lastErr = er;
+        const keyProblem = er.code === "quota_error" || er.code === "auth_error" || er.code === "need_key" || /401|402|kredit|habis|invalid/i.test(er.message);
+        if (keyProblem && ki < tries - 1) { flash(`🔑 Kunci ${ki + 1} ditolak — pindah kunci ${ki + 2}/${tries}…`); continue; }
+        break;
       }
-      if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
-      const t: SongTask = { id, title: selTitle, ts: Date.now() };
-      setSong(null);
-      setPeaks(null);
-      setTask(t);
-      flash("⏳ Lagu diolah — polling sabar jalan (lagu sering jadi di menit 2–5)");
-      startPolling(t);
-    } catch (e) {
-      const er = e as Error & { code?: string };
-      setErr({ code: er.code === "need_key" ? "need_key" : er.code === "quota_error" ? "quota" : "suno", msg: er.message });
-    } finally {
-      setBusy("");
     }
+    setBusy("");
+    if (tries > 1 && lastErr && (lastErr.code === "quota_error" || lastErr.code === "auth_error")) {
+      setErr({ code: "quota", msg: `Semua ${tries} kunci ditolak/habis. Terakhir: ${lastErr.message}. Tambah kunci baru lewat 🔑 Setelan API Key (ada link ambil key-nya).` });
+    } else if (lastErr && lastErr.code === "need_key") {
+      setKeyPanel(true);
+      setErr({ code: "need_key", msg: lastErr.message });
+    } else if (lastErr && lastErr.code === "quota_error") {
+      setKeyPanel(true);
+      setErr({ code: "quota", msg: lastErr.message });
+    } else {
+      setErr({ code: "suno", msg: lastErr ? lastErr.message : "Gagal generate lagu" });
+    }
+  }
+
+  async function launchWithKey(payload: Record<string, unknown>, key: string, ki: number, total: number) {
+    // auto-retry SEKALI kalau server provider 5xx / jaringan putus (bukan salah key/kredit)
+    let r: Response | null = null;
+    let j: Record<string, string> = {};
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        r = await fetch("/api/hcnsec/music", { method: "POST", headers: sunoHeaders(key), body: JSON.stringify(payload) });
+        j = await r.json().catch(() => ({}));
+      } catch (e) {
+        if (attempt === 2) throw e;
+        await new Promise((res) => setTimeout(res, 3000));
+        continue;
+      }
+      if (r.ok || r.status === 401 || r.status === 402) break;
+      if (attempt < 2) await new Promise((res) => setTimeout(res, 3000));
+    }
+    if (!r || !r.ok || j.error) throw Object.assign(new Error(j.error || `HTTP ${r ? r.status : "?"}`), { code: j.status });
+    const dur = Number(j.duration);
+    if (j.audio_url) { // provider langsung kasih audio tanpa polling
+      finishSong({ url: j.audio_url, title: j.title || selTitle, duration: isFinite(dur) && dur > 0 ? dur : undefined, image: j.image_url });
+      return;
+    }
+    const id = j.id || j.taskId || j.task_id;
+    if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
+    launchKeyRef.current = key;
+    const t: SongTask = { id, title: selTitle, ts: Date.now() };
+    setSong(null);
+    setPeaks(null);
+    setTask(t);
+    flash(total > 1
+      ? `⏳ Lagu diolah pakai kunci ${ki + 1}/${total} — polling sabar jalan`
+      : "⏳ Lagu diolah — polling sabar jalan (sering jadi menit 2–5)");
+    startPolling(t);
   }
 
   const canGo = (k: number): boolean =>
@@ -1020,20 +1147,63 @@ export default function LahanStudio({ onExit }: { onExit: () => void }) {
           <div className="lh-card">
             <div className="lh-h1">Panggung lagu 🎵</div>
             <p className="lh-sub">Judul: <b>{selTitle}</b> — lagu diolah Suno lewat provider pilihanmu. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
-            <div className="lh-duo">
-              <select className="lh-sel" value={sunoProv} onChange={(e) => { setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch { /* abaikan */ } }}>
-                {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-              <input className="lh-in" style={{ marginTop: 0 }} type="password" placeholder="Tempel API key…" value={sunoKey} onChange={(e) => { setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch { /* abaikan */ } }} />
+            <div className="lh-kv">
+              <span>Provider</span>
+              <b>
+                <select className="lh-sel" value={sunoProv} onChange={(e) => { setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch { /* abaikan */ } setCreditInfo({}); }}>
+                  {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              </b>
             </div>
-            <p className="lh-note">💳 <b>Kredit jujur</b>: 1 lagu = 1 panggilan API dari akun provider-mu. Saldo pasti hanya terlihat di dashboard provider mereka — VERVE tidak mengarang angka kredit. Key habis → buka situs provider → menu API → generate key baru → tempel ulang di sini.</p>
+
+            <button className="lh-btn sec" onClick={() => setKeyPanel(!keyPanel)}>
+              🔑 Setelan API Key — {keysForProvider().length} kunci tersimpan {keyPanel ? "▴" : "▾"}
+            </button>
+
+            {keyPanel && (
+              <div className="lh-keypanel">
+                {PROVIDER_KEY_LINK[sunoProv]?.url ? (
+                  <a className="lh-keylink" href={PROVIDER_KEY_LINK[sunoProv].url} target="_blank" rel="noreferrer">
+                    🔑 Ambil API key di {SUNO_PROVIDERS.find((p) => p.id === sunoProv)?.label.replace(/^🥇 /, "")} ↗
+                  </a>
+                ) : (
+                  <p className="lh-note">aimusic.so = mode gratis tanpa key (sering penuh). Mau lancar: pakai Kie.ai.</p>
+                )}
+                <p className="lh-note">1. Tap link di atas → login → {PROVIDER_KEY_LINK[sunoProv]?.hint}.<br />2. Tempel <b>satu kunci per baris</b> di bawah → <b>+ Tambah</b>. Bisa BANYAK kunci: kalau satu habis/ditolak, mesin <b>otomatis pindah kunci berikutnya</b>.</p>
+                <textarea
+                  className="lh-ta"
+                  rows={3}
+                  placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : sunoProv === "apiframe" ? "afk_xxx\nafk_yyy" : "kunci_baris_1\nkunci_baris_2"}
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button className="lh-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!keyDraft.trim()} onClick={addKeysFromDraft}>＋ Tambah</button>
+                  <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} disabled={checkingCredit || !keysForProvider().length} onClick={cekKredit}>{checkingCredit ? "⏳ Mengecek…" : "🔄 Cek Kredit"}</button>
+                  <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} disabled={!keysForProvider().length} onClick={clearKeysCurrentProv}>🗑 Hapus</button>
+                </div>
+                <div className="lh-keyshead">
+                  <span>KUNCI TERSIMPAN</span>
+                  <span>{keysForProvider().length} kunci</span>
+                </div>
+                {!keysForProvider().length && <p className="lh-note" style={{ textAlign: "center" }}><i>Belum ada kunci.</i></p>}
+                {keysForProvider().map((k) => (
+                  <div key={k.key} className="lh-keyrow">
+                    <span className="k">{maskKey(k.key)}</span>
+                    <span className="cr">{creditInfo[k.key] || creditInfo[maskKey(k.key)] || ""}</span>
+                    <button className="lh-mini" onClick={() => removeKey(k.key)}>🗑</button>
+                  </div>
+                ))}
+                <p className="lh-note">💳 <b>Kredit jujur</b>: nominal cuma ditampilkan kalau provider mengeksposnya via API — kalau tidak, kami bilang jujur & kunci tetap bisa dipakai. 1 lagu = 1 panggilan API. Kunci disimpan DI HP-mu saja (localStorage), dipakai bareng studio.</p>
+              </div>
+            )}
           </div>
 
           {err && (err.code === "need_key" || err.code === "quota") && (
             <div className="lh-card lh-errcard">
               <b>{err.code === "need_key" ? "🔑 Butuh API key" : "💳 Kredit provider habis"}</b>
               <p>{err.msg}</p>
-              <p className="lh-note">Saran: daftar Kie.ai (gratis & lancar dari Indo) → API → generate key → tempel di kolom atas.</p>
+              <p className="lh-note">Saran: buka 🔑 Setelan API Key di atas → tap link provider (Kie.ai gratis & lancar dari Indo) → generate key → tempel satu per baris → Tambah. Kalau kunci lama habis, mesin otomatis pindah ke kunci berikutnya.</p>
             </div>
           )}
 
