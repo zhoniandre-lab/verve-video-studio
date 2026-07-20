@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
 import { renderGif } from "@/lib/gif";
+import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
@@ -472,6 +473,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [voiceVol, setVoiceVol] = useState(1);        // 0..1.5 (tts+rekaman)
   const [musicFadeIn, setMusicFadeIn] = useState(0);  // detik
   const [musicFadeOut, setMusicFadeOut] = useState(0); // detik
+  /* ---------- gelombang suara asli (analisis file → bentuk batang di track) ---------- */
+  const [musicPeaks, setMusicPeaks] = useState<number[] | null>(null);
+  const [ttsPeaks, setTtsPeaks] = useState<number[] | null>(null);
+  const [voicePeaks, setVoicePeaks] = useState<number[] | null>(null);
+  const [musicBeats, setMusicBeats] = useState<{ bpm: number; beats: number[] } | null>(null);
   /* ---------- gaya global ---------- */
   const [filterPreset, setFilterPreset] = useState("none");
   const [adj, setAdj] = useState<AdjustState>({ ...DEFAULT_ADJUST });
@@ -645,6 +651,27 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [slides, slideOptsById, selStik, selId, setSelStik]);
   useEffect(() => { if (selStik && selTextSid) setSelTextSid(""); }, [selStik]); // eslint-disable-line
   useEffect(() => { if (selTextSid && selStik) setSelStik(null); }, [selTextSid]); // eslint-disable-line
+  /* ---------- analisis gelombang suara asli (async — hasil digambar di balok track audio) ---------- */
+  const proxify = proxifyAudioUrl;
+  useEffect(() => {
+    if (!musicUrl) { setMusicPeaks(null); setMusicBeats(null); return; }
+    let alive = true;
+    getAudioPeaks(proxify(musicUrl), 180).then(pk => { if (alive) setMusicPeaks(pk); });
+    estimateBeats(proxify(musicUrl)).then(r => { if (alive) setMusicBeats(r); });
+    return () => { alive = false; };
+  }, [musicUrl, proxify]);
+  useEffect(() => {
+    if (!ttsUrl) { setTtsPeaks(null); return; }
+    let alive = true;
+    getAudioPeaks(proxify(ttsUrl), 180).then(pk => { if (alive) setTtsPeaks(pk); });
+    return () => { alive = false; };
+  }, [ttsUrl, proxify]);
+  useEffect(() => {
+    if (!voiceUrl) { setVoicePeaks(null); return; }
+    let alive = true;
+    getAudioPeaks(proxify(voiceUrl), 180).then(pk => { if (alive) setVoicePeaks(pk); });
+    return () => { alive = false; };
+  }, [voiceUrl, proxify]);
 
   /* ---------- PREVIEW (canvas + rAF + audio clock) ---------- */
   const drawFrameRefCb = useRef<(t: number) => void>(() => {});
@@ -2080,6 +2107,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl}
         musicDur={musicDur} ttsDur={ttsDur} voiceDur={voiceDur}
         musicOff={musicOff} ttsOff={ttsOff} voiceOff={voiceOff}
+        musicPeaks={musicPeaks} ttsPeaks={ttsPeaks} voicePeaks={voicePeaks}
+        musicBeats={musicBeats?.beats || null} musicBpm={musicBeats?.bpm || 0}
         onAudioOff={(k: "m" | "t" | "v", sec: number) => { const v = Math.round(sec * 100) / 100; if (k === "m") setMusicOff(v); else if (k === "t") setTtsOff(v); else setVoiceOff(v); }}
         onAudioMoved={(k: string) => flash(`${k === "m" ? "🎵 Musik" : k === "t" ? "🗣️ Narasi" : "🎙️ Rekaman"} digeser — mulai di ${formatDur((k === "m" ? musicOff : k === "t" ? ttsOff : voiceOff))}`)}
         onTextStart={moveTextStart} onTextDur={moveTextDur}
@@ -2567,6 +2596,11 @@ function TimelineV6(p: any) {
                   {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < dispTotal ? (
                     <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-2px)", fontSize: 8.5, color: "#4b5260", fontWeight: 600 }}>·</span>
                   ) : null; })}
+                  {/* penanda ketukan musik (estimasi dari gelombang) — bantu potong/teks pas irama */}
+                  {p.musicBeats?.length ? p.musicBeats.slice(0, 900).map((b: number, bi: number) => {
+                    const bx = ((p.musicOff || 0) + b) * PXS0;
+                    return bx >= 0 && bx <= dispTotal * PXS0 ? <i key={`b${bi}`} className="v6e-beat" style={{ left: bx }} /> : null;
+                  }) : null}
                 </div>
 
             {/* TRACK 1: video */}
@@ -2635,9 +2669,21 @@ function TimelineV6(p: any) {
                           onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
                           style={{ position: "absolute", left: r.off * PXS0, top: k * (rowH + 5), width: wOf(r), height: rowH, background: r.grad, color: r.col, overflow: "hidden" }}>
                           <i style={{ fontStyle: "normal" }}>{r.icon}</i>
-                          <span className="wv">{Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % Math.max(8, rowH - 14)) }} />)}</span>
+                          <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
+                            (() => {
+                              const pk: number[] | null = (r.key === "m" ? p.musicPeaks : r.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
+                              if (pk && pk.length) {
+                                const bars = Math.max(24, Math.min(190, Math.floor(wOf(r) / 4.2)));
+                                return Array.from({ length: bars }).map((_, k2) => {
+                                  const v = pk[Math.min(pk.length - 1, Math.floor(k2 / bars * pk.length))];
+                                  return <i key={k2} style={{ height: Math.max(3, Math.round(v * Math.max(8, rowH - 12))) }} />;
+                                });
+                              }
+                              return Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % Math.max(8, rowH - 14)) }} />);
+                            })()
+                          }</span>
                           <span className="nm" style={rowH < 40 ? { fontSize: 9.5 } : undefined}>
-                            {r.nm}{r.dur ? ` · ${formatDur(r.dur)}` : ""}{r.off > 0.05 ? ` · ▶${formatDur(r.off)}` : ""}
+                            {r.nm}{r.key === "m" && p.musicBpm ? ` · 🥁${p.musicBpm}` : ""}{r.dur ? ` · ${formatDur(r.dur)}` : ""}{r.off > 0.05 ? ` · ▶${formatDur(r.off)}` : ""}
                           </span>
                         </div>
                       );
