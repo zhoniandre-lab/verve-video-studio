@@ -817,7 +817,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       } catch (e) {
         const er = e as Error & { code?: string };
         lastErr = er;
-        const keyProblem = er.code === "quota_error" || er.code === "auth_error" || er.code === "need_key" || /401|402|kredit|habis|invalid/i.test(er.message);
+        const keyProblem = er.code === "quota_error" || er.code === "auth_error" || er.code === "need_key" || /401|402|kredit|habis|invalid|credit|insufficient|balance/i.test(er.message); // v10.4: istilah Inggris provider ikut dikenali
         if (keyProblem && ki < tries - 1) { flash(`🔑 Kunci ${ki + 1} ditolak — pindah kunci ${ki + 2}/${tries}…`); continue; }
         break;
       }

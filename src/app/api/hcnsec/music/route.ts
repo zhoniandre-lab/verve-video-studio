@@ -301,7 +301,18 @@ export async function POST(req: Request) {
         }
 
         const n = normalize(data, provider);
-        if (n.status === "error") { lastErr = `${url}: ${n.error}`; continue; }
+        if (n.status === "error") {
+          // 💳 v10.4: kredit/saldo habis kadang datang sebagai HTTP 200 ber-code error (bukan 402).
+          // Kenali → petakan ke 402 quota_error + pesan Indonesia, supaya klien membuka panel kunci,
+          // BUKAN memuntahkan bahasa mentah Inggris seperti 'Credits insufficient'.
+          if (/insufficient|not enough|balance|quota|kredit/i.test(String(n.error))) {
+            return NextResponse.json({
+              error: `Kredit ${PROVIDERS[provider].label} habis bro — provider bilang saldo tidak cukup untuk request ini. Top up saldo di dashboard ${PROVIDERS[provider].label}, atau tambah kunci/provider lain lewat 🔑 Setelan API Key di langkah ini.`,
+              status: "quota_error", provider,
+            }, { status: 402 });
+          }
+          lastErr = `${url}: ${n.error}`; continue;
+        }
         if (n.id || n.audio_url) {
           n.provider = provider;
           return NextResponse.json(n);
