@@ -39,9 +39,12 @@ SET STUDIO (GRATIS, langsung jalan, bisa di-Undo kecuali diberi tanda):
 - {"op":"set_quality","sharp":true}
 - {"op":"set_motion","slide":N,"mode":"zoom_in|zoom_out|selangseling|zoompelan|denyut|goyang|melayang|berkedip|ayun|none"}   (GERAK PADA GAMBARNYA ala CapCut, ZOOM KERAS TERLIHAT JELAS. slide kosong = SEMUA adegan. "zoom in dan zoom out biar gambar bergerak bagus" → mode selangseling (masuk/keluar bergantian per adegan). BUKAN set_transition)
 - {"op":"clear_caption"}                (hapus keterangan otomatis — gratis)
+- {"op":"geser_keterangan","detik":-10..10}    (geser timing karaoke +-N detik — untuk "karaoke kecepetan/kelambatan/tidak pas dengan suara". NEGATIF = lebih awal/maju, POSITIF = lebih lambat/mundur)
 BERAT TAPI GRATIS (aplikasi hanya menampilkan tombol Gas/Batal — kerja keras HP, BUKAN kredit):
 - {"op":"render_now"}  (hanya bila pembuat minta render/ekspor/download/jadikan video)
-- {"op":"auto_caption"} (keterangan/karaoke otomatis dari AUDIO — transkripsi AI whisper, ±1–2 menit; hanya bila pembuat minta keterangan/lirik jalan/karaoke otomatis)
+- {"op":"auto_caption"} (keterangan/karaoke otomatis dari AUDIO — transkripsi AI whisper, ±1–2 menit; hanya bila pembuat minta keterangan/lirik jalan/karaoke otomatis DAN belum ada karaoke)
+- {"op":"selaraskan_ulang"} (karaoke SUDAH ADA tapi tidak pas — sinkron ulang lirik ke irama lagu dari nol; teks lama disingkirkan dulu, anti dobel)
+CATATAN SELARAS: kalau karaoke sudah ada tapi timingnya tidak pas → pakai geser_keterangan (tawarkan 0.5–1 dtk) dan/atau selaraskan_ulang — JANGAN auto_caption polos (itu menambah teks baru di atas yang lama = karaoke dobel).
 Nomor adegan HARUS 1..KONTEKS.jumlah_adegan.
 PENTING soal zoom: "zoom/gerak pada GAMBAR" = set_motion (set_transition HANYA sambungan antar-adegan). zoom MASUK = zoom_in, zoom KELUAR = zoom_out (keduanya SUDAH ADA & keras terlihat), campuran keren = selangseling. Untuk "keterangan otomatis / karaoke otomatis / lirik jalan" pakai auto_caption, JANGAN ngaku sudah selesai tanpa ops.
 
@@ -118,6 +121,7 @@ const STUDIO_OPS = new Set([
   "set_music_fade", "set_music_off", "set_muted", "edit_caption", "move_slide", "delete_slide",
   "set_bg", "set_filter", "set_quality", "render_now",
   "set_motion", "auto_caption", "clear_caption", // 🎬 v11.3: gerak gambar + keterangan otomatis
+  "geser_keterangan", "selaraskan_ulang", // 🎬 v11.6: perkakas selaras karaoke
 ]);
 const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun", "zoom_in", "zoom_out", "selangseling"]); // 🎬 v11.4: +keras/arah/selangseling
 const num = (v: unknown, a: number, b: number): number | null => {
@@ -158,6 +162,7 @@ function cleanStudioOps(raw: unknown, nSlides: number): { ops: Op[]; dropped: st
         out.slide = Math.round(Number(rawSc));
       }
     }
+    if (name === "geser_keterangan") { const d = num(o.detik, -10, 10); if (d === null) { dropped.push("geser tanpa detik"); continue; } out.detik = d; }
     if (name === "set_bg") { if (!["cover", "blur", "color"].includes(String(o.mode))) { dropped.push("mode latar aneh"); continue; } out.mode = String(o.mode); const c = s(o.color, 20); if (c) out.color = c; }
     if (name === "set_filter") { const f = s(o.preset, 30); if (!f) { dropped.push("filter kosong"); continue; } out.preset = f; }
     if (name === "set_quality") { out.sharp = !!o.sharp; }

@@ -1317,8 +1317,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [dirLog, dirBusy, dirOpen]);
 
   function applyStudioOps(ops: StudioOp[]) {
-    const heavy = ops.filter((o) => o.op === "render_now" || o.op === "auto_caption");
-    const free = ops.filter((o) => o.op !== "render_now" && o.op !== "auto_caption");
+    const heavy = ops.filter((o) => o.op === "render_now" || o.op === "auto_caption" || o.op === "selaraskan_ulang");
+    const free = ops.filter((o) => o.op !== "render_now" && o.op !== "auto_caption" && o.op !== "selaraskan_ulang");
     if (heavy.length) {
       setDirPending(heavy.map((o) => ({ op: o.op })));
       dirPush("sys", "🔥 Ada kerja berat menunggu izinmu: Render (CPU HP) / Keterangan otomatis (AI transkripsi audio, ±1–2 mnt) — BUKAN kredit. Ketuk Gas di bawah kalau yakin.");
@@ -1377,6 +1377,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           break;
         }
         case "clear_caption": clearCaptions(); done.push("keterangan otomatis dihapus"); break;
+        case "geser_keterangan": {
+          // 🎬 v11.6: geser timing karaoke (perkakas resmi nudgeLyrics + undo bawaan)
+          const d = clamp(o.detik, -10, 10, 0);
+          if (d !== 0) { nudgeLyrics(d); done.push(`keterangan digeser ${d > 0 ? "+" : ""}${d} dtk`); }
+          break;
+        }
         default: break;
       }
     }
@@ -1433,6 +1439,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       dirPush("sys", from === "lirik"
         ? "📝 Keterangan otomatis jalan — AI menyelaraskan LIRIK lagumu ke irama lagu (Whisper, dengan cadangan perkiraan cerdas). Hasilnya muncul sebagai karaoke di track teks."
         : "📝 Keterangan otomatis jalan — AI menyalin audio (±1–2 mnt). Hasilnya bisa dilihat/disetel lewat tombol Keterangan di toolbar.");
+      void doAutoCaptions(from);
+    } else if (o.op === "selaraskan_ulang") {
+      // 🎬 v11.6 SELARAS: karaoke lama (id lyr_) disingkirkan DULU — anti karaoke dobel — baru sync dari nol
+      const from = (mLyrics || "").trim() && musicUrl ? "lirik" : musicUrl ? "musik" : "suara";
+      dirPush("sys", "🎯 Sinkron ulang dari nol — teks karaoke lama disingkirkan dulu (tidak ada yang dobel), lalu AI menyelaraskan lirik ke irama lagu (±1–2 mnt)…");
+      setSlideOptsById((prev) => {
+        const next: Record<string, SlideOpt> = { ...prev };
+        for (const sid2 of Object.keys(next)) {
+          const oo: any = next[sid2];
+          if (!oo?.texts?.length) continue;
+          const kept = oo.texts.filter((t: any) => !/^lyr_/.test(t?.id || ""));
+          if (kept.length !== oo.texts.length) next[sid2] = { ...oo, texts: kept };
+        }
+        return next;
+      });
+      setLyrOff(0);
       void doAutoCaptions(from);
     }
   }
@@ -2718,7 +2740,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
           {dirPending.map((o, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, background: "#1a1207", border: "1px solid #f59e0b44", borderRadius: 8, padding: "6px 8px", fontSize: 12 }}>
-              <span>{o.op === "auto_caption" ? "📝 Keterangan otomatis — AI transkripsi audio (±1–2 mnt)" : "🔥 Render video sekarang (berat di HP)"}</span>
+              <span>{o.op === "auto_caption" ? "📝 Keterangan otomatis — AI transkripsi audio (±1–2 mnt)" : o.op === "selaraskan_ulang" ? "🎯 Sinkron ulang karaoke ke irama lagu (AI, ±1–2 mnt)" : "🔥 Render video sekarang (berat di HP)"}</span>
               <span style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => gasStudioOp(o)} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 6, padding: "4px 10px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Gas</button>
                 <button onClick={() => setDirPending((p) => p.filter((x) => x !== o))} style={{ background: "none", color: "#cbd5e1", border: "1px solid #ffffff2a", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Batal</button>
