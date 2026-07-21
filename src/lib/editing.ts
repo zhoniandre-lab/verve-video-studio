@@ -43,6 +43,7 @@ export interface SlideOpt {
   tx?: number;               // geser gambar X (fraksi lebar bingkai) — kunci per-klip
   ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
   tz?: number;               // zoom gambar (1 = normal, 0.5..6)
+  kb?: { dir: "in" | "out"; s?: number }; // 🎬 v11.4: Ken Burns kustom Sutradara (arah + kekuatan 0.05..0.5)
   text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
   texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
   stickers?: StickerItem[];

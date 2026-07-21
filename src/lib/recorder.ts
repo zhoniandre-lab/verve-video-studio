@@ -412,6 +412,7 @@ interface DrawState {
   particles:{x:number,y:number,vx:number,vy:number,life:number,size:number}[];
   phase:number;
   _canvas:HTMLCanvasElement; _transition:Transition;
+  _kb?: { dir?: "in" | "out"; s?: number } | null; // 🎬 v11.4: Ken Burns kustom per-klip
   showTitle?:boolean; showCaption?:boolean;
   logoImg?:HTMLImageElement|HTMLCanvasElement|null; logoPos?:"center"|"corner"|"none";
   captions?:CaptionWord[]; captionStyle?:CaptionStyle;
@@ -447,7 +448,13 @@ function drawFrame(s: DrawState) {
   const nxt = imgs[nextIdx % imgs.length];
   // Ken Burns dikurangi dari 8%→3% di mobile — drawImage zoom mahal
   const kb = (W <= 720) ? 0.03 : 0.08;
-  const zoomBase = 1.0 + slideT*kb + (beat?0.008:0);
+  // 🎬 v11.4: Ken Burns KERAS dari Sutradara menang atas ramp bawaan (yang cuma 3–8%, tak terasa di HP)
+  const kbC = (s as any)._kb as { dir?: string; s?: number } | undefined;
+  let zoomBase = 1.0 + slideT*kb + (beat?0.008:0);
+  if (kbC) {
+    const Sk = Math.min(0.5, Math.max(0.05, kbC.s || 0.3));
+    zoomBase = kbC.dir === "out" ? (1 + Sk) - slideT * Sk : 1 + slideT * Sk;
+  }
   const drawImg = (img:HTMLCanvasElement,alpha:number,zoom:number)=>{
     if (alpha<=0) return;
     ctx.globalAlpha = alpha;
@@ -1853,6 +1860,7 @@ async function renderWebCodecs(b:any){
       W:canvas.width,H:canvas.height,bars,bass,beat,
       rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
       phase:t*0.5,_canvas:canvas,_transition:transition,_vignette:(b as any).vigOverlay,
+      _kb:(typeof slideOpts !== "undefined" ? (slideOpts as any)?.[slideIdx]?.kb : null),
       showTitle:showTitle!==false, showCaption: !!captions?.length,
       logoImg,logoPos,captions,captionStyle,
       videoFilter: b.videoFilter,
@@ -1988,6 +1996,7 @@ async function renderMediaRecorder(b:any){
     drawFrame({time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
       phase:t*0.5,_canvas:canvas,_transition:transition,showTitle:showTitle!==false,
+      _kb:(typeof slideOpts !== "undefined" ? (slideOpts as any)?.[slideIdx]?.kb : null),
       _vignette:(b as any).vigOverlay,
       logoImg,logoPos,captions,captionStyle,showCaption:!!captions?.length,
       videoFilter: b.videoFilter,

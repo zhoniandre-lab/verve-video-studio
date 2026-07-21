@@ -877,7 +877,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const cur = getImage(sl[L.idx].imageUrl);
     const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(sl[L.nextIdx].imageUrl) : null;
     const gf = buildClipFilter(filterRef.current, adjRef.current);
-    const kb = (optCur?.loop === "zoompelan" || !optCur?.loop) ? 1 + Math.min(0.06, (tt / Math.max(1, tl.total)) * 0.06) : 1;
+    // 🎬 v11.4: Ken Burns KERAS per-klip (medan kb) — tanpa itu, perilaku lama (6% halus) utuh
+    const kbC = (optCur as any)?.kb as { dir?: string; s?: number } | undefined;
+    const progC = L.clipDur > 0 ? Math.min(1, Math.max(0, L.clipT / L.clipDur)) : 0;
+    const SkC = Math.min(0.5, Math.max(0.05, kbC?.s || 0.3));
+    const kb = kbC
+      ? (kbC.dir === "out" ? (1 + SkC) - progC * SkC : 1 + progC * SkC)
+      : ((optCur?.loop === "zoompelan" || !optCur?.loop) ? 1 + Math.min(0.06, (tt / Math.max(1, tl.total)) * 0.06) : 1);
     paintClips(ctx, W, H, cur, nxt, {
       clipT: L.clipT, clipDur: L.clipDur, inTrans: L.inTrans, transT: L.transT,
       transId: L.inTrans ? canonicalTrans(optCur?.trans ?? "dissolve") : "none",
@@ -1353,11 +1359,21 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         case "set_filter": { const f = String(o.preset || ""); if ((FILTERS as any[]).some((x) => x.id === f)) { setFilterPreset(f); done.push(`filter → ${f}`); } break; }
         case "set_quality": setQualitySharp(!!o.sharp); done.push(o.sharp ? "kualitas render: tajam" : "kualitas render: standar"); break;
         case "set_motion": {
-          // 🎬 v11.3: gerak GAMBAR ala CapCut (Ken Burns dkk) — pakai daftar resmi ANIM_LOOP
+          // 🎬 v11.4: Ken Burns KERAS (zoom_in/zoom_out/selangseling) lewat medan kb kustom;
+          // mode lain (denyut dkk) tetap pakai daftar resmi ANIM_LOOP
           const m = String(o.mode || "");
-          if (!(ANIM_LOOP as any[]).some((x) => x.id === m)) break;
-          if (hasSlide) { setOpt(sid, { loop: m } as any); done.push(`gerak adegan ${o.slide} → ${m}`); }
-          else { slides.forEach((sl) => setOpt(sl.id, { loop: m } as any)); done.push(`gerak SEMUA adegan → ${m}`); }
+          const targets = hasSlide ? [i1] : slides.map((_, k) => k);
+          if (m === "zoom_in" || m === "zoom_out") {
+            const dir = m === "zoom_in" ? "in" : "out";
+            targets.forEach((k) => setOpt(slides[k].id, { kb: { dir, s: 0.3 }, loop: "none" } as any));
+            done.push(hasSlide ? `zoom ${dir === "in" ? "MASUK" : "KELUAR"} keras adegan ${o.slide}` : `zoom ${dir === "in" ? "MASUK" : "KELUAR"} keras SEMUA adegan`);
+          } else if (m === "selangseling") {
+            slides.forEach((_, k) => setOpt(slides[k].id, { kb: { dir: k % 2 === 0 ? "in" : "out", s: 0.3 }, loop: "none" } as any));
+            done.push("zoom masuk & keluar SELANG-SELING di semua adegan");
+          } else if ((ANIM_LOOP as any[]).some((x) => x.id === m)) {
+            targets.forEach((k) => setOpt(slides[k].id, { loop: m, kb: undefined } as any));
+            done.push(hasSlide ? `gerak adegan ${o.slide} → ${m}` : `gerak SEMUA adegan → ${m}`);
+          }
           break;
         }
         case "clear_caption": clearCaptions(); done.push("keterangan otomatis dihapus"); break;
