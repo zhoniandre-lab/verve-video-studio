@@ -112,6 +112,24 @@ const SUNO_PROVIDERS = [
 ];
 const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
+// 🎚 v10.3 SUNO LENGKAP — panel ala proyek pertama + picker versi sampai yang terbaru
+const SUNO_MODELS = [
+  { id: "V4_5PLUS", label: "v4.5+", note: "✦ stabil & jernih" },
+  { id: "V5_5", label: "v5.5", note: "🆕 terbaru" },
+  { id: "V5", label: "v5.0", note: "baru" },
+  { id: "V4_5ALL", label: "v4.5-all", note: "vokal lebih fokus" },
+  { id: "V4_5", label: "v4.5", note: "" },
+  { id: "V4", label: "v4.0", note: "hemat kredit" },
+  { id: "V3_5", label: "v3.5", note: "klasik" },
+];
+const SUNO_ERAS = [
+  { id: "2020s", label: "modern 2020-an" }, { id: "2010s", label: "2010-an" },
+  { id: "2000s", label: "2000-an" }, { id: "90s", label: "90-an" }, { id: "80s", label: "80-an" },
+];
+const SUNO_TEMPOS = [
+  { id: "slow", label: "🐢 Lambat" }, { id: "mid", label: "🚶 Sedang" }, { id: "fast", label: "🏃 Cepat" },
+];
+const SUNO_INSTRS = ["piano akustik", "gitar akustik", "biola & strings", "orkestra penuh", "suling", "gendang melayu", "synth ambient", "drum halus"];
 /** Interval polling cerdas (detik): rapat di awal, makin jarang makin lama — total sabar ±6 mnt (putaran 2 s.d. 9 mnt) */
 const POLL_DELTAS = [5, 8, 10, 12, 15, 15, 20, 20, 25, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30];
 
@@ -123,6 +141,7 @@ type LahanState = {
   genre: string; mood: string; vocal: string;
   task: SongTask | null; song: SongResult | null;
   charLock?: string; modelPinned?: string; // 🔒 v10.0 SATU WAJAH
+  sunoModel?: string; sEra?: string; sTempo?: string; sInstr?: string[]; // 🎚 v10.3 SUNO LENGKAP
 };
 
 const DEFAULT_CHARS: CharCard[] = [
@@ -195,6 +214,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [genre, setGenre] = useState(GENRES[0]);
   const [mood, setMood] = useState(MOODS[0]);
   const [vocal, setVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
+  const [sunoModel, setSunoModel] = useState("V4_5PLUS"); // 🎚 v10.3: versi Suno yang DIPAKAI (tampil & bisa dipilih sampai terbaru)
+  const [sEra, setSEra] = useState("");
+  const [sTempo, setSTempo] = useState("");
+  const [sInstr, setSInstr] = useState<string[]>([]);
+  const [songModelUsed, setSongModelUsed] = useState(""); // 🎚 v10.3: versi yang dipakai generate terakhir
   const [sunoKey, setSunoKey] = useState("");
   const [sunoProv, setSunoProv] = useState("kie");
   const [task, setTask] = useState<SongTask | null>(null);
@@ -254,6 +278,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       setSong(j.song || null);
       setCharLock(j.charLock || ""); // 🔒 v10.0
       setModelPinned(j.modelPinned || "");
+      setSunoModel(j.sunoModel && SUNO_MODELS.some((m) => m.id === j.sunoModel) ? (j.sunoModel as string) : "V4_5PLUS"); // 🎚 v10.3
+      setSEra(j.sEra && SUNO_ERAS.some((e) => e.id === j.sEra) ? (j.sEra as string) : "");
+      setSTempo(j.sTempo && SUNO_TEMPOS.some((t) => t.id === j.sTempo) ? (j.sTempo as string) : "");
+      setSInstr(Array.isArray(j.sInstr) ? (j.sInstr as string[]).filter((x) => typeof x === "string" && SUNO_INSTRS.includes(x)) : []);
     } catch { /* draf korup → mulai bersih */ }
     try {
       setSunoKey(localStorage.getItem("verve_suno_key") || "");
@@ -280,7 +308,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       if (board && !withImages) {
         slimBoard = { ...board, scenes: board.scenes.map((s) => ({ ...s, url: undefined, status: s.status === "done" ? "idle" : s.status })) };
       }
-      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song, charLock, modelPinned };
+      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song, charLock, modelPinned, sunoModel, sEra, sTempo, sInstr };
       localStorage.setItem(LAHAN_KEY, JSON.stringify(payload));
     };
     try {
@@ -288,7 +316,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     } catch {
       try { save(false); } catch { /* storage penuh total — sesi jalan terus */ }
     }
-  }, [step, topic, angles, selKeyword, angle, researchAt, selTitle, naskah, board, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song]);
+  }, [step, topic, angles, selKeyword, angle, researchAt, selTitle, naskah, board, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song, sunoModel, sEra, sTempo, sInstr]);
 
   /* bersihkan timer saat keluar layar — task tetap tersimpan di draf (bisa dipantau ulang) */
   useEffect(() => () => {
@@ -736,6 +764,19 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     setPolling(false);
   }
 
+  // 🎚 v10.3: pratinjau style AKHIR yang benar-benar dikirim (gender + manual + era/tempo/instrumen)
+  function composeFinalStyle(): string {
+    const gw = vocal === "male" ? "male vocalist, deep male voice" : vocal === "female" ? "female vocalist, soft female voice" : "";
+    const tempoW = sTempo === "fast" ? "uptempo" : sTempo === "mid" ? "mid-tempo" : sTempo === "slow" ? "slow tempo" : "";
+    return [
+      gw,
+      mStyle.trim() || [genre, mood, "indonesian, emotional, high quality"].join(", "),
+      sEra ? `era ${sEra}` : "", tempoW,
+      sInstr.length ? `instruments: ${sInstr.join(", ")}` : "",
+      "professional studio recording, high quality audio",
+    ].filter(Boolean).join(", ");
+  }
+
   async function launchSong() {
     if (!selTitle) return;
     const instrumental = vocal === "instrumental";
@@ -760,8 +801,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       genre, tags: styleStr,
       custom: lyr.length > 30, instrumental,
       vocalGender: instrumental ? undefined : vocal === "auto" ? undefined : vocal,
+      model: sunoModel, // 🎚 v10.3: versi Suno pilihan user (v3.5 → v5.5 terbaru)
+      style_bits: { era: sEra || undefined, tempo: sTempo || undefined, instruments: sInstr.length ? sInstr.join(", ") : undefined }, // 🎚 v10.3: panel lengkap ala proyek pertama
       _raw_title: selTitle.slice(0, 80), _raw_lyrics: lyr, _raw_style: styleStr,
     };
+    setSongModelUsed(sunoModel); // 🎚 v10.3: catat versi yang dipakai (ditampilkan di hasil)
     // ROTASI OTOMATIS: kunci habis/ditolak → langsung pindah kunci berikutnya
     const tries = Math.max(1, keys.length);
     let lastErr: (Error & { code?: string }) | null = null;
@@ -891,7 +935,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       coverThumb: (builtSlides[0]?.imageUrl || "").slice(0, 40000),
       adj: { b: 0, c: 6, s: 4, e: 0, tem: 4, hue: 0, fade: 0, vig: 12, grain: 0 },
       mTitle: selTitle, mLyrics: lyrics, mStyle, mGenre: genre, mMood: mood,
-      mModel: "suno-v5", mVocal: vocal === "instrumental" ? "instrumental" : "vocal",
+      mModel: "suno-" + sunoModel.toLowerCase().replace(/_/g, "."), mVocal: vocal === "instrumental" ? "instrumental" : "vocal", // 🎚 v10.3: meta ikut versi asli
     };
     try {
       const arr = JSON.parse(localStorage.getItem("verve_drafts_v1") || "[]");
@@ -1409,6 +1453,31 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 </button>
               ))}
             </div>
+            <div className="lh-h2" style={{ marginTop: 10 }}>🤖 Versi Suno <span className="lh-note">(yang dipakai: <b>{sunoModel}</b>)</span></div>
+            <div className="lh-chips">
+              {SUNO_MODELS.map((m) => (
+                <button key={m.id} className={`lh-chip ${sunoModel === m.id ? "on" : ""}`} onClick={() => setSunoModel(m.id)}>
+                  {m.label}{m.note ? ` · ${m.note}` : ""}
+                </button>
+              ))}
+            </div>
+            <div className="lh-h2" style={{ marginTop: 10 }}>🕰 Era & tempo</div>
+            <div className="lh-chips">
+              {SUNO_ERAS.map((e) => (
+                <button key={e.id} className={`lh-chip ${sEra === e.id ? "on" : ""}`} onClick={() => setSEra(sEra === e.id ? "" : e.id)}>{e.label}</button>
+              ))}
+              {SUNO_TEMPOS.map((t) => (
+                <button key={t.id} className={`lh-chip ${sTempo === t.id ? "on" : ""}`} onClick={() => setSTempo(sTempo === t.id ? "" : t.id)}>{t.label}</button>
+              ))}
+            </div>
+            <div className="lh-h2" style={{ marginTop: 10 }}>🎻 Instrumen pilihan <span className="lh-note">(boleh pilih banyak)</span></div>
+            <div className="lh-chips">
+              {SUNO_INSTRS.map((ins) => (
+                <button key={ins} className={`lh-chip ${sInstr.includes(ins) ? "on" : ""}`} onClick={() => setSInstr(sInstr.includes(ins) ? sInstr.filter((x) => x !== ins) : [...sInstr, ins])}>{ins}</button>
+              ))}
+            </div>
+            <p className="lh-note">🎼 Style akhir yang dikirim: <b>{composeFinalStyle().slice(0, 240)}</b></p>
+            <p className="lh-note">ℹ️ ±12 kredit Kie per generate · tulisan manualmu SELALU di urutan depan · gender vokal + lawan gender terlarang ikut tertanam (v10.2).</p>
             <button className="lh-btn" disabled={polling || busy === "song"} onClick={launchSong}>
               {busy === "song" ? "⏳ Mengirim ke dapur lagu..." : "🎵 Generate Lagu"}
             </button>
@@ -1441,7 +1510,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
 
           {song && (
             <div className="lh-card">
-              <div className="lh-h2">✅ Lagu jadi: {song.title || selTitle}</div>
+              <div className="lh-h2">✅ Lagu jadi: {song.title || selTitle}{songModelUsed ? ` · 🤖 Suno ${songModelUsed}` : ""}</div>
               {!!peaks?.length && (
                 <div className="lh-wave">{peaks.map((p, i) => <i key={i} style={{ height: `${Math.max(8, Math.round(p * 100))}%` }} />)}</div>
               )}
