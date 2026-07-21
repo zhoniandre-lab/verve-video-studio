@@ -17,8 +17,31 @@ ATURAN OUTPUT KERAS (tidak boleh dilanggar):
 - Jawab HANYA JSON murni satu objek. TANPA markdown, TANPA teks di luar JSON:
   {"reply":"jawaban singkat untuk pembuat","ops":[ ...perintah... ]}
 
-KAMUS PERINTAH — hanya ini yang boleh keluar:
-GRATIS (langsung dijalankan aplikasi, tanpa kredit):
+KAMUS PERINTAH — pilih SATU set sesuai KONTEKS.mode:
+* KONTEKS.mode == "studio"  → pakai SET STUDIO (video dari adegan gambar + lagu di timeline editor)
+* selain itu ("wizard")     → pakai SET WIZARD di bawah
+
+SET STUDIO (GRATIS, langsung jalan, bisa di-Undo kecuali diberi tanda):
+- {"op":"set_ratio","ratio":"16:9|9:16|1:1"}
+- {"op":"set_transition","transition":"zoom|fade|slide|blur|glitch|dissolve|none","dur":0.2..3}
+- {"op":"set_slide_dur","detik":0.5..30}      (durasi default tiap adegan)
+- {"op":"set_slide_time","slide":N,"detik":0.5..30}
+- {"op":"set_music_vol","vol":0..1.5}         (1 = 100%)
+- {"op":"set_voice_vol","vol":0..1.5}
+- {"op":"set_music_fade","fade_in":0..15,"fade_out":0..15}
+- {"op":"set_music_off","detik":0..300}
+- {"op":"set_muted","on":true}
+- {"op":"edit_caption","slide":N,"text":"teks karaoke baru adegan N"}
+- {"op":"move_slide","from":A,"to":B}
+- {"op":"delete_slide","slide":N}             (hanya bila pembuat meminta; masih bisa di-Undo)
+- {"op":"set_bg","mode":"cover|blur|color","color":"#hex"}
+- {"op":"set_filter","preset":"id dari KONTEKS.daftar_filter"}
+- {"op":"set_quality","sharp":true}
+BERAT TAPI GRATIS (aplikasi hanya menampilkan tombol Gas/Batal — kerja keras HP, BUKAN kredit):
+- {"op":"render_now"}  (hanya bila pembuat minta render/ekspor/download/jadikan video)
+Nomor adegan HARUS 1..KONTEKS.jumlah_adegan.
+
+SET WIZARD — GRATIS (langsung dijalankan aplikasi, tanpa kredit):
 - {"op":"set_title","title":"judul baru"}
 - {"op":"set_visual_style","style_visual":"gaya sinematik","color_grade":"#hex"}
 - {"op":"edit_scene_prompt","scene":N,"visual_en":"prompt Inggris pengganti untuk adegan N"}
@@ -84,6 +107,46 @@ function cleanOps(raw: unknown, nScenes: number): { ops: Op[]; dropped: string[]
   return { ops, dropped };
 }
 
+/** 🎬 v11.1: validator SET STUDIO — angka dijepit, nomor adegan wajib sah, perintah aneh dibuang transparan. */
+const TRANS = new Set(["zoom", "fade", "slide", "blur", "glitch", "dissolve", "none"]);
+const STUDIO_OPS = new Set([
+  "set_ratio", "set_transition", "set_slide_dur", "set_slide_time", "set_music_vol", "set_voice_vol",
+  "set_music_fade", "set_music_off", "set_muted", "edit_caption", "move_slide", "delete_slide",
+  "set_bg", "set_filter", "set_quality", "render_now",
+]);
+const num = (v: unknown, a: number, b: number): number | null => {
+  const n = Number(v);
+  return isFinite(n) ? Math.min(b, Math.max(a, n)) : null;
+};
+function cleanStudioOps(raw: unknown, nSlides: number): { ops: Op[]; dropped: string[] } {
+  const ops: Op[] = [];
+  const dropped: string[] = [];
+  if (!Array.isArray(raw)) return { ops, dropped };
+  const slideOk = (v: unknown) => { const n = Math.round(Number(v)); return Number.isInteger(n) && n >= 1 && n <= nSlides; };
+  for (const item of raw.slice(0, 8)) {
+    const o = (item || {}) as Op;
+    const name = String(o.op || "");
+    if (!STUDIO_OPS.has(name)) { dropped.push(`op studio tak dikenal: ${name}`); continue; }
+    const out: Op = { op: name };
+    if (name === "set_ratio") { if (!["16:9", "9:16", "1:1"].includes(String(o.ratio))) { dropped.push("rasio aneh"); continue; } out.ratio = String(o.ratio); }
+    if (name === "set_transition") { if (!TRANS.has(String(o.transition))) { dropped.push(`transisi aneh: ${o.transition}`); continue; } out.transition = String(o.transition); const d = num(o.dur, 0.2, 3); if (d !== null) out.dur = d; }
+    if (name === "set_slide_dur") { const d = num(o.detik, 0.5, 30); if (d === null) { dropped.push("durasi aneh"); continue; } out.detik = d; }
+    if (name === "set_slide_time") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } out.slide = Math.round(Number(o.slide)); const d = num(o.detik, 0.5, 30); if (d === null) { dropped.push("durasi aneh"); continue; } out.detik = d; }
+    if (name === "set_music_vol" || name === "set_voice_vol") { const v = num(o.vol, 0, 1.5); if (v === null) { dropped.push("volume aneh"); continue; } out.vol = v; }
+    if (name === "set_music_fade") { const fi = num(o.fade_in, 0, 15); const fo = num(o.fade_out, 0, 15); if (fi === null && fo === null) { dropped.push("fade tanpa nilai"); continue; } if (fi !== null) out.fade_in = fi; if (fo !== null) out.fade_out = fo; }
+    if (name === "set_music_off") { const d = num(o.detik, 0, 300); if (d === null) { dropped.push("offset aneh"); continue; } out.detik = d; }
+    if (name === "set_muted") { out.on = !!o.on; }
+    if (name === "edit_caption") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } out.slide = Math.round(Number(o.slide)); out.text = s(o.text, 120); }
+    if (name === "move_slide") { const f = Math.round(Number(o.from)), t = Math.round(Number(o.to)); if (!slideOk(f) || !slideOk(t)) { dropped.push("move_slide di luar jangkauan"); continue; } out.from = f; out.to = t; }
+    if (name === "delete_slide") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } if (nSlides <= 1) { dropped.push("menolak hapus adegan terakhir"); continue; } out.slide = Math.round(Number(o.slide)); }
+    if (name === "set_bg") { if (!["cover", "blur", "color"].includes(String(o.mode))) { dropped.push("mode latar aneh"); continue; } out.mode = String(o.mode); const c = s(o.color, 20); if (c) out.color = c; }
+    if (name === "set_filter") { const f = s(o.preset, 30); if (!f) { dropped.push("filter kosong"); continue; } out.preset = f; }
+    if (name === "set_quality") { out.sharp = !!o.sharp; }
+    ops.push(out);
+  }
+  return { ops, dropped };
+}
+
 export async function POST(req: Request) {
   try {
     const key = process.env.HCNSEC_API_KEY || "";
@@ -124,7 +187,9 @@ export async function POST(req: Request) {
         const parsed = safeParseJSON(content);
         if (!parsed || typeof parsed !== "object") throw new Error("jawaban bukan JSON");
         const reply = s(parsed.reply, 600) || "Siap bro.";
-        const { ops, dropped } = cleanOps(parsed.ops, nScenes);
+        const isStudio = String(ctx.mode || "") === "studio";
+        const nSlides = Array.isArray(ctx.durasi_tiap_adegan) ? ctx.durasi_tiap_adegan.length : (Number(ctx.jumlah_adegan) || 0);
+        const { ops, dropped } = isStudio ? cleanStudioOps(parsed.ops, nSlides) : cleanOps(parsed.ops, nScenes);
         return NextResponse.json({ reply, ops, dropped, model_used: models[i] });
       } catch (e) {
         errs.push(`${models[i]}: ${e instanceof Error ? e.message.slice(0, 120) : "?"}`);

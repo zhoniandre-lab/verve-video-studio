@@ -572,6 +572,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [slides, setSlides] = useState<Slide[]>([]);
   const [slideOptsById, setSlideOptsById] = useState<Record<string, SlideOpt>>({});
   const [selId, setSelId] = useState<string>("");
+  // 🎬 v11.1 SUTRADARA STUDIO — chat perintah → eksekusi langsung (pushHist = undo resmi)
+  const [dirOpen, setDirOpen] = useState(false);
+  const [dirLog, setDirLog] = useState<{ me: "me" | "ai" | "sys"; text: string }[]>([]);
+  const [dirInp, setDirInp] = useState("");
+  const [dirBusy, setDirBusy] = useState(false);
+  const [dirPending, setDirPending] = useState<{ op: string }[]>([]);
+  const dirEndRef = useRef<HTMLDivElement | null>(null);
   // teks yang sedang TERPILIH di layar (muncul bingkai) — digeser 1 jari & di-cubit 2 jari
   // format: "sid" = lapisan utama · "sid::tid" = lapisan tambahan (teks multi-lapis)
   const [selTextSid, setSelTextSidState] = useState<string>("");
@@ -1296,6 +1303,107 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     pushHist();
     setSlides(c => { const a = [...c]; const [x] = a.splice(from, 1); a.splice(to, 0, x); return a; });
   }
+  // =============== 🎬 v11.1 SUTRADARA STUDIO ===============
+  type StudioOp = { op: string } & Record<string, any>;
+  const dirPush = (me: "me" | "ai" | "sys", text: string) => setDirLog((l) => [...l.slice(-40), { me, text }]);
+  useEffect(() => {
+    dirEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [dirLog, dirBusy, dirOpen]);
+
+  function applyStudioOps(ops: StudioOp[]) {
+    const heavy = ops.filter((o) => o.op === "render_now");
+    const free = ops.filter((o) => o.op !== "render_now");
+    if (heavy.length) {
+      setDirPending(heavy.map((o) => ({ op: o.op })));
+      dirPush("sys", "🔥 Render itu kerja berat di HP (CPU sendiri, BUKAN kredit) — ketuk Gas di bawah kalau yakin. Selesai render → tombol ⬇ Download aktif.");
+    }
+    if (!free.length) return;
+    pushHist(); // ↩ menumpang undo RESMI Studio — bukan sistem paralel
+    const done: string[] = [];
+    const clamp = (v: any, a: number, b: number, d: number) => { const n = Number(v); return isFinite(n) ? Math.min(b, Math.max(a, n)) : d; };
+    for (const o of free) {
+      const i1 = Math.round(Number(o.slide)) - 1;
+      const hasSlide = i1 >= 0 && i1 < slides.length;
+      const sid = hasSlide ? slides[i1].id : "";
+      switch (o.op) {
+        case "set_ratio": if (["16:9", "9:16", "1:1"].includes(String(o.ratio))) { setRatio(o.ratio); done.push(`rasio → ${o.ratio}`); } break;
+        case "set_transition": setTransition(String(o.transition)); if (o.dur !== undefined) setTransitionDur(clamp(o.dur, 0.2, 3, 0.6)); done.push(`transisi → ${o.transition}`); break;
+        case "set_slide_dur": setSlideDuration(clamp(o.detik, 0.5, 30, slideDuration)); done.push(`durasi tiap adegan → ${clamp(o.detik, 0.5, 30, slideDuration)} dtk`); break;
+        case "set_slide_time": if (hasSlide) { setOpt(sid, { dur: clamp(o.detik, 0.5, 30, slideDuration) } as any); done.push(`adegan ${o.slide} → ${clamp(o.detik, 0.5, 30, slideDuration)} dtk`); } break;
+        case "set_music_vol": { const v = clamp(o.vol, 0, 1.5, musicVol); setMusicVol(v); done.push(`volume musik → ${Math.round(v * 100)}%`); break; }
+        case "set_voice_vol": { const v = clamp(o.vol, 0, 1.5, voiceVol); setVoiceVol(v); done.push(`volume suara → ${Math.round(v * 100)}%`); break; }
+        case "set_music_fade": if (o.fade_in !== undefined) setMusicFadeIn(clamp(o.fade_in, 0, 15, musicFadeIn)); if (o.fade_out !== undefined) setMusicFadeOut(clamp(o.fade_out, 0, 15, musicFadeOut)); done.push("fade musik disetel"); break;
+        case "set_music_off": setMusicOff(clamp(o.detik, 0, 300, musicOff)); done.push(`musik mulai di detik ${clamp(o.detik, 0, 300, musicOff)}`); break;
+        case "set_muted": setAudMuted(!!o.on); done.push(o.on ? "audio asli dimute" : "audio asli dibunyikan"); break;
+        case "edit_caption": if (hasSlide && typeof o.text === "string") {
+          const cur = (slideOptsById[sid]?.texts || []) as any[];
+          const nt = cur.length
+            ? cur.map((t, k) => (k === 0 ? { ...t, txt: String(o.text).slice(0, 120) } : t))
+            : [{ id: "t" + Math.random().toString(36).slice(2, 9), txt: String(o.text).slice(0, 120), font: "sistem", size: 0.062, color: "#ffffff", bold: true, italic: false, shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5, bg: true, bgColor: "rgba(0,0,0,0.45)", y: 0.84, align: "center", anim: "none" } as any];
+          setOpt(sid, { texts: nt } as any);
+          done.push(`teks adegan ${o.slide} diubah`);
+        } break;
+        case "move_slide": {
+          const f = Math.round(Number(o.from)) - 1, t = Math.round(Number(o.to)) - 1;
+          if (f >= 0 && f < slides.length && t >= 0 && t < slides.length && f !== t) { moveSlide(f, t); done.push(`adegan ${f + 1} → posisi ${t + 1}`); }
+          break;
+        }
+        case "delete_slide": if (hasSlide && slides.length > 1) { removeSlideAt(i1); done.push(`adegan ${o.slide} dihapus`); } break;
+        case "set_bg": if (["cover", "blur", "color"].includes(String(o.mode))) { setBgMode(o.mode); if (o.color) setBgColor(String(o.color).slice(0, 20)); done.push(`latar → ${o.mode}`); } break;
+        case "set_filter": { const f = String(o.preset || ""); if ((FILTERS as any[]).some((x) => x.id === f)) { setFilterPreset(f); done.push(`filter → ${f}`); } break; }
+        case "set_quality": setQualitySharp(!!o.sharp); done.push(o.sharp ? "kualitas render: tajam" : "kualitas render: standar"); break;
+        default: break;
+      }
+    }
+    if (done.length) dirPush("sys", "✏️ Langsung kujalankan: " + done.join(" · ") + " — salah? pakai ↩ Undo di toolbar.");
+  }
+
+  async function sendDirectorStudio(text: string) {
+    const msg = text.trim();
+    if (!msg || dirBusy) return;
+    dirPush("me", msg);
+    setDirBusy(true);
+    const ac = new AbortController();
+    const wd = setTimeout(() => ac.abort(), 45000); // keluarga anti-beku
+    try {
+      const ctx = {
+        mode: "studio",
+        jumlah_adegan: slides.length,
+        rasio: ratio,
+        transisi: { id: transition, dur: transitionDur },
+        durasi_default_adegan: slideDuration,
+        durasi_tiap_adegan: slides.map((s, i) => ({ n: i + 1, dur: (slideOptsById[s.id] as any)?.dur ?? slideDuration, ada_teks: !!((slideOptsById[s.id] as any)?.texts || []).length })),
+        musik: { ada: !!musicUrl, nama: musicName, vol: musicVol, off: musicOff, fade_in: musicFadeIn, fade_out: musicFadeOut, muted: audMuted },
+        filter: filterPreset,
+        daftar_filter: (FILTERS as any[]).map((f) => f.id).slice(0, 24),
+        kualitas_tajam: qualitySharp,
+        bg: { mode: bgMode, color: bgColor },
+        render_siap_download: !!videoUrl,
+      };
+      const r = await fetch("/api/hcnsec/director", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
+        body: JSON.stringify({ message: msg, ctx, history: dirLog.slice(-6) }),
+      }).finally(() => clearTimeout(wd));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (j.reply) dirPush("ai", String(j.reply));
+      if (Array.isArray(j.ops)) applyStudioOps(j.ops);
+      if (Array.isArray(j.dropped) && j.dropped.length) dirPush("sys", "⚠️ Kusaring perintah aneh: " + j.dropped.slice(0, 2).join(" · "));
+    } catch (e) {
+      dirPush("sys", "❌ Sutradara gagal menjawab: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setDirBusy(false);
+    }
+  }
+
+  function gasStudioOp(o: { op: string }) {
+    setDirPending((p) => p.filter((x) => x !== o));
+    if (o.op === "render_now") {
+      dirPush("sys", "🎬 Render dimulai — CPU HP yang bekerja. Selesai → tombol ⬇ Download menyala.");
+      void doRender();
+    }
+  }
+
   function trimSlide(id: string, targetEffDur: number) {
     const sp = slideOptsById[id]?.speed || 1;
     setOpt(id, { dur: clampN(targetEffDur, 0.4, 600) * sp }); // sampai 10 menit — ngikutin lagu panjang
@@ -2544,6 +2652,57 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
         )}
       </div>
+
+      {/* 🎬 v11.1 SUTRADARA STUDIO — tombol melayang + panel chat */}
+      <button
+        onClick={() => setDirOpen((v) => !v)}
+        style={{ position: "fixed", right: 12, bottom: 96, zIndex: 75, width: 48, height: 48, borderRadius: "50%", border: "1px solid #14b8a688", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", fontSize: 20, fontWeight: 900, boxShadow: "0 6px 18px #0009", cursor: "pointer" }}
+        title="Sutradara Chat — perintah AI, langsung dieksekusi"
+      >🎬</button>
+      {dirOpen && (
+        <div style={{ position: "fixed", right: 10, bottom: 152, zIndex: 75, width: "min(340px, 92vw)", background: "#10141b", border: "1px solid #ffffff1f", borderRadius: 14, padding: 10, boxShadow: "0 10px 30px #000c", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+            <b style={{ fontSize: 14 }}>🎬 Sutradara</b>
+            <span style={{ fontSize: 10.5, color: "#8b93a3" }}>perintah → langsung dieksekusi · ↩ Undo toolbar</span>
+          </div>
+          <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#0b0e13", borderRadius: 10, border: "1px solid #ffffff12" }}>
+            {!dirLog.length && (
+              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "adegan 3 pindah ke awal" · "musiknya kecilin 40%" · "teks adegan 2: aku pulang membawa luka" · "transisi fade 0.8 detik" · "render sekarang".</div>
+            )}
+            {dirLog.map((m, i) => (
+              m.me === "me" ? (
+                <div key={i} style={{ alignSelf: "flex-end", maxWidth: "86%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", borderRadius: "10px 10px 3px 10px", padding: "6px 10px", fontSize: 13, fontWeight: 600 }}>{m.text}</div>
+              ) : m.me === "ai" ? (
+                <div key={i} style={{ alignSelf: "flex-start", maxWidth: "92%", background: "#161b24", color: "#e8edf5", borderRadius: "10px 10px 10px 3px", padding: "6px 10px", fontSize: 13, border: "1px solid #ffffff12", whiteSpace: "pre-wrap" }}>{m.text}</div>
+              ) : (
+                <div key={i} style={{ alignSelf: "center", maxWidth: "96%", color: "#98a2b3", fontSize: 11, textAlign: "center" }}>{m.text}</div>
+              )
+            ))}
+            {dirBusy && <div style={{ color: "#8b93a3", fontSize: 12 }}>🎬 mikir…</div>}
+            <div ref={dirEndRef} />
+          </div>
+          {dirPending.map((o, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, background: "#1a1207", border: "1px solid #f59e0b44", borderRadius: 8, padding: "6px 8px", fontSize: 12 }}>
+              <span>🔥 Render video sekarang (berat di HP)</span>
+              <span style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => gasStudioOp(o)} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 6, padding: "4px 10px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Gas</button>
+                <button onClick={() => setDirPending((p) => p.filter((x) => x !== o))} style={{ background: "none", color: "#cbd5e1", border: "1px solid #ffffff2a", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Batal</button>
+              </span>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              value={dirInp}
+              onChange={(e) => setDirInp(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); } }}
+              placeholder="perintah… (Enter)"
+              style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+            />
+            <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
+          </div>
+          {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}
+        </div>
+      )}
 
       {/* ============ SHEETS & MODALS ============ */}
       {tool && tool !== "teksedit" && (
