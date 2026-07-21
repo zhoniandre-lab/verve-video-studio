@@ -1453,14 +1453,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 </button>
               ))}
             </div>
-            <div className="lh-h2" style={{ marginTop: 10 }}>🤖 Versi Suno <span className="lh-note">(yang dipakai: <b>{sunoModel}</b>)</span></div>
-            <div className="lh-chips">
+            <div className="lh-h2" style={{ marginTop: 10 }}>🤖 Versi Suno</div>
+            <select className="lh-sel" value={sunoModel} onChange={(e) => setSunoModel(e.target.value)}>
               {SUNO_MODELS.map((m) => (
-                <button key={m.id} className={`lh-chip ${sunoModel === m.id ? "on" : ""}`} onClick={() => setSunoModel(m.id)}>
-                  {m.label}{m.note ? ` · ${m.note}` : ""}
-                </button>
+                <option key={m.id} value={m.id}>Suno {m.label}{m.note ? ` — ${m.note}` : ""}</option>
               ))}
-            </div>
+            </select>
+            <p className="lh-note">Yang dipakai: <b>{sunoModel}</b> — dari v3.5 klasik sampai v5.5 🆕 terbaru.</p>
             <div className="lh-h2" style={{ marginTop: 10 }}>🕰 Era & tempo</div>
             <div className="lh-chips">
               {SUNO_ERAS.map((e) => (

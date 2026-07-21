@@ -19,7 +19,7 @@ type Provider = "kie" | "apiframe" | "sunor" | "aimusic";
 const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   kie:      { base: "https://api.kie.ai/api/v1", label: "Kie.ai" },
   apiframe: { base: "https://apiframe.ai/api",   label: "apiframe.ai" },
-  sunor:    { base: "https://api.sunor.cc/v1",   label: "Sunor.cc" },
+  sunor:    { base: "https://sunor.cc",            label: "Sunor.cc" }, // v10.5: subdomain api.* MATI di DNS — endpoint resmi ada di domain utama
   aimusic:  { base: "https://api.aimusic.so",    label: "aimusic.so (free)" },
 };
 
@@ -28,7 +28,7 @@ function detectProvider(rawKey: string, hdrProvider?: string): Provider {
   const k = rawKey.toLowerCase().trim();
   if (!k) return "aimusic";
   if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
-  if (k.startsWith("snr_") || k.startsWith("sunor_")) return "sunor";
+  if (k.startsWith("snr_") || k.startsWith("sunor_") || k.startsWith("sk_live")) return "sunor"; // v10.5: kunci asli Sunor = sk_live_…
   if (k.startsWith("afk_") || k.startsWith("af_")) return "apiframe";
   // Hex 32+ tanpa prefix — asumsikan Kie.ai (Kie ngasih key hex murni).
   if (/^[a-f0-9]{24,}$/i.test(k)) return "kie";
@@ -141,7 +141,15 @@ function buildBody(payload: any, provider: Provider): any {
     return body;
   }
 
-  // apiframe / sunor / aimusic — suno-compatible
+  // ☀️ v10.5 SUNOR RESMI — POST /api/v1/task {model:"suno", task_type:"music", input:{…}} (dok sunor.cc/suno-api)
+  if (provider === "sunor") {
+    const input: any = { make_instrumental: !!instrumental, tags: styleStr.slice(0, 480) };
+    if (isCustom) { input.prompt = finalLyrics.slice(0, 5000); input.tags = styleStr.slice(0, 480); } // Custom Mode: lirik [Verse]/[Chorus] + tags
+    else input.gpt_description_prompt = finalPrompt.slice(0, 500); // mode deskripsi bebas
+    return { model: "suno", task_type: "music", input };
+  }
+
+  // apiframe / aimusic — suno-compatible
   const body: any = {
     prompt: isCustom ? finalLyrics : finalPrompt,
     title: finalTitle,
@@ -177,6 +185,7 @@ function buildHeaders(key: string): Record<string,string> {
 
 function getEndpoints(provider: Provider, base: string, forStatus?: string): string[] {
   if (forStatus) {
+    if (provider === "sunor") return [`${base}/api/v1/task/${forStatus}`]; // v10.5: GET task/{id}
     if (provider === "kie") {
       return [
         `${base}/generate/record-info?taskId=${forStatus}`,
@@ -195,6 +204,7 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
   if (provider === "kie") {
     return [`${base}/generate`];
   }
+  if (provider === "sunor") return [`${base}/api/v1/task`]; // v10.5: POST task — satu-satunya jalur resmi
   return [
     `${base}/v1/generate`,
     `${base}/v1/music/generate`,
@@ -233,6 +243,29 @@ function normalize(d: any, provider: Provider): any {
       return { status: "error", error: data.errorMessage || st };
     }
     return { id: data.taskId, status: "pending" };
+  }
+
+  // ☀️ v10.5 Sunor: buat → {data:{task_id}} · poll → {data:{status:"success"|"failure"|"running", output:{…}}}
+  if (provider === "sunor") {
+    const d0 = d.data || d || {};
+    if (d0.task_id && !d0.status) return { id: d0.task_id, status: "pending" };
+    const st = String(d0.status || d0.state || "pending").toLowerCase();
+    if (st === "success" || st === "completed" || st === "succeeded") {
+      const out = d0.output ?? d0.result ?? {};
+      const first: any = Array.isArray(out) ? (out[0] || {}) : (out.songs?.[0] || out.clips?.[0] || out || {});
+      return {
+        id: d0.task_id || first.id || "",
+        status: "completed",
+        audio_url: first.audio_url || first.audioUrl || first.url || first.stream_url || "",
+        title: first.title || d0.title || "",
+        image_url: first.image_url || first.imageUrl || first.cover_url || "",
+        duration: first.duration,
+      };
+    }
+    if (st === "failure" || st === "error" || st === "failed" || st === "timeout") {
+      return { status: "error", error: d0.error || d0.message || d0.fail_reason || `Sunor: ${st}` };
+    }
+    return { id: d0.task_id, status: "pending" };
   }
 
   // Generic suno-compatible
@@ -319,7 +352,7 @@ export async function POST(req: Request) {
         }
         lastErr = `Empty response from ${url}: ${txt.slice(0,200)}`;
       } catch(e:any){
-        lastErr = `${PROVIDERS[provider].label} network: ${e?.message || e}`;
+        lastErr = `${PROVIDERS[provider].label} tidak bisa dihubungi dari server (koneksi gagal) — coba lagi, atau ganti provider lain.`; // v10.5: bahasa manusia, bukan bahasa mesin
         // retry endpoint berikutnya kalau abort/network
       }
     }
