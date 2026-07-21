@@ -1532,11 +1532,16 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   // v8.1: ketajaman sekarang DI-BAKE ke tiap gambar SEKALI di prepareImages (sharpenCanvas).
   // Filter SVG url(#vsharp) lama DIHAPUS — per-frame convolve itu SANGAT BERAT (ramea mengeluh
   // render siput) dan di beberapa browser HP filter url() menggagalkan drawImage → VIDEO HITAM.
+  // v8.8: STOPWATCH tiap fase — biar ketahuan di mana detik terbuang (tampil di layar ekspor)
+  const __tp = () => performance.now();
+  const prepT: Record<string, number> = { gambar: 0, audio: 0, spektrum: 0 };
   const canvas = document.createElement("canvas");
   canvas.width = rW; canvas.height = rH;
   const ctx = canvas.getContext("2d",{alpha:false,desynchronized:true})!;
   onStage?.("Menyiapkan aset...");
+  let __m = __tp();
   const imgs = await prepareImages(images, rW, rH, onStage, !!opts.sharpen);
+  prepT.gambar = __tp() - __m;
   // v6: preload gambar stiker (overlay foto) supaya tergambar di export
   try {
     const stickerUrls: string[] = [];
@@ -1550,7 +1555,9 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   }
 
   let audio: {data:Float32Array;sampleRate:number;duration:number}|null = null;
+  __m = __tp();
   if (audioUrl) audio = await decodeAudio(audioUrl, onStage);
+  prepT.audio = __tp() - __m;
 
   const slideDur = Math.max(1, slideDuration);
   const transDur = clamp(opts.transitionDuration??(mobileOptimized?0.5:0.8),0,slideDur*0.6);
@@ -1586,8 +1593,11 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
 
   // ===== PRE-COMPUTE SPECTRUM TABLE (boost besar) =====
   onStage2 = onStage || null;
+  __m = __tp();
   const spec = precomputeSpectrum(audio?.data||null, audio?.sampleRate||44100, totalFrames, fps, prof.bars);
+  prepT.spektrum = __tp() - __m;
   onStage2 = null;
+  onStage?.(`⏱ Siap: gambar ${(prepT.gambar/1000).toFixed(1)}d · audio ${(prepT.audio/1000).toFixed(1)}d · spektrum ${(prepT.spektrum/1000).toFixed(1)}d`);
 
   // Build captions (distribusi sepanjang durasi audio total — LEBIH AKURAT)
   let finalCaptions: CaptionWord[] = [];
@@ -1770,6 +1780,10 @@ async function renderWebCodecs(b:any){
   const keyframeEvery = fps*2;
   const bassRef = {level:0, beat:false};
   const tStart = performance.now();
+  // v8.8: stopwatch fase (lukis / capture / antre-encoder) + state dup-skip VFR
+  let msPaint = 0, msWait = 0, msCap = 0, skippedDup = 0, encFrames = 0;
+  let pendingVf: { vf: any; kf: boolean; idx: number } | null = null;
+  let lastFrameKey = "";
 
   /* ===== v8.7 CACHE BINGKAI: 90–99% frame slideshow IDENTIK.
      Lapisan A (dunia klip: gambar+kenburns+teks karaoke) dicache di canvas sendiri —
@@ -1848,7 +1862,9 @@ async function renderWebCodecs(b:any){
       clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt,
     };
 
+    let frameIdKey = "";
     if (fastOk) {
+      const __p0 = performance.now();
       let kA = slideIdx + "." + Math.round(Math.min(1, Math.max(0, slideT)) * 96) + "." + (beat ? 1 : 0);
       for (let di = 0; di < tdesc.length; di++) {
         const d = tdesc[di];
@@ -1865,28 +1881,47 @@ async function renderWebCodecs(b:any){
       if (kB !== keyB) { keyB = kB; bctx.clearRect(0, 0, canvas.width, canvas.height); drawFrame({ ...st, _canvas: cvB, only: "B" }); }
       mctx.drawImage(cvB, 0, 0);
       drawFrame({ ...st, _canvas: canvas, only: "OV2" });
+      msPaint += performance.now() - __p0;
       fastFrames++;
+      // identitas piksel frame ini — kunci dup-skip
+      let ok2 = Math.round(bass * 40) + "";
+      for (let bi = 0; bi < 10 && bars.length > 0; bi++) ok2 += "." + Math.round((bars[Math.floor(bi * bars.length / 10)] || 0) * 20);
+      frameIdKey = kA + "#" + kB + "#" + ok2 + "#" + Math.round(canvas.width * (t / totalDur));
     } else {
+      const __p0 = performance.now();
       paintFrames++;
       drawFrame({ ...st, _canvas: canvas, only: "all" });
+      msPaint += performance.now() - __p0;
     }
 
-    const vf = new (window as any).VideoFrame(canvas,{timestamp:Math.floor(t*1e6),duration:Math.floor(1e6/fps)});
-    videoEncoder.encode(vf,{keyFrame:f%keyframeEvery===0});
-    vf.close();
+    /* v8.8 DUP-SKIP (VFR jujur): kalau piksel frame ini IDENTIK dengan frame sebelumnya,
+       JANGAN kirim ke encoder — muxer otomatis memperpanjang durasi frame sebelumnya.
+       Gerakan di layar hasil tetap IDENTIK; kerja encoder di bagian statis ≈ NOL. */
+    const skippable = fastOk && !b.spectrumSticker && pendingVf && frameIdKey === lastFrameKey;
+    if (skippable) { skippedDup++; }
+    else {
+      const __c0 = performance.now();
+      if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
+      const nvf = new (window as any).VideoFrame(canvas, { timestamp: Math.floor(t * 1e6), duration: Math.floor(1e6 / fps) });
+      msCap += performance.now() - __c0;
+      pendingVf = { vf: nvf, kf: f % keyframeEvery === 0, idx: f };
+      lastFrameKey = frameIdKey;
+    }
 
-    // v8.1: backpressure NYATA pakai antrean encoder asli (encodeQueueSize) — mencegah RAM
-    // bengkak & jank di HP; yield rutin ke UI supaya progress jalan & layar tidak beku.
-    while ((videoEncoder as any).encodeQueueSize > 8) {
+    // backpressure (diukur): antrean dilonggarkan 8→24 agar encoder sibuk terus selagi kita melukis
+    const __w0 = performance.now();
+    while ((videoEncoder as any).encodeQueueSize > 24) {
       await new Promise(r=>setTimeout(r,1));
     }
+    msWait += performance.now() - __w0;
     const yieldEvery = Math.max(1, prof.batchSize*2);
     if (f%yieldEvery===0){
       onProgress?.(f/totalFrames);
       await new Promise(r=>setTimeout(r,0));
     }
   }
-  try { console.log(`[v8.7 cache-bingkai] ${fastFrames}/${totalFrames} frame kilat · ${paintFrames}x lukis ulang`); } catch {}
+  if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
+  try { console.log(`[v8.8 telemetri] lukis ${(msPaint/1000).toFixed(1)}d · capture ${(msCap/1000).toFixed(1)}d · antre-encoder ${(msWait/1000).toFixed(1)}d · unik ${encFrames}/${totalFrames} · dup-skip ${skippedDup}`); } catch {}
   await videoEncoder.flush(); videoEncoder.close();
   // v8.1 WATCHDOG: kalau encoder menolak SEMUA frame, JANGAN kirim file busuk ke user
   if (!vidChunks) {
@@ -1895,6 +1930,8 @@ async function renderWebCodecs(b:any){
   if (audioEncoder && audioEncDone){ await audioEncDone; audioEncoder.close(); }
   muxer.finalize();
   onProgress?.(1); onStage?.("✅ Selesai!");
+  const __fd = (ms:number)=> (ms/1000).toFixed(1)+"d";
+  onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup}`);
   return new Blob([muxer.target.buffer],{type:"video/mp4"});
 }
 
