@@ -2840,6 +2840,7 @@ function TimelineV6(p: any) {
     d.rowTo = to; d.rowBad = bad;
     const cur = rowDropRef.current;
     if (!cur || cur.r !== to || cur.bad !== bad) { const nv = { r: to, bad }; rowDropRef.current = nv; setRowDrop(nv); }
+    force(v => v + 1); // v8.9: chip visual IKUT jari naik-turun — terasa ringan di tangan
     // jari mendekati tepi atas/bawah → daftar jalur ikut menggulir (tak perlu angkat jari)
     const el2 = scrollRef.current;
     if (el2) { const r2 = el2.getBoundingClientRect(); if (e.clientY > r2.bottom - 30) el2.scrollTop += 15; else if (e.clientY < r2.top + 30) el2.scrollTop -= 15; }
@@ -2884,7 +2885,7 @@ function TimelineV6(p: any) {
   }
   const laneRowRef = (lid: string) => (el: HTMLElement | null) => { if (el) laneRowRefs.current.set(lid, el); else laneRowRefs.current.delete(lid); };
   function dragUpdate(e: React.PointerEvent, d: any) {
-    d.lastX = e.clientX; updEdge(e.clientX);
+    d.lastX = e.clientX; (d as any).lastY = e.clientY; updEdge(e.clientX);
     if (!d.armed) return;
     if (maybePromoteLane(e, d)) return; // vertikal / tahan lama → angkat jalur
     if (d.kind === "trim") applyTrim(d, e.clientX);
@@ -2909,7 +2910,7 @@ function TimelineV6(p: any) {
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
-    armDrag(d, target, e.pointerId, 300); // tekan-tahan 0,3d → klip "terangkat" & bisa diseret
+    armDrag(d, target, e.pointerId, 220); // v8.9: tekan-tahan 0,22d → klip "terangkat" & bisa diseret
   }
   function onClipMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
@@ -2946,13 +2947,19 @@ function TimelineV6(p: any) {
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
-    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
+    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
   }
   function onAudMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
     if (!d || d.kind !== "aud") return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
+      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
+        // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
+        d.armed = true; clearTimeout(armTRef.current);
+        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+      }
       return;
     }
     dragUpdate(e, d);
@@ -2974,13 +2981,19 @@ function TimelineV6(p: any) {
     const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, key: sid + "|" + (tid || ""), st0, dur0 };
     dragRef.current = d;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
-    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
   }
   function onTxtMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
     if (!d || (d.kind !== "txt" && d.kind !== "txtd")) return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
+      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
+        // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
+        d.armed = true; clearTimeout(armTRef.current);
+        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+      }
       return;
     }
     dragUpdate(e, d);
@@ -3002,13 +3015,19 @@ function TimelineV6(p: any) {
     const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, key: stid, st0, dur0 };
     dragRef.current = d;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
-    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 280);
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
   }
   function onStkMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
     if (!d || (d.kind !== "stk" && d.kind !== "stkd")) return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
+      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
+        // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
+        d.armed = true; clearTimeout(armTRef.current);
+        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+      }
       return;
     }
     dragUpdate(e, d);
@@ -3209,12 +3228,13 @@ function TimelineV6(p: any) {
                                   const rd = it.payload;
                                   const dd3 = dragRef.current as any;
                                   const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === rd.key;
+                                  const aDragY = lifting && typeof dd3.lastY === "number" && dd3.rowTo != null ? Math.round(dd3.lastY - (dd3.startY || 0)) : 0;
                                   const wpx = Math.max(90, (rd.dur || 4) * PXS0);
                                   return (
                                     <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — tahan&geser: ⇄ maju/mundur · ⇅ pindah jalur (BEBAS!)"}
                                       onPointerDown={(e) => onAudDown(e, rd.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
                                       onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
-                                      style={{ position: "absolute", left: rd.off * PXS0, top: 3, width: wpx, height: 40, background: rd.grad, color: rd.col, overflow: "hidden" }}>
+                                      style={{ position: "absolute", left: rd.off * PXS0, top: 3, width: wpx, height: 40, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                       <i style={{ fontStyle: "normal" }}>{rd.icon}</i>
                                       <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
                                         (() => {
@@ -3244,11 +3264,12 @@ function TimelineV6(p: any) {
                                   const enc = tid ? `${s.id}::${tid}` : s.id;
                                   const isSel = p.selTextSid === enc;
                                   const isLyr = /^lyr_/.test(t?.id || tid || "");
+                                  const tDragY = lifting && typeof dd4.lastY === "number" && dd4.rowTo != null ? Math.round(dd4.lastY - (dd4.startY || 0)) : 0;
                                   return (
                                     <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur BEBAS (asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh kolam"
                                       onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
                                       onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
-                                      style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0 }}>
+                                      style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0, transform: lifting ? `translateY(${tDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                       {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
                                       <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                       <span className="txtdur" title="Tarik untuk ubah durasi teks"
@@ -3261,11 +3282,12 @@ function TimelineV6(p: any) {
                                 const dd5 = dragRef.current as any;
                                 const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
                                 const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
+                                const sDragY = lifting && typeof dd5.lastY === "number" && dd5.rowTo != null ? Math.round(dd5.lastY - (dd5.startY || 0)) : 0;
                                 return (
                                   <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur BEBAS (asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh kolam"
                                     onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
                                     onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
-                                    style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0 }}>
+                                    style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                     {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
                                     <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                     <span className="txtdur" title="Tarik untuk ubah durasi stiker"
