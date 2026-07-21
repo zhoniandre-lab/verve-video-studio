@@ -255,6 +255,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const pvAudioRef = useRef<HTMLAudioElement | null>(null);
   const [pvPlaying, setPvPlaying] = useState(false);
   const [pvT, setPvT] = useState(0);
+  const [pvErr, setPvErr] = useState("");   // 🛡 v11.2: kegagalan audio TIDAK BOLEH diam-diam lagi
+  const [pvProxy, setPvProxy] = useState(false); // 🛡 v11.2: percobaan kedua lewat jalur proxy
   const launchKeyRef = useRef("");
   const [toast, setToast] = useState("");
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
@@ -396,6 +398,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   /* ---- garis waktu gabungan (pembagian rata mengikuti durasi lagu) ---- */
   const doneScenes = useMemo(() => (board ? board.scenes.filter((s) => s.status === "done" && !!s.url) : []), [board]);
   const totalDur = song?.duration && song.duration > 0 ? Math.round(song.duration) : Math.max(1, doneScenes.length) * 6;
+  // 🛡 v11.2: sumber audio pratinjau — langsung dulu, otomatis pindah ke proxy kalau link langsung gagal
+  const pvSrc = song ? (pvProxy ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(song.url)}` : song.url) : "";
   const perScene = totalDur / Math.max(1, doneScenes.length);
   const pvIdx = Math.max(0, Math.min(doneScenes.length - 1, Math.floor(pvT / perScene)));
 
@@ -1045,17 +1049,41 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   }
 
   /* ================= GABUNG OTOMATIS → STUDIO EDIT ================= */
+  function pvFailMsg(fromProxy: boolean): string {
+    // Pesan jujur (bukan bahasa mesin): link hasil generate penyedia umumnya hanya awet beberapa jam.
+    return `${fromProxy ? "Lagu tetap tidak bisa dimuat walau lewat jalur aman" : "Lagu tidak bisa dimuat"}. Kemungkinan besar LINK LAGU dari penyedia sudah kedaluwarsa (tautan hasil generate hanya awet beberapa jam). Solusi jujur: generate lagu baru di langkah Lagu — adeganmu tidak hilang.`;
+  }
+
   function togglePreview() {
     const a = pvAudioRef.current;
     if (!a) return;
     if (pvPlaying) {
       a.pause();
       setPvPlaying(false);
-    } else {
-      setPvT(a.currentTime || 0);
-      void a.play().then(() => setPvPlaying(true)).catch(() => setPvPlaying(false));
+      return;
     }
+    if (!song?.url) { setPvErr("Link lagu kosong di draf — lagu perlu digenerate ulang (adeganmu aman)."); return; }
+    setPvErr("");
+    setPvT(a.currentTime || 0);
+    void a.play()
+      .then(() => setPvPlaying(true))
+      .catch(() => {
+        setPvPlaying(false);
+        // 🛡 v11.2: jangan langsung menyerah & jangan diam — coba SEKALI lewat jalur proxy otomatis
+        if (!pvProxy) { setPvProxy(true); return; } // efek di bawah yang mencoba memutar ulang
+        setPvErr(pvFailMsg(true));
+      });
   }
+
+  /* 🛡 v11.2: begitu jalur proxy diaktifkan, muat & coba putar otomatis — hasilnya dilaporkan jujur */
+  useEffect(() => {
+    if (!pvProxy || !pvAudioRef.current) return;
+    const a = pvAudioRef.current;
+    a.load();
+    void a.play()
+      .then(() => { setPvErr(""); setPvPlaying(true); })
+      .catch((e) => { setPvPlaying(false); setPvErr(pvFailMsg(true) + ` (${String((e as Error)?.name || e || "error")})`); });
+  }, [pvProxy]); // eslint-disable-line react-hooks/exhaustive-deps
   function seekPreview(i: number) {
     const t = i * perScene + 0.01;
     const a = pvAudioRef.current;
@@ -1733,6 +1761,9 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               )}
             </div>
             <div className="lh-pv-bar"><i style={{ width: `${Math.min(100, (pvT / Math.max(1, totalDur)) * 100)}%` }} /></div>
+            {!!pvErr && (
+              <p className="lh-note" style={{ color: "#fca5a5", marginTop: 8 }}>🔇 {pvErr} <b>Peringatan:</b> kalau dipaksa Masuk Studio, hasil render kemungkinan TANPA SUARA.</p>
+            )}
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
               <button className="lh-btn" style={{ flex: 1, marginTop: 0 }} onClick={togglePreview}>{pvPlaying ? "⏸ Jeda" : "▶ Putar"}</button>
               <span className="lh-note" style={{ margin: 0 }}>{fmtClock(Math.floor(pvT))} / {fmtClock(totalDur)}</span>
@@ -1742,7 +1773,18 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <button key={i} className={i === pvIdx ? "on" : ""} onClick={() => seekPreview(i)}>{i + 1}</button>
               ))}
             </div>
-            <audio ref={pvAudioRef} src={song.url} preload="auto" onEnded={() => setPvPlaying(false)} />
+            <audio
+              ref={pvAudioRef}
+              src={pvSrc}
+              preload="auto"
+              onEnded={() => setPvPlaying(false)}
+              onError={() => {
+                // 🛡 v11.2: kegagalan terdeteksi TANPA menunggu tombol Putar ditekan
+                setPvPlaying(false);
+                if (!pvProxy && song?.url) setPvProxy(true); // kesempatan kedua lewat proxy
+                else setPvErr(song?.url ? pvFailMsg(true) : "Link lagu kosong di draf — lagu perlu digenerate ulang (adeganmu aman).");
+              }}
+            />
           </div>
 
           {/* 🎬 v11.0 SUTRADARA CHAT — setelah video jadi, AI yang bekerja */}
