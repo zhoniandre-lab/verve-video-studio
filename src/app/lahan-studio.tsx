@@ -335,6 +335,21 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     return () => clearInterval(it);
   }, [pvPlaying]);
 
+  /* 🛡 v10.7 BANGUN SIGAP: Android menidurkan semua timer saat layar mati / tab di background —
+     jangan andalkan antrean tick. Begitu aplikasi tampil lagi & masih memantau → restart rantai
+     (cek pertama jalan seketika). Kalau user sengaja "Batal pantau" (polling=false), kita diam hormat. */
+  useEffect(() => {
+    const awake = () => {
+      if (document.visibilityState === "visible" && polling && task && !song) startPolling(task, 1);
+    };
+    document.addEventListener("visibilitychange", awake);
+    window.addEventListener("focus", awake);
+    return () => {
+      document.removeEventListener("visibilitychange", awake);
+      window.removeEventListener("focus", awake);
+    };
+  }, [polling, task, song]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ticker detik berjalan selama polling */
   useEffect(() => {
     if (!polling || !task) return;
@@ -726,21 +741,22 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       .catch(() => setPeaks(null));
   }
 
-  function startPolling(t: SongTask, round = 1) {
+  function startPolling(t: SongTask, round = 1, base = 0) {
     clearPollTimer();
     pollStop.current = false;
     setPolling(true);
     setErr(null);
-    setPollUi({ attempt: 0, elapsed: Math.round((Date.now() - t.ts) / 1000), last: "antre" });
-    let idx = 0;
+    setPollUi({ attempt: base, elapsed: Math.round((Date.now() - t.ts) / 1000), last: "antre" });
+    let idx = base; // 🛡 v10.7: nomor cek terusan antar-putaran — tidak ada lagi "Cek #0" yang bikin panik
+    let checks = 0; // 🛡 v10.7: tiap rantai WAJIB minimal 1 cek NYATA ke provider (anti "drama tanpa cek")
     let fails = 0; // 🛡 v10.6: hitung cek gagal karena jaringan (bukan fatal provider)
     const limitMs = round === 1 ? 6 * 60 * 1000 : 9 * 60 * 1000; // sabar 6 mnt, auto-lanjut s.d. 9 mnt
     const overLimit = (attemptNow: number, elapsedNow: number): boolean => {
       if (elapsedNow <= limitMs) return false;
       if (round === 1) {
-        // AUTO-LANJUT putaran 2 (cuma polling — tidak membakar kredit generate baru)
+        // AUTO-LANJUT putaran 2 (cuma polling — tidak membakar kredit generate baru; nomor cek diteruskan)
         setPollUi({ attempt: attemptNow, elapsed: Math.round(elapsedNow / 1000), last: "auto-lanjut putaran 2" });
-        pollTimer.current = setTimeout(() => { if (!pollStop.current) startPolling(t, 2); }, 20000);
+        pollTimer.current = setTimeout(() => { if (!pollStop.current) startPolling(t, 2, idx); }, 20000);
       } else {
         setPolling(false);
         setErr({ code: "suno_sibuk", msg: "Provider masih sibuk >9 menit. Task tersimpan aman — lagu sering jadi di belakang; tap 🔍 Cek manual sebentar lagi." });
@@ -749,14 +765,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     };
     const tick = async () => {
       if (pollStop.current) return;
-      // 🛡 v10.6: batas sabar dicek DULUAN tiap putaran — dulu dicek SETELAH nanya provider,
-      // jadi satu cek yang hang ikut mematikan batas sabar (timer jalan terus, tak pernah berhenti).
-      if (overLimit(idx, Date.now() - t.ts)) return;
+      // 🛡 v10.7: batas sabar ditegakkan ANTAR cek (v10.6), TAPI cek PERTAMA tiap rantai SELALU
+      // benar-benar menanya provider — task dari draf / HP habis standby tidak boleh "didramatisir"
+      // 0 cek (regresi v10.6 yang ketahuan dari screenshot user: 9:32 jalan, "Cek #0").
+      if (checks > 0 && overLimit(idx, Date.now() - t.ts)) return;
       try {
         const st = await checkOnce(t.id);
+        checks++;
         if (st === "done") return;
         fails = 0;
       } catch (e) {
+        checks++;
         const msg = e instanceof Error ? e.message : String(e);
         // Error FATAL provider (quota habis, generate gagal) = berhenti seperti dulu.
         // Error SESAAT (jaringan putus / cek kepotong tenggat) = lanjut pantau, jangan bunuh monitor.
@@ -773,7 +792,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       if (overLimit(idx, elapsed)) return;
       pollTimer.current = setTimeout(tick, POLL_DELTAS[Math.min(idx, POLL_DELTAS.length - 1)] * 1000);
     };
-    pollTimer.current = setTimeout(tick, POLL_DELTAS[0] * 1000);
+    pollTimer.current = setTimeout(tick, 0); // 🛡 v10.7: cek pertama SEGERA — HP baru bangun = kabar instan
   }
 
   function cancelPolling() {
@@ -860,7 +879,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     let j: Record<string, string> = {};
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        r = await fetch("/api/hcnsec/music", { method: "POST", headers: sunoHeaders(key), body: JSON.stringify(payload) });
+        // 🛡 v10.7: POST generate juga punya tenggat 65 dtk (server maks 55) — tombol tidak "busy" selamanya
+        const acg = new AbortController();
+        const wdg = setTimeout(() => acg.abort(), 65000);
+        r = await fetch("/api/hcnsec/music", { method: "POST", headers: sunoHeaders(key), body: JSON.stringify(payload), signal: acg.signal })
+          .finally(() => clearTimeout(wdg));
         j = await r.json().catch(() => ({}));
       } catch (e) {
         if (attempt === 2) throw e;
@@ -1511,7 +1534,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <div className="lh-pollbar"><i style={{ width: `${Math.min(100, (pollUi.elapsed / 540) * 100)}%` }} /></div>
                 <p>
                   {polling
-                    ? `Cek #${pollUi.attempt} · polling anti-beku (tiap cek bertenggat 40 dtk, batas sabar dijaga timer) · sabar maks 9 mnt. Menit 2–5 itu antrean PENYEDIA — di luar kendali aplikasi.${pollUi.last !== "antre" && pollUi.last !== "pending" ? ` · ${pollUi.last}` : ""}`
+                    ? `Cek #${pollUi.attempt} · polling anti-beku (tiap cek 40 dtk, sabar dijaga timer, HP bangun langsung dicek) · sabar maks 9 mnt. Menit 2–5 itu antrean PENYEDIA — di luar kendali aplikasi.${pollUi.last !== "antre" && pollUi.last !== "pending" ? ` · ${pollUi.last}` : ""}`
                     : "Kamu keluar saat lagu diolah / polling dihentikan. Task aman tersimpan."}
                 </p>
                 <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
