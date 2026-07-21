@@ -1252,8 +1252,8 @@ body:has(.cc2-root) { background: var(--v-bg); }
   border-left:6px solid transparent; border-right:6px solid transparent; border-top:7px solid #fff; }
 .v6e-trans-chip.off { background:rgba(255,255,255,.35); color:#111; }
 /* item track "terangkat" saat tekan-tahan (siap diseret bebas) */
-.v6e-clip.lift, .v6e-audioclip.lift, .v6e-textchip.lift { transform:scale(1.03); box-shadow:0 8px 22px rgba(0,0,0,.55); z-index:7;
-  outline:2px solid var(--v6-teal); transition:transform .12s; }
+.v6e-clip.lift, .v6e-audioclip.lift, .v6e-textchip.lift { transform:scale(1.07); box-shadow:0 10px 26px rgba(0,0,0,.6),0 0 0 2px rgba(45,212,191,.85); filter:brightness(1.14); z-index:12;
+  outline:2px solid var(--v6-teal); transition:transform .1s; }
 .v6e-textchip.asbtn { cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
 .v6e-textchip.free { border-color:var(--v6-teal); background:rgba(25,194,184,.16); }
 .v6e-textchip.stik.free { border-color:#a78bfa; background:rgba(167,139,250,.16); }

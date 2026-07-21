@@ -2823,7 +2823,7 @@ function TimelineV6(p: any) {
     const dy = e.clientY - (d.startY || 0); const dx = e.clientX - d.startX;
     // klip: geser vertikal = ANGKAT jalur video; SEMUA objek elemen (audio/teks/stiker): vertikal = pindah BARIS
     const vertikal = d.kind === "reorder" && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;
-    const tahanLama = (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // tahan lama diam → angkat jalur makro
+    const tahanLama = d.kind === "reorder" && (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // v9.0: "angkat kolam" CUMA klip video — objek elemen TAK PERNAH dicuri dari genggaman jari
     if (!vertikal && !tahanLama) return false;
     startLaneLift(laneIdOfDrag(d), e.clientY);
     return true;
@@ -2849,7 +2849,7 @@ function TimelineV6(p: any) {
   function commitObjRow(d: any) {
     if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if (!d || !d.armed || !(d.kind === "aud" || d.kind === "txt" || d.kind === "stk") || d.rowTo == null) return;
-    suppressClickRef.current = true;
+    if ((d.maxD || 0) > 6) suppressClickRef.current = true; // v9.0: tahan lama TANPA gerak lalu lepas = tetap TAP → setting
     if (d.rowBad) { p.onRowBad?.(); return; }
     const cur = elmPoolRef.current.find((x: any) => x.key === d.key);
     if (cur && cur.row === d.rowTo) return;
@@ -2886,6 +2886,7 @@ function TimelineV6(p: any) {
   const laneRowRef = (lid: string) => (el: HTMLElement | null) => { if (el) laneRowRefs.current.set(lid, el); else laneRowRefs.current.delete(lid); };
   function dragUpdate(e: React.PointerEvent, d: any) {
     d.lastX = e.clientX; (d as any).lastY = e.clientY; updEdge(e.clientX);
+    d.maxD = Math.max(d.maxD || 0, Math.abs(e.clientX - d.startX), Math.abs(e.clientY - (d.startY || 0))); // v9.0: total gerak dua sumbu — penentu TAP vs DRAG
     if (!d.armed) return;
     if (maybePromoteLane(e, d)) return; // vertikal / tahan lama → angkat jalur
     if (d.kind === "trim") applyTrim(d, e.clientX);
@@ -2899,7 +2900,7 @@ function TimelineV6(p: any) {
   function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
     clearTimeout(armTRef.current);
     armTRef.current = setTimeout(() => {
-      if (dragRef.current === d) { d.armed = true; if (el) { try { el.setPointerCapture?.(pid); } catch {} } force(v => v + 1); }
+      if (dragRef.current === d) { d.armed = true; if (el) { try { el.setPointerCapture?.(pid); } catch {} } try { (navigator as any).vibrate?.(10); } catch {} force(v => v + 1); } // v9.0: GETAR = kegenggam, silakan bawa
     }, ms);
   }
 
@@ -2947,6 +2948,7 @@ function TimelineV6(p: any) {
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
+    suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
   }
   function onAudMove(e: React.PointerEvent) {
@@ -2957,7 +2959,7 @@ function TimelineV6(p: any) {
       if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
-        d.armed = true; clearTimeout(armTRef.current);
+        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
@@ -2968,7 +2970,7 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if (d?.kind === "aud" && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); }
+    if (d?.kind === "aud" && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); } // v9.0: gerak vertikal pun = drag (dulu bocor jadi tap!)
     commitObjRow(d);
   }
 
@@ -2980,6 +2982,7 @@ function TimelineV6(p: any) {
     const dur0 = t.dur ?? (timeline?.durs?.[i] || 3);
     const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, key: sid + "|" + (tid || ""), st0, dur0 };
     dragRef.current = d;
+    suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
   }
@@ -2991,7 +2994,7 @@ function TimelineV6(p: any) {
       if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
-        d.armed = true; clearTimeout(armTRef.current);
+        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
@@ -3002,7 +3005,7 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); }
+    if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); } // v9.0: gerak vertikal pun = drag
     commitObjRow(d);
   }
 
@@ -3014,6 +3017,7 @@ function TimelineV6(p: any) {
     const dur0 = st.dur ?? (timeline?.durs?.[i] || 3);
     const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, key: stid, st0, dur0 };
     dragRef.current = d;
+    suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
   }
@@ -3025,7 +3029,7 @@ function TimelineV6(p: any) {
       if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
-        d.armed = true; clearTimeout(armTRef.current);
+        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
@@ -3036,7 +3040,7 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && Math.abs(d.lastX - d.startX) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); }
+    if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); } // v9.0: gerak vertikal pun = drag
     commitObjRow(d);
   }
 
@@ -3228,10 +3232,10 @@ function TimelineV6(p: any) {
                                   const rd = it.payload;
                                   const dd3 = dragRef.current as any;
                                   const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === rd.key;
-                                  const aDragY = lifting && typeof dd3.lastY === "number" && dd3.rowTo != null ? Math.round(dd3.lastY - (dd3.startY || 0)) : 0;
+                                  const aDragY = lifting && dd3.kind === "aud" && typeof dd3.lastY === "number" ? Math.round(dd3.lastY - (dd3.startY || 0)) : 0; // v9.0: IKUT jari terus — tanpa syarat
                                   const wpx = Math.max(90, (rd.dur || 4) * PXS0);
                                   return (
-                                    <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — tahan&geser: ⇄ maju/mundur · ⇅ pindah jalur (BEBAS!)"}
+                                    <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — TAP = setting audio · TAHAN = GENGGAM — ikut jari bebas (⇄ maju/mundur · ⇅ jalur)"}
                                       onPointerDown={(e) => onAudDown(e, rd.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
                                       onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
                                       style={{ position: "absolute", left: rd.off * PXS0, top: 3, width: wpx, height: 40, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
@@ -3264,9 +3268,9 @@ function TimelineV6(p: any) {
                                   const enc = tid ? `${s.id}::${tid}` : s.id;
                                   const isSel = p.selTextSid === enc;
                                   const isLyr = /^lyr_/.test(t?.id || tid || "");
-                                  const tDragY = lifting && typeof dd4.lastY === "number" && dd4.rowTo != null ? Math.round(dd4.lastY - (dd4.startY || 0)) : 0;
+                                  const tDragY = lifting && dd4.kind === "txt" && typeof dd4.lastY === "number" ? Math.round(dd4.lastY - (dd4.startY || 0)) : 0; // v9.0: IKUT jari terus
                                   return (
-                                    <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur BEBAS (asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh kolam"
+                                    <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
                                       onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
                                       onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
                                       style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0, transform: lifting ? `translateY(${tDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
@@ -3282,9 +3286,9 @@ function TimelineV6(p: any) {
                                 const dd5 = dragRef.current as any;
                                 const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
                                 const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
-                                const sDragY = lifting && typeof dd5.lastY === "number" && dd5.rowTo != null ? Math.round(dd5.lastY - (dd5.startY || 0)) : 0;
+                                const sDragY = lifting && dd5.kind === "stk" && typeof dd5.lastY === "number" ? Math.round(dd5.lastY - (dd5.startY || 0)) : 0; // v9.0: IKUT jari terus
                                 return (
-                                  <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="Tahan&geser: ⇄ ubah waktu · ⇅ pindah jalur BEBAS (asal tak numpuk!) · ⋮ ujung = durasi · tahan LAMA = angkat seluruh kolam"
+                                  <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
                                     onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
                                     onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
                                     style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
