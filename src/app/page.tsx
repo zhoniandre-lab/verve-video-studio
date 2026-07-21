@@ -1427,8 +1427,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       dirPush("sys", "🎬 Render dimulai — CPU HP yang bekerja. Selesai → tombol ⬇ Download menyala.");
       void doRender();
     } else if (o.op === "auto_caption") {
-      dirPush("sys", "📝 Keterangan otomatis jalan — AI menyalin audio (±1–2 mnt). Hasilnya bisa dilihat/disetel lewat tombol Keterangan di toolbar.");
-      void doAutoCaptions();
+      // 🛡 v11.5 SUMBER PINTAR: proyek Cerita Jadi Lagu = lagu + lirik, tanpa suara TTS.
+      // Dulu chat memanggil apa adanya (sumber 'suara') → ditolak 'Belum ada suara'. Sekarang memilih sendiri.
+      const from = (mLyrics || "").trim() && musicUrl ? "lirik" : musicUrl ? "musik" : "suara";
+      dirPush("sys", from === "lirik"
+        ? "📝 Keterangan otomatis jalan — AI menyelaraskan LIRIK lagumu ke irama lagu (Whisper, dengan cadangan perkiraan cerdas). Hasilnya muncul sebagai karaoke di track teks."
+        : "📝 Keterangan otomatis jalan — AI menyalin audio (±1–2 mnt). Hasilnya bisa dilihat/disetel lewat tombol Keterangan di toolbar.");
+      void doAutoCaptions(from);
     }
   }
 
@@ -1660,7 +1665,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     });
   }
 
-  async function doAutoCaptions() {
+  async function doAutoCaptions(forceFrom?: string) { // 🎬 v11.5: Sutradara boleh memilihkan sumber (lirik/musik/suara)
+    const from = forceFrom ?? ccFrom;
+    if (forceFrom) setCcFrom(forceFrom); // saklar UI ikut sinkron supaya panel Keterangan tidak bingung
     setLoading("cc"); setError("");
     try {
       const tpl = CC_TEMPLATES.find(t => t.id === ccTpl) || CC_TEMPLATES[0];
@@ -1668,7 +1675,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
       /* ===== v8.2: DARI LIRIK LAGU — sinkron AI (Whisper HCNSEC) bila bisa, kalau tidak perkiraan cerdas.
          Hasil: SATU ClipText karaoke per baris, masuk TRACK TEKS (bisa digeser/edit satu-satu). ===== */
-      if (ccFrom === "lirik") {
+      if (from === "lirik") {
         if (!musicUrl) throw new Error("Belum ada musik di track — keterangan lirik butuh lagunya.");
         const lyrSrc = (mLyrics || "").trim();
         if (!lyrSrc) throw new Error("Proyek ini belum punya lirik. Bikin lagu lewat Lahan dulu, atau proyek lama belum menyimpan liriknya.");
@@ -1714,12 +1721,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         return;
       }
 
-      const srcUrl = ccFrom === "suara" ? (ttsUrl || voiceUrl) : musicUrl;
-      if (!srcUrl) throw new Error(ccFrom === "suara" ? "Belum ada suara (TTS/rekaman). Buat di menu Audio dulu." : "Belum ada musik di track.");
+      const srcUrl = from === "suara" ? (ttsUrl || voiceUrl) : musicUrl;
+      if (!srcUrl) throw new Error(from === "suara" ? "Belum ada suara (TTS/rekaman). Buat di menu Audio dulu." : "Belum ada musik di track.");
       const dur = await getAudioDuration(srcUrl);
       if (!dur) throw new Error("Durasi audio tidak terbaca.");
 
-      if (ccFrom === "suara" && ttsText.trim() && (srcUrl === ttsUrl)) {
+      if (from === "suara" && ttsText.trim() && (srcUrl === ttsUrl)) {
         // AKURAT: teks diketahui → distribusi waktu per karakter
         const sentences = ttsText.split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(Boolean);
         const totalChars = sentences.reduce((a, s) => a + s.length, 0) || 1;
