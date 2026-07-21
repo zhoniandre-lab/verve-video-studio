@@ -130,7 +130,7 @@ const SUNO_TEMPOS = [
   { id: "slow", label: "🐢 Lambat" }, { id: "mid", label: "🚶 Sedang" }, { id: "fast", label: "🏃 Cepat" },
 ];
 const SUNO_INSTRS = ["piano akustik", "gitar akustik", "biola & strings", "orkestra penuh", "suling", "gendang melayu", "synth ambient", "drum halus"];
-/** Interval polling cerdas (detik): rapat di awal, makin jarang makin lama — total sabar ±6 mnt (putaran 2 s.d. 9 mnt) */
+/** Interval polling cerdas (detik): rapat di awal, makin jarang makin lama — total sabar ±6 mnt (putaran 2 s.d. 9 mnt). v10.6: tiap cek bertenggat 40 dtk + batas sabar dijaga timer, tidak bisa beku */
 const POLL_DELTAS = [5, 8, 10, 12, 15, 15, 20, 20, 25, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30];
 
 type LahanState = {
@@ -698,7 +698,12 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   }
 
   async function checkOnce(id: string): Promise<"done" | "pending"> {
-    const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store" });
+    // 🛡 v10.6 ANTI-BEKU: tiap cek punya tenggat 40 dtk — sinyal 4G nyangkut tidak
+    // lagi menggantung monitor tanpa akhir (kasus beku 10+ mnt di "Cek #1").
+    const ac = new AbortController();
+    const wd = setTimeout(() => ac.abort(), 40000);
+    const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store", signal: ac.signal })
+      .finally(() => clearTimeout(wd));
     const pd = await r.json().catch(() => ({}));
     const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
     if (url) {
@@ -728,31 +733,44 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     setErr(null);
     setPollUi({ attempt: 0, elapsed: Math.round((Date.now() - t.ts) / 1000), last: "antre" });
     let idx = 0;
+    let fails = 0; // 🛡 v10.6: hitung cek gagal karena jaringan (bukan fatal provider)
     const limitMs = round === 1 ? 6 * 60 * 1000 : 9 * 60 * 1000; // sabar 6 mnt, auto-lanjut s.d. 9 mnt
+    const overLimit = (attemptNow: number, elapsedNow: number): boolean => {
+      if (elapsedNow <= limitMs) return false;
+      if (round === 1) {
+        // AUTO-LANJUT putaran 2 (cuma polling — tidak membakar kredit generate baru)
+        setPollUi({ attempt: attemptNow, elapsed: Math.round(elapsedNow / 1000), last: "auto-lanjut putaran 2" });
+        pollTimer.current = setTimeout(() => { if (!pollStop.current) startPolling(t, 2); }, 20000);
+      } else {
+        setPolling(false);
+        setErr({ code: "suno_sibuk", msg: "Provider masih sibuk >9 menit. Task tersimpan aman — lagu sering jadi di belakang; tap 🔍 Cek manual sebentar lagi." });
+      }
+      return true;
+    };
     const tick = async () => {
       if (pollStop.current) return;
+      // 🛡 v10.6: batas sabar dicek DULUAN tiap putaran — dulu dicek SETELAH nanya provider,
+      // jadi satu cek yang hang ikut mematikan batas sabar (timer jalan terus, tak pernah berhenti).
+      if (overLimit(idx, Date.now() - t.ts)) return;
       try {
         const st = await checkOnce(t.id);
         if (st === "done") return;
+        fails = 0;
       } catch (e) {
-        setPolling(false);
-        setErr({ code: "suno", msg: e instanceof Error ? e.message : String(e) });
-        return;
+        const msg = e instanceof Error ? e.message : String(e);
+        // Error FATAL provider (quota habis, generate gagal) = berhenti seperti dulu.
+        // Error SESAAT (jaringan putus / cek kepotong tenggat) = lanjut pantau, jangan bunuh monitor.
+        if (!/fetch|abort|network|load failed|timed?\s?out|kepotong|koneksi/i.test(msg)) {
+          setPolling(false);
+          setErr({ code: "suno", msg });
+          return;
+        }
+        fails++;
       }
       idx++;
       const elapsed = Date.now() - t.ts;
-      setPollUi({ attempt: idx, elapsed: Math.round(elapsed / 1000), last: "pending" });
-      if (elapsed > limitMs) {
-        if (round === 1) {
-          // AUTO-LANJUT putaran 2 (cuma polling — tidak membakar kredit generate baru)
-          setPollUi({ attempt: idx, elapsed: Math.round(elapsed / 1000), last: "auto-lanjut putaran 2" });
-          pollTimer.current = setTimeout(() => { if (!pollStop.current) startPolling(t, 2); }, 20000);
-          return;
-        }
-        setPolling(false);
-        setErr({ code: "suno_sibuk", msg: "Provider masih sibuk >9 menit. Task tersimpan aman — lagu sering jadi di belakang; tap 🔍 Cek manual sebentar lagi." });
-        return;
-      }
+      setPollUi({ attempt: idx, elapsed: Math.round(elapsed / 1000), last: fails ? `cek gagal×${fails} (jaringan) — tetap dipantau` : "pending" });
+      if (overLimit(idx, elapsed)) return;
       pollTimer.current = setTimeout(tick, POLL_DELTAS[Math.min(idx, POLL_DELTAS.length - 1)] * 1000);
     };
     pollTimer.current = setTimeout(tick, POLL_DELTAS[0] * 1000);
@@ -1493,7 +1511,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <div className="lh-pollbar"><i style={{ width: `${Math.min(100, (pollUi.elapsed / 540) * 100)}%` }} /></div>
                 <p>
                   {polling
-                    ? `Cek #${pollUi.attempt} · polling cerdas (rapat di awal, renggang kemudian) · batas sabar 9 menit. Lagu sering jadi di menit 2–5, aman ditinggal — task tersimpan di draf.`
+                    ? `Cek #${pollUi.attempt} · polling anti-beku (tiap cek bertenggat 40 dtk, batas sabar dijaga timer) · sabar maks 9 mnt. Menit 2–5 itu antrean PENYEDIA — di luar kendali aplikasi.${pollUi.last !== "antre" && pollUi.last !== "pending" ? ` · ${pollUi.last}` : ""}`
                     : "Kamu keluar saat lagu diolah / polling dihentikan. Task aman tersimpan."}
                 </p>
                 <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
