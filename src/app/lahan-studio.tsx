@@ -81,6 +81,16 @@ type Scene = {
 type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
 
 type SongTask = { id: string; title: string; ts: number };
+// 🎬 v11.0 SUTRADARA CHAT — perintah terstruktur dari otak /api/hcnsec/director
+type DirOp = {
+  op: string; scene?: number; title?: string; style_visual?: string; color_grade?: string;
+  visual_en?: string; lyric_line?: string; lyrics?: string; mStyle?: string;
+  era?: string; tempo?: string; instruments?: string; vocal?: string; model?: string; instruction?: string;
+};
+type DirSnap = {
+  board: Board | null; lyrics: string; mStyle: string; selTitle: string;
+  sEra: string; sTempo: string; sInstr: string[]; vocal: "auto" | "male" | "female" | "instrumental"; sunoModel: string;
+};
 type SongResult = { url: string; title: string; duration?: number; image?: string };
 type SunoKey = { key: string; provider: string };
 
@@ -222,6 +232,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [sunoKey, setSunoKey] = useState("");
   const [sunoProv, setSunoProv] = useState("kie");
   const [task, setTask] = useState<SongTask | null>(null);
+  // 🎬 v11.0 SUTRADARA CHAT
+  const [chatLog, setChatLog] = useState<{ me: "me" | "ai" | "sys"; text: string }[]>([]);
+  const [chatInp, setChatInp] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [pendingOps, setPendingOps] = useState<DirOp[]>([]);
+  const [undoSnap, setUndoSnap] = useState<DirSnap | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [song, setSong] = useState<SongResult | null>(null);
   const [peaks, setPeaks] = useState<number[] | null>(null);
   const [polling, setPolling] = useState(false);
@@ -542,7 +559,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   }
   const ensureLockCache = ensureLockCacheRef; // 🔒 v10.0
 
-  async function genScene(i: number, sc: Scene) {
+  async function genScene(i: number, sc: Scene, extra?: string) { // 🎬 v11.0: arahan Sutradara (opsional)
     setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, status: "loading", err: undefined } : s)) }));
     const ac = new AbortController(); const watchdog = setTimeout(() => ac.abort(), 55000); // v10.1: jam pengaman — batal halus ketimbang 'Failed to fetch'
     try {
@@ -554,7 +571,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         body: JSON.stringify({
           _storyScene: {
             // lock aktif → adegan MURNI (identitas HANYA dari _charLock, tanpa dobel injeksi); lock gagal → jalan lama
-            visual_prompt: ensureLockCache.current || charLock ? sc.visual_prompt : injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya]),
+            visual_prompt: (ensureLockCache.current || charLock ? sc.visual_prompt : injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya])) + (extra ? `, ${extra}` : ""), // 🎬 v11.0: arahan regen dari Sutradara ikut dibawa
             scene_desc: sc.scene_desc,
             mood: sc.mood,
           },
@@ -801,6 +818,121 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     setPolling(false);
   }
 
+  // ================= 🎬 v11.0 SUTRADARA CHAT =================
+  function pushChat(me: "me" | "ai" | "sys", text: string) {
+    setChatLog((l) => [...l.slice(-40), { me, text }]);
+  }
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatLog, chatBusy]);
+
+  function snapNow(): DirSnap {
+    return { board, lyrics, mStyle, selTitle, sEra, sTempo, sInstr, vocal, sunoModel };
+  }
+
+  /** Perintah GRATIS → langsung jalan + sediakan ↩ Urungkan (satu langkah). */
+  function applyFreeOps(ops: DirOp[]) {
+    if (!ops.length) return;
+    setUndoSnap(snapNow());
+    const done: string[] = [];
+    for (const o of ops) {
+      if (o.op === "set_title" && o.title) { setSelTitle(o.title); done.push(`judul → "${o.title}"`); }
+      else if (o.op === "set_visual_style") {
+        setBoard((b) => b && ({ ...b, style_visual: o.style_visual || b.style_visual, color_grade: o.color_grade || b.color_grade }));
+        done.push("gaya visual diubah (berlaku ke regen berikutnya)");
+      } else if (o.op === "edit_scene_prompt" && o.scene && o.visual_en) {
+        const i = o.scene - 1;
+        if (board?.scenes[i]) {
+          setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, visual_prompt: o.visual_en!, status: "idle", url: undefined } : s)) }));
+          done.push(`prompt adegan ${o.scene} ditulis ulang (gambar lama dilepas supaya tidak basi)`);
+        }
+      } else if (o.op === "edit_scene_line" && o.scene && o.lyric_line !== undefined) {
+        const i = o.scene - 1;
+        if (board?.scenes[i]) {
+          setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, lyric_line: o.lyric_line! } : s)) }));
+          done.push(`baris karaoke adegan ${o.scene} diubah`);
+        }
+      } else if (o.op === "edit_lyrics" && o.lyrics) { setLyrics(o.lyrics); done.push("lirik lagu ditulis ulang"); }
+      else if (o.op === "set_style" && o.mStyle) { setMStyle(o.mStyle); done.push("style musik manual diubah"); }
+      else if (o.op === "set_music_knobs") {
+        if (o.era) setSEra(o.era);
+        if (o.tempo) setSTempo(o.tempo);
+        if (o.instruments) setSInstr(o.instruments.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 4));
+        if (o.vocal && ["auto", "male", "female", "instrumental"].includes(o.vocal)) setVocal(o.vocal as "auto" | "male" | "female" | "instrumental");
+        if (o.model) setSunoModel(o.model);
+        done.push("kenop musik disetel ulang");
+      }
+    }
+    if (done.length) pushChat("sys", "✏️ Langsung kujalankan: " + done.join(" · ") + " — salah langkah? ketuk ↩ Urungkan di bawah.");
+  }
+
+  async function sendDirector(text: string) {
+    const msg = text.trim();
+    if (!msg || chatBusy || !board) return;
+    pushChat("me", msg);
+    setChatBusy(true);
+    const ac = new AbortController();
+    const wd = setTimeout(() => ac.abort(), 45000); // keluarga anti-beku: chat juga bertenggat
+    try {
+      const ctx = {
+        judul: selTitle,
+        style_visual: board.style_visual, color_grade: board.color_grade,
+        scenes: board.scenes.map((s) => ({ n: s.scene, desc: s.scene_desc, lirik: s.lyric_line, visual_en: s.visual_prompt, mood: s.mood, ada_gambar: s.status === "done" })),
+        lagu: song ? { judul: song.title, durasi: song.duration || null, model: songModelUsed || null } : null,
+        lirik_full: lyrics,
+        setelan: { genre, mood, vokal: vocal, model: sunoModel, era: sEra, tempo: sTempo, instrumen: sInstr, style_manual: mStyle },
+      };
+      const r = await fetch("/api/hcnsec/director", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
+        body: JSON.stringify({ message: msg, ctx, history: chatLog.slice(-6) }),
+      }).finally(() => clearTimeout(wd));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (j.reply) pushChat("ai", String(j.reply));
+      const ops: DirOp[] = Array.isArray(j.ops) ? j.ops : [];
+      applyFreeOps(ops.filter((o) => !["regen_scene", "regen_song"].includes(o.op)));
+      const cost = ops.filter((o) => ["regen_scene", "regen_song"].includes(o.op));
+      if (cost.length) {
+        setPendingOps(cost);
+        pushChat("sys", "🔥 Ada usulan yang membakar kredit — keputusan 100% di tanganmu (Gas / Batal di bawah gelembung).");
+      }
+      if (Array.isArray(j.dropped) && j.dropped.length) pushChat("sys", "⚠️ Kusaring perintah aneh dari model: " + j.dropped.slice(0, 2).join(" · "));
+    } catch (e) {
+      pushChat("sys", "❌ Sutradara gagal menjawab: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  /** Tombol Gas untuk perintah BAKAR KREDIT — hanya dari ketukan pembuat. */
+  async function gasOp(o: DirOp) {
+    setPendingOps((p) => p.filter((x) => x !== o));
+    if (o.op === "regen_scene" && o.scene) {
+      const i = o.scene - 1;
+      if (!board?.scenes[i]) return;
+      pushChat("sys", `🔥 Regen adegan ${o.scene} jalan (kredit gambar) — arahan: "${o.instruction || "-"}"`);
+      const ok = await genScene(i, board.scenes[i], o.instruction || "");
+      pushChat("sys", ok ? `✅ Adegan ${o.scene} bergambar baru` : `⚠️ Regen adegan ${o.scene} gagal — bisa diulang dari kartu adegan`);
+    } else if (o.op === "regen_song") {
+      const add = (o.instruction || "").slice(0, 280);
+      const next = (mStyle.trim() ? mStyle.trim() + ", " : "") + add;
+      setMStyle(next);
+      pushChat("sys", `🔥 Lagu diulang dengan arahan: "${add}" (kredit lagu) — pantau di kartu atas`);
+      void launchSong(next);
+    }
+    pushChat("sys", "🧾 Jujur: kredit yang telanjur terpakai tidak bisa kembali — ↩ Urungkan hanya memulihkan teks & setelan.");
+  }
+
+  function undoDirector() {
+    const s = undoSnap;
+    if (!s) return;
+    setBoard(s.board); setLyrics(s.lyrics); setMStyle(s.mStyle); setSelTitle(s.selTitle);
+    setSEra(s.sEra); setSTempo(s.sTempo); setSInstr(s.sInstr); setVocal(s.vocal); setSunoModel(s.sunoModel);
+    setUndoSnap(null);
+    pushChat("sys", "↩ Perubahan AI dibatalkan — kembali seperti semula.");
+  }
+
   // 🎚 v10.3: pratinjau style AKHIR yang benar-benar dikirim (gender + manual + era/tempo/instrumen)
   function composeFinalStyle(): string {
     const gw = vocal === "male" ? "male vocalist, deep male voice" : vocal === "female" ? "female vocalist, soft female voice" : "";
@@ -814,7 +946,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     ].filter(Boolean).join(", ");
   }
 
-  async function launchSong() {
+  async function launchSong(styleOverride?: string) { // 🎬 v11.0: Sutradara boleh menyuntik style revisi
     if (!selTitle) return;
     const instrumental = vocal === "instrumental";
     const lyr = lyrics.trim();
@@ -830,7 +962,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     }
     setErr(null);
     setBusy("song");
-    const styleStr = (mStyle.trim() || [genre, mood, "indonesian, emotional, high quality"].join(", ")).slice(0, 480);
+    const styleStr = ((styleOverride ?? mStyle.trim()) || [genre, mood, "indonesian, emotional, high quality"].join(", ")).slice(0, 480);
     const payload = {
       title: selTitle.slice(0, 80),
       prompt: styleStr,
@@ -1518,7 +1650,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             </div>
             <p className="lh-note">🎼 Style akhir yang dikirim: <b>{composeFinalStyle().slice(0, 240)}</b></p>
             <p className="lh-note">ℹ️ ±12 kredit Kie per generate · tulisan manualmu SELALU di urutan depan · gender vokal + lawan gender terlarang ikut tertanam (v10.2).</p>
-            <button className="lh-btn" disabled={polling || busy === "song"} onClick={launchSong}>
+            <button className="lh-btn" disabled={polling || busy === "song"} onClick={() => void launchSong()}>
               {busy === "song" ? "⏳ Mengirim ke dapur lagu..." : "🎵 Generate Lagu"}
             </button>
             {vocal !== "instrumental" && lyrics.trim().length < 30 && (
@@ -1611,6 +1743,58 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               ))}
             </div>
             <audio ref={pvAudioRef} src={song.url} preload="auto" onEnded={() => setPvPlaying(false)} />
+          </div>
+
+          {/* 🎬 v11.0 SUTRADARA CHAT — setelah video jadi, AI yang bekerja */}
+          <div className="lh-card">
+            <div className="lh-h1">🎬 Sutradara Chat</div>
+            <p className="lh-note">Video jadi tapi belum puas? <b>Bilang saja apa yang mau diubah</b> — Sutradara menerjemahkan jadi perintah editing. Perintah gratis langsung jalan (ada ↩ Urungkan) · perintah bakar kredit <b>selalu minta izin dulu</b>. Otak: model cepat gateway kita — tanpa biaya baru.</p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "6px 0 8px" }}>
+              {["adegan 2 diganti dia berdiri di sawah pas senja", "lagunya kurang sedih, tambah biola", "baris karaoke adegan 1 diganti: aku pulang membawa luka"].map((q, i) => (
+                <button key={i} className="lh-chip" onClick={() => void sendDirector(q)}>{q}</button>
+              ))}
+            </div>
+            <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "10px", background: "#0b0e13", borderRadius: 12, border: "1px solid #ffffff14" }}>
+              {!chatLog.length && (
+                <div style={{ color: "#8b93a3", fontSize: 13 }}>Contoh perintah: "judulnya ganti …" · "ganti vokal ke wanita" · "adegan 3 promptnya kurang hujan" · "tempo lagunya pelanin". Kamu nyutradarai, AI yang kerja.</div>
+              )}
+              {chatLog.map((m, i) => (
+                m.me === "me" ? (
+                  <div key={i} style={{ alignSelf: "flex-end", maxWidth: "86%", background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", borderRadius: "12px 12px 4px 12px", padding: "8px 12px", fontSize: 14, fontWeight: 600 }}>{m.text}</div>
+                ) : m.me === "ai" ? (
+                  <div key={i} style={{ alignSelf: "flex-start", maxWidth: "92%", background: "#161b24", color: "#e8edf5", borderRadius: "12px 12px 12px 4px", padding: "8px 12px", fontSize: 14, border: "1px solid #ffffff12", whiteSpace: "pre-wrap" }}>{m.text}</div>
+                ) : (
+                  <div key={i} style={{ alignSelf: "center", maxWidth: "96%", color: "#98a2b3", fontSize: 12, textAlign: "center" }}>{m.text}</div>
+                )
+              ))}
+              {chatBusy && <div style={{ color: "#8b93a3", fontSize: 13 }}>🎬 Sutradara mikir…</div>}
+              <div ref={chatEndRef} />
+            </div>
+            {!!pendingOps.length && (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                {pendingOps.map((o, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", background: "#1a1207", border: "1px solid #f59e0b44", borderRadius: 10, padding: "8px 10px", fontSize: 13 }}>
+                    <span>🔥 {o.op === "regen_scene" ? `Regen adegan ${o.scene}` : "Ulang lagu"}{o.instruction ? ` — "${o.instruction}"` : ""} <b>(±kredit)</b></span>
+                    <span style={{ display: "flex", gap: 6 }}>
+                      <button className="lh-mini ok" onClick={() => void gasOp(o)}>Gas</button>
+                      <button className="lh-mini" onClick={() => setPendingOps((p) => p.filter((x) => x !== o))}>Batal</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <input
+                value={chatInp}
+                onChange={(e) => setChatInp(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { const v = chatInp; setChatInp(""); void sendDirector(v); } }}
+                placeholder="tulis perintahmu… lalu Enter"
+                style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+              />
+              <button className="lh-btn" style={{ marginTop: 0, whiteSpace: "nowrap" }} disabled={chatBusy} onClick={() => { const v = chatInp; setChatInp(""); void sendDirector(v); }}>Kirim</button>
+            </div>
+            {undoSnap && <button className="lh-mini" style={{ marginTop: 8 }} onClick={undoDirector}>↩ Urungkan perubahan AI</button>}
+            <p className="lh-note" style={{ marginTop: 8 }}>Jujur fase 1: riwayat chat belum disimpan saat halaman ditutup · perubahan struktur timeline Studio (potong/geser klip) menyusul fase 2.</p>
           </div>
 
           <div className={`lh-card lh-verdict ${doneScenes.length === board.scenes.length ? "ok" : "warn"}`}>
