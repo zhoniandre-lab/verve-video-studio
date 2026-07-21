@@ -37,9 +37,13 @@ SET STUDIO (GRATIS, langsung jalan, bisa di-Undo kecuali diberi tanda):
 - {"op":"set_bg","mode":"cover|blur|color","color":"#hex"}
 - {"op":"set_filter","preset":"id dari KONTEKS.daftar_filter"}
 - {"op":"set_quality","sharp":true}
+- {"op":"set_motion","slide":N,"mode":"zoompelan|denyut|goyang|melayang|berkedip|ayun|none"}   (GERAK GAMBARNYA ala CapCut — slide boleh dikosongkan = SEMUA adegan. Untuk permintaan "zoom in/out pada gambar" pakai INI, BUKAN set_transition)
+- {"op":"clear_caption"}                (hapus keterangan otomatis — gratis)
 BERAT TAPI GRATIS (aplikasi hanya menampilkan tombol Gas/Batal — kerja keras HP, BUKAN kredit):
 - {"op":"render_now"}  (hanya bila pembuat minta render/ekspor/download/jadikan video)
+- {"op":"auto_caption"} (keterangan/karaoke otomatis dari AUDIO — transkripsi AI whisper, ±1–2 menit; hanya bila pembuat minta keterangan/lirik jalan/karaoke otomatis)
 Nomor adegan HARUS 1..KONTEKS.jumlah_adegan.
+PENTING soal zoom: "zoom in/out pada GAMBAR / biar gambarnya gerak keren" = set_motion mode zoompelan — set_transition HANYA sambungan antar-adegan. Kalau pembuat minta zoom KELUAR, pasang zoompelan lalu di "reply" jujur bahwa arah keluar belum ada (gerak masuk dulu). Untuk "keterangan otomatis / karaoke otomatis / lirik jalan" pakai auto_caption, JANGAN ngaku sudah selesai tanpa ops.
 
 SET WIZARD — GRATIS (langsung dijalankan aplikasi, tanpa kredit):
 - {"op":"set_title","title":"judul baru"}
@@ -113,7 +117,9 @@ const STUDIO_OPS = new Set([
   "set_ratio", "set_transition", "set_slide_dur", "set_slide_time", "set_music_vol", "set_voice_vol",
   "set_music_fade", "set_music_off", "set_muted", "edit_caption", "move_slide", "delete_slide",
   "set_bg", "set_filter", "set_quality", "render_now",
+  "set_motion", "auto_caption", "clear_caption", // 🎬 v11.3: gerak gambar + keterangan otomatis
 ]);
+const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun"]);
 const num = (v: unknown, a: number, b: number): number | null => {
   const n = Number(v);
   return isFinite(n) ? Math.min(b, Math.max(a, n)) : null;
@@ -139,6 +145,7 @@ function cleanStudioOps(raw: unknown, nSlides: number): { ops: Op[]; dropped: st
     if (name === "edit_caption") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } out.slide = Math.round(Number(o.slide)); out.text = s(o.text, 120); }
     if (name === "move_slide") { const f = Math.round(Number(o.from)), t = Math.round(Number(o.to)); if (!slideOk(f) || !slideOk(t)) { dropped.push("move_slide di luar jangkauan"); continue; } out.from = f; out.to = t; }
     if (name === "delete_slide") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } if (nSlides <= 1) { dropped.push("menolak hapus adegan terakhir"); continue; } out.slide = Math.round(Number(o.slide)); }
+    if (name === "set_motion") { if (!MOTIONS.has(String(o.mode))) { dropped.push(`mode gerak aneh: ${o.mode}`); continue; } out.mode = String(o.mode); if (o.slide !== undefined) { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } out.slide = Math.round(Number(o.slide)); } }
     if (name === "set_bg") { if (!["cover", "blur", "color"].includes(String(o.mode))) { dropped.push("mode latar aneh"); continue; } out.mode = String(o.mode); const c = s(o.color, 20); if (c) out.color = c; }
     if (name === "set_filter") { const f = s(o.preset, 30); if (!f) { dropped.push("filter kosong"); continue; } out.preset = f; }
     if (name === "set_quality") { out.sharp = !!o.sharp; }

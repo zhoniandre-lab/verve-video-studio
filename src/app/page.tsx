@@ -1311,11 +1311,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [dirLog, dirBusy, dirOpen]);
 
   function applyStudioOps(ops: StudioOp[]) {
-    const heavy = ops.filter((o) => o.op === "render_now");
-    const free = ops.filter((o) => o.op !== "render_now");
+    const heavy = ops.filter((o) => o.op === "render_now" || o.op === "auto_caption");
+    const free = ops.filter((o) => o.op !== "render_now" && o.op !== "auto_caption");
     if (heavy.length) {
       setDirPending(heavy.map((o) => ({ op: o.op })));
-      dirPush("sys", "🔥 Render itu kerja berat di HP (CPU sendiri, BUKAN kredit) — ketuk Gas di bawah kalau yakin. Selesai render → tombol ⬇ Download aktif.");
+      dirPush("sys", "🔥 Ada kerja berat menunggu izinmu: Render (CPU HP) / Keterangan otomatis (AI transkripsi audio, ±1–2 mnt) — BUKAN kredit. Ketuk Gas di bawah kalau yakin.");
     }
     if (!free.length) return;
     pushHist(); // ↩ menumpang undo RESMI Studio — bukan sistem paralel
@@ -1352,6 +1352,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         case "set_bg": if (["cover", "blur", "color"].includes(String(o.mode))) { setBgMode(o.mode); if (o.color) setBgColor(String(o.color).slice(0, 20)); done.push(`latar → ${o.mode}`); } break;
         case "set_filter": { const f = String(o.preset || ""); if ((FILTERS as any[]).some((x) => x.id === f)) { setFilterPreset(f); done.push(`filter → ${f}`); } break; }
         case "set_quality": setQualitySharp(!!o.sharp); done.push(o.sharp ? "kualitas render: tajam" : "kualitas render: standar"); break;
+        case "set_motion": {
+          // 🎬 v11.3: gerak GAMBAR ala CapCut (Ken Burns dkk) — pakai daftar resmi ANIM_LOOP
+          const m = String(o.mode || "");
+          if (!(ANIM_LOOP as any[]).some((x) => x.id === m)) break;
+          if (hasSlide) { setOpt(sid, { loop: m } as any); done.push(`gerak adegan ${o.slide} → ${m}`); }
+          else { slides.forEach((sl) => setOpt(sl.id, { loop: m } as any)); done.push(`gerak SEMUA adegan → ${m}`); }
+          break;
+        }
+        case "clear_caption": clearCaptions(); done.push("keterangan otomatis dihapus"); break;
         default: break;
       }
     }
@@ -1401,6 +1410,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (o.op === "render_now") {
       dirPush("sys", "🎬 Render dimulai — CPU HP yang bekerja. Selesai → tombol ⬇ Download menyala.");
       void doRender();
+    } else if (o.op === "auto_caption") {
+      dirPush("sys", "📝 Keterangan otomatis jalan — AI menyalin audio (±1–2 mnt). Hasilnya bisa dilihat/disetel lewat tombol Keterangan di toolbar.");
+      void doAutoCaptions();
     }
   }
 
@@ -2667,7 +2679,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
           <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#0b0e13", borderRadius: 10, border: "1px solid #ffffff12" }}>
             {!dirLog.length && (
-              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "adegan 3 pindah ke awal" · "musiknya kecilin 40%" · "teks adegan 2: aku pulang membawa luka" · "transisi fade 0.8 detik" · "render sekarang".</div>
+              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "zoom pelan di semua gambar" · "keterangan otomatis" · "musiknya kecilin 40%" · "teks adegan 2: aku pulang membawa luka" · "adegan 3 pindah ke awal" · "render sekarang".</div>
             )}
             {dirLog.map((m, i) => (
               m.me === "me" ? (
@@ -2683,7 +2695,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
           {dirPending.map((o, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, background: "#1a1207", border: "1px solid #f59e0b44", borderRadius: 8, padding: "6px 8px", fontSize: 12 }}>
-              <span>🔥 Render video sekarang (berat di HP)</span>
+              <span>{o.op === "auto_caption" ? "📝 Keterangan otomatis — AI transkripsi audio (±1–2 mnt)" : "🔥 Render video sekarang (berat di HP)"}</span>
               <span style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => gasStudioOp(o)} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 6, padding: "4px 10px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Gas</button>
                 <button onClick={() => setDirPending((p) => p.filter((x) => x !== o))} style={{ background: "none", color: "#cbd5e1", border: "1px solid #ffffff2a", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Batal</button>
