@@ -88,9 +88,16 @@ function buildBody(payload: any, provider: Provider): any {
   const instrWord = sb.instruments ? `instruments: ${sb.instruments}` : "";
 
   const autoStyleParts = [genre || "", eraWord, tempoWord, instrWord].map(s=>(s||"").trim()).filter(Boolean);
-  // Gabung style manual (rawStyle / deskripsi utama) + auto bits
-  const styleStr = [rawStyle, autoStyleParts.join(", "), "professional studio recording, high quality audio"]
+  // 🎤 v10.2 LAGU NURUT: kata kunci gender IKUT DITANAM di style/tags di urutan DEPAN — tuas yang dituruti
+  // SEMUA provider & versi Suno. Jangan cuma andalkan param vocalGender (dok resmi: hanya 'preferred'/best-effort).
+  const genderWords = instrumental ? "" :
+    vocalGender === "male" ? "male vocalist, deep male voice" :
+    vocalGender === "female" ? "female vocalist, soft female voice" : "";
+  // Gabung: gender + style manual user (prioritas!) + auto bits + mutu
+  const styleStr = [genderWords, rawStyle, autoStyleParts.join(", "), "professional studio recording, high quality audio"]
     .map(s=>(s||"").trim()).filter(Boolean).join(", ");
+  // tags versi ber-gender untuk jalur suno-compatible generik
+  const tagsStr = [genderWords, tags || styleStr].map(s=>(s||"").trim()).filter(Boolean).join(", ");
 
   // Title pakai rawTitle
   const finalTitle = (rawTitle || "Verve AI Song").slice(0, 80);
@@ -107,7 +114,10 @@ function buildBody(payload: any, provider: Provider): any {
       title: finalTitle,
       callBackUrl: "playground",
       // negativeTags default: hal2 yang bikin lirik ngawur / bahasa asing
-      negativeTags: "korean, japanese, chinese, heavy metal, edm, autotune, robotic, off-key, distorted",
+      // 🎤 v10.2: lawan gender di-NEGATIF-kan — pria pilih? wanita masuk daftar larangan. Dan sebaliknya.
+      negativeTags: "korean, japanese, chinese, heavy metal, edm, autotune, robotic, off-key, distorted" +
+        (!instrumental && vocalGender === "male" ? ", female vocals, female voice" : "") +
+        (!instrumental && vocalGender === "female" ? ", male vocals, male voice" : ""),
     };
     if (isCustom) {
       // PENTING (docs Kie): di custom mode, `prompt` WAJIB diisi lirik yang sama dg `lyrics`
@@ -116,7 +126,7 @@ function buildBody(payload: any, provider: Provider): any {
       body.lyrics = finalLyrics.slice(0, 5000);
       body.style = styleStr.slice(0, 480);
       // styleWeight rendah = lebih patuh ke lirik; audioWeight normal; weirdness rendah biar gak aneh
-      body.styleWeight = 0.55;
+      body.styleWeight = 0.65; // v10.2: style manual user dituruti lebih keras (dulu 0.55 → gaya mengambang)
       body.audioWeight = 0.7;
       body.weirdnessConstraint = 0.3;
     } else {
@@ -124,9 +134,9 @@ function buildBody(payload: any, provider: Provider): any {
       body.style = styleStr.slice(0,480);
     }
     if (!instrumental) {
+      // v10.2: dok resmi hanya 'm'/'f' — 'mf' invalid (diabaikan/ditolak). Auto = biarkan provider memilih.
       if (vocalGender === "male") body.vocalGender = "m";
       else if (vocalGender === "female") body.vocalGender = "f";
-      else body.vocalGender = "mf";
     }
     return body;
   }
@@ -135,7 +145,7 @@ function buildBody(payload: any, provider: Provider): any {
   const body: any = {
     prompt: isCustom ? finalLyrics : finalPrompt,
     title: finalTitle,
-    tags: tags || styleStr,
+    tags: tagsStr, // v10.2: gender tertanam
     make_instrumental: !!instrumental,
     wait_audio: false,
     mv: "chirp-v3-5",
@@ -149,7 +159,7 @@ function buildBody(payload: any, provider: Provider): any {
     body.custom_mode = true;
     body.prompt = finalLyrics;
     body.style = styleStr;
-    body.tags = tags || styleStr;
+    body.tags = tagsStr; // v10.2: gender tertanam
   }
   return body;
 }
