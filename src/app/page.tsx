@@ -2753,6 +2753,27 @@ function TimelineV6(p: any) {
   const edgeDirRef = useRef(0);
   const edgeRafRef = useRef(0);
   const suppressClickRef = useRef(false);
+  // 🚪 v9.1 SATU PINTU — satu-satunya gerbang gesture: begitu jari menyentuh objek, kendali pindah ke pendengar WINDOW
+  // yang mengunci ID jari itu saja sampai lepas/batal. Telapak & jari kedua diabaikan total; pembatalan browser dibersihkan tuntas.
+  const gstRef = useRef<{ pid: number } | null>(null);
+  function gstBind(e: React.PointerEvent, mv: (ev: any) => void, up: (cancelled: boolean, ev?: any) => void): boolean {
+    if (gstRef.current) return false; // sedang ada jari lain bekerja → sentuhan ini diabaikan total
+    const pid = e.pointerId;
+    gstRef.current = { pid };
+    const mvH = (ev: PointerEvent) => { if (ev.pointerId === pid) mv(ev); };
+    const upH = (ev: PointerEvent) => {
+      if (ev.pointerId !== pid) return; // jari lain yang lepas → abaikan
+      gstRef.current = null;
+      window.removeEventListener("pointermove", mvH);
+      window.removeEventListener("pointerup", upH);
+      window.removeEventListener("pointercancel", upH);
+      up(ev.type === "pointercancel", ev);
+    };
+    window.addEventListener("pointermove", mvH);
+    window.addEventListener("pointerup", upH);
+    window.addEventListener("pointercancel", upH);
+    return true;
+  }
 
   function applyReorder(d: any, clientX: number) {
     const dx = clientX - d.startX;
@@ -2905,6 +2926,7 @@ function TimelineV6(p: any) {
   }
 
   function onClipDown(e: React.PointerEvent, i: number) {
+    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     const sid = slides[i].id;
     p.onSel(sid);
     const target = e.target as HTMLElement;
@@ -2912,6 +2934,7 @@ function TimelineV6(p: any) {
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
     armDrag(d, target, e.pointerId, 220); // v8.9: tekan-tahan 0,22d → klip "terangkat" & bisa diseret
+    gstBind(e, onClipMove, onClipUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
   }
   function onClipMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
@@ -2922,19 +2945,22 @@ function TimelineV6(p: any) {
     }
     dragUpdate(e, d);
   }
-  function onClipUp() {
+  function onClipUp(cancelled?: boolean) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null;
     stopEdge();
+    if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
     if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
+    if (gstRef.current) return; // v9.1: SATU gesture
     e.stopPropagation();
     const sid = slides[i].id;
     p.onSel(sid);
     dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1, side, armed: true, lastX: e.clientX } as any;
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    gstBind(e, onHdlMove, onHdlUp); // v9.1: SATU PINTU
   }
   function onHdlMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
@@ -2945,11 +2971,14 @@ function TimelineV6(p: any) {
 
   // seret balok audio (tekan-tahan → geser posisi mulai)
   function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
+    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
+    e.stopPropagation(); // v9.1: dulu BOCOR ke pembungkus jalur — sumber 'kadang kaku/ngaco'
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
     suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
+    gstBind(e, onAudMove, onAudUp); // v9.1: SATU PINTU
   }
   function onAudMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
@@ -2966,16 +2995,18 @@ function TimelineV6(p: any) {
     }
     dragUpdate(e, d);
   }
-  function onAudUp() {
+  function onAudUp(cancelled?: boolean) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
+    if (cancelled) { if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); } return; } // v9.1: batal → bersih total, tanpa commit
     if (d?.kind === "aud" && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); } // v9.0: gerak vertikal pun = drag (dulu bocor jadi tap!)
     commitObjRow(d);
   }
 
   // seret chip TEKS di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi) — per lapisan (tid)
   function onTxtDown(e: React.PointerEvent, sid: string, mode: "move" | "dur", t: any, tid: string = "") {
+    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     e.stopPropagation();
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
@@ -2985,6 +3016,7 @@ function TimelineV6(p: any) {
     suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
+    gstBind(e, onTxtMove, onTxtUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
   }
   function onTxtMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
@@ -3001,16 +3033,18 @@ function TimelineV6(p: any) {
     }
     dragUpdate(e, d);
   }
-  function onTxtUp() {
+  function onTxtUp(cancelled?: boolean) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
+    if (cancelled) { if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); } return; } // v9.1: batal → bersih total, tanpa commit
     if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); } // v9.0: gerak vertikal pun = drag
     commitObjRow(d);
   }
 
   // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
   function onStkDown(e: React.PointerEvent, sid: string, stid: string, mode: "move" | "dur", st: any) {
+    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     e.stopPropagation();
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
@@ -3020,6 +3054,7 @@ function TimelineV6(p: any) {
     suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
     else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
+    gstBind(e, onStkMove, onStkUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
   }
   function onStkMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
@@ -3036,10 +3071,11 @@ function TimelineV6(p: any) {
     }
     dragUpdate(e, d);
   }
-  function onStkUp() {
+  function onStkUp(cancelled?: boolean) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
+    if (cancelled) { if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); } return; } // v9.1: batal → bersih total, tanpa commit
     if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); } // v9.0: gerak vertikal pun = drag
     commitObjRow(d);
   }
@@ -3151,13 +3187,12 @@ function TimelineV6(p: any) {
                       className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
                       style={{ width: clipW(i), opacity: ghost ? 0.35 : 1 }}
                       onPointerDown={(e) => onClipDown(e, i)}
-                      onPointerMove={onClipMove} onPointerUp={onClipUp}
                     >
                       {s.imageUrl ? <img src={s.imageUrl} alt="" draggable={false} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
                       <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                       {sel && <>
-                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❮</span>
-                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")} onPointerMove={onHdlMove} onPointerUp={onHdlUp}>❯</span>
+                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
+                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>❯</span>
                       </>}
                       {i < slides.length - 1 && (() => {
                         const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
@@ -3236,8 +3271,8 @@ function TimelineV6(p: any) {
                                   const wpx = Math.max(90, (rd.dur || 4) * PXS0);
                                   return (
                                     <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — TAP = setting audio · TAHAN = GENGGAM — ikut jari bebas (⇄ maju/mundur · ⇅ jalur)"}
-                                      onPointerDown={(e) => onAudDown(e, rd.key)} onPointerMove={onAudMove} onPointerUp={onAudUp} onPointerCancel={onAudUp}
-                                      onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
+                                      onPointerDown={(e) => onAudDown(e, rd.key)}
+                                      onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
                                       style={{ position: "absolute", left: rd.off * PXS0, top: 3, width: wpx, height: 40, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                       <i style={{ fontStyle: "normal" }}>{rd.icon}</i>
                                       <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
@@ -3271,13 +3306,13 @@ function TimelineV6(p: any) {
                                   const tDragY = lifting && dd4.kind === "txt" && typeof dd4.lastY === "number" ? Math.round(dd4.lastY - (dd4.startY || 0)) : 0; // v9.0: IKUT jari terus
                                   return (
                                     <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
-                                      onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}
-                                      onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
+                                      onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)}
+                                      onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
                                       style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0, transform: lifting ? `translateY(${tDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                       {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
                                       <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                       <span className="txtdur" title="Tarik untuk ubah durasi teks"
-                                        onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)} onPointerMove={onTxtMove} onPointerUp={onTxtUp} onPointerCancel={onTxtUp}>⋮</span>
+                                        onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)}>⋮</span>
                                     </div>
                                   );
                                 }
@@ -3289,13 +3324,13 @@ function TimelineV6(p: any) {
                                 const sDragY = lifting && dd5.kind === "stk" && typeof dd5.lastY === "number" ? Math.round(dd5.lastY - (dd5.startY || 0)) : 0; // v9.0: IKUT jari terus
                                 return (
                                   <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
-                                    onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}
-                                    onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
+                                    onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)}
+                                    onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
                                     style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                     {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
                                     <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                     <span className="txtdur" title="Tarik untuk ubah durasi stiker"
-                                      onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)} onPointerMove={onStkMove} onPointerUp={onStkUp} onPointerCancel={onStkUp}>⋮</span>
+                                      onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)}>⋮</span>
                                   </div>
                                 );
                               })}
