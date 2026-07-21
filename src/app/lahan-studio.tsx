@@ -122,6 +122,7 @@ type LahanState = {
   lyrics: string; lyricMode: "auto" | "manual"; mStyle: string;
   genre: string; mood: string; vocal: string;
   task: SongTask | null; song: SongResult | null;
+  charLock?: string; modelPinned?: string; refUrl?: string; // 🔒 v10.0 SATU WAJAH
 };
 
 const DEFAULT_CHARS: CharCard[] = [
@@ -185,7 +186,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [naskah, setNaskah] = useState("");
   const [board, setBoard] = useState<Board | null>(null);
   const [genAllBusy, setGenAllBusy] = useState(false);
-  const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board" | "lyrics" | "song">("");
+  const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board" | "lyrics" | "song" | "charlock">("");
   const [err, setErr] = useState<{ code: string; msg: string } | null>(null);
   /* ---- SUNO ---- */
   const [lyrics, setLyrics] = useState("");
@@ -216,6 +217,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const launchKeyRef = useRef("");
   const [toast, setToast] = useState("");
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
+  const [charLock, setCharLock] = useState(""); // 🔒 v10.0: kalimat identitas BEKU (Inggris) — disuntik kata-per-kata SAMA ke tiap gambar
+  const [modelPinned, setModelPinned] = useState(""); // 🔒 v10.0: model pertama yang BERHASIL di-pin → semua adegan semodel
+  const [refUrl, setRefUrl] = useState(""); // 🔒 v10.0: gambar adegan pertama = kandidat acuan wajah (percobaan, fallback aman)
+  const ensureLockCacheRef = useRef<string>(""); // 🔒 v10.0: cache lock milik sesi menggambar berjalan
   const [gaya, setGaya] = useState(0);
   const [expanded, setExpanded] = useState<string>("");
   const brain = useMemo(loadBrain, []);
@@ -248,6 +253,9 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       setVocal((["auto", "male", "female", "instrumental"] as const).includes(j.vocal as never) ? (j.vocal as never) : "auto");
       setTask(j.task || null);
       setSong(j.song || null);
+      setCharLock(j.charLock || ""); // 🔒 v10.0
+      setModelPinned(j.modelPinned || "");
+      setRefUrl(j.refUrl || "");
     } catch { /* draf korup → mulai bersih */ }
     try {
       setSunoKey(localStorage.getItem("verve_suno_key") || "");
@@ -274,7 +282,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       if (board && !withImages) {
         slimBoard = { ...board, scenes: board.scenes.map((s) => ({ ...s, url: undefined, status: s.status === "done" ? "idle" : s.status })) };
       }
-      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song };
+      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song, charLock, modelPinned, refUrl };
       localStorage.setItem(LAHAN_KEY, JSON.stringify(payload));
     };
     try {
@@ -464,18 +472,55 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     }
   }
 
+  // 🔒 v10.0 SATU WAJAH — bekukan kartu karakter → SATU kalimat identitas Inggris, disuntik kata-per-kata SAMA ke tiap gambar
+  async function ensureCharLock(force = false): Promise<string> {
+    if (!force && charLock.trim().length > 10) return charLock.trim();
+    setBusy("charlock");
+    try {
+      const r = await fetch("/api/hcnsec/charlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chars, gaya: GAYA_VISUAL[gaya] }),
+      });
+      const j = await r.json();
+      if (r.ok && j.identity && String(j.identity).trim().length > 10) {
+        const id = String(j.identity).trim();
+        setCharLock(id);
+        return id;
+      }
+      throw new Error(j.error || " bekukan gagal");
+    } catch {
+      // fallback lokal deterministik — tetap terkunci + token Indonesia pasti ada
+      const named = chars.filter((c) => c.nama.trim());
+      const c0 = named[0] || DEFAULT_CHARS[0];
+      const id = `the exact same main character in every image, Indonesian, Southeast Asian facial features, warm tan skin (sawo matang), dark brown eyes, ${c0.nama} (${c0.peran}): ${c0.usia}, consistent face and hairstyle (${c0.ciri}), always wearing ${c0.pakaian}, recurring setting: ${c0.suasana}` +
+        (named.length > 1 ? ` | supporting characters: ${named.slice(1).map((c) => `${c.nama} (${c.usia}, ${c.ciri}, wearing ${c.pakaian})`).join(" | ")}` : "");
+      setCharLock(id);
+      return id;
+    } finally { setBusy(""); }
+  }
+  const ensureLockCache = ensureLockCacheRef; // alias lama dipertahankan
+  // seed stabil dari judul → kalau gateway muafakat, semua adegan lahir dari benih yang sama
+  function stableSeed(s2: string): number { let h = 5381; for (let k = 0; k < s2.length; k++) h = (((h << 5) + h) + s2.charCodeAt(k)) >>> 0; return 1000000 + (h % 9000000); }
+
   async function genScene(i: number, sc: Scene) {
     setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, status: "loading", err: undefined } : s)) }));
     try {
+      ensureLockCache.current = await ensureCharLock(); // 🔒 v10.0: bekukan dulu — sumber tunggal kebenaran wajah
       const r = await fetch("/api/hcnsec/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           _storyScene: {
-            visual_prompt: injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya]),
+            // lock aktif → adegan MURNI (identitas HANYA dari _charLock, tanpa dobel injeksi); lock gagal → jalan lama
+            visual_prompt: ensureLockCache.current || charLock ? sc.visual_prompt : injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya]),
             scene_desc: sc.scene_desc,
             mood: sc.mood,
           },
+          _charLock: ensureLockCache.current || charLock || undefined,
+          _seed: stableSeed(selTitle || "verve"),
+          _modelFirst: modelPinned || undefined,
+          _ref: refUrl || undefined,
           _mood: sc.mood,
           style: GAYA_TO_STYLE[gaya] || "cinematic",
           title: selTitle,
@@ -485,6 +530,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (!modelPinned && j.model) setModelPinned(String(j.model)); // 🔒 v10.0: pin model yang BERHASIL
+      if (!refUrl && j.originalUrl) setRefUrl(j.originalUrl); // 🔒 v10.0: gambar pertama = kandidat acuan wajah
       const url = await shrinkImage(j.url);
       setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "done", url } : s)) }));
       return true;
@@ -1148,6 +1195,16 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             <p className="lh-note">Jujur bro: konsistensi karakter AI itu ~90-95% — kartu karakter + tombol ↻ ulangi per adegan adalah obatnya. Detail kartu makin spesifik = hasil makin akur.</p>
           </div>
 
+          <div className="lh-card">
+            <div className="lh-h2">🔒 Kunci identitas (satpam wajah)</div>
+            <p className="lh-note">Kalimat BEKU ini dirakit algoritma dari kartu karaktermu + kunci "Indonesia" di dalamnya, lalu disuntik <b>kata-per-kata SAMA di urutan PERTAMA</b> tiap prompt gambar. Inilah yang bikin wajah & pakaian konsisten dan orangnya beneran orang Indonesia. Boleh diedit — tapi jangan ubah-ubah di tengah proyek.</p>
+            <textarea className="lh-ta" rows={3} placeholder="Tekan tombol BEKUKAN di bawah — kalimat identitas terisi otomatis dari kartu karakter…" value={charLock} onChange={(e) => setCharLock(e.target.value)} />
+            <button className="lh-btn sec" disabled={busy === "charlock"} onClick={() => void ensureCharLock(true).then(() => flash("🔒 Identitas dibekukan — disuntik ke SEMUA gambar"))}>
+              {busy === "charlock" ? "⏳ Membekukan..." : charLock ? "⤿ Bekukan ULANG dari kartu" : "🔒 Bekukan dari kartu karakter"}
+            </button>
+            {modelPinned && <p className="lh-note">🤖 Model terkunci: <b>{modelPinned}</b> (dipin dari gambar pertama yang berhasil → semua adegan semodel){refUrl ? " · 🖼 gambar adegan pertama ikut dikirim sebagai acuan wajah (percobaan; kalau gateway menolak, otomatis jalan biasa)" : ""}</p>}
+          </div>
+
           <button className="lh-btn" onClick={() => setStep(6)}>Lanjut: Naskah Cerita 📝</button>
         </>
       )}
@@ -1221,8 +1278,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                   <textarea className="lh-ta" rows={2} value={sc.scene_desc} onChange={(e) => updateScene(i, { scene_desc: e.target.value })} />
                   {!!sc.lyric_line && <p className="lh-lyric">🎵 “{sc.lyric_line}”</p>}
                   <details className="lh-details">
-                    <summary>prompt gambar (sudah terinjeksi karakter) ▾</summary>
-                    <pre className="lh-prompt">{injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya])}</pre>
+                    <summary>prompt gambar (🔒 kunci identitas + adegan) ▾</summary>
+                    <pre className="lh-prompt">{charLock ? `🔒 IDENTITAS BEKU: ${charLock}\n\n+ ADEGAN MURNI: ${sc.visual_prompt}` : injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya])}</pre>
                     <textarea className="lh-ta" rows={2} value={sc.visual_prompt} onChange={(e) => updateScene(i, { visual_prompt: e.target.value })} />
                   </details>
                   <div style={{ display: "flex", gap: 8, marginTop: 8 }}>

@@ -18,6 +18,7 @@ export async function POST(req: Request) {
   try {
     const {
       title, keyword, niche, style, prompt, _rawPrompt, _storyScene, _mood,
+      _charLock, _seed, _modelFirst, _ref, // 🔒 v10.0 SATU WAJAH
     } = await req.json();
     const styleObj = IMAGE_STYLES.find(s => s.id === style) || IMAGE_STYLES[0];
 
@@ -34,6 +35,11 @@ export async function POST(req: Request) {
       const mood = (_mood || sc.mood || "emotional, cinematic").trim();
       // Susun komposisi: [shot type + subject + action + environment + lighting + mood + color + lens + quality]
       const parts: string[] = [];
+      // 🔒 v10.0 SATU WAJAH: identitas BEKU di URUTAN PERTAMA — model paling patuh pada awal prompt
+      const lockTxt = String(_charLock || "").trim();
+      if (lockTxt.length > 10) {
+        parts.push(`IDENTICAL MAIN CHARACTER IN EVERY IMAGE (same exact face, same hair, same skin tone, same outfit — non-negotiable): ${lockTxt}${/indonesian/i.test(lockTxt) ? "" : ", Indonesian, Southeast Asian facial features, warm tan skin (sawo matang), dark brown eyes"}.`);
+      }
       parts.push(eng || `cinematic shot of ${idDesc.slice(0, 80)}`);
       if (idDesc && eng.length < 120) {
         // Tambahkan detail adegan bila visual_en pendek
@@ -52,15 +58,17 @@ export async function POST(req: Request) {
     if (!userPrompt) return NextResponse.json({ error: "Prompt kosong" }, { status: 400 });
 
     // Negative prompt bawaan (mengurangi cacat wajah/tangan)
-    const negSuffix =
+    let negSuffix =
       ", no text, no watermark, no logo, no signature, no distorted face, no deformed hands, " +
       "no extra fingers, no missing fingers, no blurry face, no ugly, no mutated, no bad anatomy, " +
       "sharp focus on subject, centered emotional composition";
+    if (String(_charLock || "").trim().length > 10) negSuffix += ", no face swap, no different person, no inconsistent face, no changing hairstyle, no changing hair color, no changing outfit, no caucasian features, no western facial features"; // 🔒 v10.0: penjaga identitas
 
     try {
       const { url, model, size: usedSize, prompt: usedPrompt } = await generateImage(
         userPrompt,
-        (styleObj ? styleObj.suffix : "") + negSuffix
+        (styleObj ? styleObj.suffix : "") + negSuffix,
+        { seed: Number(_seed) || undefined, modelFirst: _modelFirst ? String(_modelFirst) : undefined, refUrl: _ref ? String(_ref) : undefined } // 🔒 v10.0: pin model + coba seed & referensi (fallback aman)
       );
 
       let dataUrl = url;

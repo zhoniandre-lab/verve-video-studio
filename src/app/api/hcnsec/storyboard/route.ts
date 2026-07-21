@@ -36,6 +36,7 @@ Aturan penting:
 5. VISUAL_EN: WAJIB dalam Bahasa Inggris, 20-40 kata, sebutkan: shot type + subjek + aksi + lighting + lens/gear feel.
 6. COLOR: pilih warna hex yang cocok mood (ungu/pink untuk romantis, biru dingin untuk sedih, emas untuk harapan, merah untuk marah, hijau untuk islami).
 7. STYLE_VISUAL: satu kata: cinematic, anime, studio, fantasy, cyberpunk, pixar, oil, minimalist.
+8. LARANGAN KERAS: VISUAL_EN DILARANG menyebut etnis, warna kulit, detail wajah, model rambut, atau pakaian spesifik karakter — identitas disuntik SISTEM terpisah agar wajah 100% konsisten antar adegan. Cukup: shot, aksi, gesture, lingkungan, cahaya, lensa.
 
 Mulai output tepat di bawah MULAI-FORMAT dan akhiri sebelum AKHIR-FORMAT.`;
 

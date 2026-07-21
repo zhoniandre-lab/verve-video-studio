@@ -177,13 +177,28 @@ function extractUrl(item: any): string | null {
 
 interface GenImageResult { url: string; model: string; size: string; prompt: string; }
 
-export async function generateImage(prompt: string, styleSuffix?: string): Promise<GenImageResult> {
+export async function generateImage(prompt: string, styleSuffix?: string, opts?: { seed?: number; modelFirst?: string; refUrl?: string }): Promise<GenImageResult> {
   // Generate selalu 1024x1024 (native), resize/crop di client
   const fullPrompt = styleSuffix
     ? `${prompt}, ${styleSuffix}, no text, no watermark, no logo, sharp focus, centered composition`
     : `${prompt}, no text, no watermark, sharp focus, centered composition`;
   const errors: string[] = [];
-  for (const model of IMAGE_MODELS) {
+  // 🔒 v10.0 SATU WAJAH: model yang BERHASIL di-pin paling depan → semua adegan semodel, wajah sedarah
+  const order = opts?.modelFirst && IMAGE_MODELS.includes(opts.modelFirst)
+    ? [opts.modelFirst, ...IMAGE_MODELS.filter((m) => m !== opts.modelFirst)]
+    : IMAGE_MODELS;
+  // 🔒 v10.0: percobaan kunci tambahan (seed dan/atau gambar referensi) — dibungkus try penuh; gateway menolak → jalur normal
+  if (opts?.seed || opts?.refUrl) {
+    try {
+      const body: any = { model: order[0], prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: "url" };
+      if (opts.seed) body.seed = opts.seed;
+      if (opts.refUrl) { body.image = opts.refUrl; body.image_url = opts.refUrl; }
+      const data = await postJson("/images/generations", body, 90);
+      const url = extractUrl(data.data?.[0] ?? data);
+      if (url && url.length > 100) return { url, model: order[0], size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };
+    } catch { /* diam-diam lanjut jalur normal */ }
+  }
+  for (const model of order) {
     for (const fmt of ["url", "b64_json"] as const) {
       try {
         const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt }, 90);
