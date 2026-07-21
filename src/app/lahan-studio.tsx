@@ -122,7 +122,7 @@ type LahanState = {
   lyrics: string; lyricMode: "auto" | "manual"; mStyle: string;
   genre: string; mood: string; vocal: string;
   task: SongTask | null; song: SongResult | null;
-  charLock?: string; modelPinned?: string; refUrl?: string; // 🔒 v10.0 SATU WAJAH
+  charLock?: string; modelPinned?: string; // 🔒 v10.0 SATU WAJAH
 };
 
 const DEFAULT_CHARS: CharCard[] = [
@@ -219,7 +219,6 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [chars, setChars] = useState<CharCard[]>(DEFAULT_CHARS);
   const [charLock, setCharLock] = useState(""); // 🔒 v10.0: kalimat identitas BEKU (Inggris) — disuntik kata-per-kata SAMA ke tiap gambar
   const [modelPinned, setModelPinned] = useState(""); // 🔒 v10.0: model pertama yang BERHASIL di-pin → semua adegan semodel
-  const [refUrl, setRefUrl] = useState(""); // 🔒 v10.0: gambar adegan pertama = kandidat acuan wajah (percobaan, fallback aman)
   const ensureLockCacheRef = useRef<string>(""); // 🔒 v10.0: cache lock milik sesi menggambar berjalan
   const [gaya, setGaya] = useState(0);
   const [expanded, setExpanded] = useState<string>("");
@@ -255,7 +254,6 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       setSong(j.song || null);
       setCharLock(j.charLock || ""); // 🔒 v10.0
       setModelPinned(j.modelPinned || "");
-      setRefUrl(j.refUrl || "");
     } catch { /* draf korup → mulai bersih */ }
     try {
       setSunoKey(localStorage.getItem("verve_suno_key") || "");
@@ -282,7 +280,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       if (board && !withImages) {
         slimBoard = { ...board, scenes: board.scenes.map((s) => ({ ...s, url: undefined, status: s.status === "done" ? "idle" : s.status })) };
       }
-      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song, charLock, modelPinned, refUrl };
+      const payload: LahanState = { step, topic, angles: angles.slice(0, 40), selKeyword, angle: slimAngle, researchAt, selTitle, naskah, board: slimBoard, lyrics, lyricMode, mStyle, genre, mood, vocal, task, song, charLock, modelPinned };
       localStorage.setItem(LAHAN_KEY, JSON.stringify(payload));
     };
     try {
@@ -499,17 +497,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       return id;
     } finally { setBusy(""); }
   }
-  const ensureLockCache = ensureLockCacheRef; // alias lama dipertahankan
-  // seed stabil dari judul → kalau gateway muafakat, semua adegan lahir dari benih yang sama
-  function stableSeed(s2: string): number { let h = 5381; for (let k = 0; k < s2.length; k++) h = (((h << 5) + h) + s2.charCodeAt(k)) >>> 0; return 1000000 + (h % 9000000); }
+  const ensureLockCache = ensureLockCacheRef; // 🔒 v10.0
 
   async function genScene(i: number, sc: Scene) {
     setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, status: "loading", err: undefined } : s)) }));
+    const ac = new AbortController(); const watchdog = setTimeout(() => ac.abort(), 55000); // v10.1: jam pengaman — batal halus ketimbang 'Failed to fetch'
     try {
       ensureLockCache.current = await ensureCharLock(); // 🔒 v10.0: bekukan dulu — sumber tunggal kebenaran wajah
       const r = await fetch("/api/hcnsec/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ac.signal, // v10.1: terhubung ke jam pengaman
         body: JSON.stringify({
           _storyScene: {
             // lock aktif → adegan MURNI (identitas HANYA dari _charLock, tanpa dobel injeksi); lock gagal → jalan lama
@@ -518,9 +516,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             mood: sc.mood,
           },
           _charLock: ensureLockCache.current || charLock || undefined,
-          _seed: stableSeed(selTitle || "verve"),
           _modelFirst: modelPinned || undefined,
-          _ref: refUrl || undefined,
           _mood: sc.mood,
           style: GAYA_TO_STYLE[gaya] || "cinematic",
           title: selTitle,
@@ -528,15 +524,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
           niche: "cerita jadi lagu",
         }),
       });
+      clearTimeout(watchdog);
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       if (!modelPinned && j.model) setModelPinned(String(j.model)); // 🔒 v10.0: pin model yang BERHASIL
-      if (!refUrl && j.originalUrl) setRefUrl(j.originalUrl); // 🔒 v10.0: gambar pertama = kandidat acuan wajah
       const url = await shrinkImage(j.url);
       setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "done", url } : s)) }));
       return true;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      clearTimeout(watchdog);
+      let msg = e instanceof Error ? e.message : String(e);
+      if (/failed to fetch|abort/i.test(msg)) msg = "⏱ Koneksi kepotong (proses kelamaan) — provider gambar lagi lambat. Coba lagi adegan ini."; // v10.1: pesan manusiawi, bukan bahasa mesin
       setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "error", err: msg } : s)) }));
       return false;
     }
@@ -1202,7 +1200,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             <button className="lh-btn sec" disabled={busy === "charlock"} onClick={() => void ensureCharLock(true).then(() => flash("🔒 Identitas dibekukan — disuntik ke SEMUA gambar"))}>
               {busy === "charlock" ? "⏳ Membekukan..." : charLock ? "⤿ Bekukan ULANG dari kartu" : "🔒 Bekukan dari kartu karakter"}
             </button>
-            {modelPinned && <p className="lh-note">🤖 Model terkunci: <b>{modelPinned}</b> (dipin dari gambar pertama yang berhasil → semua adegan semodel){refUrl ? " · 🖼 gambar adegan pertama ikut dikirim sebagai acuan wajah (percobaan; kalau gateway menolak, otomatis jalan biasa)" : ""}</p>}
+            {modelPinned && <p className="lh-note">🤖 Model terkunci: <b>{modelPinned}</b> — dipin dari gambar pertama yang berhasil, semua adegan memakainya</p>}
           </div>
 
           <button className="lh-btn" onClick={() => setStep(6)}>Lanjut: Naskah Cerita 📝</button>

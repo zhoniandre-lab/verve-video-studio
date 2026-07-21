@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { generateImage, IMAGE_STYLES } from "@/lib/hcnsec";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // v10.1: tegas — jangan pernah lewat anggaran serverless
 
 async function proxyImageToBase64(url: string): Promise<string> {
   const r = await fetch(url, {
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
   try {
     const {
       title, keyword, niche, style, prompt, _rawPrompt, _storyScene, _mood,
-      _charLock, _seed, _modelFirst, _ref, // 🔒 v10.0 SATU WAJAH
+      _charLock, _modelFirst, // 🔒 v10.1: cukup kunci identitas + pin model — percobaan seed/referensi DICABUT (biang nggantung)
     } = await req.json();
     const styleObj = IMAGE_STYLES.find(s => s.id === style) || IMAGE_STYLES[0];
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
       const { url, model, size: usedSize, prompt: usedPrompt } = await generateImage(
         userPrompt,
         (styleObj ? styleObj.suffix : "") + negSuffix,
-        { seed: Number(_seed) || undefined, modelFirst: _modelFirst ? String(_modelFirst) : undefined, refUrl: _ref ? String(_ref) : undefined } // 🔒 v10.0: pin model + coba seed & referensi (fallback aman)
+        { modelFirst: _modelFirst ? String(_modelFirst) : undefined } // 🔒 v10.1: pin model saja
       );
 
       let dataUrl = url;
