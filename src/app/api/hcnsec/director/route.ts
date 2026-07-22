@@ -132,7 +132,7 @@ const STUDIO_OPS = new Set([
   "add_spectrum", "add_cta", // 🌈▶️ v13.4.1: buka pintu satpam utk spektrum & tombol CTA YouTube
   "animasikan_adegan", "matikan_animasi", // 🎬 v11.8: ANIMASI STUDIO (kredit video AI / matikan gratis)
 ]);
-const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun", "zoom_in", "zoom_out", "selangseling"]); // 🎬 v11.4: +keras/arah/selangseling
+const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun", "zoom_in", "zoom_out", "selangseling", "geser_kiri", "geser_kanan", "naik", "turun", "sinematik"]); // 🎬 v11.4 + v13.4.2: mode GERAK WAH v13.3 masuk daftar putih
 const num = (v: unknown, a: number, b: number): number | null => {
   const n = Number(v);
   return isFinite(n) ? Math.min(b, Math.max(a, n)) : null;
@@ -165,7 +165,7 @@ function cleanStudioOps(raw: unknown, nSlides: number): { ops: Op[]; dropped: st
       // 🛡 v11.4: slide kosong/null/0 ATAU mode selangseling = SEMUA adegan — BUKAN kesalahan,
       // tidak di-drop, tidak menakuti pembuat dengan peringatan "adegan 0 tidak ada".
       const rawSc = o.slide;
-      const semuaAdegan = rawSc === undefined || rawSc === null || rawSc === "" || Number(rawSc) === 0 || mv === "selangseling";
+      const semuaAdegan = rawSc === undefined || rawSc === null || rawSc === "" || Number(rawSc) === 0 || mv === "selangseling" || mv === "sinematik"; // 🎬 v13.4.2: sinematik jua selalu SEMUA adegan
       if (!semuaAdegan) {
         if (!slideOk(rawSc)) { dropped.push(`adegan ${rawSc} tidak ada`); continue; }
         out.slide = Math.round(Number(rawSc));
