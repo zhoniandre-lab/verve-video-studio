@@ -2874,19 +2874,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         </div>
       </div>
 
-      {/* ============ WAKTU + RULER ============ */}
+      {/* ============ WAKTU — v12.8 SATU ROL: rol kosmetik pembagian-genap DIHAPUS (angka 00:34/01:08 bukan detik nyata
+          dan membingungkan). Satu-satunya penggaris = skala detik asli di dalam track, persis seperti CapCut. ============ */}
       <div className="v6e-timerow">
         <span><b>{formatDur(curT)}</b> / {formatDur(durT)}</span>
-        <div className="v6e-ruler">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <i key={i} className={i % 5 === 0 ? "big" : ""} />
-          ))}
-          {Array.from({ length: 5 }).map((_, i) => (
-            <span key={`t${i}`} style={{ position: "absolute", fontSize: 9, left: `${12 + i * (86 / 4)}%`, color: "#6b7280", fontWeight: 600 }}>
-              {formatDur((durT || clipsTotal || 0) * (i / 4))}
-            </span>
-          ))}
-        </div>
+        <span className="v6e-timerow-tip">🕒 penggaris detik di track — cubit utk zoom</span>
       </div>
 
       {/* ============ TIMELINE ============ */}

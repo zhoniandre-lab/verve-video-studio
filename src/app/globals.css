@@ -1192,9 +1192,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 .v6e-timerow { display:flex; align-items:center; gap:6px; padding:0 14px; font-size:11px; color:#9ca3af; font-weight:600;
   user-select:none; flex:0 0 auto; }
 .v6e-timerow b { color:#fff; font-weight:700; }
-.v6e-ruler { flex:1; height:14px; display:flex; align-items:flex-end; justify-content:space-between; overflow:hidden; }
-.v6e-ruler i { width:1px; height:5px; background:#3f3f46; flex:0 0 auto; }
-.v6e-ruler i.big { height:9px; background:#52525b; }
+.v6e-timerow-tip { font-size:10px; color:#5b6472; font-weight:600; }
 
 /* ---------- TIMELINE ---------- */
 .v6e-tl { flex:0 0 auto; background:#000; padding:2px 0 4px; }
