@@ -591,6 +591,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
           keyword: `${selKeyword} | karakter wajib konsisten: ${charLine || "sesuai judul"} | arah gaya: ${GAYA_VISUAL[gaya]}`,
           niche: "Cerita jadi lagu / lagu emosional",
           slides: sceneCount,
+          naskah: (naskah || "").slice(0, 1500), // 🎬 v13.2: naskah jadi SUMBER ALUR storyboard — adegan berantai seperti film
         }),
       });
       const j = await r.json();
@@ -644,43 +645,57 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
 
   async function genScene(i: number, sc: Scene, extra?: string) { // 🎬 v11.0: arahan Sutradara (opsional)
     setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, status: "loading", err: undefined } : s)) }));
-    const ac = new AbortController(); const watchdog = setTimeout(() => ac.abort(), 55000); // v10.1: jam pengaman — batal halus ketimbang 'Failed to fetch'
-    try {
-      ensureLockCache.current = await ensureCharLock(); // 🔒 v10.0: bekukan dulu — sumber tunggal kebenaran wajah
-      const r = await fetch("/api/hcnsec/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: ac.signal, // v10.1: terhubung ke jam pengaman
-        body: JSON.stringify({
-          _storyScene: {
-            // lock aktif → adegan MURNI (identitas HANYA dari _charLock, tanpa dobel injeksi); lock gagal → jalan lama
-            visual_prompt: (ensureLockCache.current || charLock ? sc.visual_prompt : injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya])) + (extra ? `, ${extra}` : ""), // 🎬 v11.0: arahan regen dari Sutradara ikut dibawa
-            scene_desc: sc.scene_desc,
-            mood: sc.mood,
-          },
-          _charLock: ensureLockCache.current || charLock || undefined,
-          _modelFirst: modelPinned || undefined,
-          _mood: sc.mood,
-          style: GAYA_TO_STYLE[gaya] || "cinematic",
-          title: selTitle,
-          keyword: selKeyword,
-          niche: "cerita jadi lagu",
-        }),
-      });
-      clearTimeout(watchdog);
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      if (!modelPinned && j.model) setModelPinned(String(j.model)); // 🔒 v10.0: pin model yang BERHASIL
-      const url = await shrinkImage(j.url);
-      setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "done", url } : s)) }));
-      return true;
-    } catch (e) {
-      clearTimeout(watchdog);
-      let msg = e instanceof Error ? e.message : String(e);
-      if (/failed to fetch|abort/i.test(msg)) msg = "⏱ Koneksi kepotong (proses kelamaan) — provider gambar lagi lambat. Coba lagi adegan ini."; // v10.1: pesan manusiawi, bukan bahasa mesin
-      setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "error", err: msg } : s)) }));
-      return false;
+    let lastMsg = "gagal, coba lagi";
+    for (let attempt = 1; attempt <= 3; attempt++) { // 🎬 v13.2: ANTRE OTOMATIS — server penuh/channel habis = sabar tunggu & coba lagi, bukan langsung menyerah
+      const ac = new AbortController(); const watchdog = setTimeout(() => ac.abort(), 55000); // v10.1: jam pengaman TIAP percobaan
+      try {
+        ensureLockCache.current = await ensureCharLock(); // 🔒 v10.0: bekukan dulu — sumber tunggal kebenaran wajah
+        const r = await fetch("/api/hcnsec/image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ac.signal, // v10.1: terhubung ke jam pengaman
+          body: JSON.stringify({
+            _storyScene: {
+              // lock aktif → adegan MURNI (identitas HANYA dari _charLock, tanpa dobel injeksi); lock gagal → jalan lama
+              visual_prompt: (ensureLockCache.current || charLock ? sc.visual_prompt : injectCharacter(sc.visual_prompt, chars, GAYA_VISUAL[gaya])) + (extra ? `, ${extra}` : ""), // 🎬 v11.0: arahan regen dari Sutradara ikut dibawa
+              scene_desc: sc.scene_desc,
+              mood: sc.mood,
+            },
+            _charLock: ensureLockCache.current || charLock || undefined,
+            _modelFirst: modelPinned || undefined,
+            _mood: sc.mood,
+            style: GAYA_TO_STYLE[gaya] || "cinematic",
+            title: selTitle,
+            keyword: selKeyword,
+            niche: "cerita jadi lagu",
+          }),
+        });
+        clearTimeout(watchdog);
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        if (!modelPinned && j.model) setModelPinned(String(j.model)); // 🔒 v10.0: pin model yang BERHASIL
+        const url = await shrinkImage(j.url);
+        setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "done", url } : s)) }));
+        return true;
+      } catch (e) {
+        clearTimeout(watchdog);
+        let msg = e instanceof Error ? e.message : String(e);
+        const busySrv = /concurrency|available channel|429|rate limit|overload|too many|antri/i.test(msg); // 🎬 v13.2: deteksi "antrian server penuh"
+        if (/failed to fetch|abort/i.test(msg)) msg = "⏱ Koneksi kepotong (proses kelamaan) — provider gambar lagi lambat. Coba lagi adegan ini."; // v10.1: pesan manusiawi, bukan bahasa mesin
+        lastMsg = busySrv
+          ? "⏳ Antrian server gambar penuh (sudah 3x coba otomatis). Tunggu 1-2 menit lalu tekan lagi — bukan salah koneksimu."
+          : msg;
+        if (busySrv && attempt < 3) {
+          setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "loading", err: `⏳ Server penuh — ngantri otomatis (percobaan ${attempt + 1}/3)...` } : s)) }));
+          await new Promise((r) => setTimeout(r, 15000 * attempt)); // makin sabar: 15 detik, lalu 30 detik
+          continue;
+        }
+        setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "error", err: lastMsg } : s)) }));
+        return false;
+      }
     }
+    setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, jj) => (jj === i ? { ...s, status: "error", err: lastMsg } : s)) }));
+    return false;
   }
 
   async function genAllScenes() {
@@ -1626,6 +1641,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                   </div>
                   {sc.url && <img className="lh-scene-img" src={sc.url} alt={`adegan ${sc.scene}`} />}
                   {sc.status === "error" && <p className="lh-note" style={{ color: "#ff9b9b" }}>{sc.err}</p>}
+                  <p className="lh-note" style={{ margin: "6px 0 2px" }}>🎬 <b>Alur adegan {sc.scene}</b> — aksi nyata lanjutan cerita (boleh diedit kalau kurang pas):</p>
                   <textarea className="lh-ta" rows={2} value={sc.scene_desc} onChange={(e) => updateScene(i, { scene_desc: e.target.value })} />
                   {!!sc.lyric_line && <p className="lh-lyric">🎵 “{sc.lyric_line}”</p>}
                   <details className="lh-details">

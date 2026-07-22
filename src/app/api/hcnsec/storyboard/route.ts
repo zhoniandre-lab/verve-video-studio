@@ -10,6 +10,9 @@ KATA KUNCI: {{KW}}
 NICHE: {{NICHE}}
 JUMLAH ADEGAN: {{N}}
 
+NASKAH CERITA (SUMBER ALUR — wajib diikuti baris demi baris):
+{{NASKAH}}
+
 TULIS OUTPUT TEPAT SESUAI FORMAT DI BAWAH INI. JANGAN tambahkan apapun sebelum/sesudah.
 JANGAN PERNAH gunakan tanda kurung kurawal { } atau kurung siku [ ].
 JANGAN gunakan JSON.
@@ -37,14 +40,19 @@ Aturan penting:
 6. COLOR: pilih warna hex yang cocok mood (ungu/pink untuk romantis, biru dingin untuk sedih, emas untuk harapan, merah untuk marah, hijau untuk islami).
 7. STYLE_VISUAL: satu kata: cinematic, anime, studio, fantasy, cyberpunk, pixar, oil, minimalist.
 8. LARANGAN KERAS: VISUAL_EN DILARANG menyebut etnis, warna kulit, detail wajah, model rambut, atau pakaian spesifik karakter — identitas disuntik SISTEM terpisah agar wajah 100% konsisten antar adegan. Cukup: shot, aksi, gesture, lingkungan, cahaya, lensa.
+9. ALUR BERANTAI (PALING PENTING): semua adegan adalah SATU FILM PENDEK utuh. Setiap adegan MELANJUTKAN kejadian adegan sebelumnya (sebab → akibat), mengikuti urutan naskah. DILARANG kumpulan suasana yang berdiri sendiri-sendiri tanpa hubungan.
+10. BENANG MERAH: pilih SATU benda cerita NYATA dari naskah (mis: baju ibu yang tersimpan di lemari) — wajib muncul di minimal 3 adegan dan disebut jelas di VISUAL_EN adegan-adegan itu. Benda cerita BUKAN pakaian yang sedang dipakai tokoh (itu wilayah kunci identitas).
+11. DESKRIPSI = AKSI KONKRET tokoh + benda nyata (mis: anak membuka pintu lemari tua yang berdecit, tangan gemetar mengusap baju batik ibu) — BUKAN untaian kata sifat. DILARANG adegan metafora abstrak tanpa aksi nyata.
+12. VISUAL_EN bergaya realisme dokumenter sinematik: aksi nyata + benda kunci + ruang nyata yang masuk akal (lemari kayu tua, kamar sempit berdebu, halaman rumah sore hari). Foto beneran yang bisa disyut kamera, bukan ilustrasi mimpi.
 
 Mulai output tepat di bawah MULAI-FORMAT dan akhiri sebelum AKHIR-FORMAT.`;
 
-async function tryGenerate(title: string, keyword: string, niche: string, n: number, attempt: number): Promise<any> {
+async function tryGenerate(title: string, keyword: string, niche: string, n: number, attempt: number, naskah: string): Promise<any> {
   let sys = PROLOGUE
     .replace(/\{\{TITLE\}\}/g, String(title||"").slice(0,80).replace(/"/g,"'"))
     .replace(/\{\{KW\}\}/g, String(keyword||"-").slice(0,80).replace(/"/g,"'"))
     .replace(/\{\{NICHE\}\}/g, String(niche||"-").slice(0,80).replace(/"/g,"'"))
+    .replace(/\{\{NASKAH\}\}/g, String(naskah||"").slice(0,1500).replace(/"/g,"'") || "(naskah belum ada — bangun alur sebab-akibat murni dari judul & kata kunci)")
     .replace(/\{\{N\}\}/g, String(n));
   if (attempt > 1) {
     sys += "\n\nPERINGATAN KHUSUS: JANGAN PERNAH mengembalikan JSON, array, object, atau kode apapun. Gunakan FORMAT DI ATAS SAJA. Tanda { } [ ] DILARANG sama sekali. Gunakan SCENE_START/SCENE_END marker.";
@@ -105,13 +113,13 @@ function parseStoryboardText(raw: string, expectedN: number): any {
 
 export async function POST(req: Request) {
   try {
-    const { title, keyword, niche, slides } = await req.json();
+    const { title, keyword, niche, slides, naskah } = await req.json();
     if (!title) return NextResponse.json({ error: "Judul kosong" }, { status: 400 });
     const n = Math.max(2, Math.min(12, Number(slides)||4));
     let lastErr: any = null;
     for (let attempt=1; attempt<=3; attempt++){
       try {
-        const parsed = await tryGenerate(title, keyword||"", niche||"", n, attempt);
+        const parsed = await tryGenerate(title, keyword||"", niche||"", n, attempt, naskah||"");
         if (!parsed.scenes || parsed.scenes.length < Math.max(1, n-1)) throw new Error("scene kurang");
         return NextResponse.json(parsed);
       } catch(e:any){ lastErr = e; }
