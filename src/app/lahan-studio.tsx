@@ -1192,14 +1192,45 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   }
 
+  /** 📻 v13.7: ukur durasi lagu dari metadata audio (langsung → GERBANG) — lagu wizard bisa datang TANPA durasi. */
+  function probeSongDur(url: string): Promise<number> {
+    const cands = /^https?:/i.test(url) ? [url, `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`] : [url];
+    return new Promise((res) => {
+      let settled = false;
+      const done = (d: number) => { if (!settled) { settled = true; res(d); } };
+      const tryOne = (i: number) => {
+        if (settled) return;
+        if (i >= cands.length) return done(0);
+        const a = new Audio();
+        a.preload = "metadata";
+        a.onloadedmetadata = () => { const d = a.duration; done(isFinite(d) && d > 0.5 ? d : 0); };
+        a.onerror = () => tryOne(i + 1);
+        setTimeout(() => tryOne(i + 1), 12000);
+        a.src = cands[i];
+      };
+      tryOne(0);
+    });
+  }
+
   /** Bangun draf studio PENUH: gambar→Track 1, lagu→jalur musik, lirik→lapisan teks per klip. */
-  function masukStudio() {
+  async function masukStudio() {
     if (!board || !song) return;
+    if ((masukStudio as any)._busy) return; (masukStudio as any)._busy = true;
+    try {
     if (!doneScenes.length) {
       setErr({ code: "merge", msg: "Belum ada adegan bergambar — kembali ke langkah Adegan dulu bro." });
       return;
     }
-    const per = Math.round((totalDur / doneScenes.length) * 100) / 100;
+    // 🩹 v13.7 SELARAS LAGU: durasi lagu HARUS terukur sebelum bagi rata — dulu lagu tanpa durasi →
+    // 7 adegan × 6d = 42 detik doang dari lagu 4+ menit (laporan bro: "tidak mengikuti audio panjangnya").
+    let durEff = song.duration && song.duration > 1 ? song.duration : 0;
+    if (!durEff) {
+      flash("📻 Mengukur durasi lagu dulu ya bro…");
+      durEff = await probeSongDur(song.url);
+      if (durEff > 1) { setSong((s) => (s ? { ...s, duration: durEff } : s)); flash(`🎵 Lagu terukur ${Math.round(durEff)} detik — adegan aku selaraskan`); }
+    }
+    const totalEff = durEff > 1 ? Math.round(durEff) : totalDur;
+    const per = Math.round((totalEff / doneScenes.length) * 100) / 100;
     const builtSlides = doneScenes.map((sc) => ({ id: uidL("c"), imageUrl: sc.url as string }));
     const slideOptsById: Record<string, unknown> = {};
     builtSlides.forEach((sl, i) => {
@@ -1224,7 +1255,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       ratio: "16:9", slideDuration: per, transition: "dissolve", transitionDur: 0.6,
       bgMode: "cover", bgColor: "#000000",
       musicUrl: song.url, musicName: (song.title || selTitle).slice(0, 60),
-      musicDur: Math.round((song.duration || 0) * 100) / 100 || 0,
+      musicDur: Math.round((durEff || song.duration || 0) * 100) / 100 || 0,
       musicOff: 0, musicVol: 1, musicFadeIn: 0, musicFadeOut: 0,
       ttsUrl: "", ttsText: "", voiceUrl: "", ttsDur: 0, voiceDur: 0, ttsOff: 0, voiceOff: 0, voiceVol: 1,
       filterPreset: "none", qualitySharp: false, audMuted: false,
@@ -1247,6 +1278,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     } catch (e) {
       setErr({ code: "merge", msg: "Gagal simpan draf gabungan (storage penuh? hapus draf lama): " + (e instanceof Error ? e.message : String(e)) });
     }
+    } finally { (masukStudio as any)._busy = false; } // v13.7: tutup gerbang anti dobel-klik
   }
 
   const canGo = (k: number): boolean =>
@@ -1970,7 +2002,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               <p>Masuk Studio: gambar → <b>Track 1</b> · lagu → <b>jalur musik</b> (gelombang asli + BPM) · lirik tiap adegan → <b>lapisan teks terpisah</b> (bisa kau geser/edit hapus satu-satu). Belum cocok = edit, cocok = ekspor.</p>
             </div>
           </div>
-          <button className="lh-btn" onClick={masukStudio}>🎬 MASUK STUDIO EDIT</button>
+          <button className="lh-btn" onClick={() => void masukStudio()}>🎬 MASUK STUDIO EDIT</button>
         </>
       )}
 

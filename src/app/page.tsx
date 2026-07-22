@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
 import { renderGif } from "@/lib/gif";
+import { makeAutoThumbBlob } from "@/lib/thumb";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
@@ -838,6 +839,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   useEffect(() => { if (musicUrl && !musicDur) getAudioDuration(musicUrl).then((d) => { if (d > 0.5) setMusicDur(d); }); }, [musicUrl, musicDur]);
   useEffect(() => { if (ttsUrl && !ttsDur) getAudioDuration(ttsUrl).then((d) => { if (d > 0.5) setTtsDur(d); }); }, [ttsUrl, ttsDur]);
   useEffect(() => { if (voiceUrl && !voiceDur) getAudioDuration(voiceUrl).then((d) => { if (d > 0.5) setVoiceDur(d); }); }, [voiceUrl, voiceDur]);
+
+  const audioSyncedRef = useRef(0); // ⏱ v13.7 SELARAS — flag penyembuhan sekali jalan (efeknya di bawah deklarasi mTitle)
   // elemen audio yang dikelola jam manual (mode offset) saat preview
   const tlAudRef = useRef<{ a: HTMLAudioElement; off: number; dur: number }[]>([]);
   // ingat pengaturan ekspor terakhir
@@ -846,6 +849,23 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [sunoKey, setSunoKey] = useState("");
   const [sunoProv, setSunoProv] = useState("kie");
   const [mTitle, setMTitle] = useState("");
+
+  /* ⏱ v13.7 SELARAS LAGU — draf kelahiran Lahan yang klipnya kependekan (lagu 4 menit, isi cuma 42 detik)
+     disetarakan OTOMATIS tepat SEKALI per proyek. Setelah itu durasi klip = milikmu, diundo pun tidak diusik lagi. */
+  useEffect(() => {
+    if (audioSyncedRef.current) return;
+    if (!musicUrl || !musicDur || musicDur < 8 || slides.length < 2) return;
+    if (!(mTitle || niche)) return; // hanya draf dari Lahan — proyek rakitan manual jangan diutak-atik
+    const tot = slides.reduce((a, s) => { const o: any = slideOptsById[s.id] || {}; return a + Math.max(0.4, (o.dur ?? slideDuration) / Math.max(0.25, o.speed || 1)); }, 0);
+    if (tot <= 0 || tot >= musicDur * 0.8) return;
+    const f = Math.min(10, musicDur / tot);
+    if (f < 1.05) return;
+    audioSyncedRef.current = 1;
+    pushHist(); // biar bisa di-Undo kalau kau tak suka
+    slides.forEach((s) => { const o: any = slideOptsById[s.id] || {}; const base = Math.max(0.4, o.dur ?? slideDuration); setOpt(s.id, { dur: Math.round(base * f * 100) / 100 } as any); });
+    flash(`⏱ ${slides.length} adegan otomatis diselaraskan penuh ke lagu ${formatDur(Math.round(musicDur))} — tinggal poles per klip sesukamu bro`);
+    setTimeout(() => { try { persistSnapshot(); } catch {} }, 700);
+  }, [musicDur, musicUrl, slides, slideOptsById, slideDuration, mTitle, niche]); // eslint-disable-line react-hooks/exhaustive-deps
   const [mLyrics, setMLyrics] = useState("");
   const [mStyle, setMStyle] = useState("");
   const [mGenre, setMGenre] = useState("pop ballad");
@@ -1365,6 +1385,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", musicDur, ttsDur, voiceDur, musicOff, ttsOff, voiceOff, filterPreset, adj, qualitySharp,
       musicVol, voiceVol, musicFadeIn, musicFadeOut,
       capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb: thumb, audMuted,
+      audioSynced: audioSyncedRef.current ? 1 : 0, // ⏱ v13.7
       mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal };
   }, [slides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor, musicUrl, musicName, ttsUrl, ttsText, filterPreset, adj, qualitySharp, capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb, draftId, projTitle, mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal, audMuted]);
   function applySnapshot(d: any) {
@@ -1389,6 +1410,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setMTitle(d.mTitle || ""); setMLyrics(d.mLyrics || ""); setMStyle(d.mStyle || "");
     setMGenre(d.mGenre || "pop ballad"); setMMood(d.mMood || "emotional, menyentuh");
     setMModel(d.mModel || "suno-v5"); setMVocal(d.mVocal || "vocal");
+    audioSyncedRef.current = d.audioSynced ? 1 : 0; // ⏱ v13.7: draf yang sudah disetarakan tidak diusik lagi
     setSelId(""); setClipBar(false); setCurT(0);
     (window as any).__v6prevlen = fromArrayLen((d.slides || []));
     histRef.current = { stk: [], i: -1 }; setHistTick(v => v + 1);
@@ -2474,10 +2496,43 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.error) throw new Error(d.error || `Error ${r.status}`);
+      // 🏷 v13.7 JUDUL TERKUNCI — judul utama SELALU persis judul pilihanmu di tahap Judul (Lahan);
+      // AI hanya membantu deskripsi/tags/hashtags + usulan alternatif di bawahnya.
+      const locked = (projTitle || "").trim();
+      if (locked) {
+        d.titleHighCTR = locked;
+        d.titleAlternatives = (d.titleAlternatives || []).filter((t: string) => (t || "").trim() && (t || "").trim() !== locked);
+      }
       setMeta(d);
-      flash("📋 Metadata YouTube dibuat");
+      flash("📋 Metadata siap — judul mengikuti judul terkuncimu ✓");
     } catch (e: any) { setErr(e); }
     setLoading(null);
+  }
+  /* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */
+  const [thumbU, setThumbU] = useState("");
+  const [thumbBusy, setThumbBusy] = useState(false);
+  const [thumbIdx, setThumbIdx] = useState(0);
+  const [thumbSalt, setThumbSalt] = useState(0);
+  const thumbBlobRef = useRef<Blob | null>(null);
+  async function genThumb(saltOv?: number, idxOv?: number, quiet?: boolean) {
+    if (!slides.length) { if (!quiet) flash("Belum ada adegan — tambahkan klip dulu bro"); return; }
+    const s2 = saltOv ?? thumbSalt;
+    const i2 = (((idxOv ?? thumbIdx) % slides.length) + slides.length) % slides.length;
+    setThumbSalt(s2); setThumbIdx(i2);
+    setThumbBusy(true);
+    try {
+      const img = getImage(slides[i2]?.imageUrl || "");
+      const blob = await makeAutoThumbBlob(img, projTitle || "Cerita Jadi Lagu", niche || "cerita jadi lagu", s2);
+      thumbBlobRef.current = blob;
+      setThumbU((u) => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(blob); });
+      if (!quiet) flash("🖼 Thumbnail High-CTR siap — tinggal download!");
+    } catch { if (!quiet) flash("⚠️ Thumbnail gagal dirakit — coba lagi ya bro"); }
+    setThumbBusy(false);
+  }
+  function downloadThumb() {
+    const b = thumbBlobRef.current; if (!b) return;
+    downloadBlob(b, `thumb_${(projTitle || "verve").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 30) || "verve"}_${Date.now()}.jpg`);
+    flash("⬇ Thumbnail 1280×720 terdownload — tinggal pasang di YouTube");
   }
   async function copyFld(k: string, t: string) {
     if (await copyTxt(t)) { setCopiedFld(k); setTimeout(() => setCopiedFld(""), 1400); }
@@ -3152,6 +3207,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, projTitle,
+            thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
           }}
         />
       )}
@@ -4591,6 +4647,7 @@ function StikerSheet({ api: A, tab0, onClose }: any) {
 
 /* ---------------- EKSPOR (video | GIF, slider resolusi/fps/bitrate) ---------------- */
 function EksporSheet({ api: A, onClose }: any) {
+  useEffect(() => { if (!A.thumbU && (A.slides || []).length) { try { A.genThumb(0, 0, true); } catch {} } }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const resIdx = RES_STOPS.indexOf(A.exRes);
   const fpsIdx = FPS_STOPS.indexOf(A.exFps);
   const mbIdx = MBPS_STOPS.indexOf(A.exMbps);
@@ -4662,6 +4719,19 @@ function EksporSheet({ api: A, onClose }: any) {
                     <button className="v6-btn" style={{ width: "100%", marginTop: 8 }} onClick={A.downloadMetaTxt}>📥 Download metadata (.txt)</button>
                   </div>
                 )}
+                {/* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */}
+                <div style={{ marginTop: 10, border: "1px solid rgba(255,214,10,.35)", borderRadius: 14, padding: 12 }}>
+                  <b style={{ fontSize: 12 }}>🖼 Thumbnail YouTube otomatis</b>
+                  <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, lineHeight: 1.5 }}>Dirakit dari judul terkuncimu + adegan video — psikologi CTR: kontras tinggi, maks 3 kata emosional, adegan tetap kelihatan.</div>
+                  {A.thumbU
+                    ? <img src={A.thumbU} alt="thumbnail" style={{ width: "100%", borderRadius: 10, marginTop: 8, border: "1px solid var(--v6-line)" }} />
+                    : <div className="v6-note" style={{ marginTop: 8 }}>{A.thumbBusy ? "⏳ Merakit thumbnail…" : "Thumbnail dirakit otomatis begitu ada adegan."}</div>}
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button className="v6-chip" style={{ flex: 1 }} disabled={!!A.thumbBusy} onClick={() => A.genThumb(A.thumbSalt, A.thumbIdx + 1)}>🎬 Adegan lain</button>
+                    <button className="v6-chip" style={{ flex: 1 }} disabled={!!A.thumbBusy} onClick={() => A.genThumb(A.thumbSalt + 1, A.thumbIdx)}>🔀 Urutan kata lain</button>
+                  </div>
+                  <button className="v6-bigcta" style={{ marginTop: 8 }} disabled={!A.thumbU || !!A.thumbBusy} onClick={A.downloadThumb}>⬇ Download thumbnail (1280×720 JPG)</button>
+                </div>
               </>
             )}
           </>

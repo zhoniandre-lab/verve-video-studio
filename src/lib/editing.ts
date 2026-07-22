@@ -1224,11 +1224,15 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
       ctx.shadowColor = "rgba(45,212,191,.5)"; ctx.shadowBlur = s * 0.16;
       ctx.fillStyle = gd;
       const has = !!(spec && spec.length);
+      // 🩹 v13.7 SATUAN OTOMATIS — preview ngasih byte analyser (0..255), render ngasih RMS ternormalisasi (0..1).
+      // Dulu SELALU /255 → di render batang cuma 0,4% tinggi = titik statis (laporan bro: "spektrumnya tidak berjalan").
+      let sdiv = 255;
+      if (has) { let mx = 0; for (let k = 0; k < spec!.length; k += 8) { const vv = Number(spec![k]); if (vv > mx) mx = vv; } if (mx <= 1.6) sdiv = 1; }
       for (let i = 0; i < N; i++) {
         let v: number;
         if (has) {
           const idx = 2 + Math.floor((i / N) * Math.min(spec!.length * 0.62, 900));
-          v = 0.06 + (Number(spec![idx]) / 255) * 0.94;
+          v = 0.06 + Math.min(1, Number(spec![idx]) / sdiv) * 0.94;
         } else {
           v = 0.14 + 0.5 * Math.abs(Math.sin(t * 2.1 + i * 0.9)) * Math.abs(Math.sin(t * 1.3 + i * 0.37));
         }
