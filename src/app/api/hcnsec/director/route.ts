@@ -129,6 +129,7 @@ const STUDIO_OPS = new Set([
   "set_bg", "set_filter", "set_quality", "render_now",
   "set_motion", "auto_caption", "clear_caption", // 🎬 v11.3: gerak gambar + keterangan otomatis
   "geser_keterangan", "selaraskan_ulang", // 🎬 v11.6: perkakas selaras karaoke
+  "add_spectrum", "add_cta", // 🌈▶️ v13.4.1: buka pintu satpam utk spektrum & tombol CTA YouTube
   "animasikan_adegan", "matikan_animasi", // 🎬 v11.8: ANIMASI STUDIO (kredit video AI / matikan gratis)
 ]);
 const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun", "zoom_in", "zoom_out", "selangseling"]); // 🎬 v11.4: +keras/arah/selangseling
