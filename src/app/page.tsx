@@ -453,6 +453,70 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
   );
 }
 
+/* ---------- 🏹 PROVIDER VIDEO (BANSOS) ---------- */
+type VidProv = { id: string; label: string; base: string; key: string; model: string; aktif: boolean };
+const VIDPROV_KEY = "verve_video_providers_v1";
+function readVidProvs(): VidProv[] { try { const j = JSON.parse(localStorage.getItem(VIDPROV_KEY) || "[]"); return Array.isArray(j) ? j : []; } catch { return []; } }
+const vpBtn: any = { fontSize: 11, padding: "4px 8px", background: "none", border: "1px solid #ffffff2a", borderRadius: 6, color: "#cbd5e1", cursor: "pointer", whiteSpace: "nowrap" };
+
+function VideoProvidersCard() {
+  const [list, setList] = useState<VidProv[]>([]);
+  const [label, setLabel] = useState(""); const [base, setBase] = useState("");
+  const [key2, setKey2] = useState(""); const [model, setModel] = useState("");
+  const [info, setInfo] = useState("");
+  useEffect(() => { setList(readVidProvs()); }, []);
+  const persist = (next: VidProv[]) => { setList(next); try { localStorage.setItem(VIDPROV_KEY, JSON.stringify(next)); } catch {} };
+  function add() {
+    const b = base.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\/.+\..+/.test(b)) { alert("Base URL aneh — contoh benar: https://api.kie.ai/api/v1 atau https://xxx.com/v1"); return; }
+    if (!key2.trim()) { alert("API key belum diisi bro"); return; }
+    let host = "provider"; try { host = new URL(b).hostname; } catch {}
+    const p: VidProv = { id: "vp" + Date.now().toString(36), label: label.trim() || host, base: b, key: key2.trim(), model: model.trim(), aktif: true };
+    persist([...list, p]);
+    setLabel(""); setBase(""); setKey2(""); setModel("");
+    setInfo(`✅ ${p.label} masuk pasukan! Dicoba PALING AWAL saat kamu minta animasi di Sutradara Studio.`);
+  }
+  async function cekGratis(p: VidProv) {
+    setInfo(`🔍 Nanya katalog ${p.label}… (gratis — tanpa bakar kredit video)`);
+    try {
+      const r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ probeModels: true, cp: { base: p.base, key: p.key } }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+      const vids: string[] = d.video_candidates || [];
+      setInfo(vids.length
+        ? `✅ ${p.label} nyambung! Kandidat video: ${vids.slice(0, 6).join(" · ")} — total ${d.total ?? "?"} model. Salin salah satu ke kolom Model kalau perlu.`
+        : `⚠️ ${p.label} nyambung tapi tak ada nama berbau video. Isi katalog (10 awal): ${(d.models || []).slice(0, 10).join(", ").slice(0, 280) || "kosong"}`);
+    } catch (e: any) { setInfo(`❌ ${p.label}: ${e?.message || e}`); }
+  }
+  return (
+    <div style={{ padding: "0 2px", marginTop: 14 }}>
+      <div className="v6-lbl">🏹 PROVIDER VIDEO (buruan bansos — bawa key + base URL sendiri)</div>
+      <div className="v6-note">Dapat kredit video gratis dari penyedia mana pun (referral/share orang)? Tempel di sini — pasukanmu dicoba <b>paling awal</b> sebelum cadangan lain. Tersimpan <b>hanya di HP kamu</b>.</div>
+      {list.map((p) => (
+        <div key={p.id} className="v6-cardrow" style={{ cursor: "default", marginTop: 6, padding: "8px 10px" }}>
+          <span style={{ fontSize: 16 }}>{p.aktif ? "🟢" : "⚪"}</span>
+          <div className="tt" style={{ fontSize: 12, minWidth: 0, flex: 1 }}>
+            {p.label}
+            <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.base}{p.model ? ` · model: ${p.model}` : ""}</div>
+          </div>
+          <button style={vpBtn} onClick={() => persist(list.map(x => x.id === p.id ? { ...x, aktif: !x.aktif } : x))}>{p.aktif ? "Matikan" : "Aktifkan"}</button>
+          <button style={vpBtn} title="Cek katalog GRATIS (tanpa bakar kredit)" onClick={() => void cekGratis(p)}>🔍</button>
+          <button style={vpBtn} onClick={() => { if (confirm(`Hapus ${p.label} dari pasukan?`)) persist(list.filter(x => x.id !== p.id)); }}>🗑</button>
+        </div>
+      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+        <input className="v6-inp" placeholder="Nama bebas (mis. BansosBudi)" value={label} onChange={e => setLabel(e.target.value)} />
+        <input className="v6-inp" placeholder="Base URL (mis. https://api.kie.ai/api/v1 atau https://xxx.com/v1)" value={base} onChange={e => setBase(e.target.value)} />
+        <input className="v6-inp" placeholder="API key dari penyedia" value={key2} onChange={e => setKey2(e.target.value)} />
+        <input className="v6-inp" placeholder="Model (opsional — mis. kling/v2-1-standard; kosong = bawaan)" value={model} onChange={e => setModel(e.target.value)} />
+        <button className="v6-btn" onClick={add}>➕ Tambah ke pasukan</button>
+      </div>
+      {!!info && <div className="v6-note" style={{ marginTop: 8 }}>{info}</div>}
+      <div className="v6-note" style={{ marginTop: 6 }}>💡 Tombol 🔍 = <b>cek katalog GRATIS</b> (nanya daftar model, tanpa bakar kredit video) — buat mastiin bansos-mu hidup. Kami paham 2 dialek penyedia: gaya <b>openai (/v1)</b> & gaya <b>kie (/api/v1/jobs)</b> — dideteksi otomatis.</div>
+    </div>
+  );
+}
+
 /* ==================================================================
    SAYA
    ================================================================== */
@@ -491,6 +555,7 @@ function SayaPage({ refresh }: { refresh: () => void }) {
         <div className="v6-note">💡 Tanpa key, VERVE pakai generator musik gratis (lebih lambat). Key disimpan <b>hanya di HP kamu</b> (localStorage), tidak dikirim ke mana pun kecuali ke provider musik saat generate.</div>
         <button className="v6-btn" style={{ marginTop: 10, width: "100%" }} onClick={save}>💾 Simpan</button>
       </div>
+      <VideoProvidersCard />
       <div className="v6-cardrow" style={{ cursor: "default", marginTop: 14 }}>
         <span style={{ fontSize: 20 }}>🛡️</span>
         <div className="tt" style={{ fontSize: 12 }}>Hak cipta<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Musik dari generator AI (Suno) = orisinal milikmu. Hati-hati saat upload lagu orang lain — risiko klaim hak cipta tetap tanggung jawab pengguna.</div></div>
@@ -1530,12 +1595,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const prompt = `Subtle living photo, gentle cinematic motion, slow stable camera, natural micro movement, no morphing faces${extra ? ": " + extra : ""}`;
         const vhdr: Record<string, string> = { "Content-Type": "application/json" };
         try { const kk = localStorage.getItem("verve_suno_key") || ""; if (kk) vhdr["X-Suno-Key"] = kk; } catch {} // 🔄 v12.1: pinjam kunci Kie/Suno buat sirkuit video
-        let r = await fetch("/api/hcnsec/video", { method: "POST", headers: vhdr, body: JSON.stringify({ prompt, imageUrl: slides[i].imageUrl, duration: 5, aspectRatio: ratio }), signal: ac.signal });
+        // 🏹 v12.2: ikutkan pasukan provider bansos (maks 3 yang aktif) — dicoba server PALING AWAL
+        const vbody: any = { prompt, imageUrl: slides[i].imageUrl, duration: 5, aspectRatio: ratio };
+        try { const j = JSON.parse(localStorage.getItem("verve_video_providers_v1") || "[]"); if (Array.isArray(j)) { const c = j.filter((x: any) => x && x.aktif !== false && x.base && x.key).slice(0, 3); if (c.length) vbody.customProviders = c; } } catch {}
+        let r = await fetch("/api/hcnsec/video", { method: "POST", headers: vhdr, body: JSON.stringify(vbody), signal: ac.signal });
         let d: any = await r.json().catch(() => ({}));
         let tries = 0;
         while (!d.video_url && (d.id || d.task_id) && tries < 8 && !ac.signal.aborted) { // LANJUT task yang sama — hemat kredit
           await new Promise((res) => setTimeout(res, 4000));
-          r = await fetch("/api/hcnsec/video", { method: "POST", headers: vhdr, body: JSON.stringify({ pollOnly: true, taskId: d.id || d.task_id, endpoint: d.endpoint, provider: d.provider }), signal: ac.signal });
+          r = await fetch("/api/hcnsec/video", { method: "POST", headers: vhdr, body: JSON.stringify({ pollOnly: true, taskId: d.id || d.task_id, endpoint: d.endpoint, provider: d.provider, cp: d.cp }), signal: ac.signal });
           d = await r.json().catch(() => ({}));
           tries++;
         }
