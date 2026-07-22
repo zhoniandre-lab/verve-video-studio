@@ -77,6 +77,7 @@ type Scene = {
   scene: number; scene_desc: string; lyric_line: string; visual_prompt: string; mood: string;
   status: "idle" | "loading" | "done" | "error";
   url?: string; err?: string;
+  videoUrl?: string; // 🎬 v11.7 ADEGAN HIDUP: klip video AI dari gambar adegan (opsional — gagal? gambar aman tetap jalan)
 };
 type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
 
@@ -237,6 +238,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [chatInp, setChatInp] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [pendingOps, setPendingOps] = useState<DirOp[]>([]);
+  const [vidAsk, setVidAsk] = useState<number | null>(null); // 🎬 v11.7: konfirmasi kredit sebelum Hidupkan
+  const [vidBusy, setVidBusy] = useState<Set<number>>(new Set());
+  const [vidShow, setVidShow] = useState<number | null>(null);
+  const vidAbortRef = useRef<Map<number, AbortController>>(new Map());
   const [undoSnap, setUndoSnap] = useState<DirSnap | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [song, setSong] = useState<SongResult | null>(null);
@@ -909,6 +914,54 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     }
   }
 
+  // 🎬 v11.7 ADEGAN HIDUP — ubah gambar adegan jadi klip bergerak ±5 dtk (image→video, wajah konsisten).
+  // MAHAL kredit → SELALU lewat kartu Gas/Batal (tombol atau Sutradara). Kalau model sibuk/gagal:
+  // gambar adegan TIDAK rusak, dan gerak halus otomatis (Ken Burns bawaan render) tetap jalan.
+  function motionPromptFor(sc: Scene): string {
+    const base = (sc.visual_prompt || sc.scene_desc || "cinematic emotional scene").replace(/\s+/g, " ").trim().slice(0, 220);
+    return `Subtle living photo, gentle cinematic motion, slow stable camera, natural micro movement, no morphing faces, no new objects: ${base}`;
+  }
+
+  async function animateScene(i: number) {
+    const sc = board?.scenes[i];
+    if (!board || !sc || sc.videoUrl || vidBusy.has(i)) return;
+    if (!sc.url || sc.status !== "done") {
+      pushChat("sys", `⚠️ Adegan ${sc.scene} belum punya gambar — generate gambarnya dulu bro.`);
+      return;
+    }
+    const ac = new AbortController();
+    vidAbortRef.current.set(i, ac);
+    setVidBusy((s) => { const n = new Set(s); n.add(i); return n; });
+    pushChat("sys", `🎥 Menghidupkan adegan ${sc.scene}… (bisa 1–3 menit — tetap di halaman ini ya. Kalau gagal, gambar aman + gerak halus otomatis tetap jalan)`);
+    try {
+      const first = { prompt: motionPromptFor(sc), imageUrl: sc.url, duration: 5, aspectRatio: "9:16" };
+      let r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(first), signal: ac.signal });
+      let d: any = await r.json().catch(() => ({}));
+      // Server bisa pulang 202 + task id → LANJUT pantau TANPA bikin task baru (hemat kredit!)
+      let tries = 0;
+      while (!d.video_url && (d.id || d.task_id) && tries < 10 && !ac.signal.aborted) {
+        await new Promise((res) => setTimeout(res, 4000));
+        r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pollOnly: true, taskId: d.id || d.task_id, endpoint: d.endpoint }), signal: ac.signal });
+        d = await r.json().catch(() => ({}));
+        tries++;
+      }
+      if (ac.signal.aborted) return; // diurungkan pembuat — task server mungkin tetap jalan tapi tidak dipasang
+      if (d.video_url) {
+        const vurl = String(d.video_url);
+        setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, videoUrl: vurl } : s)) }));
+        setVidShow(i);
+        pushChat("sys", `✅ Adegan ${sc.scene} HIDUP! Klip ±5 dtk jadi — otomatis ikut preview & render Studio. (URL klip bertahan beberapa jam — sebaiknya render/download hari ini ya)`);
+      } else {
+        throw new Error(d.error ? String(d.error) : "Model video sibuk — klip belum jadi kali ini. Gambarmu aman kok, coba lagi nanti ya bro.");
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") pushChat("sys", `⚠️ Hidupkan adegan ${sc.scene} gagal: ${e?.message || e}. Gambar tidak rusak — gerak halus otomatis tetap jalan di render.`);
+    } finally {
+      setVidBusy((s) => { const n = new Set(s); n.delete(i); return n; });
+      vidAbortRef.current.delete(i);
+    }
+  }
+
   /** Tombol Gas untuk perintah BAKAR KREDIT — hanya dari ketukan pembuat. */
   async function gasOp(o: DirOp) {
     setPendingOps((p) => p.filter((x) => x !== o));
@@ -918,6 +971,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       pushChat("sys", `🔥 Regen adegan ${o.scene} jalan (kredit gambar) — arahan: "${o.instruction || "-"}"`);
       const ok = await genScene(i, board.scenes[i], o.instruction || "");
       pushChat("sys", ok ? `✅ Adegan ${o.scene} bergambar baru` : `⚠️ Regen adegan ${o.scene} gagal — bisa diulang dari kartu adegan`);
+    } else if (o.op === "hidupkan_adegan" && o.scene) { // 🎬 v11.7
+      const i = o.scene - 1;
+      if (!board?.scenes[i]) return;
+      pushChat("sys", `🎥 Hidupkan adegan ${o.scene} jalan (kredit video AI) — pantau di kartu adegan`);
+      void animateScene(i);
     } else if (o.op === "regen_song") {
       const add = (o.instruction || "").slice(0, 280);
       const next = (mStyle.trim() ? mStyle.trim() + ", " : "") + add;
@@ -1103,7 +1161,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       return;
     }
     const per = Math.round((totalDur / doneScenes.length) * 100) / 100;
-    const builtSlides = doneScenes.map((sc) => ({ id: uidL("c"), imageUrl: sc.url as string }));
+    const builtSlides = doneScenes.map((sc) => ({ id: uidL("c"), imageUrl: sc.url as string, videoUrl: sc.videoUrl || undefined })); // 🎬 v11.7: klip Adegan Hidup ikut ke Studio
     const slideOptsById: Record<string, unknown> = {};
     builtSlides.forEach((sl, i) => {
       const sc = doneScenes[i];
@@ -1530,6 +1588,37 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                       {sc.status === "loading" ? "⏳ Menggambar..." : sc.status === "done" ? "↻ Ulangi adegan ini" : "🖼 Generate gambar"}
                     </button>
                   </div>
+                  {sc.status === "done" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      {!sc.videoUrl ? (
+                        <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} disabled={vidBusy.has(i)} onClick={() => setVidAsk(i)}>
+                          {vidBusy.has(i) ? "⏳ Meracik gerak AI… (1–3 mnt)" : "🎥 Hidupkan — klip bergerak AI"}
+                        </button>
+                      ) : (
+                        <button className="lh-btn sec" style={{ flex: 1, marginTop: 0, borderColor: "#3ddc84" }} onClick={() => setVidShow(vidShow === i ? null : i)}>
+                          🎬 HIDUP ✓ — {vidShow === i ? "tutup klip" : "putar klip"}
+                        </button>
+                      )}
+                      {vidBusy.has(i) && (
+                        <button className="lh-btn sec" style={{ marginTop: 0 }} onClick={() => vidAbortRef.current.get(i)?.abort()}>Urung</button>
+                      )}
+                    </div>
+                  )}
+                  {vidShow === i && !!sc.videoUrl && (
+                    <video src={sc.videoUrl} autoPlay loop muted playsInline controls style={{ width: "100%", borderRadius: 10, marginTop: 8, background: "#000" }} />
+                  )}
+                  {vidAsk === i && !sc.videoUrl && (
+                    <div className="lh-card" style={{ marginTop: 8, borderStyle: "dashed" }}>
+                      <div className="lh-h2">🎥 Hidupkan adegan {sc.scene}?</div>
+                      <p className="lh-note">AI mengubah gambar ini jadi <b>klip bergerak ±5 detik</b> — wajah & suasana tetap, geraknya natural.</p>
+                      <p className="lh-note">⚠️ <b>Berat kredit</b> (±1 klip video AI) · 1–3 menit, tetap di halaman ini.</p>
+                      <p className="lh-note">✅ <b>Aman:</b> kalau model sibuk/gagal, adegan TETAP gambar utuh + gerak halus otomatis (zoom sinematik bawaan) seperti biasa.</p>
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button className="lh-btn" style={{ flex: 1, marginTop: 0 }} onClick={() => { setVidAsk(null); void animateScene(i); }}>🔥 Gas, hidupkan!</button>
+                        <button className="lh-btn sec" style={{ marginTop: 0 }} onClick={() => setVidAsk(null)}>Batal</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
 

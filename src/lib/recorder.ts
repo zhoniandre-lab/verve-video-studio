@@ -54,6 +54,7 @@ export interface RenderOptions {
   // ===== v5: PER-KLIP EDITING (transisi/durasi/animasi/efek/stiker/teks per slide) =====
   slideOpts?: SlideOpt[];     // sejajar dgn images[]; bila ada → timeline per-klip
   grainAmt?: number;          // 0..100 overlay grain film
+  videos?: (string | null)[]; // 🎬 v11.7: klip video AI per-slide (sejajar images[]; null/kosong = gambar biasa persis seperti dulu)
   // ===== v6: pengaturan ekspor kustom + latar + peningkat ketajaman =====
   custom?: { w: number; h: number; fps: number; videoBitrate: number };
   bgMode?: "cover" | "blur" | "color";
@@ -289,6 +290,73 @@ async function prepareImages(sources: string[], W:number, H:number, onStage?:(s:
     await new Promise(r=>setTimeout(r,0));
   }
   return out;
+}
+
+// ===== 🎬 v11.7 ADEGAN HIDUP: klip video AI (gambar→video) per-slide =====
+// Tiap klip dapat PROXY CANVAS sendiri (salinan still + vinyet) yang DITUKAR ke imgs[i].
+// Painter tidak perlu tahu apa pun soal video: frame <video> disalin ke kanvas itu tiap tick.
+// Gagal muat / kena blokir CORS → slide otomatis tetap gambar still (aman, tidak ada layar hitam).
+async function prepareVideos(
+  videos: (string | null | undefined)[], W: number, H: number,
+  imgs: HTMLCanvasElement[], onStage?: (s: string) => void
+): Promise<Map<number, { v: HTMLVideoElement; c: HTMLCanvasElement }>> {
+  const out = new Map<number, { v: HTMLVideoElement; c: HTMLCanvasElement }>();
+  if (!videos || !videos.length) return out;
+  const idxs = videos.map((u, i) => ({ u, i })).filter((x): x is { u: string; i: number } => !!x.u && x.i < imgs.length);
+  if (!idxs.length) return out;
+  const loadVid = (v: HTMLVideoElement, src: string) => new Promise<boolean>((res) => {
+    let done = false;
+    const fin = (ok: boolean) => { if (done) return; done = true; res(ok); };
+    v.addEventListener("loadeddata", () => fin(true), { once: true });
+    v.addEventListener("error", () => fin(false), { once: true });
+    setTimeout(() => fin(false), 25_000);
+    v.src = src;
+  });
+  for (const { u, i } of idxs) {
+    onStage?.(`Memuat klip video ${i + 1}...`);
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
+    let ok = await loadVid(v, u);
+    if (!ok && /^https?:/.test(u)) ok = await loadVid(v, `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`); // jalur cadangan same-origin
+    if (!ok || !v.videoWidth) { onStage?.(`⚠️ Klip video ${i + 1} gagal dimuat — slide tetap gambar still.`); continue; }
+    // Kanvas kerja = salinan still (sudah termasuk vinyet bake / sharpen)
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const cx = c.getContext("2d")!;
+    cx.drawImage(imgs[i], 0, 0);
+    // Uji taint SEKALI: gambar frame video lalu coba baca piksel
+    cx.drawImage(v, 0, 0, W, H);
+    if (!canvasReadable(c)) { onStage?.(`⚠️ Klip video ${i + 1} diblokir CORS — slide tetap gambar still.`); continue; }
+    cx.drawImage(imgs[i], 0, 0); // kembalikan poster still (frame video dilukis saat render)
+    imgs[i] = c;
+    out.set(i, { v, c });
+  }
+  return out;
+}
+
+function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElement | null, vigStr?: number) {
+  if (!v || v.readyState < 2 || !v.videoWidth) return;
+  const W = c.width, H = c.height;
+  const ir = v.videoWidth / v.videoHeight, cr = W / H;
+  let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+  if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
+  else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
+  const cx = c.getContext("2d")!;
+  cx.imageSmoothingEnabled = true;
+  cx.imageSmoothingQuality = "low"; // pola sama seperti drawCoverToCanvas — cepat di HP
+  cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+  if (vig && (vigStr || 0) > 0.01) { cx.globalAlpha = vigStr!; cx.drawImage(vig, 0, 0, W, H); cx.globalAlpha = 1; } // vinyet konsisten dgn slide still
+}
+
+function seekVid(v: HTMLVideoElement, t: number): Promise<void> {
+  return new Promise((res) => {
+    if (!v || v.readyState < 2) return res();
+    if (Math.abs(v.currentTime - t) < 0.001) return res();
+    let done = false;
+    const fin = () => { if (done) return; done = true; v.removeEventListener("seeked", fin); res(); };
+    v.addEventListener("seeked", fin);
+    setTimeout(fin, 260); // jangan pernah macet total karena seek lambat di HP
+    try { v.currentTime = t; } catch { fin(); }
+  });
 }
 
 // ===== Pre-compute spectrum table (LUT) — inilah boost speed utama =====
@@ -1549,6 +1617,8 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   let __m = __tp();
   const imgs = await prepareImages(images, rW, rH, onStage, !!opts.sharpen);
   prepT.gambar = __tp() - __m;
+  // 🎬 v11.7: siapkan klip video AI (opsional — tanpa field videos = slideshow murni seperti biasa)
+  const vidMap = await prepareVideos(opts.videos || [], rW, rH, imgs, onStage);
   // v6: preload gambar stiker (overlay foto) supaya tergambar di export
   try {
     const stickerUrls: string[] = [];
@@ -1622,6 +1692,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   // FULLSCREEN tiap frame (10.000+ drawImage per render!). Mode blur/color tetap overlay per-frame.
   const vigStr = typeof opts.vignetteStrength === "number" ? opts.vignetteStrength : 0.75;
   let vigOverlay: HTMLCanvasElement | null = null;
+  let vigForVideo: HTMLCanvasElement | null = null; // 🎬 v11.7: klip video butuh vinyet per-frame (slide still sudah ke-bake)
   if (vigStr > 0.01) {
     vigOverlay = document.createElement("canvas");
     vigOverlay.width = rW; vigOverlay.height = rH;
@@ -1636,6 +1707,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
         ix.drawImage(vigOverlay, 0, 0);
         ix.globalAlpha = 1;
       }
+      vigForVideo = vigOverlay; // 🎬 v11.7: simpan utk klip video sebelum di-null
       vigOverlay = null; // sudah ke-bake — tak perlu overlay per-frame lagi
     }
   }
@@ -1652,6 +1724,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     timeline, slideOpts,
     grainAmt: opts.grainAmt || 0,
     clipImgs: null as any, // diisi nanti bila perlu
+    vidMap, vigVideo: vigForVideo, vigStrV: vigStr, // 🎬 v11.7 ADEGAN HIDUP
   };
   if (Mp4Muxer && MuxTarget && supportsWebCodecs()){
     return renderWebCodecs({canvas,ctx,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,
@@ -1784,6 +1857,8 @@ async function renderWebCodecs(b:any){
   // atau overlay siap pakai untuk mode blur/color) — tak ada lagi pre-render duplikat di sini.
 
   const perSlide = slideDur+transDur;
+  // 🎬 v11.7: peta klip video (idx → elemen video + kanvas proxy)
+  const vidMap = (b as any).vidMap as Map<number, { v: HTMLVideoElement; c: HTMLCanvasElement }> | undefined;
   const keyframeEvery = fps*2;
   const bassRef = {level:0, beat:false};
   const tStart = performance.now();
@@ -1815,6 +1890,7 @@ async function renderWebCodecs(b:any){
     (o.texts || []).forEach(grab);
     (o.stickers || []).forEach((st2: any) => { if (typeof st2.emoji === "string" && st2.emoji[0] === "@") dynSlides.add(si); });
   });
+  if (vidMap && vidMap.size) { for (const si of vidMap.keys()) dynSlides.add(si); } // 🎬 v11.7: slide ber-video = wajib lukis penuh tiap frame (cache lompat)
   const hasBComplex = !!(captions && captions.length) || !!((b as any).textLayers && (b as any).textLayers.length);
   const animDurOf = (o: any) => (o && typeof o.animDur === "number" && o.animDur > 0 ? o.animDur : 0.6);
   const mctx: CanvasRenderingContext2D = canvas.getContext("2d", { alpha: false })!;
@@ -1844,6 +1920,13 @@ async function renderWebCodecs(b:any){
       frameDur = slideDur; clipT = localT; transId = transition || "zoom";
     }
     const slideT = Math.min(1, localT/frameDur);
+    // 🎬 v11.7: sinkronkan klip video (seek deterministik + salin frame ke kanvas proxy). Beku di frame terakhir kalau slot lebih panjang.
+    if (vidMap && vidMap.size) {
+      const vC = vidMap.get(slideIdx);
+      const vN = inTrans ? vidMap.get(nextIdx) : undefined;
+      if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; await seekVid(vC.v, Math.max(0, Math.min(t - s0, (vC.v.duration || 1) - 0.06))); blitVid(vC.v, vC.c, (b as any).vigVideo, (b as any).vigStrV); }
+      if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; await seekVid(vN.v, Math.max(0, Math.min(t - s1, (vN.v.duration || 1) - 0.06))); blitVid(vN.v, vN.c, (b as any).vigVideo, (b as any).vigStrV); }
+    }
     const optCur = slideOpts ? (slideOpts as any)[slideIdx] : null;
     const aDur = animDurOf(optCur);
     const fastOk = useV5fast && !inTrans && !hasBComplex && !dynSlides.has(slideIdx)
@@ -1969,6 +2052,7 @@ async function renderMediaRecorder(b:any){
   const done = new Promise<Blob>(res=>{mr.onstop=()=>res(new Blob(chunks,{type:mime}));});
   mr.start(100);
   const perSlide=slideDur+transDur, bassRef={level:0,beat:false};
+  const vidMap = (b as any).vidMap as Map<number, { v: HTMLVideoElement; c: HTMLCanvasElement }> | undefined; // 🎬 v11.7
   const startT=performance.now();
   const tick=()=>{
     const elapsed=(performance.now()-startT)/1000;
@@ -1993,6 +2077,19 @@ async function renderMediaRecorder(b:any){
     const bass = spec.bassLevels[Math.min(f,spec.bassLevels.length-1)]||0;
     const beat = !!spec.beats[Math.min(f,spec.beats.length-1)];
     bassRef.level=bass; bassRef.beat=beat;
+    // 🎬 v11.7: klip video diputar natural (mesin realtime) lalu disalin tiap tick; slide lain ditidurkan
+    if (vidMap && vidMap.size) {
+      for (const [si, o] of vidMap) {
+        const active = si === slideIdx || (inTrans && si === nextIdx);
+        if (active) {
+          if (o.v.paused) {
+            try { const s0 = timeline ? (timeline.starts[si] ?? 0) : si * perSlide; const want = Math.max(0, Math.min(t - s0, (o.v.duration || 1) - 0.06)); if (o.v.ended || Math.abs(o.v.currentTime - want) > 0.6) o.v.currentTime = want; } catch {}
+            void o.v.play().catch(() => {});
+          }
+          blitVid(o.v, o.c, (b as any).vigVideo, (b as any).vigStrV);
+        } else if (!o.v.paused) o.v.pause();
+      }
+    }
     drawFrame({time:t,fps,totalDur,slideIdx,slideT,transT,isTransition:inTrans,nextIdx,
       W:canvas.width,H:canvas.height,bars,bass,beat,rgb,color:vizColor,style:vizStyle,imgs,profile:prof,title,particles,
       phase:t*0.5,_canvas:canvas,_transition:transition,showTitle:showTitle!==false,
@@ -2010,6 +2107,7 @@ async function renderMediaRecorder(b:any){
   };
   requestAnimationFrame(tick);
   const blob=await done;
+  try { vidMap?.forEach((o) => o.v.pause()); } catch {} // 🎬 v11.7: tidurkan klip setelah render
   onStage?.("✅ Selesai!"); onProgress?.(1);
   return blob;
 }

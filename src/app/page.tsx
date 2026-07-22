@@ -21,7 +21,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
    resolusi kustom) + Spectrum Studio (modul terpisah).
    ===================================================================== */
 
-interface Slide { id: string; imageUrl: string; }
+interface Slide { id: string; imageUrl: string; videoUrl?: string; } // 🎬 v11.7: klip video AI opsional (Adegan Hidup dari Lahan)
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
 type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan";
 
@@ -696,6 +696,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const imgsRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const vidsRef = useRef<Map<string, HTMLVideoElement>>(new Map()); // 🎬 v11.7
+  const vidBufRef = useRef<(HTMLCanvasElement | null)[]>([null, null]); // 🎬 v11.7: 2 buffer (cur + nxt saat transisi)
   const musicEl = useRef<HTMLAudioElement | null>(null);
   const voiceEls = useRef<HTMLAudioElement[]>([]);
   const actxRef = useRef<AudioContext | null>(null);
@@ -847,6 +849,54 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     imgsRef.current.set(url, img);
     return img.complete && img.naturalWidth ? img : null;
   }
+  // 🎬 v11.7: muat klip video (CORS bersih; sekali gagal → coba proxy same-origin; gagal lagi → mati = gambar still)
+  function getVideo(url: string): HTMLVideoElement | null {
+    let v = vidsRef.current.get(url);
+    if (v) return (v as any).__dead ? null : v;
+    v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
+    v.addEventListener("error", () => {
+      const el = v as any;
+      if (!el.__retried) { el.__retried = 1; v!.src = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`; }
+      else el.__dead = true;
+    });
+    v.src = url;
+    vidsRef.current.set(url, v);
+    return v;
+  }
+  function blitPrevVid(v: HTMLVideoElement, W: number, H: number, slot: number): HTMLCanvasElement | null {
+    if (!v.videoWidth) return null;
+    const bufs = vidBufRef.current;
+    if (!bufs[slot]) bufs[slot] = document.createElement("canvas");
+    const c = bufs[slot]!;
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    const ir = v.videoWidth / v.videoHeight, cr = W / H;
+    let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+    if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
+    else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
+    const cx = c.getContext("2d")!;
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "low";
+    cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+    return c;
+  }
+  // Sinkron putar/tidur dengan status preview; saat di-scrub (pause) ikutkan posisi ke clipT
+  function syncPrevVideos(vC: HTMLVideoElement | null, vN: HTMLVideoElement | null, clipT: number) {
+    const manage = (v: HTMLVideoElement | null, isCur: boolean) => {
+      if (!v || (v as any).__dead) return;
+      if (playingRef.current) {
+        if (v.paused) {
+          try { const want = isCur ? Math.max(0, Math.min(clipT, (v.duration || 1) - 0.06)) : 0; if (v.ended || Math.abs(v.currentTime - want) > 0.8) v.currentTime = want; } catch {}
+          void v.play().catch(() => {});
+        }
+      } else {
+        if (!v.paused) v.pause();
+        const want = isCur ? Math.max(0, Math.min(clipT, (v.duration || 1) - 0.06)) : 0;
+        try { if (Math.abs(v.currentTime - want) > 0.15) v.currentTime = want; } catch {}
+      }
+    };
+    manage(vC, true); manage(vN, false);
+    vidsRef.current.forEach((ov) => { if (ov !== vC && ov !== vN && !ov.paused) ov.pause(); }); // tidurkan klip slide lain
+  }
   const playingRef = useRef(false);
   // getClockT dibuat stabil (ref-based) — jangan tangkap state `playing`/`curT`
   // supaya loop rAF tidak membawa closure basi (bug: proyek tanpa audio macet di 00:00)
@@ -876,6 +926,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const optNxt = sl[L.nextIdx] ? optsRef.current[sl[L.nextIdx].id] : null;
     const cur = getImage(sl[L.idx].imageUrl);
     const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(sl[L.nextIdx].imageUrl) : null;
+    // 🎬 v11.7: kalau slide punya klip video AI, gambar diganti kanvas buffer berisi frame video terkini
+    const vidC = sl[L.idx].videoUrl ? getVideo(sl[L.idx].videoUrl!) : null;
+    const vidN = (L.nextIdx !== L.idx && sl[L.nextIdx] && sl[L.nextIdx].videoUrl) ? getVideo(sl[L.nextIdx].videoUrl!) : null;
+    let curDraw: any = cur; let nxtDraw: any = nxt;
+    if (vidC || vidN) {
+      syncPrevVideos(vidC, vidN, L.clipT);
+      if (vidC && vidC.readyState >= 2 && vidC.videoWidth) { const b0 = blitPrevVid(vidC, W, H, 0); if (b0) curDraw = b0; }
+      if (vidN && vidN.readyState >= 2 && vidN.videoWidth) { const b1 = blitPrevVid(vidN, W, H, 1); if (b1) nxtDraw = b1; }
+    }
     const gf = buildClipFilter(filterRef.current, adjRef.current);
     // 🎬 v11.4: Ken Burns KERAS per-klip (medan kb) — tanpa itu, perilaku lama (6% halus) utuh
     const kbC = (optCur as any)?.kb as { dir?: string; s?: number } | undefined;
@@ -884,7 +943,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const kb = kbC
       ? (kbC.dir === "out" ? (1 + SkC) - progC * SkC : 1 + progC * SkC)
       : ((optCur?.loop === "zoompelan" || !optCur?.loop) ? 1 + Math.min(0.06, (tt / Math.max(1, tl.total)) * 0.06) : 1);
-    paintClips(ctx, W, H, cur, nxt, {
+    paintClips(ctx, W, H, curDraw, nxtDraw, {
       clipT: L.clipT, clipDur: L.clipDur, inTrans: L.inTrans, transT: L.transT,
       transId: L.inTrans ? canonicalTrans(optCur?.trans ?? "dissolve") : "none",
       optCur: optCur as any, optNxt: optNxt as any,
@@ -2164,6 +2223,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       };
       const blob = await renderSlideshow({
         images: useSlides.map(s => s.imageUrl),
+        videos: useSlides.map(s => s.videoUrl || null), // 🎬 v11.7: klip Adegan Hidup ikut di-render
         audioUrl: audioUrl || undefined,
         slideDuration,
         transitionDuration: transitionDur,
@@ -3405,6 +3465,7 @@ function TimelineV6(p: any) {
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
                       {s.imageUrl ? <img src={s.imageUrl} alt="" draggable={false} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
+                      {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Adegan Hidup — klip video AI">🎬</span>}
                       <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                       {sel && <>
                         <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
@@ -4756,7 +4817,7 @@ function VideoAiModal({ onClose }: any) {
     <MiniModal title="🎬 Video AI (beta)" onClose={onClose}>
       <textarea className="v6-inp v6-ta" style={{ minHeight: 80 }} placeholder="cth: hujan turun di jendela kafe yang hangat, sinematik" value={pr} onChange={e => setPr(e.target.value)} />
       <button className="v6-bigcta" disabled={busy} onClick={gen}>{busy ? "⏳…" : "✨ Generate video pendek"}</button>
-      {result === "pending" && <div className="v6-okbox">⏳ Video sedang dibuat server. Karena klip video AI belum bisa disisipkan langsung ke timeline (timeline kita berbasis foto klip), hasilnya dibuka di tab baru.</div>}
+      {result === "pending" && <div className="v6-okbox">⏳ Video sedang dimasak server — hasilnya dibuka di tab baru saat jadi. TIPS 🎬: klip yang PEGANG peran & ikut render kini bisa dibuat di Lahan (langkah Adegan → 🎥 Hidupkan): gambar adeganmu sendiri yang digerakkan AI — wajah konsisten, langsung masuk timeline.</div>}
       {result && result !== "pending" && <a className="v6-okbox" style={{ display: "block" }} href={result} target="_blank" rel="noreferrer">▶️ Buka hasil video AI</a>}
     </MiniModal>
   );

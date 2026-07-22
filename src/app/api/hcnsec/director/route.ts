@@ -59,6 +59,7 @@ SET WIZARD — GRATIS (langsung dijalankan aplikasi, tanpa kredit):
   (isikan HANYA kenop yang diminta berubah)
 BAKAR KREDIT (aplikasi hanya MENAMPILKAN tombol Gas/Batal — keputusan di tangan pembuat):
 - {"op":"regen_scene","scene":N,"instruction":"arahan perubahan gambar adegan N"}
+- {"op":"hidupkan_adegan","scene":N}   (🎥 ADEGAN HIDUP: ubah gambar adegan N jadi klip video bergerak AI ±5 detik — untuk "hidupkan/gerakkan/jadikan video adegan N". Adegan WAJIB sudah punya gambar; kalau gagal, gambar aman + gerak halus otomatis tetap jalan)
 - {"op":"regen_song","instruction":"arahan perubahan lagu (gaya/mood/vokal)"}
 
 LARANGAN:
@@ -70,7 +71,7 @@ LARANGAN:
 
 type Op = Record<string, unknown>;
 const FREE_OPS = new Set(["set_title", "set_visual_style", "edit_scene_prompt", "edit_scene_line", "edit_lyrics", "set_style", "set_music_knobs"]);
-const COST_OPS = new Set(["regen_scene", "regen_song"]);
+const COST_OPS = new Set(["regen_scene", "regen_song", "hidupkan_adegan"]);
 const ERAS = new Set(["2020s", "2010s", "2000s", "90s", "80s"]);
 const TEMPOS = new Set(["slow", "mid", "fast"]);
 const VOCALS = new Set(["male", "female", "auto", "instrumental"]);
@@ -89,7 +90,7 @@ function cleanOps(raw: unknown, nScenes: number): { ops: Op[]; dropped: string[]
     if (!FREE_OPS.has(name) && !COST_OPS.has(name)) { dropped.push(`op tak dikenal: ${name}`); continue; }
     const out: Op = { op: name };
     const sc = Number(o.scene);
-    if (["edit_scene_prompt", "edit_scene_line", "regen_scene"].includes(name)) {
+    if (["edit_scene_prompt", "edit_scene_line", "regen_scene", "hidupkan_adegan"].includes(name)) {
       if (!Number.isInteger(sc) || sc < 1 || sc > nScenes) { dropped.push(`${name}: adegan ${o.scene} tidak ada`); continue; }
       out.scene = sc;
     }
