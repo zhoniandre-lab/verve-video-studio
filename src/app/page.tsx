@@ -3184,7 +3184,7 @@ function TimelineV6(p: any) {
 
   // saat tidak diputar: geser konten = geser waktu (garis tengah sebagai penanda posisi)
   function onTlScroll(e: any) {
-    if (p.playing || suppressSeekRef.current || pinchZRef.current) return;
+    if (p.playing || suppressSeekRef.current || pinchZRef.current || dragRef.current) return; // v12.5: jari drag (trim/asset) → scroll tak boleh memicu loncat waktu
     const sl = e.target.scrollLeft;
     p.onSeek(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
   }
@@ -3226,7 +3226,7 @@ function TimelineV6(p: any) {
     if (tlPtrs.current.size === 0) scrubHoldRef.current = false;
   }
 
-  function clipW(i: number): number { return Math.max(30, (timeline?.durs?.[i] || 0) * PXS0); }
+  function clipW(i: number): number { return Math.max(38, (timeline?.durs?.[i] || 0) * PXS0); }
 
   /* ---- TEKAN-TAHAN & SERET (klip reorder / trim / audio offset) + AUTO-SCROLL tepi ---- */
   const armTRef = useRef<any>(null);
@@ -3670,7 +3670,7 @@ function TimelineV6(p: any) {
                       style={{ width: clipW(i), opacity: ghost ? 0.35 : 1 }}
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
-                      {s.imageUrl ? <img src={s.imageUrl} alt="" draggable={false} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
+                      {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
                       {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
                       <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                       {sel && <>
@@ -3742,7 +3742,7 @@ function TimelineV6(p: any) {
                             <div key={r}
                               ref={(el) => { if (el) elmRowEls.current.set(r, el); else elmRowEls.current.delete(r); }}
                               className={`v6e-lanerow ${rowDrop && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
-                              style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                              style={{ position: "relative", height: 54, marginBottom: 6 }}>
                               {/* v12.4 KEPALA REL — label isi baris: ikon tiap jenis objek (×n bila lebih dari satu) */}
                               {(() => {
                                 const cnt: Record<string, number> = {};
@@ -3754,7 +3754,7 @@ function TimelineV6(p: any) {
                                 const ks = Object.keys(cnt);
                                 if (!ks.length) return null;
                                 return (
-                                  <div className="v6e-lanehead" aria-hidden="true" style={{ marginTop: 23 }}>
+                                  <div className="v6e-lanehead" aria-hidden="true" style={{ marginTop: 27 }}>
                                     <span>{ks.map((k) => (cnt[k] > 1 ? `${k}×${cnt[k]}` : k)).join(" ")}</span>
                                   </div>
                                 );
@@ -3772,7 +3772,7 @@ function TimelineV6(p: any) {
                                     <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — TAP = setting audio · TAHAN = GENGGAM — ikut jari bebas (⇄ maju/mundur · ⇅ jalur)"}
                                       onPointerDown={(e) => onAudDown(e, rd.key)}
                                       onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
-                                      style={{ position: "absolute", left: rd.off * PXS0, top: 3, width: wpx, height: 40, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
+                                      style={{ position: "absolute", left: rd.off * PXS0, top: 4, width: wpx, height: 46, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                       <i style={{ fontStyle: "normal" }}>{rd.icon}</i>
                                       <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
                                         (() => {
@@ -3807,7 +3807,7 @@ function TimelineV6(p: any) {
                                     <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
                                       onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)}
                                       onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
-                                      style={{ position: "absolute", left: st * PXS0, top: 3, width: Math.max(64, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0, transform: lifting ? `translateY(${tDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
+                                      style={{ position: "absolute", left: st * PXS0, top: 4, width: Math.max(64, dd * PXS0), height: 46, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0, transform: lifting ? `translateY(${tDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                       {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
                                       <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                       <span className="txtdur" title="Tarik untuk ubah durasi teks"
@@ -3825,7 +3825,7 @@ function TimelineV6(p: any) {
                                   <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
                                     onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)}
                                     onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
-                                    style={{ position: "absolute", left: t0 * PXS0, top: 3, width: Math.max(52, dd * PXS0), height: 40, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
+                                    style={{ position: "absolute", left: t0 * PXS0, top: 4, width: Math.max(52, dd * PXS0), height: 46, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
                                     {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
                                     <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                     <span className="txtdur" title="Tarik untuk ubah durasi stiker"
@@ -3839,11 +3839,11 @@ function TimelineV6(p: any) {
                       );
                     })()}
                     {/* jalur tambah elemen: bebas pilih jenis apa pun */}
-                    <div style={{ position: "relative", height: 42, order: 9999 }}>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 46, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru, mulai di posisi penanda)">🔤</button>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 92, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru, mulai di posisi penanda)">😀</button>
-                      {hasAudio && <button className="v6e-track-addbtn" style={{ position: "absolute", left: 138, top: 1, minWidth: 40, width: 40, height: 40, padding: 0 }} onClick={p.onDelAudio} title="Hapus semua audio">🗑</button>}
+                    <div style={{ position: "relative", height: 48, order: 9999 }}>
+                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
+                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 50, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru, mulai di posisi penanda)">🔤</button>
+                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 100, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru, mulai di posisi penanda)">😀</button>
+                      {hasAudio && <button className="v6e-track-addbtn" style={{ position: "absolute", left: 150, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onDelAudio} title="Hapus semua audio">🗑</button>}
                     </div>
                   </>
                 );
