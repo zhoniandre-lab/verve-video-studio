@@ -3655,6 +3655,8 @@ function TimelineV6(p: any) {
 
             {/* JALUR VIDEO — ikut susunan bebas, bisa diangkat & dipindah juga */}
             <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0 }}>
+              {/* v12.4 KEPALA REL — label jalur ala OpenCut: sticky kiri, 0 lebar → waktu klip tidak bergeser, pointer-events none → gesture tak tersentuh */}
+              <div className="v6e-lanehead" aria-hidden="true"><span><b className="dot" />Visual · {slides.length}</span></div>
               {slides.map((s: Slide, i: number) => {
                 const sel = s.id === selId;
                 const isOutro = s.id.startsWith("outro");
@@ -3741,6 +3743,22 @@ function TimelineV6(p: any) {
                               ref={(el) => { if (el) elmRowEls.current.set(r, el); else elmRowEls.current.delete(r); }}
                               className={`v6e-lanerow ${rowDrop && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
                               style={{ position: "relative", height: 46, marginBottom: 5 }}>
+                              {/* v12.4 KEPALA REL — label isi baris: ikon tiap jenis objek (×n bila lebih dari satu) */}
+                              {(() => {
+                                const cnt: Record<string, number> = {};
+                                pool.forEach((it2: any, ii2: number) => {
+                                  if (pack[ii2] !== r) return;
+                                  const ic = it2.kind === "aud" ? (it2.key === "aud:m" ? "🎵" : it2.key === "aud:t" ? "🗣️" : "🎙️") : it2.kind === "txt" ? "🔤" : "😀";
+                                  cnt[ic] = (cnt[ic] || 0) + 1;
+                                });
+                                const ks = Object.keys(cnt);
+                                if (!ks.length) return null;
+                                return (
+                                  <div className="v6e-lanehead" aria-hidden="true" style={{ marginTop: 23 }}>
+                                    <span>{ks.map((k) => (cnt[k] > 1 ? `${k}×${cnt[k]}` : k)).join(" ")}</span>
+                                  </div>
+                                );
+                              })()}
                               {pool.map((it: any, ii: number) => {
                                 if (pack[ii] !== r) return null;
                                 /* ---- balok AUDIO ---- */
