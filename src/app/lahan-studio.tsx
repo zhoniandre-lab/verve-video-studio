@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { avWarm } from "@/lib/avault";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
@@ -1171,6 +1172,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         setPvErr(pvFailMsg(true));
       });
   }
+
+  /* 🛟 v13.7.1 BRANKAS LAGU — begitu lagu jadi/dipilih, byte-nya LANGSUNG diamankan selagi link masih segar.
+     (Sumber fatal "corrupt/CORS" tadi malam: link mati sebelum sempat disalin. Tak akan terulang.) */
+  useEffect(() => { if (song?.url) void avWarm(song.url); }, [song?.url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 🛡 v11.2: begitu jalur proxy diaktifkan, muat & coba putar otomatis — hasilnya dilaporkan jujur */
   useEffect(() => {

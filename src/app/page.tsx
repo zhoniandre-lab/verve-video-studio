@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob } from "@/lib/recorder";
 import { renderGif } from "@/lib/gif";
 import { makeAutoThumbBlob } from "@/lib/thumb";
+import { avWarm, avPut } from "@/lib/avault";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
@@ -839,6 +840,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   useEffect(() => { if (musicUrl && !musicDur) getAudioDuration(musicUrl).then((d) => { if (d > 0.5) setMusicDur(d); }); }, [musicUrl, musicDur]);
   useEffect(() => { if (ttsUrl && !ttsDur) getAudioDuration(ttsUrl).then((d) => { if (d > 0.5) setTtsDur(d); }); }, [ttsUrl, ttsDur]);
   useEffect(() => { if (voiceUrl && !voiceDur) getAudioDuration(voiceUrl).then((d) => { if (d > 0.5) setVoiceDur(d); }); }, [voiceUrl, voiceDur]);
+  // 🛟 v13.7.1 BRANKAS LAGU — begitu proyek kebuka, salin byte audio ke brankas SEKARANG selagi link masih segar.
+  // (Link AI mati dalam hitungan jam; brankas ini yang menyelamatkan render-render berikutnya.)
+  useEffect(() => { if (musicUrl) void avWarm(musicUrl); }, [musicUrl]);
+  useEffect(() => { if (ttsUrl) void avWarm(ttsUrl); }, [ttsUrl]);
+  useEffect(() => { if (voiceUrl) void avWarm(voiceUrl); }, [voiceUrl]);
 
   const audioSyncedRef = useRef(0); // ⏱ v13.7 SELARAS — flag penyembuhan sekali jalan (efeknya di bawah deklarasi mTitle)
   // elemen audio yang dikelola jam manual (mode offset) saat preview
@@ -1932,7 +1938,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       setStageText("Menggabungkan audio...");
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       const actx = new AC();
-      const bufs = await Promise.all(parts.map(p => fetch(p.url).then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b.slice(0)))));
+      const bufs = await Promise.all(parts.map(p => fetch(p.url).then(r => r.arrayBuffer()).then(b => { void avPut(p.url, b, ""); return actx.decodeAudioData(b.slice(0)); }))); // 🛟 v13.7.1: jalur mix juga menabung ke brankas
       const sr = bufs[0].sampleRate; const ch = Math.min(2, bufs[0].numberOfChannels);
       const offs = parts.map(p => Math.max(0, Math.round((p.off || 0) * sr)));
       const maxLen = Math.max(...bufs.map((b, i) => offs[i] + b.length));

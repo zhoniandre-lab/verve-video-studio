@@ -13,6 +13,7 @@
  *  - Caption CapCut-style: kata demi kata highlight sesuai posisi audio
  */
 import type { VizStyle } from "./types";
+import { avGet, avPut, avDel } from "./avault";
 import {
   buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
   setDrawBg, preloadStickerImages, paintFloatingTexts, paintFloatingStickers,
@@ -141,15 +142,29 @@ async function decodeAudio(url: string, onStage?:(s:string)=>void) {
   const m = url.match(/^\/?api\/hcnsec\/proxy-audio\?url=(.+)$/);
   if (m) { try { cands.push(decodeURIComponent(m[1])); } catch {} } // cadangan: langsung ke sumber
   if (/^https?:/.test(url) && !/proxy-audio/.test(url)) cands.push(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`); // cadangan: lewat proxy
-  let last: any = null;
+  // 🛟 v13.7.1: kumpulkan penyebab TIAP jalur (bukan cuma yang terakhir) → pesan akhir jujur & bisa ditindak
+  const why: string[] = [];
   for (const u of cands) {
-    try { return await decodeAudioOnce(u, onStage); } catch (e: any) { last = e; }
+    try { return await decodeAudioOnce(u, onStage); }
+    catch (e: any) { why.push(`${/proxy-audio/.test(u) ? "gerbang" : "langsung"}: ${String(e?.message || e).replace(/\s+/g, " ").slice(0, 70)}`); }
   }
-  const msg = String(last?.message || last || "audio gagal dimuat");
-  if (/Failed to fetch|NetworkError|502|503|404|403|timeout/i.test(msg)) {
-    throw new Error(`🎵 Lagu/voice tak bisa dimuat — kemungkinan LINK-nya KADALUWARSA (link Suno/kie/aimusic umurnya hitungan jam) atau CDN-nya keblok. Selamatkan: upload MP3/WAV dari HP-mu (menu Audio → Upload lagu) atau generate ulang lagu, lalu render lagi ya bro. [${msg.slice(0, 90)}]`);
+  // 🛟 BRANKAS LAGU — jaringan menyerah total? minum dari salinan lokal (link AI umurnya hitungan jam!)
+  try {
+    for (const u of cands) {
+      const hit = await avGet(u);
+      if (hit && hit.byteLength > 50_000) {
+        try {
+          onStage?.("🛟 Menyelamatkan audio dari BRANKAS LAGU…");
+          return await decodeBuf(hit.slice(0));
+        } catch { await avDel(u); why.push("brankas: salinan korup, dibuang"); }
+      }
+    }
+  } catch {}
+  const joined = why.join(" · ").slice(0, 240);
+  if (/Failed to fetch|NetworkError|502|503|404|403|415|timeout|kedaluwarsa|Bukan media|tak kedecode/i.test(joined)) {
+    throw new Error(`🎵 LINK LAGU SUDAH MATI di sumbernya & brankas belum sempat menyalinnya. Jalan selamat: upload MP3/WAV lagu ini dari HP-mu (bar Audio → Upload lagu) lalu render lagi — upload kebal selamanya. Atau generate ulang lagu. Detail: ${joined}`);
   }
-  throw last;
+  throw new Error(`Audio gagal dimuat. Detail: ${joined || "tak diketahui"}`);
 }
 async function decodeAudioOnce(url: string, onStage?:(s:string)=>void) {
   onStage?.("Decoding audio...");
@@ -160,6 +175,16 @@ async function decodeAudioOnce(url: string, onStage?:(s:string)=>void) {
     clearTimeout(t);
     if (!r.ok) { let hint = ""; try { hint = (await r.text()).replace(/\s+/g, " ").slice(0, 120); } catch {} throw new Error(`Gagal ambil audio (HTTP ${r.status})${hint ? " — " + hint : ""}`); }
     const buf = await r.arrayBuffer();
+    const dec = await decodeBuf(buf);
+    void avPut(url, buf, r.headers.get("content-type") || ""); // 🛟 v13.7.1: salin byte MENTAH yang terbukti sehat ke BRANKAS LAGU
+    return dec;
+  } catch(e:any) {
+    if (e?.name === "AbortError") throw new Error("Ambil audio timeout. Cek koneksi lalu render ulang.");
+    throw e;
+  }
+}
+// 🛟 v13.7.1: decode+konversi dipisah — dipakai jalur jaringan MAUPUN jalur BRANKAS (rumus identik, tak diubah)
+async function decodeBuf(buf: ArrayBuffer) {
     const AC = (window.AudioContext || (window as any).webkitAudioContext);
     const actx = new AC();
     let audioBuf: AudioBuffer;
@@ -167,7 +192,7 @@ async function decodeAudioOnce(url: string, onStage?:(s:string)=>void) {
       audioBuf = await actx.decodeAudioData(buf.slice(0));
     } catch(de:any) {
       actx.close();
-      throw new Error("Audio tidak bisa diputar (format corrupt/CORS). Coba generate ulang lagu atau pakai file upload ya bro.");
+      throw new Error("byte audio tak kedecode (bukan lagu — sumber balikin HTML/halaman error)");
     }
     // KONVERSI ke STEREO 44100Hz — format paling kompatibel untuk Android/iOS/YouTube.
     // v8.1: kalau sumber SUDAH 44.1k (umumnya lagu), ambil saluran langsung TANPA
@@ -203,10 +228,6 @@ async function decodeAudioOnce(url: string, onStage?:(s:string)=>void) {
     actx.close();
     return { data: outL, sampleRate: targetSR, channels: nCh, duration: nFrames/targetSR,
       stereoL: outL, stereoR: outR };
-  } catch(e:any) {
-    if (e?.name === "AbortError") throw new Error("Ambil audio timeout. Cek koneksi lalu render ulang.");
-    throw e;
-  }
 }
 
 function loadImage(src: string, useCors = true): Promise<HTMLImageElement> {
