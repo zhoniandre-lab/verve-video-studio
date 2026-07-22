@@ -161,7 +161,7 @@ function proxifyAudioUrl(url: string): string {
   if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("/")) return url;
   try {
     const h = new URL(url).hostname.toLowerCase();
-    const need = h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe") || h.includes("sunor") || h.includes("aimusic") || h.includes("r2.dev") || h.includes("cdn2") || h.includes("cdn.");
+    const need = h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe") || h.includes("sunor") || h.includes("aimusic") || h.includes("r2.dev") || h.includes("cdn2") || h.includes("cdn.") || h.includes("googleapis") || h.includes("storage.") || h.includes("supabase") || h.includes("cloudinary") || h.includes("gstatic"); // 🩹 v12.9
     return need ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}` : url;
   } catch { return url; }
 }
@@ -1191,6 +1191,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (!musicEl.current || musicEl.current.src !== proxifyAudioUrl(musicUrl)) {
           musicEl.current = new Audio(proxifyAudioUrl(musicUrl));
           musicEl.current.crossOrigin = "anonymous";
+          musicEl.current.onerror = () => { // 🩹 v12.9: link lagu mati di preview → lapor jujur, bukan diem
+            if ((window as any).__verveMusiErr === musicUrl) return; (window as any).__verveMusiErr = musicUrl;
+            flash("🔗 Lagu tak bisa diputar — LINK lagu kemungkinan KADALUWARSA (hidupnya hitungan jam). Upload ulang MP3 dari HP (Audio → Upload lagu) atau generate ulang lagu, ya bro.");
+          };
           // analyser utk beat (dipakai some effects later)
           try {
             const src = actxRef.current.createMediaElementSource(musicEl.current);

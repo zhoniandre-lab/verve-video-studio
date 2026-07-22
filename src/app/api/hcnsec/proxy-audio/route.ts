@@ -30,6 +30,12 @@ export async function GET(req: Request) {
         host.includes("sunor") ||
         host.includes("cdn") ||
         host.includes("aimusic") ||
+        // 🩹 v12.9: CDN penyimpan audio luas — lagu dari API mana pun boleh lewat jalur CORS ini
+        host.includes("googleapis") ||
+        host.includes("storage.") ||
+        host.includes("supabase") ||
+        host.includes("cloudinary") ||
+        host.includes("gstatic") ||
         host.includes("cdn") ||
         host.includes("r2") ||
         host.includes("s3") ||
@@ -55,7 +61,7 @@ export async function GET(req: Request) {
     clearTimeout(t);
 
     if (!r.ok || !r.body) {
-      return new NextResponse(`Upstream ${r.status}`, { status: 502 });
+      return NextResponse.json({ error: `Upstream ${r.status} — link kemungkinan kedaluwarsa/diblock sumber` }, { status: 502 });
     }
 
     const ct = r.headers.get("content-type") || "audio/mpeg";

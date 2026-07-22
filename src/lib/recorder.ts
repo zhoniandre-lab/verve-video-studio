@@ -134,14 +134,30 @@ function lerp(a:number,b:number,t:number){return a+(b-a)*t;}
 function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
 function easeInOut(t:number){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
 
+// 🩹 v12.9 SELAMATKAN AUDIO — kaskade jalur: proxy→langsung / langsung→proxy + pesan jujur.
 async function decodeAudio(url: string, onStage?:(s:string)=>void) {
+  const cands: string[] = [url];
+  const m = url.match(/^\/?api\/hcnsec\/proxy-audio\?url=(.+)$/);
+  if (m) { try { cands.push(decodeURIComponent(m[1])); } catch {} } // cadangan: langsung ke sumber
+  if (/^https?:/.test(url) && !/proxy-audio/.test(url)) cands.push(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`); // cadangan: lewat proxy
+  let last: any = null;
+  for (const u of cands) {
+    try { return await decodeAudioOnce(u, onStage); } catch (e: any) { last = e; }
+  }
+  const msg = String(last?.message || last || "audio gagal dimuat");
+  if (/Failed to fetch|NetworkError|502|503|404|403|timeout/i.test(msg)) {
+    throw new Error(`🎵 Lagu/voice tak bisa dimuat — kemungkinan LINK-nya KADALUWARSA (link Suno/kie/aimusic umurnya hitungan jam) atau CDN-nya keblok. Selamatkan: upload MP3/WAV dari HP-mu (menu Audio → Upload lagu) atau generate ulang lagu, lalu render lagi ya bro. [${msg.slice(0, 90)}]`);
+  }
+  throw last;
+}
+async function decodeAudioOnce(url: string, onStage?:(s:string)=>void) {
   onStage?.("Decoding audio...");
   try {
     const ac = new AbortController();
     const t = setTimeout(()=>ac.abort(), 120_000);
     const r = await fetch(url, { signal: ac.signal, cache: "force-cache" });
     clearTimeout(t);
-    if (!r.ok) throw new Error(`Gagal ambil audio (HTTP ${r.status}). Coba render ulang ya bro.`);
+    if (!r.ok) { let hint = ""; try { hint = (await r.text()).replace(/\s+/g, " ").slice(0, 120); } catch {} throw new Error(`Gagal ambil audio (HTTP ${r.status})${hint ? " — " + hint : ""}`); }
     const buf = await r.arrayBuffer();
     const AC = (window.AudioContext || (window as any).webkitAudioContext);
     const actx = new AC();
