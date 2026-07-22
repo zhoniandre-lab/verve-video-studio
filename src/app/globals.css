@@ -1559,6 +1559,10 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6e-lanehead { position:sticky; left:0; flex:0 0 0px; width:0; height:0; margin:0 -4px 0 0; z-index:8; pointer-events:none; overflow:visible; }
 .v6e-lanehead > span { position:absolute; left:6px; top:50%; transform:translateY(-50%); display:flex; align-items:center; gap:5px; height:22px; padding:0 8px; border-radius:7px; background:rgba(11,14,20,.92); border:1px solid var(--v6-line); font-size:10.5px; font-weight:800; letter-spacing:.2px; color:#cbd5e1; white-space:nowrap; box-shadow:0 2px 10px rgba(0,0,0,.5); }
 .v6e-lanehead .dot { width:7px; height:7px; border-radius:50%; background:#60a5fa; flex:0 0 auto; }
+.v6e-snapline { position:absolute; top:0; bottom:0; width:2px; background:var(--v6-teal); box-shadow:0 0 7px rgba(45,212,191,.75); z-index:7; pointer-events:none; }
+.v6e-tlsplit { position:absolute; right:36px; top:2px; z-index:8; width:24px; height:24px; border-radius:7px;
+  background:rgba(20,20,26,.88); border:1px solid rgba(45,212,191,.5); color:var(--v6-teal); font-size:13px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; backdrop-filter:blur(6px); cursor:pointer; }
 .v6e-lanerow.lanelift, .v6e-track.lanelift { outline:2px dashed rgba(34,211,238,.65); outline-offset:1px; border-radius:10px; position:relative; z-index:6; }
 
 /* ===== v8.5: sorotan target jatuh saat objek diseret antar-baris ===== */

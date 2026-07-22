@@ -2909,6 +2909,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
+        onSplit={doSplitAtPlayhead} // ✂ v12.7: tombol ╫ melayang di track — sekali ketuk tepat di penanda
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
         onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); flash("🗑 Track audio dikosongkan"); }}
@@ -3161,6 +3162,23 @@ function TimelineV6(p: any) {
   const elmPoolRef = useRef<any[]>([]);
   const rowDropRef = useRef<any>(null);
   const [rowDrop, setRowDrop] = useState<any>(null);
+  // 🧲 v12.7 MAGNET & GARIS (inspirasi snap-indicator OpenCut, ditulis ulang 100%): saat seret teks/stiker/audio,
+  // waktu ikut NEMPEL ke tepi klip / penanda waktu / titik irama — serasi irama tanpa koreksi berulang
+  const [snapAt, setSnapAt] = useState<number | null>(null);
+  const snapCands = useMemo(() => {
+    const c: number[] = [0, dispTotal];
+    (timeline?.starts || []).forEach((st: number, i: number) => { c.push(st); c.push(st + (timeline?.durs?.[i] || 0)); });
+    (p.musicBeats || []).slice(0, 240).forEach((b: number) => { const t = (p.musicOff || 0) + b; if (t >= 0 && t <= dispTotal) c.push(t); });
+    return c;
+  }, [timeline, p.musicBeats, p.musicOff, dispTotal]);
+  function doSnap(v: number): number {
+    const th = Math.min(0.35, 9 / PXS0); // ambang magnet: 9px (maks 0,35d biar zoom-jauh tak serakah)
+    let best: number | null = null, bd = th;
+    for (const c of snapCands) { const d = Math.abs(c - v); if (d <= bd) { bd = d; best = c; } }
+    const dc = Math.abs(curT - v); if (dc <= bd) { bd = dc; best = curT; }
+    if (best !== snapAt) setSnapAt(best);
+    return best === null ? v : best;
+  }
 
   // ukur setengah lebar viewport → konten diberi ruang kiri-kanan supaya detik 0 & akhir bisa tepat di garis tengah
   useEffect(() => {
@@ -3277,23 +3295,27 @@ function TimelineV6(p: any) {
   }
   function applyAud(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
-    p.onAudioOff(d.audioKind, clampN(d.off0 + dxT, 0, 7200));
+    p.onAudioOff(d.audioKind, doSnap(clampN(d.off0 + dxT, 0, 7200)));
   }
   function applyTxt(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
-    p.onTextStart(d.sid, d.tid || "", clampN((d.st0 || 0) + dxT, 0, 7190));
+    p.onTextStart(d.sid, d.tid || "", doSnap(clampN((d.st0 || 0) + dxT, 0, 7190)));
   }
   function applyTxtD(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
-    p.onTextDur(d.sid, d.tid || "", clampN((d.dur0 || 3) + dxT, 0.5, 600));
+    const st0 = d.st0 || 0;
+    const end = doSnap(clampN(st0 + (d.dur0 || 3) + dxT, st0, 7190 + (d.dur0 || 3))); // magnet di tepi AKHIR
+    p.onTextDur(d.sid, d.tid || "", clampN(end - st0, 0.5, 600));
   }
   function applyStk(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
-    p.onStickerStart(d.sid, d.stid, clampN((d.st0 || 0) + dxT, 0, 7190));
+    p.onStickerStart(d.sid, d.stid, doSnap(clampN((d.st0 || 0) + dxT, 0, 7190)));
   }
   function applyStkD(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
-    p.onStickerDur(d.sid, d.stid, clampN((d.dur0 || 3) + dxT, 0.3, 600));
+    const st0 = d.st0 || 0;
+    const end = doSnap(clampN(st0 + (d.dur0 || 3) + dxT, st0, 7190 + (d.dur0 || 3))); // magnet di tepi AKHIR
+    p.onStickerDur(d.sid, d.stid, clampN(end - st0, 0.3, 600));
   }
   // jari mentok ke tepi layar → timeline ikut jalan terus (perpanjang/pindah tanpa angkat jari)
   function edgeLoop() {
@@ -3355,6 +3377,7 @@ function TimelineV6(p: any) {
   }
   // lepas jari → sahkan pindah jalur (atau tolak sopan kalau NUMPUK)
   function commitObjRow(d: any) {
+    setSnapAt(null);
     if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if (!d || !d.armed || !(d.kind === "aud" || d.kind === "txt" || d.kind === "stk") || d.rowTo == null) return;
     if ((d.maxD || 0) > 6) suppressClickRef.current = true; // v9.0: tahan lama TANPA gerak lalu lepas = tetap TAP → setting
@@ -3643,6 +3666,8 @@ function TimelineV6(p: any) {
             <div style={{ position: "relative", width: contentW, display: "flex" }}>
               <div style={{ width: halfW, flex: "0 0 auto" }} />
               <div style={{ position: "relative", flex: "0 0 auto", display: "flex", flexDirection: "column", width: colW }}>
+                {/* 🧲 v12.7 GARIS MAGNET — muncul sekilas ketika seretan nempel (tepi klip / penanda / irama) */}
+                {snapAt !== null && <div className="v6e-snapline" style={{ left: snapAt * PXS0 }} />}
                 {/* ruler waktu (adaptif ikut zoom) */}
                 <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
                   {Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep; return (
@@ -3872,6 +3897,10 @@ function TimelineV6(p: any) {
                 zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
                 p.onZoom(clampN((el.clientWidth - 24) / dispTotal, TL_MIN_PXS, TL_MAX_PXS));
               }}>⤢</button>
+          )}
+          {dispTotal > 0 && (
+            <button className="v6e-tlsplit" title="✂ Bagi klip tepat di garis penanda waktu (ala OpenCut/CapCut)"
+              onClick={() => p.onSplit && p.onSplit()}>╫</button>
           )}
           {Math.abs(PXS0 - PXS) > 1 && (
             <button className="v6e-tlfp" title="Kembali ke skala normal" onClick={() => {
