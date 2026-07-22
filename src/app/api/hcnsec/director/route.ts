@@ -40,13 +40,16 @@ SET STUDIO (GRATIS, langsung jalan, bisa di-Undo kecuali diberi tanda):
 - {"op":"set_motion","slide":N,"mode":"zoom_in|zoom_out|selangseling|zoompelan|denyut|goyang|melayang|berkedip|ayun|none"}   (GERAK PADA GAMBARNYA ala CapCut, ZOOM KERAS TERLIHAT JELAS. slide kosong = SEMUA adegan. "zoom in dan zoom out biar gambar bergerak bagus" → mode selangseling (masuk/keluar bergantian per adegan). BUKAN set_transition)
 - {"op":"clear_caption"}                (hapus keterangan otomatis — gratis)
 - {"op":"geser_keterangan","detik":-10..10}    (geser timing karaoke +-N detik — untuk "karaoke kecepetan/kelambatan/tidak pas dengan suara". NEGATIF = lebih awal/maju, POSITIF = lebih lambat/mundur)
+- {"op":"matikan_animasi","slide":N}     (matikan klip video AI di adegan N — slide kosong = SEMUA. Gratis; gambar kembali biasa)
 BERAT TAPI GRATIS (aplikasi hanya menampilkan tombol Gas/Batal — kerja keras HP, BUKAN kredit):
 - {"op":"render_now"}  (hanya bila pembuat minta render/ekspor/download/jadikan video)
 - {"op":"auto_caption"} (keterangan/karaoke otomatis dari AUDIO — transkripsi AI whisper, ±1–2 menit; hanya bila pembuat minta keterangan/lirik jalan/karaoke otomatis DAN belum ada karaoke)
 - {"op":"selaraskan_ulang"} (karaoke SUDAH ADA tapi tidak pas — sinkron ulang lirik ke irama lagu dari nol; teks lama disingkirkan dulu, anti dobel)
+BERAT + BAKAR KREDIT (kartu Gas/Batal juga, tapi ini KREDIT AI SUNGGUHAN — WAJIB jujur di "reply" bahwa ini memakai kredit):
+- {"op":"animasikan_adegan","slide":N,"instruction":"arahan gerak opsional (Inggris)"} atau {"op":"animasikan_adegan","slide":"semua"}  (🎬 ANIMASI HIDUP: gambar adegan diubah jadi klip video bergerak AI ±5 detik yang ikut preview & render — untuk "jadikan semua gambar animasi bergerak / hidupkan adegan N / bikin video tiap gambar". Gagal? gambar aman + gerak halus otomatis tetap jalan)
 CATATAN SELARAS: kalau karaoke sudah ada tapi timingnya tidak pas → pakai geser_keterangan (tawarkan 0.5–1 dtk) dan/atau selaraskan_ulang — JANGAN auto_caption polos (itu menambah teks baru di atas yang lama = karaoke dobel).
 Nomor adegan HARUS 1..KONTEKS.jumlah_adegan.
-PENTING soal zoom: "zoom/gerak pada GAMBAR" = set_motion (set_transition HANYA sambungan antar-adegan). zoom MASUK = zoom_in, zoom KELUAR = zoom_out (keduanya SUDAH ADA & keras terlihat), campuran keren = selangseling. Untuk "keterangan otomatis / karaoke otomatis / lirik jalan" pakai auto_caption, JANGAN ngaku sudah selesai tanpa ops.
+PENTING soal zoom: "zoom/gerak pada GAMBAR" = set_motion (set_transition HANYA sambungan antar-adegan). zoom MASUK = zoom_in, zoom KELUAR = zoom_out (keduanya SUDAH ADA & keras terlihat), campuran keren = selangseling. Untuk "keterangan otomatis / karaoke otomatis / lirik jalan" pakai auto_caption, JANGAN ngaku sudah selesai tanpa ops. BEDAkan baik-baik: "zoom/efek gerak cepat ala CapCut" = set_motion (gratis, instan); "animasi bergerak sungguhan / video hidup / jadikan tiap gambar animasi seperti film" = animasikan_adegan (BAKAR KREDIT — selalu lewat kartu Gas/Batal). KONTEKS.adegan_hidup = nomor adegan yang SUDAH beranimasi AI: jangan tawarkan ulang; bila pembuat tidak puas dengan hasilnya, tawarkan matikan_animasi untuk adegan itu.
 
 SET WIZARD — GRATIS (langsung dijalankan aplikasi, tanpa kredit):
 - {"op":"set_title","title":"judul baru"}
@@ -122,6 +125,7 @@ const STUDIO_OPS = new Set([
   "set_bg", "set_filter", "set_quality", "render_now",
   "set_motion", "auto_caption", "clear_caption", // 🎬 v11.3: gerak gambar + keterangan otomatis
   "geser_keterangan", "selaraskan_ulang", // 🎬 v11.6: perkakas selaras karaoke
+  "animasikan_adegan", "matikan_animasi", // 🎬 v11.8: ANIMASI STUDIO (kredit video AI / matikan gratis)
 ]);
 const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun", "zoom_in", "zoom_out", "selangseling"]); // 🎬 v11.4: +keras/arah/selangseling
 const num = (v: unknown, a: number, b: number): number | null => {
@@ -163,6 +167,13 @@ function cleanStudioOps(raw: unknown, nSlides: number): { ops: Op[]; dropped: st
       }
     }
     if (name === "geser_keterangan") { const d = num(o.detik, -10, 10); if (d === null) { dropped.push("geser tanpa detik"); continue; } out.detik = d; }
+    if (name === "animasikan_adegan" || name === "matikan_animasi") { // 🎬 v11.8: slide kosong/"semua"/0 = SEMUA adegan (BUKAN kesalahan); bila angka wajib sah
+      const rs = o.slide;
+      const semua = rs === undefined || rs === null || rs === "" || String(rs) === "semua" || Number(rs) === 0;
+      if (semua) out.slide = "semua";
+      else { if (!slideOk(rs)) { dropped.push(`adegan ${rs} tidak ada`); continue; } out.slide = Math.round(Number(rs)); }
+      if (name === "animasikan_adegan") { const ins = s(o.instruction, 160); if (ins) out.instruction = ins; }
+    }
     if (name === "set_bg") { if (!["cover", "blur", "color"].includes(String(o.mode))) { dropped.push("mode latar aneh"); continue; } out.mode = String(o.mode); const c = s(o.color, 20); if (c) out.color = c; }
     if (name === "set_filter") { const f = s(o.preset, 30); if (!f) { dropped.push("filter kosong"); continue; } out.preset = f; }
     if (name === "set_quality") { out.sharp = !!o.sharp; }

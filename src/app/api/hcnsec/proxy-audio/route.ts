@@ -18,6 +18,12 @@ export async function GET(req: Request) {
     try {
       const host = new URL(u).hostname.toLowerCase();
       allowed =
+        // 🎬 v11.8: CDN video AI (kling & kawan-kawan) + gateway sendiri — klip animasi butuh jalur CORS ini
+        host.includes("hcnsec") ||
+        host.includes("kling") ||
+        host.includes("kwai") ||
+        host.includes("kuaishou") ||
+        host.includes("video") ||
         host.includes("kie.ai") ||
         host.includes("apiframe") ||
         host.includes("suno") ||

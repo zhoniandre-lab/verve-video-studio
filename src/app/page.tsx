@@ -21,7 +21,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
    resolusi kustom) + Spectrum Studio (modul terpisah).
    ===================================================================== */
 
-interface Slide { id: string; imageUrl: string; }
+interface Slide { id: string; imageUrl: string; videoUrl?: string; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
 type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan";
 
@@ -577,7 +577,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [dirLog, setDirLog] = useState<{ me: "me" | "ai" | "sys"; text: string }[]>([]);
   const [dirInp, setDirInp] = useState("");
   const [dirBusy, setDirBusy] = useState(false);
-  const [dirPending, setDirPending] = useState<{ op: string }[]>([]);
+  const [dirPending, setDirPending] = useState<{ op: string; slide?: any; instruction?: string }[]>([]);
+  const [animBusy, setAnimBusy] = useState(false); // 🎬 v11.8: batch animasi AI sedang jalan
+  const animAbortRef = useRef<AbortController | null>(null);
   const dirEndRef = useRef<HTMLDivElement | null>(null);
   // teks yang sedang TERPILIH di layar (muncul bingkai) — digeser 1 jari & di-cubit 2 jari
   // format: "sid" = lapisan utama · "sid::tid" = lapisan tambahan (teks multi-lapis)
@@ -696,6 +698,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const imgsRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const vidsRef = useRef<Map<string, HTMLVideoElement>>(new Map()); // 🎬 v11.8
+  const vidBufRef = useRef<(HTMLCanvasElement | null)[]>([null, null]); // 🎬 v11.8: 2 buffer (cur + nxt saat transisi)
   const musicEl = useRef<HTMLAudioElement | null>(null);
   const voiceEls = useRef<HTMLAudioElement[]>([]);
   const actxRef = useRef<AudioContext | null>(null);
@@ -847,6 +851,54 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     imgsRef.current.set(url, img);
     return img.complete && img.naturalWidth ? img : null;
   }
+  // 🎬 v11.8: muat klip video (CORS bersih; sekali gagal → coba proxy same-origin; gagal lagi → mati = gambar still)
+  function getVideo(url: string): HTMLVideoElement | null {
+    let v = vidsRef.current.get(url);
+    if (v) return (v as any).__dead ? null : v;
+    v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
+    v.addEventListener("error", () => {
+      const el = v as any;
+      if (!el.__retried) { el.__retried = 1; v!.src = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`; }
+      else el.__dead = true;
+    });
+    v.src = url;
+    vidsRef.current.set(url, v);
+    return v;
+  }
+  function blitPrevVid(v: HTMLVideoElement, W: number, H: number, slot: number): HTMLCanvasElement | null {
+    if (!v.videoWidth) return null;
+    const bufs = vidBufRef.current;
+    if (!bufs[slot]) bufs[slot] = document.createElement("canvas");
+    const c = bufs[slot]!;
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    const ir = v.videoWidth / v.videoHeight, cr = W / H;
+    let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+    if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
+    else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
+    const cx = c.getContext("2d")!;
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "low";
+    cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+    return c;
+  }
+  // Sinkron putar/tidur dengan status preview; saat di-scrub (pause) ikutkan posisi ke clipT
+  function syncPrevVideos(vC: HTMLVideoElement | null, vN: HTMLVideoElement | null, clipT: number) {
+    const manage = (v: HTMLVideoElement | null, isCur: boolean) => {
+      if (!v || (v as any).__dead) return;
+      if (playingRef.current) {
+        if (v.paused) {
+          try { const want = isCur ? Math.max(0, Math.min(clipT, (v.duration || 1) - 0.06)) : 0; if (v.ended || Math.abs(v.currentTime - want) > 0.8) v.currentTime = want; } catch {}
+          void v.play().catch(() => {});
+        }
+      } else {
+        if (!v.paused) v.pause();
+        const want = isCur ? Math.max(0, Math.min(clipT, (v.duration || 1) - 0.06)) : 0;
+        try { if (Math.abs(v.currentTime - want) > 0.15) v.currentTime = want; } catch {}
+      }
+    };
+    manage(vC, true); manage(vN, false);
+    vidsRef.current.forEach((ov) => { if (ov !== vC && ov !== vN && !ov.paused) ov.pause(); });
+  }
   const playingRef = useRef(false);
   // getClockT dibuat stabil (ref-based) — jangan tangkap state `playing`/`curT`
   // supaya loop rAF tidak membawa closure basi (bug: proyek tanpa audio macet di 00:00)
@@ -876,6 +928,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const optNxt = sl[L.nextIdx] ? optsRef.current[sl[L.nextIdx].id] : null;
     const cur = getImage(sl[L.idx].imageUrl);
     const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(sl[L.nextIdx].imageUrl) : null;
+    // 🎬 v11.8: kalau slide punya klip video AI, gambar diganti kanvas buffer berisi frame video terkini
+    const vidC = sl[L.idx].videoUrl ? getVideo(sl[L.idx].videoUrl!) : null;
+    const vidN = (L.nextIdx !== L.idx && sl[L.nextIdx] && sl[L.nextIdx].videoUrl) ? getVideo(sl[L.nextIdx].videoUrl!) : null;
+    let curDraw: any = cur; let nxtDraw: any = nxt;
+    if (vidC || vidN) {
+      syncPrevVideos(vidC, vidN, L.clipT);
+      if (vidC && vidC.readyState >= 2 && vidC.videoWidth) { const b0 = blitPrevVid(vidC, W, H, 0); if (b0) curDraw = b0; }
+      if (vidN && vidN.readyState >= 2 && vidN.videoWidth) { const b1 = blitPrevVid(vidN, W, H, 1); if (b1) nxtDraw = b1; }
+    }
     const gf = buildClipFilter(filterRef.current, adjRef.current);
     // 🎬 v11.4: Ken Burns KERAS per-klip (medan kb) — tanpa itu, perilaku lama (6% halus) utuh
     const kbC = (optCur as any)?.kb as { dir?: string; s?: number } | undefined;
@@ -884,7 +945,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const kb = kbC
       ? (kbC.dir === "out" ? (1 + SkC) - progC * SkC : 1 + progC * SkC)
       : ((optCur?.loop === "zoompelan" || !optCur?.loop) ? 1 + Math.min(0.06, (tt / Math.max(1, tl.total)) * 0.06) : 1);
-    paintClips(ctx, W, H, cur, nxt, {
+    paintClips(ctx, W, H, curDraw, nxtDraw, {
       clipT: L.clipT, clipDur: L.clipDur, inTrans: L.inTrans, transT: L.transT,
       transId: L.inTrans ? canonicalTrans(optCur?.trans ?? "dissolve") : "none",
       optCur: optCur as any, optNxt: optNxt as any,
@@ -1317,11 +1378,19 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [dirLog, dirBusy, dirOpen]);
 
   function applyStudioOps(ops: StudioOp[]) {
-    const heavy = ops.filter((o) => o.op === "render_now" || o.op === "auto_caption" || o.op === "selaraskan_ulang");
-    const free = ops.filter((o) => o.op !== "render_now" && o.op !== "auto_caption" && o.op !== "selaraskan_ulang");
+    const heavyNames = ["render_now", "auto_caption", "selaraskan_ulang", "animasikan_adegan"]; // 🎬 v11.8
+    const heavy = ops.filter((o) => heavyNames.includes(o.op));
+    const free = ops.filter((o) => !heavyNames.includes(o.op));
     if (heavy.length) {
-      setDirPending(heavy.map((o) => ({ op: o.op })));
-      dirPush("sys", "🔥 Ada kerja berat menunggu izinmu: Render (CPU HP) / Keterangan otomatis (AI transkripsi audio, ±1–2 mnt) — BUKAN kredit. Ketuk Gas di bawah kalau yakin.");
+      setDirPending(heavy.map((o) => ({ op: o.op, slide: o.slide, instruction: o.instruction })));
+      const parts = heavy.map((o) => {
+        if (o.op === "render_now") return "Render (CPU HP — gratis)";
+        if (o.op === "auto_caption" || o.op === "selaraskan_ulang") return "Keterangan otomatis (AI transkripsi — gratis, ±1–2 mnt)";
+        const semua = o.slide === undefined || o.slide === null || String(o.slide) === "semua" || Number(o.slide) === 0;
+        const n = semua ? slides.filter((s) => !s.videoUrl).length : 1;
+        return `Animasi AI ${semua ? `SEMUA (${n} adegan)` : `adegan ${o.slide}`} — ⚠️ BAKAR KREDIT video AI`;
+      });
+      dirPush("sys", "🔥 Kerja berat menunggu izinmu: " + parts.join(" · ") + ". Ketuk Gas/Batal di bawah — keputusan (dan kredit) di tanganmu.");
     }
     if (!free.length) return;
     pushHist(); // ↩ menumpang undo RESMI Studio — bukan sistem paralel
@@ -1377,6 +1446,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           break;
         }
         case "clear_caption": clearCaptions(); done.push("keterangan otomatis dihapus"); break;
+        case "matikan_animasi": { // 🎬 v11.8: cabut klip AI (slide kosong = semua) — gratis, ikut Undo resmi
+          const targets = hasSlide ? [i1] : slides.map((_, k) => k);
+          const n0 = targets.filter((k) => !!slides[k].videoUrl).length;
+          if (n0) setSlides((c) => c.map((s, k) => (targets.includes(k) ? { ...s, videoUrl: undefined } : s)));
+          done.push(n0 ? (hasSlide ? `animasi AI adegan ${o.slide} dimatikan` : `animasi AI dimatikan di ${n0} adegan`) : "belum ada animasi AI yang aktif");
+          break;
+        }
         case "geser_keterangan": {
           // 🎬 v11.6: geser timing karaoke (perkakas resmi nudgeLyrics + undo bawaan)
           const d = clamp(o.detik, -10, 10, 0);
@@ -1410,6 +1486,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         kualitas_tajam: qualitySharp,
         bg: { mode: bgMode, color: bgColor },
         render_siap_download: !!videoUrl,
+        adegan_hidup: slides.map((s, i) => (s.videoUrl ? i + 1 : 0)).filter(Boolean), // 🎬 v11.8: adegan yang SUDAH beranimasi AI
       };
       const r = await fetch("/api/hcnsec/director", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
@@ -1427,8 +1504,69 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
   }
 
-  function gasStudioOp(o: { op: string }) {
+  // 🎬 v11.8 ANIMASI STUDIO — animasikan gambar adegan jadi klip video AI ±5 dtk (image→video),
+  // SATU-SATU (sopan di HP), hasil menempel di slide → preview + render ikut otomatis.
+  // BAKAR KREDIT: selalu lewat kartu Gas/Batal. Gagal? gambar aman + gerak halus otomatis tetap jalan.
+  async function animateSlidesStudio(idxList: number[], instruction?: string) {
+    if (animBusy) { dirPush("sys", "⏳ Animasi lain masih jalan — tunggu selesai atau ketuk Urung dulu ya."); return; }
+    const list = idxList.filter((i) => slides[i] && slides[i].imageUrl && !slides[i].videoUrl);
+    if (!list.length) { dirPush("sys", "ℹ️ Tidak ada adegan yang perlu dianimasikan (sudah hidup semua / tanpa gambar)."); return; }
+    const ac = new AbortController();
+    animAbortRef.current = ac;
+    setAnimBusy(true);
+    pushHist(); // ↩ SATU snapshot untuk seluruh batch — Undo membatalkan semuanya sekaligus
+    let ok = 0;
+    const failed: string[] = [];
+    dirPush("sys", `🎬 Menganimasikan ${list.length} adegan SATU-SATU (tiap klip ±5 dtk; total ±${list.length}–${list.length * 3} mnt — layar tetap nyala ya). Mau berhenti di tengah? ketuk ⏹ Urung — yang sudah jadi tetap kepakai.`);
+    for (const i of list) {
+      if (ac.signal.aborted) break;
+      dirPush("sys", `🎥 Adegan ${i + 1} sedang dianimasikan… (${ok} jadi sejauh ini)`);
+      try {
+        const extra = (instruction || "").trim().slice(0, 160);
+        const prompt = `Subtle living photo, gentle cinematic motion, slow stable camera, natural micro movement, no morphing faces${extra ? ": " + extra : ""}`;
+        let r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, imageUrl: slides[i].imageUrl, duration: 5, aspectRatio: ratio }), signal: ac.signal });
+        let d: any = await r.json().catch(() => ({}));
+        let tries = 0;
+        while (!d.video_url && (d.id || d.task_id) && tries < 8 && !ac.signal.aborted) { // LANJUT task yang sama — hemat kredit
+          await new Promise((res) => setTimeout(res, 4000));
+          r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pollOnly: true, taskId: d.id || d.task_id, endpoint: d.endpoint }), signal: ac.signal });
+          d = await r.json().catch(() => ({}));
+          tries++;
+        }
+        if (ac.signal.aborted) break;
+        if (d.video_url) {
+          const vu = String(d.video_url);
+          setSlides((c) => c.map((s, j) => (j === i ? { ...s, videoUrl: vu } : s)));
+          ok++;
+          dirPush("sys", `✅ Adegan ${i + 1} hidup! (badge 🎬 di track · ikut preview & render)`);
+        } else {
+          failed.push(`adegan ${i + 1}: ${String(d.error || "model video sibuk").slice(0, 90)}`);
+        }
+      } catch (e: any) {
+        if (e?.name === "AbortError") break;
+        failed.push(`adegan ${i + 1}: ${String(e?.message || e).slice(0, 90)}`);
+      }
+    }
+    setAnimBusy(false);
+    animAbortRef.current = null;
+    dirPush("sys", ac.signal.aborted
+      ? `⏹ Diurungkan. ${ok} adegan sempat hidup & tetap dipakai; sisanya gambar biasa + gerak halus otomatis.`
+      : ok === list.length
+        ? `🏁 Selesai — SEMUA ${ok} adegan hidup! Play preview untuk lihat geraknya. Salah? ↩ Undo membatalkan semua. (URL klip bertahan jam-an — render/download sebaiknya hari ini)`
+        : ok > 0
+          ? `🏁 Selesai: ${ok}/${list.length} adegan hidup. Gagal: ${failed.slice(0, 2).join(" · ")} — sisanya tetap gambar + gerak halus otomatis.`
+          : `⚠️ Semua gagal dianimasikan — ${failed[0] || "model video sibuk"}. Gambarmu aman kok. Coba lagi nanti ya bro.`);
+  }
+
+  function gasStudioOp(o: { op: string; slide?: any; instruction?: string }) {
     setDirPending((p) => p.filter((x) => x !== o));
+    if (o.op === "animasikan_adegan") { // 🎬 v11.8
+      const semua = o.slide === undefined || o.slide === null || String(o.slide) === "semua" || Number(o.slide) === 0;
+      const idxs = semua ? slides.map((_, k) => k) : [Math.max(0, Math.round(Number(o.slide)) - 1)];
+      dirPush("sys", "🔥 Oke — kredit AI dipakai, aku kerjakan satu-satu. Kalau ada yang gagal: gambarnya aman, gerak halus otomatis tetap jalan.");
+      void animateSlidesStudio(idxs, typeof o.instruction === "string" ? o.instruction : undefined);
+      return;
+    }
     if (o.op === "render_now") {
       dirPush("sys", "🎬 Render dimulai — CPU HP yang bekerja. Selesai → tombol ⬇ Download menyala.");
       void doRender();
@@ -2164,6 +2302,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       };
       const blob = await renderSlideshow({
         images: useSlides.map(s => s.imageUrl),
+        videos: useSlides.map(s => s.videoUrl || null), // 🎬 v11.8: klip animasi ikut di-render
         audioUrl: audioUrl || undefined,
         slideDuration,
         transitionDuration: transitionDur,
@@ -2724,7 +2863,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
           <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#0b0e13", borderRadius: 10, border: "1px solid #ffffff12" }}>
             {!dirLog.length && (
-              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "zoom pelan di semua gambar" · "keterangan otomatis" · "musiknya kecilin 40%" · "teks adegan 2: aku pulang membawa luka" · "adegan 3 pindah ke awal" · "render sekarang".</div>
+              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "animasikan semua gambar jadi video hidup" · "hidupkan adegan 2" · "matikan animasi adegan 1" · "zoom pelan semua" · "keterangan otomatis" · "musiknya kecilin 40%" · "render sekarang".</div>
             )}
             {dirLog.map((m, i) => (
               m.me === "me" ? (
@@ -2736,11 +2875,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               )
             ))}
             {dirBusy && <div style={{ color: "#8b93a3", fontSize: 12 }}>🎬 mikir…</div>}
+            {animBusy && <div style={{ display: "flex", justifyContent: "center" }}><button onClick={() => animAbortRef.current?.abort()} style={{ background: "none", color: "#fca5a5", border: "1px solid #7f1d1d", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer" }}>⏹ Urungkan animasi (yang sudah jadi tetap dipakai)</button></div>}
             <div ref={dirEndRef} />
           </div>
           {dirPending.map((o, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, background: "#1a1207", border: "1px solid #f59e0b44", borderRadius: 8, padding: "6px 8px", fontSize: 12 }}>
-              <span>{o.op === "auto_caption" ? "📝 Keterangan otomatis — AI transkripsi audio (±1–2 mnt)" : o.op === "selaraskan_ulang" ? "🎯 Sinkron ulang karaoke ke irama lagu (AI, ±1–2 mnt)" : "🔥 Render video sekarang (berat di HP)"}</span>
+              <span>{o.op === "auto_caption" ? "📝 Keterangan otomatis — AI transkripsi audio (±1–2 mnt)" : o.op === "selaraskan_ulang" ? "🎯 Sinkron ulang karaoke ke irama lagu (AI, ±1–2 mnt)" : o.op === "animasikan_adegan" ? `🎬 Animasi AI ${(o.slide === undefined || o.slide === null || String(o.slide) === "semua" || Number(o.slide) === 0) ? "SEMUA adegan" : `adegan ${o.slide}`} — ⚠️ BAKAR KREDIT video AI (±1–3 mnt/adegan)` : "🔥 Render video sekarang (berat di HP)"}</span>
               <span style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => gasStudioOp(o)} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 6, padding: "4px 10px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Gas</button>
                 <button onClick={() => setDirPending((p) => p.filter((x) => x !== o))} style={{ background: "none", color: "#cbd5e1", border: "1px solid #ffffff2a", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Batal</button>
@@ -3405,6 +3545,7 @@ function TimelineV6(p: any) {
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
                       {s.imageUrl ? <img src={s.imageUrl} alt="" draggable={false} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
+                      {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
                       <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                       {sel && <>
                         <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
