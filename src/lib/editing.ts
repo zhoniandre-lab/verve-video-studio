@@ -1072,6 +1072,7 @@ export function paintFloatingTexts(
 export function paintFloatingStickers(
   ctx: CanvasRenderingContext2D, W: number, H: number,
   optsList: (SlideOpt | null | undefined)[], t: number,
+  spec?: Uint8Array | Float32Array | number[] | null, // 🌈 v13.4: frekuensi lagu utk stiker @bars (opsional)
 ) {
   for (const o of optsList) {
     const arr = o?.stickers;
@@ -1080,7 +1081,7 @@ export function paintFloatingStickers(
       if (s.start == null) continue;
       const dur = s.dur && s.dur > 0 ? s.dur : 3;
       if (t < s.start || t >= s.start + dur) continue;
-      paintStickersV6(ctx, W, H, [s], 1, t);
+      paintStickersV6(ctx, W, H, [s], 1, t, spec);
     }
   }
 }
@@ -1207,13 +1208,104 @@ export async function preloadStickerImages(urls: string[]): Promise<void> {
 }
 
 /* ---------- STIKER ANIMASI (orisinal, digambar kode) ---------- */
-export interface AnimStickerDef { id: string; label: string; cat: string; draw: (ctx: CanvasRenderingContext2D, s: number, t: number) => void; }
+export interface AnimStickerDef { id: string; label: string; cat: string; draw: (ctx: CanvasRenderingContext2D, s: number, t: number, spec?: Uint8Array | Float32Array | number[] | null) => void; }
 function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, y, w, h, r);
   else ctx.rect(x, y, w, h);
 }
 export const ANIM_STICKERS: AnimStickerDef[] = [
+  { id:"@bars", label:"Spektrum Musik", cat:"musik", draw(ctx, s, t, spec) {
+      // 🌈 v13.4: equalizer ikut irama lagu (preview: analyser live · render: data frekuensi per-frame · tanpa data: goyang santai)
+      const N = 28, wTot = s * 6.4, lane = wTot / N, bw = lane * 0.62;
+      const gd = ctx.createLinearGradient(0, -s * 1.9, 0, 0);
+      gd.addColorStop(0, "#f472b6"); gd.addColorStop(0.55, "#a78bfa"); gd.addColorStop(1, "#2dd4bf");
+      ctx.save();
+      ctx.shadowColor = "rgba(45,212,191,.5)"; ctx.shadowBlur = s * 0.16;
+      ctx.fillStyle = gd;
+      const has = !!(spec && spec.length);
+      for (let i = 0; i < N; i++) {
+        let v: number;
+        if (has) {
+          const idx = 2 + Math.floor((i / N) * Math.min(spec!.length * 0.62, 900));
+          v = 0.06 + (Number(spec![idx]) / 255) * 0.94;
+        } else {
+          v = 0.14 + 0.5 * Math.abs(Math.sin(t * 2.1 + i * 0.9)) * Math.abs(Math.sin(t * 1.3 + i * 0.37));
+        }
+        const h = Math.max(s * 0.1, v * s * 1.9);
+        const x = -wTot / 2 + i * lane + (lane - bw) / 2;
+        roundRectPath(ctx, x, -h, bw, h, bw * 0.5); ctx.fill();
+        ctx.globalAlpha = 0.2; // refleksi lembut di lantai
+        roundRectPath(ctx, x, s * 0.06, bw, h * 0.32, bw * 0.5); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    } },
+  { id:"@cta", label:"CTA Suka+Subs+Lonceng", cat:"sosmed", draw(ctx, s, t) {
+      // ▶️ v13.4: tombol YouTube NYATU — tangan mengklik 👍 lalu SUBSCRIBE lalu 🔔, berputar terus selama stiker tampil
+      const T = 4.8, u = ((t % T) + T) % T;
+      const chH = s * 1.02, r = chH * 0.22, gapc = s * 0.28;
+      const likeW = chH, pillW = s * 2.9, bellW = chH;
+      const totW = likeW + pillW + bellW + gapc * 2, x0 = -totW / 2, y0 = -chH / 2;
+      const likeHit = u > 0.72 && u < 1.08, subDone = u > 2.34, bellHit = u > 3.48 && u < 3.86;
+      const likeX = x0, pillX = x0 + likeW + gapc, bellX = pillX + pillW + gapc;
+      ctx.save(); // 👍 SUKA
+      if (likeHit) { const k = 1 + 0.12 * Math.sin((u - 0.72) / 0.36 * Math.PI); ctx.translate(likeX + likeW / 2, 0); ctx.scale(k, k); ctx.translate(-(likeX + likeW / 2), 0); }
+      ctx.fillStyle = likeHit ? "#2563eb" : "rgba(12,12,18,.74)";
+      roundRectPath(ctx, likeX, y0, likeW, chH, r); ctx.fill();
+      ctx.font = `${chH * 0.62}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("👍", likeX + likeW / 2, chH * 0.02);
+      ctx.restore();
+      ctx.save(); // 🔴 SUBSCRIBE → abu DISUBSCRIBE
+      ctx.fillStyle = subDone ? "#3f3f46" : "#e8290b";
+      roundRectPath(ctx, pillX, y0, pillW, chH, r); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = `900 ${chH * 0.32}px system-ui,sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(subDone ? "DISUBSCRIBE ✓" : "SUBSCRIBE", pillX + pillW / 2, chH * 0.04);
+      ctx.restore();
+      ctx.save(); // 🔔 LONCENG (emas + goyang setelah dipencet)
+      if (bellHit) { ctx.translate(bellX + bellW / 2, 0); ctx.rotate(Math.sin(u * 14) * 0.18); ctx.translate(-(bellX + bellW / 2), 0); }
+      ctx.fillStyle = subDone ? "#eab308" : "rgba(12,12,18,.74)";
+      roundRectPath(ctx, bellX, y0, bellW, chH, r); ctx.fill();
+      ctx.font = `${chH * 0.6}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🔔", bellX + bellW / 2, chH * 0.02);
+      ctx.restore();
+      // 👆 TANGAN — terbang berurutan seperti manusia: suka → subscribe → lonceng
+      const pxOf = (i: number) => i === 0 ? likeX + likeW / 2 : i === 1 ? pillX + pillW / 2 : bellX + bellW / 2;
+      const segs: [number, number, number][] = [[0.12, 0.8, 0], [1.4, 2.34, 1], [2.66, 3.58, 2]];
+      let cx = pxOf(0), cy = s * 1.8, press = 0;
+      const vis = u > 0.04 && u < 4.5;
+      for (const [a, b, i] of segs) {
+        const pw = 0.2;
+        if (u >= a && u < b + pw) {
+          const kk = Math.min(1, (u - a) / (b - a));
+          const e = kk * kk * (3 - 2 * kk); // smoothstep — gerak manusiawi, bukan robot
+          const fromX = i === 0 ? pxOf(0) : pxOf(i - 1);
+          cx = fromX + (pxOf(i) - fromX) * e;
+          cy = s * 1.8 - (s * 1.8 - chH * 0.55) * e;
+          if (u >= b) {
+            press = Math.min(1, (u - b) / pw);
+            cx = pxOf(i); cy = chH * 0.5;
+            ctx.save(); // riak tekanan
+            ctx.globalAlpha = (1 - press) * 0.55; ctx.strokeStyle = "#fff"; ctx.lineWidth = s * 0.05;
+            ctx.beginPath(); ctx.arc(cx, 0, s * (0.3 + press * 0.55), 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+          }
+          break;
+        }
+      }
+      if (vis) {
+        ctx.save();
+        ctx.translate(cx, cy); ctx.rotate(-0.42); const pk = press ? 0.86 : 1; ctx.scale(pk, pk);
+        ctx.font = `${s * 1.15}px 'Segoe UI Emoji','Noto Color Emoji',sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = s * 0.1;
+        ctx.fillText("👆", 0, 0);
+        ctx.restore();
+      }
+    } },
   { id:"@ikuti", label:"IKUTI + Klik", cat:"sosmed", draw(ctx, s, t) {
       const tap = (t % 1.6) < 0.25 ? 0.93 : 1;
       ctx.save(); ctx.scale(tap, tap);
@@ -1368,7 +1460,7 @@ export const STICKER_ANIM_CATS: { id: string; label: string }[] = [
 ];
 
 /* ---------- PAINTER STIKER v6 (anim + gambar + emoji) ---------- */
-export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: number, stickers: StickerItem[] | undefined, alpha: number, absT: number) {
+export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: number, stickers: StickerItem[] | undefined, alpha: number, absT: number, spec?: Uint8Array | Float32Array | number[] | null) {
   if (!stickers || !stickers.length) return;
   ctx.save();
   for (const st of stickers as any[]) {
@@ -1387,7 +1479,7 @@ export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: num
       }
     } else if (typeof st.emoji === "string" && st.emoji.startsWith("@")) {
       const def = ANIM_STICKER_MAP[st.emoji];
-      if (def) def.draw(ctx, Math.max(8, px * 0.8), absT);
+      if (def) def.draw(ctx, Math.max(8, px * 0.8), absT, spec); // 🌈 v13.4: data frekuensi nyambung ke stiker @bars
     } else {
       ctx.font = `${px}px 'Segoe UI Emoji','Noto Color Emoji',system-ui,sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";

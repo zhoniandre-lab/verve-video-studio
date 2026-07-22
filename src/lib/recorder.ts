@@ -571,7 +571,7 @@ function drawFrame(s: DrawState) {
       kbZoom: zoomBase, kbDx: kbdx, kbDy: kbdy,
     });
     // stiker & teks lepas waktu (start/dur sendiri — digeser di track)
-    paintFloatingStickers(ctx, W, H, optsArr, s.time);
+    paintFloatingStickers(ctx, W, H, optsArr, s.time, (s as any).bars); // 🌈 v13.4: spektrum render = data frekuensi asli per-frame
     paintFloatingTexts(ctx, W, H, optsArr, s.time);
   }
 

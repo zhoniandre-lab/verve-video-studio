@@ -39,6 +39,8 @@ SET STUDIO (GRATIS, langsung jalan, bisa di-Undo kecuali diberi tanda):
 - {"op":"set_filter","preset":"id dari KONTEKS.daftar_filter"}
 - {"op":"set_quality","sharp":true}
 - {"op":"set_motion","slide":N,"mode":"zoom_in|zoom_out|selangseling|geser_kiri|geser_kanan|naik|turun|sinematik|zoompelan|denyut|goyang|melayang|berkedip|ayun|none"}   (GERAK PADA GAMBARNYA ala CapCut, ZOOM KERAS TERLIHAT JELAS. slide kosong = SEMUA adegan. "zoom in dan zoom out biar gambar bergerak bagus" → mode selangseling (masuk/keluar bergantian per adegan). BUKAN set_transition. 🎬 v13.3 GERAK WAH: geser_kiri/geser_kanan/naik/turun = kamera mengalir satu arah; "sinematik" (slide kosong) = TIAP ADEGAN beda gerakan otomatis — zoom masuk → geser kiri → zoom keluar → geser kanan → naik → turun, kekuatan bervariasi. Untuk "lebih wah / variatif / jangan bolak-balik monoton / bosan gitu-gitu aja" → WAJIB mode sinematik, JANGAN selangseling berulang)
+- {"op":"add_spectrum"}  (🌈 SPEKTRUM MUSIK ikut irama lagu — equalizer bergerak di video; untuk "spektrum/visualizer/equalizer/bars musik". GRATIS; pembuat bisa geser & atur waktunya di track)
+- {"op":"add_cta"}  (▶️ TOMBOL CTA YOUTUBE nyatu: 👍 suka → SUBSCRIBE → 🔔 lonceng, dengan TANGAN yang mengklik berurutan; untuk "tombol subscribe/like/lonceng/CTA ajakan". GRATIS)
 - {"op":"clear_caption"}                (hapus keterangan otomatis — gratis)
 - {"op":"geser_keterangan","detik":-10..10}    (geser timing karaoke +-N detik — untuk "karaoke kecepetan/kelambatan/tidak pas dengan suara". NEGATIF = lebih awal/maju, POSITIF = lebih lambat/mundur)
 - {"op":"matikan_animasi","slide":N}     (matikan klip video AI di adegan N — slide kosong = SEMUA. Gratis; gambar kembali biasa)

@@ -815,6 +815,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const voiceEls = useRef<HTMLAudioElement[]>([]);
   const actxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const specU8Ref = useRef<Uint8Array<ArrayBuffer> | null>(null); // 🌈 v13.4: buffer frekuensi utk stiker @bars
   const barsRef = useRef<Float32Array>(new Float32Array(48));
   const clockRef = useRef<{ audio: HTMLAudioElement | null; t0: number; base: number; running: boolean }>({ audio: null, t0: 0, base: 0, running: false });
   const slidesRef = useRef(slides); useEffect(() => { slidesRef.current = slides; }, [slides]);
@@ -1076,7 +1077,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     // captions
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
     // stiker & teks lepas waktu (punya start/dur sendiri — digeser di track)
-    paintFloatingStickers(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt);
+    let specArr: Uint8Array | undefined; // 🌈 v13.4: stiker @bars minum frekuensi dari analyser yang SUDAH terpasang utk beat
+    const wantBars = sl.some((x) => (optsRef.current[x.id]?.stickers || []).some((z: StickerItem) => z.emoji === "@bars" && z.start != null && tt >= z.start && tt < z.start + (z.dur || 3)));
+    if (wantBars && analyserRef.current) {
+      const an = analyserRef.current;
+      if (!specU8Ref.current || specU8Ref.current.length !== an.frequencyBinCount) specU8Ref.current = new Uint8Array(an.frequencyBinCount);
+      an.getByteFrequencyData(specU8Ref.current);
+      specArr = specU8Ref.current;
+    }
+    paintFloatingStickers(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt, specArr);
     paintFloatingTexts(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt);
     // bingkai seleksi stiker (preview saja — tidak ikut diekspor)
     const sst = selStikRef.current;
@@ -1578,6 +1587,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           }
           break;
         }
+        case "add_spectrum": addSticker("@bars"); done.push("🌈 spektrum musik ikut irama lagu — geser & atur waktunya di track sesukamu"); break; // 🌈 v13.4
+        case "add_cta": addSticker("@cta"); done.push("▶️ tombol CTA: 👍 suka → SUBSCRIBE → 🔔 lonceng + tangan yang mengklik berurutan"); break; // ▶️ v13.4
         case "clear_caption": clearCaptions(); done.push("keterangan otomatis dihapus"); break;
         case "matikan_animasi": { // 🎬 v11.8: cabut klip AI (slide kosong = semua) — gratis, ikut Undo resmi
           const targets = hasSlide ? [i1] : slides.map((_, k) => k);
@@ -2311,7 +2322,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!sid) { flash("Tambahkan klip dulu"); return; }
     const cur = slideOptsById[sid]?.stickers || [];
     const startAt = Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100; // lahir di posisi penanda
-    const st: StickerItem = { id: uid("st"), emoji, x: 0.5, y: emoji.startsWith("@") ? 0.72 : 0.4, size: emoji.startsWith("@") ? 0.07 : 0.12, rot: 0, img, start: startAt, dur: 3 };
+    const st: StickerItem = { id: uid("st"), emoji, x: 0.5,
+      y: emoji === "@bars" ? 0.86 : emoji === "@cta" ? 0.14 : emoji.startsWith("@") ? 0.72 : 0.4, // 🎬 v13.4: spektrum ngendon bawah, CTA melayang atas
+      size: emoji === "@bars" ? 0.17 : emoji === "@cta" ? 0.13 : emoji.startsWith("@") ? 0.07 : 0.12,
+      rot: 0, img, start: startAt, dur: emoji === "@bars" || emoji === "@cta" ? 6 : 3 };
     setOpt(sid, { stickers: [...cur, st] } as Partial<SlideOpt>);
     setSelStik({ sid, stid: st.id }); // langsung terpilih → bisa digeser/di-cubit saat itu juga
     flash(img ? `🖼️ Overlay foto ditambahkan mulai ${formatDur(startAt)}` : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan mulai ${formatDur(startAt)} — jalur baru dibuat!`);
