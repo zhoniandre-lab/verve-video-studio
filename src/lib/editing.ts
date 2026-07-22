@@ -43,7 +43,7 @@ export interface SlideOpt {
   tx?: number;               // geser gambar X (fraksi lebar bingkai) — kunci per-klip
   ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
   tz?: number;               // zoom gambar (1 = normal, 0.5..6)
-  kb?: { dir: "in" | "out"; s?: number }; // 🎬 v11.4: Ken Burns kustom Sutradara (arah + kekuatan 0.05..0.5)
+  kb?: { dir: "in" | "out" | "l" | "r" | "u" | "d"; s?: number }; // 🎬 v11.4+v13.3: Ken Burns kustom — zoom (in/out) & GESER (l/r/u/d), kekuatan 0.05..0.5
   text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
   texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
   stickers?: StickerItem[];
@@ -952,6 +952,8 @@ export interface PaintInput {
   absT: number; isMobile: boolean; beat: boolean;
   grain: number;             // 0..100
   kbZoom?: number;           // ken burns zoom dasar (mis. 1+slideT*0.04)
+  kbDx?: number;             // 🎬 v13.3: ken burns GESER-X (fraksi lebar, aliran kamera geser)
+  kbDy?: number;             // 🎬 v13.3: ken burns GESER-Y (naik/turun)
 }
 export function paintClips(
   ctx: CanvasRenderingContext2D, W: number, H: number,
@@ -968,6 +970,8 @@ export function paintClips(
   // transform manual per-klip (cubit/geser gambar di preview ala CapCut — dikunci ke klip)
   curP.dx += opt.tx ?? 0;
   curP.dy += opt.ty ?? 0;
+  curP.dx += p.kbDx ?? 0; // 🎬 v13.3: geser kamera (selaras preview & render)
+  curP.dy += p.kbDy ?? 0;
   curP.zoom = (p.kbZoom ?? 1) * Math.max(0.1, opt.tz && opt.tz > 0 ? opt.tz : 1);
   if (opt.effect === "pulse") curP.zoom *= 1 + 0.028 * Math.sin(p.absT * 6.2) + (p.beat ? 0.02 : 0);
   if (opt.effect === "shake") {

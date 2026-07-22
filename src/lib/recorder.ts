@@ -533,9 +533,19 @@ function drawFrame(s: DrawState) {
   // 🎬 v11.4: Ken Burns KERAS dari Sutradara menang atas ramp bawaan (yang cuma 3–8%, tak terasa di HP)
   const kbC = (s as any)._kb as { dir?: string; s?: number } | undefined;
   let zoomBase = 1.0 + slideT*kb + (beat?0.008:0);
+  let kbdx = 0, kbdy = 0; // 🎬 v13.3
   if (kbC) {
     const Sk = Math.min(0.5, Math.max(0.05, kbC.s || 0.3));
-    zoomBase = kbC.dir === "out" ? (1 + Sk) - slideT * Sk : 1 + slideT * Sk;
+    const dir = kbC.dir || "in";
+    if (dir === "l" || dir === "r" || dir === "u" || dir === "d") { // 🎬 v13.3 GESER WAH: zoom konstan (tepi aman), isi mengalir
+      zoomBase = 1 + Sk;
+      const ax = dir === "l" ? 1 : dir === "r" ? -1 : 0;
+      const ay = dir === "u" ? 1 : dir === "d" ? -1 : 0;
+      kbdx = ax * Sk * (0.5 - slideT);
+      kbdy = ay * Sk * (0.5 - slideT);
+    } else {
+      zoomBase = dir === "out" ? (1 + Sk) - slideT * Sk : 1 + slideT * Sk;
+    }
   }
   const drawImg = (img:HTMLCanvasElement,alpha:number,zoom:number)=>{
     if (alpha<=0) return;
@@ -558,7 +568,7 @@ function drawFrame(s: DrawState) {
       globalFilter: s.videoFilter || "none",
       absT: s.time, isMobile: W <= 720, beat,
       grain: s.grainAmt || 0,
-      kbZoom: zoomBase,
+      kbZoom: zoomBase, kbDx: kbdx, kbDy: kbdy,
     });
     // stiker & teks lepas waktu (start/dur sendiri — digeser di track)
     paintFloatingStickers(ctx, W, H, optsArr, s.time);

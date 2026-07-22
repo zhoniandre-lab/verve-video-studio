@@ -780,6 +780,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   useEffect(() => { offRef.current = { music: musicOff, tts: ttsOff, voice: voiceOff }; }, [musicOff, ttsOff, voiceOff]);
   const durAudRef = useRef({ music: 0, tts: 0, voice: 0 });
   useEffect(() => { durAudRef.current = { music: musicDur, tts: ttsDur, voice: voiceDur }; }, [musicDur, ttsDur, voiceDur]);
+  // 📏 v13.3 TREK PANJANG MENYEMBUH SENDIRI: durasi audio belum terukur (lagu dari wizard/draft lama) → ukur diam-diam lewat GERBANG AMAN
+  useEffect(() => { if (musicUrl && !musicDur) getAudioDuration(musicUrl).then((d) => { if (d > 0.5) setMusicDur(d); }); }, [musicUrl, musicDur]);
+  useEffect(() => { if (ttsUrl && !ttsDur) getAudioDuration(ttsUrl).then((d) => { if (d > 0.5) setTtsDur(d); }); }, [ttsUrl, ttsDur]);
+  useEffect(() => { if (voiceUrl && !voiceDur) getAudioDuration(voiceUrl).then((d) => { if (d > 0.5) setVoiceDur(d); }); }, [voiceUrl, voiceDur]);
   // elemen audio yang dikelola jam manual (mode offset) saat preview
   const tlAudRef = useRef<{ a: HTMLAudioElement; off: number; dur: number }[]>([]);
   // ingat pengaturan ekspor terakhir
@@ -1056,15 +1060,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const kbC = (optCur as any)?.kb as { dir?: string; s?: number } | undefined;
     const progC = L.clipDur > 0 ? Math.min(1, Math.max(0, L.clipT / L.clipDur)) : 0;
     const SkC = Math.min(0.5, Math.max(0.05, kbC?.s || 0.3));
+    const panC = kbC?.dir === "l" || kbC?.dir === "r" || kbC?.dir === "u" || kbC?.dir === "d"; // 🎬 v13.3 GESER WAH
+    const kbDxC = panC ? (kbC!.dir === "l" ? 1 : kbC!.dir === "r" ? -1 : 0) * SkC * (0.5 - progC) : 0;
+    const kbDyC = panC ? (kbC!.dir === "u" ? 1 : kbC!.dir === "d" ? -1 : 0) * SkC * (0.5 - progC) : 0;
     const kb = kbC
-      ? (kbC.dir === "out" ? (1 + SkC) - progC * SkC : 1 + progC * SkC)
+      ? (panC ? 1 + SkC : (kbC.dir === "out" ? (1 + SkC) - progC * SkC : 1 + progC * SkC))
       : ((optCur?.loop === "zoompelan" || !optCur?.loop) ? 1 + Math.min(0.06, (tt / Math.max(1, tl.total)) * 0.06) : 1);
     paintClips(ctx, W, H, curDraw, nxtDraw, {
       clipT: L.clipT, clipDur: L.clipDur, inTrans: L.inTrans, transT: L.transT,
       transId: L.inTrans ? canonicalTrans(optCur?.trans ?? "dissolve") : "none",
       optCur: optCur as any, optNxt: optNxt as any,
       globalFilter: gf, absT: tt, isMobile: true, beat: false,
-      grain: adjRef.current.grain, kbZoom: kb,
+      grain: adjRef.current.grain, kbZoom: kb, kbDx: kbDxC, kbDy: kbDyC,
     } as any);
     // captions
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
@@ -1557,6 +1564,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           } else if (m === "selangseling") {
             slides.forEach((_, k) => setOpt(slides[k].id, { kb: { dir: k % 2 === 0 ? "in" : "out", s: 0.3 }, loop: "none" } as any));
             done.push("zoom masuk & keluar SELANG-SELING di semua adegan");
+          } else if (m === "geser_kiri" || m === "geser_kanan" || m === "naik" || m === "turun") { // 🎬 v13.3: kamera mengalir satu arah
+            const dir = (m === "geser_kiri" ? "l" : m === "geser_kanan" ? "r" : m === "naik" ? "u" : "d") as "l" | "r" | "u" | "d";
+            targets.forEach((k) => setOpt(slides[k].id, { kb: { dir, s: 0.24 }, loop: "none" } as any));
+            done.push(hasSlide ? `kamera ${m.replace("_", " ")} adegan ${o.slide}` : `kamera ${m.replace("_", " ")} SEMUA adegan`);
+          } else if (m === "sinematik") { // 🎬 v13.3 GERAK WAH: tiap adegan BEDA gerakan — anti bolak-balik monoton
+            const dirs = ["in", "l", "out", "r", "u", "d"] as const;
+            slides.forEach((_, k) => setOpt(slides[k].id, { kb: { dir: dirs[k % dirs.length], s: k % 2 ? 0.18 : 0.26 }, loop: "none" } as any));
+            done.push(`gerak SINEMATIK di ${slides.length} adegan — tiap adegan beda kamera (zoom masuk → geser kiri → zoom keluar → geser kanan → naik → turun)`);
           } else if ((ANIM_LOOP as any[]).some((x) => x.id === m)) {
             targets.forEach((k) => setOpt(slides[k].id, { loop: m, kb: undefined } as any));
             done.push(hasSlide ? `gerak adegan ${o.slide} → ${m}` : `gerak SEMUA adegan → ${m}`);
