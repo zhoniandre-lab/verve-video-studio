@@ -395,6 +395,32 @@ function seekVid(v: HTMLVideoElement, t: number): Promise<void> {
   });
 }
 
+// 🆙 v13.8: FFT radix-2 (512 titik) in-place — tabel bit-reversal & twiddle dihitung SEKALI.
+// 100% orisinal; dipakai precomputeSpectrum untuk analisis musik nyata (bukan RMS sampel mentah).
+const FFT_N = 512;
+const _fftRev = new Uint16Array(FFT_N);
+const _fftCos = new Float32Array(FFT_N / 2), _fftSin = new Float32Array(FFT_N / 2);
+(function initFft512() {
+  for (let i = 0; i < FFT_N; i++) { let r = 0, x = i; for (let b = 0; b < 9; b++) { r = (r << 1) | (x & 1); x >>= 1; } _fftRev[i] = r; }
+  for (let k = 0; k < FFT_N / 2; k++) { const a = -2 * Math.PI * k / FFT_N; _fftCos[k] = Math.cos(a); _fftSin[k] = Math.sin(a); }
+})();
+function fft512(re: Float32Array, im: Float32Array) {
+  const N = FFT_N;
+  for (let i = 0; i < N; i++) { const j = _fftRev[i]; if (j > i) { const tr = re[i]; re[i] = re[j]; re[j] = tr; const ti = im[i]; im[i] = im[j]; im[j] = ti; } }
+  for (let size = 2; size <= N; size <<= 1) {
+    const half = size >> 1, step = N / size;
+    for (let i = 0; i < N; i += size) {
+      for (let j = i, k = 0; j < i + half; j++, k += step) {
+        const c = _fftCos[k], s = _fftSin[k];
+        const l = j + half;
+        const xr = re[l] * c - im[l] * s, xi = re[l] * s + im[l] * c;
+        re[l] = re[j] - xr; im[l] = im[j] - xi;
+        re[j] += xr; im[j] += xi;
+      }
+    }
+  }
+}
+
 // ===== Pre-compute spectrum table (LUT) — inilah boost speed utama =====
 function precomputeSpectrum(
   audioData: Float32Array|null, sampleRate:number,
@@ -424,49 +450,47 @@ function precomputeSpectrum(
   const bassLevels = new Float32Array(totalFrames);
   const smooth = new Float32Array(barCount);
   const bassRef = { level: 0, beat: false };
-  // Pakai ENERGY BAND (octave bands) — tidak pakai sin/cos per sample, CEPAT
-  // Band log dari ~60Hz ke ~5kHz dengan cara membagi window ke band-band frekuensi memakai filter bank sederhana
-  const N = Math.min(1024, Math.floor(0.05*dssr)); // ~50ms window
+  // 🆙 v13.8: ANALISIS FFT SUNGGUHAN (512 titik @~11kHz → jendela 46ms, bin ≈ 21,5Hz).
+  // Mesin lama membaca "RMS 2–3 sampel × tepi jendela Hann" → bin bass terbaca ≈ NOL →
+  // batang spektrum menciut jadi titik (laporan bro: "bar spektrumnya dikit & ngk jelas").
+  // KONTRAK TIDAK BERUBAH: bars Float32Array 0..1 per-frame · beats · bassLevels —
+  // semua konsumen lama (visualizer bawaan, beat flash, stiker @bars) otomatis ikut pintar.
+  const NFFT = 512;
   const bassEnd = Math.floor(barCount*0.12) || 1;
-
-  // Band edge (sample offset) — simple bandpass via RMS dari range window
-  const bandEdges: number[] = [];
-  for (let b=0; b<=barCount; b++) {
-    // frek dari 60Hz ke 5kHz log
-    const f = 60 * Math.pow(5000/60, b/barCount);
-    const idx = Math.floor((f/dssr) * N);
-    bandEdges.push(clamp(idx, 1, N/2));
+  const hann = new Float32Array(NFFT);
+  for (let i=0;i<NFFT;i++) hann[i] = 0.5*(1-Math.cos(2*Math.PI*i/(NFFT-1)));
+  const binHz = dssr / NFFT;
+  const bLo = new Int32Array(barCount), bHi = new Int32Array(barCount);
+  for (let b=0;b<barCount;b++) {
+    const f0 = 60 * Math.pow(5000/60, b/barCount);
+    const f1 = 60 * Math.pow(5000/60, (b+1)/barCount);
+    bLo[b] = Math.max(1, Math.floor(f0 / binHz));
+    bHi[b] = Math.min(NFFT/2 - 1, Math.max(bLo[b] + 1, Math.ceil(f1 / binHz)));
   }
-
-  // Hann window
-  const hann = new Float32Array(N);
-  for (let i=0;i<N;i++) hann[i] = 0.5*(1-Math.cos(2*Math.PI*i/(N-1)));
+  const re = new Float32Array(NFFT), im = new Float32Array(NFFT);
 
   for (let f=0; f<totalFrames; f++) {
     const t = f/fps;
-    const posSample = audioData ? Math.floor(t*dssr) : 0;
     const out = new Float32Array(barCount);
-    if (audioData) {
-      const start = Math.max(0, Math.min(posSample - (N>>1), dsa.length - N));
-      const winLen = Math.min(N, dsa.length - start);
-      // Hitung RMS per band
+    if (audioData && dsa.length >= NFFT) {
+      const center = Math.floor(t*dssr);
+      const start = Math.max(0, Math.min(center - (NFFT>>1), dsa.length - NFFT));
+      for (let i=0;i<NFFT;i++){ re[i] = dsa[start+i]*hann[i]; im[i]=0; }
+      fft512(re, im);
       for (let b=0; b<barCount; b++) {
-        const lo = bandEdges[b], hi = Math.min(winLen, bandEdges[b+1]);
-        if (hi<=lo) { out[b] = smooth[b] * 0.9; continue; }
-        let sum=0, cnt=0;
-        for (let s=lo; s<hi; s++) {
-          const idx = start + s;
-          if (idx<0||idx>=dsa.length) continue;
-          const v = dsa[idx] * hann[s];
-          sum += v*v;
-          cnt++;
-        }
-        const rms = cnt ? Math.sqrt(sum/cnt) : 0;
-        const target = clamp(rms * 6.5 * (1 + b*0.015), 0, 1);
-        const a = target > smooth[b] ? 0.7 : 0.2;
+        let sum = 0;
+        for (let k=bLo[b]; k<bHi[b]; k++) sum += re[k]*re[k] + im[k]*im[k];
+        const mag = Math.sqrt(sum / Math.max(1, bHi[b]-bLo[b])) / (NFFT/4);
+        const db = 20 * Math.log10(mag + 1e-7);
+        let v = clamp((db + 46) / 34, 0, 1); // rentang dB musik nyata (−48…−10) → 0..1
+        if (v < 0.035) v = 0; // gerbang desis — bagian hening tetap bersih
+        const target = Math.min(1, v * (1 + b * 0.02));
+        const a = target > smooth[b] ? 0.75 : 0.18; // sergap naik · jatuh lembut (sensitif, tak kedip)
         smooth[b] = smooth[b]*(1-a) + target*a;
         out[b] = smooth[b];
       }
+    } else if (audioData) {
+      for (let b=0;b<barCount;b++) out[b] = 0.12 + Math.abs(Math.sin(t*2+b*0.3))*0.1; // klip teramat pendek
     } else {
       for (let b=0;b<barCount;b++) out[b] = 0.05 + Math.sin(t*2+b*0.2)*0.05;
     }

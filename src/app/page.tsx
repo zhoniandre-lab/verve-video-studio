@@ -2415,9 +2415,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const cur = slideOptsById[sid]?.stickers || [];
     const startAt = Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100; // lahir di posisi penanda
     const st: StickerItem = { id: uid("st"), emoji, x: 0.5,
-      y: emoji === "@bars" ? 0.86 : emoji === "@cta" ? 0.14 : emoji.startsWith("@") ? 0.72 : 0.4, // 🎬 v13.4: spektrum ngendon bawah, CTA melayang atas
-      size: emoji === "@bars" ? 0.17 : emoji === "@cta" ? 0.13 : emoji.startsWith("@") ? 0.07 : 0.12,
-      rot: 0, img, start: startAt, dur: emoji === "@bars" || emoji === "@cta" ? 6 : 3 };
+      y: emoji === "@bars" ? 0.86 : emoji === "@cta" ? 0.14 : emoji === "@wavepro" ? 0.8 : emoji === "@ring" ? 0.46 : emoji.startsWith("@") ? 0.72 : 0.4, // 🎬 v13.4/v13.8: posisi lahir tiap stiker musik-CTA
+      size: emoji === "@bars" ? 0.17 : emoji === "@cta" ? 0.13 : emoji === "@wavepro" || emoji === "@ring" ? 0.2 : emoji.startsWith("@") ? 0.07 : 0.12,
+      rot: 0, img, start: startAt, dur: emoji === "@bars" || emoji === "@cta" || emoji === "@wavepro" || emoji === "@ring" ? 6 : 3 };
     setOpt(sid, { stickers: [...cur, st] } as Partial<SlideOpt>);
     setSelStik({ sid, stid: st.id }); // langsung terpilih → bisa digeser/di-cubit saat itu juga
     flash(img ? `🖼️ Overlay foto ditambahkan mulai ${formatDur(startAt)}` : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan mulai ${formatDur(startAt)} — jalur baru dibuat!`);
@@ -4728,7 +4728,7 @@ function EksporSheet({ api: A, onClose }: any) {
                 {/* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */}
                 <div style={{ marginTop: 10, border: "1px solid rgba(255,214,10,.35)", borderRadius: 14, padding: 12 }}>
                   <b style={{ fontSize: 12 }}>🖼 Thumbnail YouTube otomatis</b>
-                  <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, lineHeight: 1.5 }}>Dirakit dari judul terkuncimu + adegan video — psikologi CTR: kontras tinggi, maks 3 kata emosional, adegan tetap kelihatan.</div>
+                  <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, lineHeight: 1.5 }}>🧠 Dia MEMBACA adeganmu: ukur kecerahan kiri-kanan, taruh teks di sisi paling kontras, hitung kekuatan gradasinya — font Anton ala thumbnail viral, maks 3 kata emosional.</div>
                   {A.thumbU
                     ? <img src={A.thumbU} alt="thumbnail" style={{ width: "100%", borderRadius: 10, marginTop: 8, border: "1px solid var(--v6-line)" }} />
                     : <div className="v6-note" style={{ marginTop: 8 }}>{A.thumbBusy ? "⏳ Merakit thumbnail…" : "Thumbnail dirakit otomatis begitu ada adegan."}</div>}

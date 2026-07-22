@@ -1,12 +1,15 @@
 /* ============================================================
-   🖼 v13.7 THUMBNAIL OTOMATIS (100% kode orisinal VERVE)
-   Merakit thumbnail YouTube 1280×720 dari judul terkunci +
-   adegan video. Prinsip psikologi CTR yang dipakai:
-   - Maks 2–3 kata EMOSIONAL ukuran raksasa (otak baca < 1 detik)
-   - Kuning peringatan (#ffd60a) di atas gelap = magnet mata
-   - Gradien gelap di kiri → teks kebaca tanpa nutupin wajah/adegan
-   - Pil niche merah kiri-atas = sinyal "penting" ala breaking news
+   🖼 v13.8 THUMBNAIL OTOMATIS — OTAK & PSIKOLOGI (100% orisinal VERVE)
+   Perkembangan dari v13.7, kini thumbnail "membaca & menghitung":
+   - MEMBACA adegan: ukur luminansi sisi kiri vs kanan pakai getImageData,
+     teks otomatis ditaruh di sisi yang LEBIH GELAP (kontras = mata langsung nangkap)
+   - KEKUATAN SCRIM DIHITUNG dari luminansi adegan (makin terang fotonya,
+     makin pekat gradasinya — teks tak pernah tenggelam)
+   - Font WAH: Anton (font klasik thumbnail CTR, sudah dimuat aplikasi, OFL)
+   - Tetap: maks 2–3 kata emosional + pil niche merah + vinyet fokus
    ============================================================ */
+
+import { ensureFontsLoaded } from "./editing";
 
 const STOPWORDS = new Set(
   ("yang dan di ke dari untuk dengan ini itu mu ku nya aku kamu kau kita kami mereka dia ia atau pada dalam tak tidak bukan " +
@@ -42,6 +45,10 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   else ctx.rect(x, y, w, h);
 }
 
+/** Font tampilan WAH untuk thumbnail (Anton = legenda CTR; Bebas untuk pil niche). */
+const THUMB_FONT_BIG = "'Anton',Impact,sans-serif";
+const THUMB_FONT_KICK = "'Bebas Neue',Impact,sans-serif";
+
 /** Gambar thumbnail ke context (panggil dengan canvas 1280×720). img boleh null → latar gradien gelap. */
 export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0) {
   // 1) Latar: foto adegan cover-fit
@@ -56,44 +63,74 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
     g0.addColorStop(0, "#1e293b"); g0.addColorStop(1, "#0f172a");
     ctx.fillStyle = g0; ctx.fillRect(0, 0, W, H);
   }
-  // 2) Gradien gelap dari kiri (teks kebaca, kanan tetap pamer adegan)
-  const g = ctx.createLinearGradient(0, 0, W * 0.8, 0);
-  g.addColorStop(0, "rgba(4,7,14,0.88)"); g.addColorStop(0.55, "rgba(4,7,14,0.45)"); g.addColorStop(1, "rgba(4,7,14,0)");
+
+  // 2) 🧠 BACA GAMBARNYA — luminansi kiri vs kanan → teks ke sisi gelap, scrim dihitung
+  let leftDark = true, scrimA = 0.8;
+  try {
+    const wHalf = (W / 2) | 0;
+    const d1 = ctx.getImageData(0, 0, wHalf, H).data;
+    const d2 = ctx.getImageData(wHalf, 0, W - wHalf, H).data;
+    const lum = (d: Uint8ClampedArray) => {
+      let acc = 0, n = 0;
+      for (let i = 0; i < d.length; i += 256) { acc += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; n++; }
+      return n ? acc / n : 128;
+    };
+    const L = lum(d1), R = lum(d2);
+    leftDark = L <= R;
+    const dl = Math.min(L, R);
+    scrimA = Math.max(0.58, Math.min(0.95, 0.5 + (dl / 255) * 0.6)); // adegan makin terang → scrim makin pekat
+  } catch { /* canvas tainted → pakai default aman */ }
+
+  // 3) Gradien gelap dari sisi gelap (arah mengikuti hasil hitungan)
+  const gx0 = leftDark ? 0 : W, gx1 = leftDark ? W * 0.8 : W * 0.2;
+  const g = ctx.createLinearGradient(gx0, 0, gx1, 0);
+  g.addColorStop(0, `rgba(4,7,14,${scrimA.toFixed(3)})`);
+  g.addColorStop(0.55, `rgba(4,7,14,${(scrimA * 0.55).toFixed(3)})`);
+  g.addColorStop(1, "rgba(4,7,14,0)");
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   const gb = ctx.createLinearGradient(0, H * 0.55, 0, H);
   gb.addColorStop(0, "rgba(4,7,14,0)"); gb.addColorStop(1, "rgba(4,7,14,0.72)");
   ctx.fillStyle = gb; ctx.fillRect(0, 0, W, H);
-  // 3) Pil niche merah kiri-atas
+
+  const align: CanvasTextAlign = leftDark ? "left" : "right";
+  const tx = leftDark ? W * 0.045 : W * 0.955;
+  ctx.textAlign = align;
+
+  // 4) Pil niche merah (branding ala kartu penting — kontras bikin berhenti scrolling)
   const kick = (niche || "cerita jadi lagu").toUpperCase().slice(0, 26);
-  const kfs = Math.round(H * 0.038);
-  ctx.font = `800 ${kfs}px system-ui, sans-serif`;
-  ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  const kfs = Math.round(H * 0.045);
+  ctx.font = `${kfs}px ${THUMB_FONT_KICK}`;
+  ctx.textBaseline = "middle";
   const kw = ctx.measureText(kick).width;
+  const kx = leftDark ? W * 0.045 : W * 0.955 - kw - H * 0.07;
   ctx.fillStyle = "#e11d48";
-  rr(ctx, W * 0.045, H * 0.055, kw + H * 0.07, H * 0.085, H * 0.042); ctx.fill();
+  rr(ctx, kx, H * 0.055, kw + H * 0.07, H * 0.088, H * 0.044); ctx.fill();
   ctx.fillStyle = "#fff";
-  ctx.fillText(kick, W * 0.045 + H * 0.035, H * 0.055 + H * 0.046);
-  // 4) Kata-kata raksasa (auto-fit lebar, stroke gelap tebal biar terbaca di HP kecil)
+  ctx.fillText(kick, kx + H * 0.035, H * 0.055 + H * 0.047);
+
+  // 5) Kata-kata raksasa — ANTON (psikologi: huruf condensed tebal = terbaca sekejap di feed)
   const words = pickPowerWords(title, salt);
   const maxW = W * 0.62;
-  let fs = Math.round(H * 0.155);
+  let fs = Math.round(H * 0.17);
   ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round";
-  const fits = (size: number) => { ctx.font = `900 ${size}px system-ui, sans-serif`; return words.every((w) => ctx.measureText(w).width <= maxW); };
+  const fits = (size: number) => { ctx.font = `${size}px ${THUMB_FONT_BIG}`; return words.every((w) => ctx.measureText(w).width <= maxW); };
   while (fs > 30 && !fits(fs)) fs -= 4;
-  ctx.font = `900 ${fs}px system-ui, sans-serif`;
+  ctx.font = `${fs}px ${THUMB_FONT_BIG}`;
   const emoHit = words.some((w) => EMO.has(w.toLowerCase()));
-  let y = H - H * 0.06 - (words.length - 1) * fs * 1.1;
+  let y = H - H * 0.06 - (words.length - 1) * fs * 1.06;
   words.forEach((w, i) => {
-    ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = fs * 0.18; ctx.shadowOffsetY = fs * 0.05;
-    ctx.strokeStyle = "#0b0f1a"; ctx.lineWidth = fs * 0.16;
-    ctx.strokeText(w, W * 0.045, y);
+    ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = fs * 0.16; ctx.shadowOffsetY = fs * 0.045;
+    ctx.strokeStyle = "#0b0f1a"; ctx.lineWidth = fs * 0.14;
+    ctx.strokeText(w, tx, y);
     ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    // dua nada: kata pertama kuning-urgensi, sisanya putih-bersih (hierarki mata)
     ctx.fillStyle = i === 0 ? "#ffd60a" : "#ffffff";
-    ctx.fillText(w, W * 0.045, y);
-    y += fs * 1.1;
+    ctx.fillText(w, tx, y);
+    y += fs * 1.06;
   });
-  if (emoHit && !words[words.length - 1].includes("😭")) { ctx.font = `${Math.round(fs * 0.72)}px system-ui, sans-serif`; ctx.fillText("😭", W * 0.045, y - fs * 0.3); }
-  // 5) Vinyet fokus halus
+  if (emoHit && !words[words.length - 1].includes("😭")) { ctx.font = `${Math.round(fs * 0.68)}px system-ui, sans-serif`; ctx.textAlign = align; ctx.fillText("😭", tx, y - fs * 0.28); }
+
+  // 6) Vinyet fokus halus
   const rad = ctx.createRadialGradient(W / 2, H / 2, H * 0.42, W / 2, H / 2, H * 1.05);
   rad.addColorStop(0, "rgba(0,0,0,0)"); rad.addColorStop(1, "rgba(0,0,0,0.32)");
   ctx.fillStyle = rad; ctx.fillRect(0, 0, W, H);
@@ -101,6 +138,7 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
 
 /** Rakit thumbnail → Blob JPEG 1280×720 siap download/upload YouTube. */
 export async function makeAutoThumbBlob(img: CanvasImageSource | null, title: string, niche: string, salt = 0): Promise<Blob> {
+  try { await ensureFontsLoaded(); } catch {} // pastikan Anton/Bebas sudah dimuat sebelum menggambar
   const cv = document.createElement("canvas");
   cv.width = 1280; cv.height = 720;
   const ctx = cv.getContext("2d")!;

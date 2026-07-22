@@ -395,10 +395,13 @@ export function paintTransition(
   const t = easeIO(Math.max(0, Math.min(1, tRaw)));
   if (type === "none") { drawBase(ctx, nxt, W, H, { ...nxtP, alpha: 1 }); return; }
   switch (type) {
-    case "dissolve":
-      drawBase(ctx, cur, W, H, curP);
-      drawBase(ctx, nxt, W, H, { ...nxtP, alpha: nxtP.alpha * t });
+    case "dissolve": {
+      // 🎞 v13.8 SINEMATIK — kamera tak berhenti saat transisi: cur menjauh pelan,
+      // nxt menenang dari dekat. Menutup rasa "kaku/jelek" pada crossfade panjang.
+      drawBase(ctx, cur, W, H, { ...curP, zoom: curP.zoom * (1 + 0.04 * t) });
+      drawBase(ctx, nxt, W, H, { ...nxtP, zoom: nxtP.zoom * (1.06 - 0.06 * t), alpha: nxtP.alpha * t });
       break;
+    }
     case "fadeblack": case "fadewhite": {
       const col = type === "fadeblack" ? "0,0,0" : "255,255,255";
       if (t < 0.5) { drawBase(ctx, cur, W, H, curP); ctx.fillStyle = `rgba(${col},${(t * 2).toFixed(3)})`; }
@@ -1007,6 +1010,9 @@ export function paintClips(
     paintTransition(ctx, W, H, cur, nxt, p.transId, p.transT, curP, nxtP, p.isMobile, p.absT);
   } else if (p.inTrans && nxt && p.transId === "none") {
     drawBase(ctx, nxt, W, H, nxtP);
+  } else if (p.inTrans && !nxt && cur) {
+    // 🩹 v13.8: gambar berikutnya telat dimuat → klip aktif MEMUDAR lembut (bukan beku kaku lalu pop)
+    drawBase(ctx, cur, W, H, { ...curP, alpha: curP.alpha * (1 - p.transT * 0.5) });
   } else if (opt.effect === "cermin" && cur) {
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W / 2, H); ctx.clip();
     ctx.translate(W, 0); ctx.scale(-1, 1);
@@ -1214,34 +1220,54 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, y, w, h, r);
   else ctx.rect(x, y, w, h);
 }
+/* 🆙 v13.8: satuan & sampling spektrum bersama — preview (byte 0..255) vs render (ternormalisasi 0..1) */
+function specDivOf(spec: Uint8Array | Float32Array | number[] | null | undefined): number {
+  if (!spec || !spec.length) return 255;
+  let mx = 0; for (let k = 0; k < spec.length; k += 8) { const vv = Number(spec[k]); if (vv > mx) mx = vv; }
+  return mx <= 1.6 ? 1 : 255;
+}
+function specAtOf(spec: Uint8Array | Float32Array | number[], i: number, N: number, div: number): number {
+  const idx = 2 + Math.floor((i / N) * Math.min(spec.length * 0.62, 900));
+  const v = Number(spec[Math.min(spec.length - 1, Math.max(0, idx))]) / div;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 export const ANIM_STICKERS: AnimStickerDef[] = [
   { id:"@bars", label:"Spektrum Musik", cat:"musik", draw(ctx, s, t, spec) {
-      // 🌈 v13.4: equalizer ikut irama lagu (preview: analyser live · render: data frekuensi per-frame · tanpa data: goyang santai)
+      // 💎 v13.8 PREMIUM: plat kaca + batang gradien neon + TUTUP PUNCAK putih jatuh pelan + pantulan lantai
       const N = 28, wTot = s * 6.4, lane = wTot / N, bw = lane * 0.62;
-      const gd = ctx.createLinearGradient(0, -s * 1.9, 0, 0);
-      gd.addColorStop(0, "#f472b6"); gd.addColorStop(0.55, "#a78bfa"); gd.addColorStop(1, "#2dd4bf");
-      ctx.save();
-      ctx.shadowColor = "rgba(45,212,191,.5)"; ctx.shadowBlur = s * 0.16;
-      ctx.fillStyle = gd;
+      const hMax = s * 1.9;
       const has = !!(spec && spec.length);
-      // 🩹 v13.7 SATUAN OTOMATIS — preview ngasih byte analyser (0..255), render ngasih RMS ternormalisasi (0..1).
-      // Dulu SELALU /255 → di render batang cuma 0,4% tinggi = titik statis (laporan bro: "spektrumnya tidak berjalan").
-      let sdiv = 255;
-      if (has) { let mx = 0; for (let k = 0; k < spec!.length; k += 8) { const vv = Number(spec![k]); if (vv > mx) mx = vv; } if (mx <= 1.6) sdiv = 1; }
+      const sdiv = specDivOf(spec);
+      ctx.save();
+      // plat kaca di belakang — nuansa widget audio mahal
+      ctx.globalAlpha = 0.32; ctx.fillStyle = "#0b1220";
+      roundRectPath(ctx, -wTot / 2 - lane * 0.7, -hMax - s * 0.3, wTot + lane * 1.4, hMax + s * 0.6, s * 0.18); ctx.fill();
+      ctx.globalAlpha = 1;
+      const gd = ctx.createLinearGradient(0, -hMax, 0, 0);
+      gd.addColorStop(0, "#f472b6"); gd.addColorStop(0.55, "#a78bfa"); gd.addColorStop(1, "#2dd4bf");
+      ctx.shadowColor = "rgba(45,212,191,.55)"; ctx.shadowBlur = s * 0.16;
+      ctx.fillStyle = gd;
+      // memori puncak per-kanvas (jatuh pelan → terasa hidup seperti equalizer studio)
+      const cvAny = ctx.canvas as any;
+      if (!cvAny.__barPk || (cvAny.__barPk as Float32Array).length !== N) { cvAny.__barPk = new Float32Array(N); cvAny.__barPkT = t; }
+      const pk: Float32Array = cvAny.__barPk;
+      const dtPk = Math.min(0.25, Math.max(0, t - (cvAny.__barPkT ?? t))); cvAny.__barPkT = t;
       for (let i = 0; i < N; i++) {
-        let v: number;
-        if (has) {
-          const idx = 2 + Math.floor((i / N) * Math.min(spec!.length * 0.62, 900));
-          v = 0.06 + Math.min(1, Number(spec![idx]) / sdiv) * 0.94;
-        } else {
-          v = 0.14 + 0.5 * Math.abs(Math.sin(t * 2.1 + i * 0.9)) * Math.abs(Math.sin(t * 1.3 + i * 0.37));
-        }
-        const h = Math.max(s * 0.1, v * s * 1.9);
+        const v = has ? specAtOf(spec!, i, N, sdiv)
+                      : 0.14 + 0.5 * Math.abs(Math.sin(t * 2.1 + i * 0.9)) * Math.abs(Math.sin(t * 1.3 + i * 0.37));
+        const h = Math.max(s * 0.1, v * hMax);
         const x = -wTot / 2 + i * lane + (lane - bw) / 2;
         roundRectPath(ctx, x, -h, bw, h, bw * 0.5); ctx.fill();
-        ctx.globalAlpha = 0.2; // refleksi lembut di lantai
+        ctx.globalAlpha = 0.2; // pantulan lantai
         roundRectPath(ctx, x, s * 0.06, bw, h * 0.32, bw * 0.5); ctx.fill();
         ctx.globalAlpha = 1;
+        pk[i] = Math.max(h, pk[i] - dtPk * hMax * 0.55);
+        if (pk[i] > s * 0.12) {
+          ctx.fillStyle = "rgba(255,255,255,.92)";
+          roundRectPath(ctx, x, -pk[i] - s * 0.05, bw, s * 0.05, s * 0.025); ctx.fill();
+          ctx.fillStyle = gd;
+        }
       }
       ctx.restore();
     } },
@@ -1309,6 +1335,74 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
         ctx.fillText("👆", 0, 0);
         ctx.restore();
       }
+    } },
+  { id:"@wavepro", label:"Gelombang Mahal", cat:"musik", draw(ctx, s, t, spec) {
+      // 🌊 v13.8: gelombang cermin HALUS 2 lapis (kurva kuadratik) + pantulan — gaya premium ala NCS
+      const N = 42, wTot = s * 6.2;
+      const has = !!(spec && spec.length);
+      const sdiv = specDivOf(spec);
+      const vals: number[] = new Array(N + 1);
+      for (let i = 0; i <= N; i++) {
+        vals[i] = has ? specAtOf(spec!, i, N, sdiv)
+                      : 0.25 + 0.45 * Math.abs(Math.sin(t * 1.7 + i * 0.42)) * Math.abs(Math.sin(t * 0.9 + i * 0.21));
+      }
+      const wave = (sgn: number, amp: number, dy: number) => {
+        ctx.beginPath();
+        for (let i = 0; i <= N; i++) {
+          const x = -wTot / 2 + (i / N) * wTot;
+          const y = dy + sgn * vals[i] * amp;
+          if (i === 0) ctx.moveTo(x, y);
+          else {
+            const px = -wTot / 2 + ((i - 1) / N) * wTot, py = dy + sgn * vals[i - 1] * amp;
+            ctx.quadraticCurveTo(px, py, (px + x) / 2, (py + y) / 2);
+          }
+        }
+        ctx.stroke();
+      };
+      ctx.save();
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.lineWidth = s * 0.085;
+      ctx.strokeStyle = "rgba(45,212,191,.95)"; ctx.shadowColor = "#2dd4bf"; ctx.shadowBlur = s * 0.22;
+      wave(-1, s * 1.5, 0);
+      ctx.lineWidth = s * 0.06;
+      ctx.strokeStyle = "rgba(167,139,250,.8)"; ctx.shadowColor = "#a78bfa";
+      wave(-1, s * 0.95, s * 0.03);
+      ctx.globalAlpha = 0.32; // pantulan lantai
+      ctx.strokeStyle = "rgba(45,212,191,.9)"; ctx.shadowBlur = s * 0.1;
+      wave(1, s * 1.05, s * 0.16);
+      ctx.restore();
+    } },
+  { id:"@ring", label:"Cincin Audio", cat:"musik", draw(ctx, s, t, spec) {
+      // 💿 v13.8: cincin 48 gerigi gradien + inti bernapas ikut bass — kaca gelap & neon, premium
+      const N = 48, r0 = s * 1.35;
+      const has = !!(spec && spec.length);
+      const sdiv = specDivOf(spec);
+      ctx.save();
+      ctx.globalAlpha = 0.3; ctx.fillStyle = "#0b1220";
+      ctx.beginPath(); ctx.arc(0, 0, s * 2.3, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      const gd = ctx.createLinearGradient(-s, -s, s, s);
+      gd.addColorStop(0, "#f472b6"); gd.addColorStop(0.5, "#a78bfa"); gd.addColorStop(1, "#2dd4bf");
+      ctx.strokeStyle = gd; ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(167,139,250,.6)"; ctx.shadowBlur = s * 0.18;
+      let bass = 0;
+      for (let i = 0; i < N; i++) {
+        const v = has ? specAtOf(spec!, i, N, sdiv)
+                      : 0.3 + 0.5 * Math.abs(Math.sin(t * 1.6 + i * 0.5)) * Math.abs(Math.sin(t * 1.1 + i * 0.23));
+        if (i < 6) bass += v;
+        const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+        const len = s * 0.12 + v * s * 0.95;
+        ctx.lineWidth = s * 0.09;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+        ctx.lineTo(Math.cos(a) * (r0 + len), Math.sin(a) * (r0 + len));
+        ctx.stroke();
+      }
+      bass /= 6;
+      ctx.globalAlpha = 0.88;
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      ctx.beginPath(); ctx.arc(0, 0, s * (0.26 + bass * 0.24), 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     } },
   { id:"@ikuti", label:"IKUTI + Klik", cat:"sosmed", draw(ctx, s, t) {
       const tap = (t % 1.6) < 0.25 ? 0.93 : 1;
