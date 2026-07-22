@@ -160,9 +160,11 @@ function proxifyAudioUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("/")) return url;
   try {
-    const h = new URL(url).hostname.toLowerCase();
-    const need = h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe") || h.includes("sunor") || h.includes("aimusic") || h.includes("r2.dev") || h.includes("cdn2") || h.includes("cdn.") || h.includes("googleapis") || h.includes("storage.") || h.includes("supabase") || h.includes("cloudinary") || h.includes("gstatic"); // 🩹 v12.9
-    return need ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}` : url;
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return url;
+    // 🩹 v13.0 GERBANG AMAN: SEMUA host http(s) lewat proxy same-origin — lotre whitelist tamat,
+    // link lagu FRESH dari provider mana pun tak pernah lagi keblok CORS di preview & render.
+    return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
   } catch { return url; }
 }
 function bufferToWav(buf: AudioBuffer): ArrayBuffer {

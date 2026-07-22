@@ -13,39 +13,19 @@ export async function GET(req: Request) {
     const u = searchParams.get("url");
     if (!u) return NextResponse.json({ error: "url param required" }, { status: 400 });
 
-    // Whitelist domain audio Suno-ish — biar gak dipakai buat open proxy sembarangan
-    let allowed = false;
+    // 🩹 v13.0 GERBANG AMAN — SEMUA host publik boleh LEWAT. Lagu user bisa datang dari provider/CDN
+    // mana pun (era lotre whitelist tamat: link FRESH pun dulu keblok CORS mentah). Yang DILARANG:
+    // (a) non-http(s) (b) host privat/loopback/metadata — penjaga SSRF (c) muatan non-media.
+    let host = "";
     try {
-      const host = new URL(u).hostname.toLowerCase();
-      allowed =
-        // 🎬 v11.8: CDN video AI (kling & kawan-kawan) + gateway sendiri — klip animasi butuh jalur CORS ini
-        host.includes("hcnsec") ||
-        host.includes("kling") ||
-        host.includes("kwai") ||
-        host.includes("kuaishou") ||
-        host.includes("video") ||
-        host.includes("kie.ai") ||
-        host.includes("apiframe") ||
-        host.includes("suno") ||
-        host.includes("sunor") ||
-        host.includes("cdn") ||
-        host.includes("aimusic") ||
-        // 🩹 v12.9: CDN penyimpan audio luas — lagu dari API mana pun boleh lewat jalur CORS ini
-        host.includes("googleapis") ||
-        host.includes("storage.") ||
-        host.includes("supabase") ||
-        host.includes("cloudinary") ||
-        host.includes("gstatic") ||
-        host.includes("cdn") ||
-        host.includes("r2") ||
-        host.includes("s3") ||
-        host.includes("blob") ||
-        host.endsWith("cdn2.suno.ai") ||
-        host.includes("cdn.kie.ai");
-    } catch { allowed = false; }
-    if (!allowed) {
-      return NextResponse.json({ error: "Domain not allowed" }, { status: 403 });
-    }
+      const pu = new URL(u);
+      if (!/^https?:$/.test(pu.protocol)) throw new Error("bad protocol");
+      host = pu.hostname.toLowerCase();
+    } catch { return NextResponse.json({ error: "URL tidak valid" }, { status: 400 }); }
+    const privat = host === "localhost" || host.endsWith(".local") || host === "0.0.0.0" ||
+      /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) || host === "[::1]" || host.includes(".internal") || host.includes("metadata");
+    if (privat) return NextResponse.json({ error: "Host privat dilarang" }, { status: 403 });
 
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 120_000);
@@ -53,7 +33,7 @@ export async function GET(req: Request) {
       headers: {
         // Mirip browser biasa
         "User-Agent": "Mozilla/5.0",
-        "Accept": "audio/*,*/*",
+        "Accept": "audio/*,video/*,*/*",
       },
       signal: ac.signal,
       cache: "no-store",
@@ -64,7 +44,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: `Upstream ${r.status} — link kemungkinan kedaluwarsa/diblock sumber` }, { status: 502 });
     }
 
-    const ct = r.headers.get("content-type") || "audio/mpeg";
+    const ctRaw = r.headers.get("content-type") || "";
+    if (ctRaw && !/(audio|video|mpeg|mp4|aac|wav|ogg|webm|m4a|flac|opus|octet-stream|binary|force-download)/i.test(ctRaw)) {
+      return NextResponse.json({ error: `Bukan media (content-type: ${ctRaw.slice(0, 60)})` }, { status: 415 });
+    }
+    const ct = ctRaw || "audio/mpeg";
     const cl = r.headers.get("content-length");
     const headers = new Headers();
     headers.set("Content-Type", ct);
