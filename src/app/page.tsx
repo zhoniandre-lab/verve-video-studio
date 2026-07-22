@@ -580,6 +580,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [dirPending, setDirPending] = useState<{ op: string; slide?: any; instruction?: string }[]>([]);
   const [animBusy, setAnimBusy] = useState(false); // 🎬 v11.8: batch animasi AI sedang jalan
   const animAbortRef = useRef<AbortController | null>(null);
+  const animLastRef = useRef<string>(""); // 🎬 v11.9: hasil batch nyata — dibaca Sutradara saat ditanya status
   const dirEndRef = useRef<HTMLDivElement | null>(null);
   // teks yang sedang TERPILIH di layar (muncul bingkai) — digeser 1 jari & di-cubit 2 jari
   // format: "sid" = lapisan utama · "sid::tid" = lapisan tambahan (teks multi-lapis)
@@ -1487,6 +1488,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         bg: { mode: bgMode, color: bgColor },
         render_siap_download: !!videoUrl,
         adegan_hidup: slides.map((s, i) => (s.videoUrl ? i + 1 : 0)).filter(Boolean), // 🎬 v11.8: adegan yang SUDAH beranimasi AI
+        animasi_sedang_jalan: animBusy, // 🎬 v11.9: FAKTA mesin — bukan tebakan AI
+        kartu_gas_menunggu: dirPending.map((o) => o.op),
+        hasil_animasi_terakhir: animLastRef.current || "belum pernah dianimasikan sesi ini",
       };
       const r = await fetch("/api/hcnsec/director", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
@@ -1540,15 +1544,23 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           ok++;
           dirPush("sys", `✅ Adegan ${i + 1} hidup! (badge 🎬 di track · ikut preview & render)`);
         } else {
-          failed.push(`adegan ${i + 1}: ${String(d.error || "model video sibuk").slice(0, 90)}`);
+          failed.push(`adegan ${i + 1}: ${String(d.error || "model video sibuk").slice(0, 160)}`);
         }
       } catch (e: any) {
         if (e?.name === "AbortError") break;
-        failed.push(`adegan ${i + 1}: ${String(e?.message || e).slice(0, 90)}`);
+        failed.push(`adegan ${i + 1}: ${String(e?.message || e).slice(0, 160)}`);
       }
     }
     setAnimBusy(false);
     animAbortRef.current = null;
+    // 🎬 v11.9: catat fakta hasil — Sutradara menjawab status DARI SINI, bukan dari tebakan
+    animLastRef.current = ac.signal.aborted
+      ? `diurungkan pembuat — ${ok} adegan sempat jadi`
+      : ok === list.length
+        ? `sukses semua: ${ok}/${list.length} adegan hidup`
+        : ok > 0
+          ? `sebagian jadi: ${ok}/${list.length}; gagal pertama: ${failed[0] || "-"}`
+          : `gagal semua (${list.length} adegan) — error pertama: ${failed[0] || "tidak diketahui"}`;
     dirPush("sys", ac.signal.aborted
       ? `⏹ Diurungkan. ${ok} adegan sempat hidup & tetap dipakai; sisanya gambar biasa + gerak halus otomatis.`
       : ok === list.length
