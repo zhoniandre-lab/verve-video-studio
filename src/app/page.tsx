@@ -1528,12 +1528,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       try {
         const extra = (instruction || "").trim().slice(0, 160);
         const prompt = `Subtle living photo, gentle cinematic motion, slow stable camera, natural micro movement, no morphing faces${extra ? ": " + extra : ""}`;
-        let r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, imageUrl: slides[i].imageUrl, duration: 5, aspectRatio: ratio }), signal: ac.signal });
+        const vhdr: Record<string, string> = { "Content-Type": "application/json" };
+        try { const kk = localStorage.getItem("verve_suno_key") || ""; if (kk) vhdr["X-Suno-Key"] = kk; } catch {} // 🔄 v12.1: pinjam kunci Kie/Suno buat sirkuit video
+        let r = await fetch("/api/hcnsec/video", { method: "POST", headers: vhdr, body: JSON.stringify({ prompt, imageUrl: slides[i].imageUrl, duration: 5, aspectRatio: ratio }), signal: ac.signal });
         let d: any = await r.json().catch(() => ({}));
         let tries = 0;
         while (!d.video_url && (d.id || d.task_id) && tries < 8 && !ac.signal.aborted) { // LANJUT task yang sama — hemat kredit
           await new Promise((res) => setTimeout(res, 4000));
-          r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pollOnly: true, taskId: d.id || d.task_id, endpoint: d.endpoint }), signal: ac.signal });
+          r = await fetch("/api/hcnsec/video", { method: "POST", headers: vhdr, body: JSON.stringify({ pollOnly: true, taskId: d.id || d.task_id, endpoint: d.endpoint, provider: d.provider }), signal: ac.signal });
           d = await r.json().catch(() => ({}));
           tries++;
         }

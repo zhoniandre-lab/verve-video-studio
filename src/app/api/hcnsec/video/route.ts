@@ -2,13 +2,84 @@
 import { NextResponse } from "next/server";
 import { generateVideo, pollVideo, listGatewayModels } from "@/lib/hcnsec";
 
+// 🔄 v12.1 SIRKUIT 2 — kie.ai (rumah resmi Kling): dipakai saat gateway utama tak punya
+// model video sama sekali. Kunci = milik pembuat (header X-Suno-Key — kunci yang sama dgn musik).
+const KIE_BASE = "https://api.kie.ai/api/v1";
+const KIE_I2V_MODELS = ["kling/v2-1-standard", "kling-2.6/image-to-video"]; // murah → baru
+const KIE_NEG = "blurry, low quality, distorted, deformed, watermark, text, ugly";
+
+function kiePayload(model: string, prompt: string, imageUrl: string, dur: number, aspect: string) {
+  const d = dur >= 10 ? "10" : "5"; // kling hanya menerima "5" | "10"
+  if (model === "kling/v2-1-standard") {
+    return { model, input: { prompt, image_url: imageUrl, duration: d, negative_prompt: KIE_NEG, cfg_scale: 0.5 } };
+  }
+  const input: Record<string, unknown> = { prompt, image_urls: [imageUrl], sound: false, duration: d };
+  if (aspect) input.aspect_ratio = aspect;
+  return { model, input };
+}
+
+async function kieCreate(key: string, payload: unknown): Promise<string> {
+  const r = await fetch(`${KIE_BASE}/jobs/createTask`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const d: any = await r.json().catch(() => ({}));
+  if (!r.ok || (d.code !== 200 && d.code !== 0)) {
+    throw new Error(`kie ${d.code ?? r.status}: ${String(d.msg || d.message || "createTask gagal").slice(0, 120)}`);
+  }
+  const tid = d.data?.taskId || d.data?.task_id || "";
+  if (!tid) throw new Error("kie: createTask tanpa taskId");
+  return String(tid);
+}
+
+async function kiePoll(key: string, taskId: string): Promise<{ video_url: string; status: string; fail?: string }> {
+  try {
+    const r = await fetch(`${KIE_BASE}/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(25_000),
+    });
+    const d: any = await r.json().catch(() => ({}));
+    const data = d.data || {};
+    const state = String(data.state || data.status || "").toLowerCase();
+    if (state === "success" || state === "succeeded" || state === "done") {
+      let url = "";
+      try {
+        const rj = typeof data.resultJson === "string" ? JSON.parse(data.resultJson) : data.resultJson;
+        url = rj?.resultUrls?.[0] || rj?.resultUrl || rj?.urls?.[0] || "";
+      } catch { /* resultJson rusak */ }
+      return { video_url: url, status: url ? "ready" : "error", fail: url ? undefined : "sukses tanpa URL hasil" };
+    }
+    if (state === "fail" || state === "failed" || state === "error") {
+      return { video_url: "", status: "failed", fail: String(data.failMsg || data.errorMessage || d.msg || "gagal di kie").slice(0, 160) };
+    }
+    return { video_url: "", status: "pending" };
+  } catch { return { video_url: "", status: "pending" }; }
+}
+
 export async function POST(req: Request) {
   try {
     const { prompt, imageUrl, duration, model, aspectRatio, poll, negativePrompt, enhance,
-      taskId, endpoint, pollOnly } = await req.json();
+      taskId, endpoint, pollOnly, provider } = await req.json();
 
     // 🎬 v11.8: LANJUTKAN polling task yang SUDAH dibuat (tanpa bikin task baru = hemat kredit).
     if (pollOnly && taskId) {
+      // 🔄 v12.1: task milik kie.ai (sirkuit 2) — dipoll lewat recordInfo, bukan gateway utama
+      if (provider === "kie") {
+        const kieKey = (req.headers.get("x-suno-key") || process.env.SUNO_API_KEY || process.env.MUSIC_API_KEY || "").trim();
+        if (!kieKey) return NextResponse.json({ error: "Kunci kie.ai tidak ikut — pantau ulang tak bisa jalan.", status: "error", video_url: "" }, { status: 401 });
+        let waited = 0; const interval = 4000; const maxWait = 26000;
+        let last: any = { video_url: "", status: "pending" };
+        while (waited < maxWait) {
+          await new Promise((r) => setTimeout(r, interval));
+          waited += interval;
+          last = await kiePoll(kieKey, String(taskId));
+          if (last.video_url || last.status === "failed") break;
+        }
+        if (last.video_url) return NextResponse.json({ id: taskId, provider: "kie", video_url: last.video_url, status: "ready" });
+        if (last.status === "failed") return NextResponse.json({ id: taskId, provider: "kie", error: `kie: ${last.fail || "gagal"}`, video_url: "", status: "error" }, { status: 500 });
+        return NextResponse.json({ id: taskId, provider: "kie", status: "pending", video_url: "", error: "Klip masih dimasak server (kie) — pantau terus ya bro." }, { status: 202 });
+      }
       const pollEp: string = endpoint || "/videos/generations";
       let res: any = { id: taskId, endpoint: pollEp, status: "pending", video_url: "" };
       let waited = 0; const interval = 3000; const maxWait = 26000;
@@ -60,8 +131,38 @@ export async function POST(req: Request) {
         }
       } catch { /* katalog pun tak bisa dibaca — teruskan error asli apa adanya */ }
     }
+    // 🔄 v12.1 SIRKUIT 2 — kie.ai (rumah resmi Kling): gateway utama tanpa video → pakai kunci musik pembuat
+    const kieKey = (req.headers.get("x-suno-key") || process.env.SUNO_API_KEY || process.env.MUSIC_API_KEY || "").trim();
+    if (!res && kieKey && imageUrl && !String(imageUrl).startsWith("data:")) {
+      let kieTask = "";
+      let kieModel = "";
+      let kieErr = "";
+      for (const m of KIE_I2V_MODELS) {
+        try {
+          kieTask = await kieCreate(kieKey, kiePayload(m, prompt, String(imageUrl), safeDur, String(aspectRatio || "")));
+          kieModel = m;
+          break;
+        } catch (e2: any) { kieErr = String(e2?.message || e2).slice(0, 140); }
+      }
+      if (kieTask) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < 50_000) {
+          await new Promise((r2) => setTimeout(r2, 4000));
+          const p = await kiePoll(kieKey, kieTask);
+          if (p.video_url) return NextResponse.json({ video_url: p.video_url, status: "ready", id: kieTask, provider: "kie", model: `kie:${kieModel}` });
+          if (p.status === "failed") return NextResponse.json({ error: `kie (${kieModel}): ${p.fail || "gagal membuat klip"}`, video_url: "", status: "error" }, { status: 500 });
+        }
+        return NextResponse.json({ id: kieTask, provider: "kie", model: `kie:${kieModel}`, status: "pending", video_url: "", error: "Klip masih dimasak server (kie) — pantau terus ya bro." }, { status: 202 });
+      }
+      if (kieErr) err0 = new Error(`kie.ai menolak: ${kieErr}`);
+    }
     if (!res) {
-      if (err0) throw err0;
+      if (err0) {
+        const guide = kieKey
+          ? ""
+          : " · 💡 Grup hcnsec-mu tanpa video sama sekali. Sirkuit cadangan (kie.ai — rumah resmi Kling) butuh kunci Kie/Suno-mu di HP ini (biasa diisi di tempat kunci lagu).";
+        throw new Error(String(err0.message || "Gagal generate video") + guide);
+      }
       throw new Error("Tidak ada model video yang menjawab di gateway ini");
     }
 
