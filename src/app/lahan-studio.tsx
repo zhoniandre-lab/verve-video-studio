@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
-  type Angle, type ScoredTitle, type BrainMemory, type AnalyzedVideo,
+  type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
 } from "@/lib/brain/yie-score";
 import {
   detectAudienceIntent, audienceCard, dominantEmotion, watchActivity,
@@ -43,6 +43,23 @@ function loadBrain(): BrainMemory {
   } catch {
     return { researches: [], results: [] };
   }
+}
+/* 🧠 v13.1: kunci judul dinormalkan — dipakai dedupe otak & lapor performa */
+function normTitleKey(t: string): string {
+  return String(t || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+/* 🧠 v13.1: gabung memori HP + brankas — yang TERBARU menang, maks 200 judul + 25 riset */
+function mergeBrain(a: BrainMemory, b: BrainMemory): BrainMemory {
+  const map = new Map<string, BrainResult>();
+  [...(a.results || []), ...(b.results || [])].forEach((r) => {
+    const k = normTitleKey(r.title || "");
+    if (!k) return;
+    const old = map.get(k);
+    if (!old || (+r.time! || 0) >= (+old.time! || 0)) map.set(k, { ...old, ...r });
+  });
+  const results = [...map.values()].sort((x, y) => (+y.time! || 0) - (+x.time! || 0)).slice(0, 200);
+  const researches = [...(a.researches || []), ...(b.researches || [])].slice(0, 25);
+  return { researches, results };
 }
 /** Kompres gambar ke 768×432 jpeg (cover 16:9) — hemat localStorage & siap jadi slide video. */
 function shrinkImage(dataUrl: string, w = 768, h = 432, q = 0.78): Promise<string> {
@@ -265,7 +282,40 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const ensureLockCacheRef = useRef<string>(""); // 🔒 v10.0: cache lock milik sesi menggambar berjalan
   const [gaya, setGaya] = useState(0);
   const [expanded, setExpanded] = useState<string>("");
-  const brain = useMemo(loadBrain, []);
+  const [brain, setBrain] = useState<BrainMemory>(() => loadBrain());
+  const [showLapor, setShowLapor] = useState(false);
+  const [perfSel, setPerfSel] = useState("");
+  const [perfCtr, setPerfCtr] = useState("");
+  const [perfImp, setPerfImp] = useState("");
+  const [perfAvd, setPerfAvd] = useState("");
+
+  // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
+  function saveBrain(up: (b: BrainMemory) => BrainMemory) {
+    setBrain((prev) => {
+      const next = up(prev);
+      try { localStorage.setItem(BRAIN_KEY, JSON.stringify(next)); } catch { /* penuh? abaikan */ }
+      fetch("/api/hcnsec/brain", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(next),
+      }).catch(() => { /* offline / brankas belum siap */ });
+      return next;
+    });
+  }
+
+  // 🧠 v13.1: hidrasi dari brankas (kalau sudah ada), gabung dengan memori HP — terbaru menang
+  useEffect(() => {
+    let live = true;
+    fetch("/api/hcnsec/brain").then((r) => r.json()).then((j) => {
+      if (!live || !j.ok || !j.brain) return;
+      setBrain((prev) => {
+        const merged = mergeBrain(prev, j.brain as BrainMemory);
+        try { localStorage.setItem(BRAIN_KEY, JSON.stringify(merged)); } catch { /* abaikan */ }
+        return merged;
+      });
+    }).catch(() => { /* brankas tak ada -> pakai memori HP saja */ });
+    return () => { live = false; };
+  }, []);
 
   function flash(t: string) {
     setToast(t);
@@ -442,6 +492,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       setAngle(a);
       setResearchAt(j.fetchedAt || new Date().toISOString());
       setSelTitle("");
+      saveBrain((b) => ({ ...b, researches: [{ topic: topic.trim(), kw: selKeyword, time: Date.now() }, ...(b.researches || [])].slice(0, 25) }));
       flash(`📊 ${a.total} kompetitor relevan dihitung (dibuang ${a.rejected.length})`);
     } catch (e) {
       const er = e as Error & { code?: string };
@@ -454,7 +505,35 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   function lockTitle(t: string) {
     setSelTitle(t);
     setStep(5);
-    flash("★ Judul dikunci — siap dirancang visualnya");
+    // 🧠 v13.1: CATAT judul terkunci ke otak (dedupe, terbaru di depan, maks 200)
+    // -> memoryPenalty otomatis hidup (judul kembar dihukum) & jadi riwayat buat lapor performa
+    saveBrain((b) => ({
+      ...b,
+      results: [{ title: t, time: Date.now() }, ...b.results.filter((r) => normTitleKey(r.title) !== normTitleKey(t))].slice(0, 200),
+    }));
+    flash("★ Judul dikunci — tercatat di otak 🧠");
+  }
+
+  /* 🧠 v13.1: LAPOR PERFORMa — angka asli YouTube Studio menghidupkan learningBoostV2 (Bayes CTR + hukuman judul gagal) */
+  function savePerf() {
+    if (!perfSel) { flash("Pilih judulnya dulu bro"); return; }
+    const num = (s: string): number | "" => {
+      const t = s.trim().replace(",", ".");
+      if (!t) return "";
+      const v = +t;
+      return isFinite(v) ? v : "";
+    };
+    const ctr = num(perfCtr), imp = num(perfImp), avd = num(perfAvd);
+    const nt = normTitleKey(perfSel);
+    saveBrain((b) => ({
+      ...b,
+      results: b.results.map((r) =>
+        normTitleKey(r.title) === nt
+          ? { title: r.title, ctr, impressions: imp, avdSec: avd, time: r.time || Date.now() }
+          : r
+      ),
+    }));
+    flash("📊 Tersimpan — otak makin paham pola judulmu!");
   }
 
   function resetLahan() {
@@ -1392,6 +1471,32 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               </div>
             ))}
           </div>
+          {!!brain.results.length && (
+            <div className="lh-card">
+              <button className="lh-btn sec" onClick={() => setShowLapor((v) => !v)}>{showLapor ? "Tutup laporan ▴" : "📊 Lapor performa video (dari YouTube Studio)"}</button>
+              {showLapor && (
+                <div style={{ marginTop: 10 }}>
+                  <p className="lh-note">Isi angka asli dari YouTube Studio → otak VERVE belajar pola judulmu (CTR Bayes + hukuman judul gagal). Daftar skor di atas langsung ikut berubah. Judul tanpa angka tetap tercatat sebagai riwayat.</p>
+                  <select className="lh-sel" value={perfSel} onChange={(e) => {
+                    const t = e.target.value; setPerfSel(t);
+                    const r = brain.results.find((x) => normTitleKey(x.title) === normTitleKey(t));
+                    setPerfCtr(r && r.ctr !== undefined && r.ctr !== "" ? String(r.ctr) : "");
+                    setPerfImp(r && r.impressions !== undefined && r.impressions !== "" ? String(r.impressions) : "");
+                    setPerfAvd(r && r.avdSec !== undefined && r.avdSec !== "" ? String(r.avdSec) : "");
+                  }}>
+                    <option value="">— pilih judul yang sudah tayang —</option>
+                    {brain.results.slice(0, 24).map((r) => <option key={normTitleKey(r.title)} value={r.title}>{r.title}</option>)}
+                  </select>
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <input className="lh-sel" style={{ flex: 1 }} inputMode="decimal" placeholder="CTR % (mis 6.2)" value={perfCtr} onChange={(e) => setPerfCtr(e.target.value)} />
+                    <input className="lh-sel" style={{ flex: 1 }} inputMode="numeric" placeholder="Tayangan" value={perfImp} onChange={(e) => setPerfImp(e.target.value)} />
+                    <input className="lh-sel" style={{ flex: 1 }} inputMode="numeric" placeholder="AVD dtk" value={perfAvd} onChange={(e) => setPerfAvd(e.target.value)} />
+                  </div>
+                  <button className="lh-mini ok" style={{ marginTop: 8 }} onClick={savePerf}>💾 Simpan ke otak 🧠</button>
+                </div>
+              )}
+            </div>
+          )}
           {selTitle && (
             <button className="lh-btn" onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
           )}
