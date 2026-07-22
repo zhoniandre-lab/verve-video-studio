@@ -55,7 +55,7 @@ async function tryGenerate(title: string, keyword: string, niche: string, n: num
     .replace(/\{\{NASKAH\}\}/g, String(naskah||"").slice(0,1500).replace(/"/g,"'") || "(naskah belum ada — bangun alur sebab-akibat murni dari judul & kata kunci)")
     .replace(/\{\{N\}\}/g, String(n));
   if (attempt > 1) {
-    sys += "\n\nPERINGATAN KHUSUS: JANGAN PERNAH mengembalikan JSON, array, object, atau kode apapun. Gunakan FORMAT DI ATAS SAJA. Tanda { } [ ] DILARANG sama sekali. Gunakan SCENE_START/SCENE_END marker.";
+    sys += "\n\nPERINGATAN KHUSUS: DESKRIPSI WAJIB diisi lengkap Bahasa Indonesia untuk SETIAP adegan (aksi konkret tokoh + benda, bukan kata sifat). JANGAN PERNAH mengembalikan JSON, array, object, atau kode apapun. Gunakan FORMAT DI ATAS SAJA. Tanda { } [ ] DILARANG sama sekali. Gunakan SCENE_START/SCENE_END marker.";
   }
   const raw = await chat([{ role: "user", content: sys }], undefined);
   return parseStoryboardText(raw, n);
@@ -100,7 +100,7 @@ function parseStoryboardText(raw: string, expectedN: number): any {
     if (visual.length<10 && desc)
       visual = `Cinematic shot, ${desc.slice(0,200)}, cinematic lighting, 8k, photorealistic, shallow depth of field`;
     if (!desc && !visual) continue;
-    out.scenes.push({ scene:no, scene_desc:desc, lyric_line:lyric, visual_prompt:visual, mood });
+    out.scenes.push({ scene:no, scene_desc:desc || lyric, lyric_line:lyric, visual_prompt:visual, mood });
   }
   if (out.scenes.length===0) throw new Error("Tidak bisa parse adegan, coba lagi.");
   while (out.scenes.length < expectedN) {
@@ -121,6 +121,8 @@ export async function POST(req: Request) {
       try {
         const parsed = await tryGenerate(title, keyword||"", niche||"", n, attempt, naskah||"");
         if (!parsed.scenes || parsed.scenes.length < Math.max(1, n-1)) throw new Error("scene kurang");
+        const kosong = parsed.scenes.filter((sc:any)=>!String(sc.scene_desc||"").trim()).length;
+        if (kosong >= 2) throw new Error("deskripsi adegan kosong");
         return NextResponse.json(parsed);
       } catch(e:any){ lastErr = e; }
     }
