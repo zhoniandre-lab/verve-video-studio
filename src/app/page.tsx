@@ -921,6 +921,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [slides, slideOptsById, selStik, selId, setSelStik]);
   useEffect(() => { if (selStik && selTextSid) setSelTextSid(""); }, [selStik]); // eslint-disable-line
   useEffect(() => { if (selTextSid && selStik) setSelStik(null); }, [selTextSid]); // eslint-disable-line
+  // 🎬 v12.6 SELEKSI SATU PINTU — ketuk objek lain = objek lama lepas OTOMATIS (rasa CapCut; dulu macet:
+  // teks/stiker terpilih lalu ketuk KLIP → bar bawah tetap milik teks/stiker, harus ‹Lepas manual)
+  function pilihObjek(kind: "clip" | "teks" | "stiker") {
+    if (kind !== "clip") setClipBar(false);
+    if (kind !== "teks") setSelTextSid("");
+    if (kind !== "stiker") setSelStik(null);
+  }
   /* ---------- analisis gelombang suara asli (async — hasil digambar di balok track audio) ---------- */
   const proxify = proxifyAudioUrl;
   useEffect(() => {
@@ -2338,7 +2345,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (already && already.sid === sid && already.stid === stid && selId === sid) { setTool("stiker"); setSheetTab(""); setClipBar(false); return; }
     const st = (slideOptsById[sid]?.stickers || []).find(x => x.id === stid);
     if (!st) return;
-    setSelStik({ sid, stid });
+    pilihObjek("stiker"); setSelStik({ sid, stid });
     if (selId !== sid) setSelId(sid);
     const i = slides.findIndex(s => s.id === sid);
     const t0 = st.start ?? (timeline?.starts?.[i] || 0);
@@ -2678,7 +2685,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (Math.abs(pt.y - cd.ct.y) < 0.08 && Math.abs(pt.x - (cd.ct.x ?? 0.5)) < 0.32) {
         const enc = selTextEncode(cd.sid, cd.tid);
         const wasSel = selTextSidRef.current === enc;
-        if (!wasSel) { setSelTextSid(enc); if (selId !== cd.sid) setSelId(cd.sid); }
+        if (!wasSel) { pilihObjek("teks"); setSelTextSid(enc); if (selId !== cd.sid) setSelId(cd.sid); }
         dragTx.current = { sid: cd.sid, tid: cd.tid, x0: e.clientX, y0: e.clientY, moved: false, wasSel };
         return;
       }
@@ -2698,7 +2705,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const rx = (s.size + 0.03) * (canvasRef.current!.height / canvasRef.current!.width) * 2;
       if (Math.abs(pt.x - s.x) < Math.max(0.09, rx) && Math.abs(pt.y - s.y) < s.size + 0.06) {
         const wasSelS = selStikRef.current?.sid === it.sid && selStikRef.current?.stid === s.id;
-        if (!wasSelS) { setSelStik({ sid: it.sid, stid: s.id }); if (selId !== it.sid) setSelId(it.sid); }
+        if (!wasSelS) { pilihObjek("stiker"); setSelStik({ sid: it.sid, stid: s.id }); if (selId !== it.sid) setSelId(it.sid); }
         dragSt.current = { sid: it.sid, stid: s.id, x0: e.clientX, y0: e.clientY, moved: false, wasSel: wasSelS };
         return;
       }
@@ -2896,9 +2903,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onAudioOff={(k: "m" | "t" | "v", sec: number) => { const v = Math.round(sec * 100) / 100; if (k === "m") setMusicOff(v); else if (k === "t") setTtsOff(v); else setVoiceOff(v); }}
         onAudioMoved={(k: string) => flash(`${k === "m" ? "🎵 Musik" : k === "t" ? "🗣️ Narasi" : "🎙️ Rekaman"} digeser — mulai di ${formatDur((k === "m" ? musicOff : k === "t" ? ttsOff : voiceOff))}`)}
         onTextStart={moveTextStart} onTextDur={moveTextDur}
-        onTextMoved={(sid: string, tid: string = "") => { setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
+        onTextMoved={(sid: string, tid: string = "") => { pilihObjek("teks"); setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
         onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
-        onSel={(id: string) => { setSelId(id); setClipBar(true); }}
+        onSel={(id: string) => { pilihObjek("clip"); setSelId(id); setClipBar(true); }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
@@ -2908,11 +2915,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onAddText={() => startTextEdit()}
         onEditText={(sid: string, tid: string = "") => onTextChipTap(sid, tid)}
         onStickerStart={moveStickerStart} onStickerDur={moveStickerDur}
-        onStickerMoved={(sid: string, stid: string) => { setSelStik({ sid, stid }); if (selId !== sid) setSelId(sid); const st = (slideOptsById[sid]?.stickers || []).find((x: any) => x.id === stid); flash("😀 Stiker ditaruh mulai " + formatDur(st?.start ?? 0) + (st?.dur ? " · " + formatDur(st.dur) : "") + " — ketuk chip utk kelola"); }}
+        onStickerMoved={(sid: string, stid: string) => { pilihObjek("stiker"); setSelStik({ sid, stid }); if (selId !== sid) setSelId(sid); const st = (slideOptsById[sid]?.stickers || []).find((x: any) => x.id === stid); flash("😀 Stiker ditaruh mulai " + formatDur(st?.start ?? 0) + (st?.dur ? " · " + formatDur(st.dur) : "") + " — ketuk chip utk kelola"); }}
         onStickerChipTap={(sid: string, stid: string) => onStickerChipTap(sid, stid)}
         onAddSticker={() => { setTool("stiker"); setSheetTab(""); setClipBar(false); }}
         onAddOutro={addOutro}
-        onTrans={(sid: string) => { setSelId(sid); setClipBar(true); onClipTool("transisi"); }}
+        onTrans={(sid: string) => { pilihObjek("clip"); setSelId(sid); setClipBar(true); onClipTool("transisi"); }}
         onMute={() => setAudMuted(v => !v)} audMuted={audMuted}
         onAiCut={() => {
           const src = musicUrl || ttsUrl || voiceUrl;
@@ -2928,7 +2935,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           });
         }}
         onCover={() => setModal("sampul")}
-        hapticSel={() => { setClipBar(true); }}
+        hapticSel={() => { pilihObjek("clip"); setClipBar(true); }}
         transition={transition}
       />
 
