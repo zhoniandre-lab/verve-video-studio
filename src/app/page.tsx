@@ -419,7 +419,46 @@ function LabPage({ gotoEditor, go }: { gotoEditor: (id?: string, cmd?: any) => v
 /* ==================================================================
    PROYEK
    ================================================================== */
+/* 📼🔒 v13.6 BRANKAS RENDER — hasil render otomatis DISALIN ke IndexedDB di HP (bertahan Chrome ditutup).
+   Sebelumnya hasil render hidup di RAM tab: pembuat keluar sebentar sebelum download → hilang selamanya. */
+const VAULT_DB = "verve_render_vault", VAULT_STORE = "renders", VAULT_MAX = 2;
+type VaultItem = { id: string; at: number; name: string; size: number; blob: Blob };
+function vaultOpen(): Promise<IDBDatabase> {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(VAULT_DB, 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore(VAULT_STORE, { keyPath: "id" }); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function vaultList(): Promise<VaultItem[]> {
+  try {
+    const db = await vaultOpen();
+    return await new Promise<VaultItem[]>((res) => {
+      const out: VaultItem[] = [];
+      const c = db.transaction(VAULT_STORE).objectStore(VAULT_STORE).openCursor();
+      c.onsuccess = () => { const cur = c.result; if (cur) { out.push(cur.value as VaultItem); cur.continue(); } else res(out.sort((a, b) => b.at - a.at)); };
+      c.onerror = () => res([]);
+    });
+  } catch { return []; }
+}
+async function vaultSave(blob: Blob, name: string): Promise<void> {
+  if (!blob || blob.size < 100_000 || blob.size > 900 * 1048576) return; // batas jujur: di luar ini jangan disimpan
+  try {
+    const db = await vaultOpen();
+    const item: VaultItem = { id: "r" + Date.now(), at: Date.now(), name, size: blob.size, blob };
+    await new Promise<void>((res, rej) => { const tx = db.transaction(VAULT_STORE, "readwrite"); tx.objectStore(VAULT_STORE).put(item); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
+    const all = await vaultList();
+    for (const old of all.slice(VAULT_MAX)) await new Promise<void>((res) => { const tx = db.transaction(VAULT_STORE, "readwrite"); tx.objectStore(VAULT_STORE).delete(old.id); tx.oncomplete = () => res(); });
+  } catch { /* kuota penuh / IDB tak tersedia → render & download manual tetap jalan normal */ }
+}
+async function vaultDelete(id: string): Promise<void> {
+  try { const db = await vaultOpen(); await new Promise<void>((res) => { const tx = db.transaction(VAULT_STORE, "readwrite"); tx.objectStore(VAULT_STORE).delete(id); tx.oncomplete = () => res(); }); } catch {}
+}
+
 function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; gotoEditor: (id?: string) => void; refresh: () => void; go: (s: ScreenId) => void }) {
+  const [vault, setVault] = useState<VaultItem[]>([]);
+  useEffect(() => { let on = true; vaultList().then((v) => { if (on) setVault(v); }); return () => { on = false; }; }, []);
   function delDraft(id: string) {
     if (!confirm("Hapus proyek ini?")) return;
     try {
@@ -433,6 +472,21 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
       <div className="v6-pagehead"><h2>Proyek</h2>
         <button className="v6-btn" onClick={() => gotoEditor()}>＋ Baru</button>
       </div>
+      {!!vault.length && (
+        <div style={{ margin: "0 14px 12px", padding: 12, borderRadius: 14, background: "rgba(20,184,166,.08)", border: "1px solid rgba(20,184,166,.35)" }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>📼 Hasil render tersimpan di HP</div>
+          {vault.map((it) => (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+              <span style={{ fontSize: 18 }}>🎬</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{it.name}</span>
+              <span style={{ fontSize: 11, opacity: .7, whiteSpace: "nowrap" }}>{(it.size / 1048576).toFixed(0)}MB</span>
+              <button className="v6-btn" style={{ padding: "6px 10px", fontSize: 12 }} title="Unduh ke HP" onClick={() => downloadBlob(it.blob, it.name)}>⬇️</button>
+              <button className="v6-btn" style={{ padding: "6px 10px", fontSize: 12 }} title="Hapus dari brankas" onClick={async () => { await vaultDelete(it.id); setVault(await vaultList()); }}>🗑</button>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, opacity: .65, marginTop: 4 }}>Disalin otomatis begitu render selesai (maks {VAULT_MAX} terbaru) — unduh ke Galeri biar abadi selamanya.</div>
+        </div>
+      )}
       {!drafts.length && <div className="v6-empty"><div className="big">🎬</div>Belum ada proyek. Buat yang pertama bro!</div>}
       <div className="v6-proj-grid">
         {drafts.map(d => (
@@ -2508,6 +2562,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       }
       setVideoBlob(blob);
       setVideoUrl(URL.createObjectURL(blob));
+      // 📼🔒 v13.6: SALIN ke brankas — hasil selamat walau Chrome keburu ditutup sebelum download
+      vaultSave(blob, `${(projTitle || "verve").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 40)}_${Date.now()}.${(blob.type || "").includes("mp4") ? "mp4" : "webm"}`);
       setProgress(1); flash("✅ Video selesai!");
       persistSnapshot(true);
       genMetadata().catch(() => {});
