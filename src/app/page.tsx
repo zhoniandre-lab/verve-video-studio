@@ -1542,7 +1542,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           const vu = String(d.video_url);
           setSlides((c) => c.map((s, j) => (j === i ? { ...s, videoUrl: vu } : s)));
           ok++;
-          dirPush("sys", `✅ Adegan ${i + 1} hidup! (badge 🎬 di track · ikut preview & render)`);
+          dirPush("sys", `✅ Adegan ${i + 1} hidup!${d.model && d.model !== "kling-v1" ? ` (model: ${d.model})` : " —"} badge 🎬 di track · ikut preview & render`);
         } else {
           failed.push(`adegan ${i + 1}: ${String(d.error || "model video sibuk").slice(0, 160)}`);
         }

@@ -1,6 +1,6 @@
 "use server";
 import { NextResponse } from "next/server";
-import { generateVideo, pollVideo } from "@/lib/hcnsec";
+import { generateVideo, pollVideo, listGatewayModels } from "@/lib/hcnsec";
 
 export async function POST(req: Request) {
   try {
@@ -32,13 +32,38 @@ export async function POST(req: Request) {
     // Batasi durasi agar tidak terlalu berat (khususnya di HP)
     const safeDur = Math.min(Math.max(Number(duration) || 5, 2), 8);
 
-    let res = await generateVideo(prompt, {
-      imageUrl,
-      duration: safeDur,
-      model,
-      aspectRatio,
-      negativePrompt,
-    });
+    // 🔍 v12.0 BERBURU MODEL: kalau model yang diminta ditolak grup distributor
+    // ("No available channel for model X under group ..."), tanya KATALOG gateway lalu
+    // coba kandidat model video lain satu-satu — channel-error gagalnya CEPAT & gratis.
+    const VIDEO_HINT = /kling|wan2?|hailuo|minimax|vidu|luma|runway|veo|sora|pixverse|cogvideo|seedance|hunyuan|hailuo|kwaivgi|video/i;
+    const CHANNEL_ERR = /no available channel|not[ -]?available|unknown.*model|invalid.*model|model.*not.*found|belum tersedia|404/i;
+    const askedModel = String(model || "").trim() || undefined;
+    const tryGen = (m?: string) => generateVideo(prompt, { imageUrl, duration: safeDur, model: m, aspectRatio, negativePrompt });
+
+    let res: any = null;
+    let err0: any = null;
+    const tried: string[] = [];
+    try {
+      res = await tryGen(askedModel);
+      tried.push(res?.model || askedModel || "?");
+    } catch (e: any) {
+      err0 = e;
+      tried.push(askedModel || "(default)");
+    }
+    if (!res && err0 && CHANNEL_ERR.test(String(err0.message || ""))) {
+      try {
+        const ids = await listGatewayModels();
+        const cand = ids.filter((x) => VIDEO_HINT.test(x) && !tried.includes(x)).slice(0, 6);
+        for (const idd of cand) {
+          try { res = await tryGen(idd); err0 = null; tried.push(idd); break; }
+          catch { tried.push(idd); }
+        }
+      } catch { /* katalog pun tak bisa dibaca — teruskan error asli apa adanya */ }
+    }
+    if (!res) {
+      if (err0) throw err0;
+      throw new Error("Tidak ada model video yang menjawab di gateway ini");
+    }
 
     // Auto-poll sampai siap (maks 60s untuk UX cepat)
     const shouldPoll = poll !== false;
@@ -74,5 +99,18 @@ export async function POST(req: Request) {
       { error: e.message || "Gagal generate video", video_url: "", status: "error" },
       { status: e.status || 500 }
     );
+  }
+}
+
+// 🔍 v12.0 DIAGNOSTIK (buka URL ini langsung di browser HP):
+// menampilkan daftar model yang BENAR-BENAR dibuka grup akun gateway + saringan kandidat video.
+// Tidak membocorkan apa pun selain NAMA model — aman dilihat pembuat.
+export async function GET() {
+  try {
+    const ids = await listGatewayModels();
+    const video = ids.filter((x) => /kling|wan2?|hailuo|minimax|vidu|luma|runway|veo|sora|pixverse|cogvideo|seedance|hunyuan|kwaivgi|video/i.test(x));
+    return NextResponse.json({ total_model: ids.length, kandidat_video: video, semua_model: ids.slice(0, 300) });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || "gagal membaca katalog" }, { status: e.status || 500 });
   }
 }

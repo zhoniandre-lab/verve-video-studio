@@ -249,6 +249,17 @@ export async function pollVideo(taskId: string, endpoint = "/videos/generations"
   } catch { return { video_url: "", status: "error" }; }
 }
 
+// 🔍 v12.0 BERBURU MODEL: tanya katalog gateway — model apa saja yang BENAR-BENAR dibuka
+// grup akun kita (gateway model one-api umumnya membuka GET /models).
+export async function listGatewayModels(): Promise<string[]> {
+  const r = await fetch(`${BASE_URL}/models`, { headers: h(), signal: AbortSignal.timeout(20000) });
+  if (!r.ok) throw new ApiError(`Gagal membaca katalog model gateway (${r.status})`, r.status);
+  const d = await r.json().catch(() => ({}));
+  const arr = (d && (d.data || d.models)) || [];
+  if (!Array.isArray(arr)) return [];
+  return arr.map((m: any) => String(m?.id || m?.name || m || "")).filter(Boolean);
+}
+
 export function listModels() {
   return { chat: CHAT_MODELS, imageStyles: IMAGE_STYLES, imageModels: IMAGE_MODELS,
     defaultChat: DEFAULT_CHAT_MODEL, defaultImage: DEFAULT_IMAGE_MODEL, defaultTts: DEFAULT_TTS_MODEL, defaultVideo: DEFAULT_VIDEO_MODEL };
