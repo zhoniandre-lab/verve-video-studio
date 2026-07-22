@@ -816,6 +816,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const actxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const specU8Ref = useRef<Uint8Array<ArrayBuffer> | null>(null); // 🌈 v13.4: buffer frekuensi utk stiker @bars
+  const [cineBars, setCineBars] = useState(false); // 🎬 v13.5 LETTERBOX BIOSKOP 2.39:1 — garis hitam atas-bawah, ikut preview & render
+  const cineBarsRef = useRef(false);
   const barsRef = useRef<Float32Array>(new Float32Array(48));
   const clockRef = useRef<{ audio: HTMLAudioElement | null; t0: number; base: number; running: boolean }>({ audio: null, t0: 0, base: 0, running: false });
   const slidesRef = useRef(slides); useEffect(() => { slidesRef.current = slides; }, [slides]);
@@ -832,6 +834,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const pipRef = useRef(pipOn); useEffect(() => { pipRef.current = pipOn; }, [pipOn]);
   const musicVolRef = useRef(musicVol); const voiceVolRef = useRef(voiceVol);
   useEffect(() => { musicVolRef.current = musicVol; if (musicEl.current) musicEl.current.volume = Math.min(1, musicVol); }, [musicVol]);
+  useEffect(() => { cineBarsRef.current = cineBars; }, [cineBars]); // 🎬 v13.5
   useEffect(() => { voiceVolRef.current = voiceVol; voiceEls.current.forEach(a => { a.volume = Math.min(1, voiceVol); }); }, [voiceVol]);
   const audMutedRef = useRef(audMuted); useEffect(() => {
     audMutedRef.current = audMuted;
@@ -1062,10 +1065,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const progC = L.clipDur > 0 ? Math.min(1, Math.max(0, L.clipT / L.clipDur)) : 0;
     const SkC = Math.min(0.5, Math.max(0.05, kbC?.s || 0.3));
     const panC = kbC?.dir === "l" || kbC?.dir === "r" || kbC?.dir === "u" || kbC?.dir === "d"; // 🎬 v13.3 GESER WAH
-    const kbDxC = panC ? (kbC!.dir === "l" ? 1 : kbC!.dir === "r" ? -1 : 0) * SkC * (0.5 - progC) : 0;
-    const kbDyC = panC ? (kbC!.dir === "u" ? 1 : kbC!.dir === "d" ? -1 : 0) * SkC * (0.5 - progC) : 0;
+    const pe = progC * progC * (3 - 2 * progC); // 🎬 v13.5 FILM EASE — kamera mengerem lembut di akhir, bukan robot linear
+    const kbDxC = panC ? (kbC!.dir === "l" ? 1 : kbC!.dir === "r" ? -1 : 0) * SkC * (0.5 - pe) : 0;
+    const kbDyC = panC ? (kbC!.dir === "u" ? 1 : kbC!.dir === "d" ? -1 : 0) * SkC * (0.5 - pe) : 0;
     const kb = kbC
-      ? (panC ? 1 + SkC : (kbC.dir === "out" ? (1 + SkC) - progC * SkC : 1 + progC * SkC))
+      ? (panC ? 1 + SkC : (kbC.dir === "out" ? (1 + SkC) - pe * SkC : 1 + pe * SkC))
       : ((optCur?.loop === "zoompelan" || !optCur?.loop) ? 1 + Math.min(0.06, (tt / Math.max(1, tl.total)) * 0.06) : 1);
     paintClips(ctx, W, H, curDraw, nxtDraw, {
       clipT: L.clipT, clipDur: L.clipDur, inTrans: L.inTrans, transT: L.transT,
@@ -1086,6 +1090,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       specArr = specU8Ref.current;
     }
     paintFloatingStickers(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt, specArr);
+    if (cineBarsRef.current) { // 🎬 v13.5 LETTERBOX BIOSKOP — layar lebar instan
+      const bh = H * (W >= H ? 0.125 : 0.07);
+      ctx.save(); ctx.filter = "none"; ctx.globalAlpha = 1; ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, bh); ctx.fillRect(0, H - bh, W, bh); ctx.restore();
+    }
     paintFloatingTexts(ctx, W, H, sl.map(x => optsRef.current[x.id]), tt);
     // bingkai seleksi stiker (preview saja — tidak ikut diekspor)
     const sst = selStikRef.current;
@@ -1579,7 +1588,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             done.push(hasSlide ? `kamera ${m.replace("_", " ")} adegan ${o.slide}` : `kamera ${m.replace("_", " ")} SEMUA adegan`);
           } else if (m === "sinematik") { // 🎬 v13.3 GERAK WAH: tiap adegan BEDA gerakan — anti bolak-balik monoton
             const dirs = ["in", "l", "out", "r", "u", "d"] as const;
-            slides.forEach((_, k) => setOpt(slides[k].id, { kb: { dir: dirs[k % dirs.length], s: k % 2 ? 0.18 : 0.26 }, loop: "none" } as any));
+            slides.forEach((_, k) => setOpt(slides[k].id, { kb: { dir: dirs[k % dirs.length], s: k % 2 ? 0.14 : 0.21 }, loop: "none" } as any)); // 🎬 v13.5: kalem ala film
             done.push(`gerak SINEMATIK di ${slides.length} adegan — tiap adegan beda kamera (zoom masuk → geser kiri → zoom keluar → geser kanan → naik → turun)`);
           } else if ((ANIM_LOOP as any[]).some((x) => x.id === m)) {
             targets.forEach((k) => setOpt(slides[k].id, { loop: m, kb: undefined } as any));
@@ -1587,6 +1596,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           }
           break;
         }
+        case "set_letterbox": { const onL = (o as any).on !== false; setCineBars(onL); done.push(onL ? "letterbox BIOSKOP aktif 🎬 — garis hitam atas-bawah, ikut preview & render" : "letterbox dimatikan"); break; } // 🎬 v13.5
         case "add_spectrum": addSticker("@bars"); done.push("🌈 spektrum musik ikut irama lagu — geser & atur waktunya di track sesukamu"); break; // 🌈 v13.4
         case "add_cta": addSticker("@cta"); done.push("▶️ tombol CTA: 👍 suka → SUBSCRIBE → 🔔 lonceng + tangan yang mengklik berurutan"); break; // ▶️ v13.4
         case "clear_caption": clearCaptions(); done.push("keterangan otomatis dihapus"); break;
@@ -2473,6 +2483,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         slideDuration,
         transitionDuration: transitionDur,
         slideOpts: orderedOpts,
+        cinebars: cineBars, // 🎬 v13.5
         videoFilter: gf === "none" ? undefined : gf,
         vignetteStrength: clampN((adj.vig / 100) * 0.8, 0, 1),
         grainAmt: adj.grain,
@@ -2516,6 +2527,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const blob = await renderGif({
         images: slides.map(s => s.imageUrl),
         slideOpts: orderedOpts as any,
+        cinebars: cineBars, // 🎬 v13.5
         slideDuration, transition, transitionDur,
         ratio, videoFilter: gf === "none" ? undefined : gf,
         grainAmt: adj.grain, bgMode, bgColor,

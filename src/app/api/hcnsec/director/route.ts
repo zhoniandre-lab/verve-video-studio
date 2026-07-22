@@ -41,6 +41,7 @@ SET STUDIO (GRATIS, langsung jalan, bisa di-Undo kecuali diberi tanda):
 - {"op":"set_motion","slide":N,"mode":"zoom_in|zoom_out|selangseling|geser_kiri|geser_kanan|naik|turun|sinematik|zoompelan|denyut|goyang|melayang|berkedip|ayun|none"}   (GERAK PADA GAMBARNYA ala CapCut, ZOOM KERAS TERLIHAT JELAS. slide kosong = SEMUA adegan. "zoom in dan zoom out biar gambar bergerak bagus" → mode selangseling (masuk/keluar bergantian per adegan). BUKAN set_transition. 🎬 v13.3 GERAK WAH: geser_kiri/geser_kanan/naik/turun = kamera mengalir satu arah; "sinematik" (slide kosong) = TIAP ADEGAN beda gerakan otomatis — zoom masuk → geser kiri → zoom keluar → geser kanan → naik → turun, kekuatan bervariasi. Untuk "lebih wah / variatif / jangan bolak-balik monoton / bosan gitu-gitu aja" → WAJIB mode sinematik, JANGAN selangseling berulang)
 - {"op":"add_spectrum"}  (🌈 SPEKTRUM MUSIK ikut irama lagu — equalizer bergerak di video; untuk "spektrum/visualizer/equalizer/bars musik". GRATIS; pembuat bisa geser & atur waktunya di track)
 - {"op":"add_cta"}  (▶️ TOMBOL CTA YOUTUBE nyatu: 👍 suka → SUBSCRIBE → 🔔 lonceng, dengan TANGAN yang mengklik berurutan; untuk "tombol subscribe/like/lonceng/CTA ajakan". GRATIS)
+- {"op":"set_letterbox","on":true|false}  (🎬 LETTERBOX BIOSKOP: garis hitam atas-bawah layar lebar, ikut preview & render — untuk "seperti film/bioskop/sinematik layar lebar". GRATIS. PADUKAN dgn set_motion sinematik utk rasa film penuh: kirim KEDUA op ini bersamaan)
 - {"op":"clear_caption"}                (hapus keterangan otomatis — gratis)
 - {"op":"geser_keterangan","detik":-10..10}    (geser timing karaoke +-N detik — untuk "karaoke kecepetan/kelambatan/tidak pas dengan suara". NEGATIF = lebih awal/maju, POSITIF = lebih lambat/mundur)
 - {"op":"matikan_animasi","slide":N}     (matikan klip video AI di adegan N — slide kosong = SEMUA. Gratis; gambar kembali biasa)
@@ -130,6 +131,7 @@ const STUDIO_OPS = new Set([
   "set_motion", "auto_caption", "clear_caption", // 🎬 v11.3: gerak gambar + keterangan otomatis
   "geser_keterangan", "selaraskan_ulang", // 🎬 v11.6: perkakas selaras karaoke
   "add_spectrum", "add_cta", // 🌈▶️ v13.4.1: buka pintu satpam utk spektrum & tombol CTA YouTube
+  "set_letterbox", // 🎬 v13.5: letterbox bioskop
   "animasikan_adegan", "matikan_animasi", // 🎬 v11.8: ANIMASI STUDIO (kredit video AI / matikan gratis)
 ]);
 const MOTIONS = new Set(["none", "denyut", "goyang", "zoompelan", "melayang", "berkedip", "ayun", "zoom_in", "zoom_out", "selangseling", "geser_kiri", "geser_kanan", "naik", "turun", "sinematik"]); // 🎬 v11.4 + v13.4.2: mode GERAK WAH v13.3 masuk daftar putih
@@ -155,6 +157,7 @@ function cleanStudioOps(raw: unknown, nSlides: number): { ops: Op[]; dropped: st
     if (name === "set_music_fade") { const fi = num(o.fade_in, 0, 15); const fo = num(o.fade_out, 0, 15); if (fi === null && fo === null) { dropped.push("fade tanpa nilai"); continue; } if (fi !== null) out.fade_in = fi; if (fo !== null) out.fade_out = fo; }
     if (name === "set_music_off") { const d = num(o.detik, 0, 300); if (d === null) { dropped.push("offset aneh"); continue; } out.detik = d; }
     if (name === "set_muted") { out.on = !!o.on; }
+    if (name === "set_letterbox") { out.on = o.on !== false; } // 🎬 v13.5
     if (name === "edit_caption") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } out.slide = Math.round(Number(o.slide)); out.text = s(o.text, 120); }
     if (name === "move_slide") { const f = Math.round(Number(o.from)), t = Math.round(Number(o.to)); if (!slideOk(f) || !slideOk(t)) { dropped.push("move_slide di luar jangkauan"); continue; } out.from = f; out.to = t; }
     if (name === "delete_slide") { if (!slideOk(o.slide)) { dropped.push(`adegan ${o.slide} tidak ada`); continue; } if (nSlides <= 1) { dropped.push("menolak hapus adegan terakhir"); continue; } out.slide = Math.round(Number(o.slide)); }

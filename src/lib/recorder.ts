@@ -49,6 +49,7 @@ export interface RenderOptions {
   vignetteStrength?: number;  // 0..1 (default 0.75)
   videoSpeed?: number;        // 0.5..2 (default 1) - affects visuals only
   spectrumSticker?: string;   // "bars-bottom"|"wave-center"|"disc"|"none" — small overlay visualizer
+  cinebars?: boolean;          // 🎬 v13.5 LETTERBOX BIOSKOP — garis hitam 2.39:1
   // ===== CAPCUT TEXT LAYERS =====
   textLayers?: TextLayer[];   // array custom text layers (multi-teks)
   // ===== v5: PER-KLIP EDITING (transisi/durasi/animasi/efek/stiker/teks per slide) =====
@@ -501,6 +502,7 @@ interface DrawState {
   videoFilter?: string;
   vignetteStrength?: number;
   spectrumSticker?: string;
+  _cinebars?: boolean; // 🎬 v13.5 LETTERBOX
   textLayers?: TextLayer[];
   // v5 per-klip
   clipT?: number; clipDur?: number; transId?: string;
@@ -539,12 +541,14 @@ function drawFrame(s: DrawState) {
     const dir = kbC.dir || "in";
     if (dir === "l" || dir === "r" || dir === "u" || dir === "d") { // 🎬 v13.3 GESER WAH: zoom konstan (tepi aman), isi mengalir
       zoomBase = 1 + Sk;
+      const se = slideT * slideT * (3 - 2 * slideT); // 🎬 v13.5 FILM EASE — cermin preview
       const ax = dir === "l" ? 1 : dir === "r" ? -1 : 0;
       const ay = dir === "u" ? 1 : dir === "d" ? -1 : 0;
-      kbdx = ax * Sk * (0.5 - slideT);
-      kbdy = ay * Sk * (0.5 - slideT);
+      kbdx = ax * Sk * (0.5 - se);
+      kbdy = ay * Sk * (0.5 - se);
     } else {
-      zoomBase = dir === "out" ? (1 + Sk) - slideT * Sk : 1 + slideT * Sk;
+      const se = slideT * slideT * (3 - 2 * slideT); // 🎬 v13.5
+      zoomBase = dir === "out" ? (1 + Sk) - se * Sk : 1 + se * Sk;
     }
   }
   const drawImg = (img:HTMLCanvasElement,alpha:number,zoom:number)=>{
@@ -582,6 +586,11 @@ function drawFrame(s: DrawState) {
     ctx.drawImage((s as any)._vignette, 0, 0, W, H);
     ctx.globalAlpha = 1;
     ctx.filter = useV5 ? "none" : (s.videoFilter || "none");
+  }
+  if ((s as any)._cinebars) { // 🎬 v13.5 LETTERBOX BIOSKOP — identik dengan preview
+    const bh = H * (W >= H ? 0.125 : 0.07);
+    ctx.save(); ctx.filter = "none"; ctx.globalAlpha = 1; ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, bh); ctx.fillRect(0, H - bh, W, bh); ctx.restore();
   }
 
   if (!useV5 && isTransition && nxt) {
@@ -1746,6 +1755,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
 
   const sharedV5 = {
     timeline, slideOpts,
+    cinebars: opts.cinebars, // 🎬 v13.5
     grainAmt: opts.grainAmt || 0,
     clipImgs: null as any, // diisi nanti bila perlu
     vidMap, vigVideo: vigForVideo, vigStrV: vigStr, // 🎬 v11.8 ANIMASI STUDIO
@@ -1973,6 +1983,7 @@ async function renderWebCodecs(b:any){
       videoFilter: b.videoFilter,
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
       spectrumSticker: b.spectrumSticker,
+      _cinebars: !!(b as any).cinebars, // 🎬 v13.5
       textLayers: b.textLayers,
       clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt,
     };
@@ -2123,6 +2134,7 @@ async function renderMediaRecorder(b:any){
       videoFilter: b.videoFilter,
       vignetteStrength: typeof b.vignetteStrength==="number"?b.vignetteStrength:0.75,
       spectrumSticker: b.spectrumSticker,
+      _cinebars: !!(b as any).cinebars, // 🎬 v13.5
       textLayers: b.textLayers,
       clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt} as any);
     onProgress?.(t/totalDur);
