@@ -887,8 +887,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         lirik_full: lyrics,
         setelan: { genre, mood, vokal: vocal, model: sunoModel, era: sEra, tempo: sTempo, instrumen: sInstr, style_manual: mStyle },
       };
+      // 🏦 v12.3: bansos chat dari Dompet Bansos (menu Saya) — dipakai duluan kalau disetel
+      const dhead: Record<string, string> = { "Content-Type": "application/json" };
+      try { const bc = JSON.parse(localStorage.getItem("verve_bansos_chat_v1") || "null"); if (bc && bc.base && bc.key) { dhead["x-bansos-chat-base"] = String(bc.base); dhead["x-bansos-chat-key"] = String(bc.key); if (bc.model) dhead["x-bansos-chat-model"] = String(bc.model); } } catch {}
       const r = await fetch("/api/hcnsec/director", {
-        method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
+        method: "POST", headers: dhead, signal: ac.signal,
         body: JSON.stringify({ message: msg, ctx, history: chatLog.slice(-6) }),
       }).finally(() => clearTimeout(wd));
       const j = await r.json().catch(() => ({}));

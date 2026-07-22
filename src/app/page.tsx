@@ -459,6 +459,40 @@ const VIDPROV_KEY = "verve_video_providers_v1";
 function readVidProvs(): VidProv[] { try { const j = JSON.parse(localStorage.getItem(VIDPROV_KEY) || "[]"); return Array.isArray(j) ? j : []; } catch { return []; } }
 const vpBtn: any = { fontSize: 11, padding: "4px 8px", background: "none", border: "1px solid #ffffff2a", borderRadius: 6, color: "#cbd5e1", cursor: "pointer", whiteSpace: "nowrap" };
 
+function BansosChatCard() {
+  const LS = "verve_bansos_chat_v1";
+  const [base, setBase] = useState(""); const [keyC, setKeyC] = useState(""); const [model, setModel] = useState("");
+  const [aktif, setAktif] = useState(false);
+  useEffect(() => { try { const j = JSON.parse(localStorage.getItem(LS) || "null"); if (j) { setBase(j.base || ""); setKeyC(j.key || ""); setModel(j.model || ""); setAktif(!!(j.base && j.key)); } } catch {} }, []);
+  function save() {
+    const b = base.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\/.+\..+/.test(b)) { alert("Base URL aneh — contoh benar: https://xxx.com/v1"); return; }
+    if (!keyC.trim()) { alert("API key belum diisi bro"); return; }
+    try { localStorage.setItem(LS, JSON.stringify({ base: b, key: keyC.trim(), model: model.trim() })); } catch {}
+    setAktif(true);
+    alert("✅ Bansos chat tersimpan — Sutradara (Studio & wizard) sekarang mencobanya duluan.");
+  }
+  function clear() {
+    try { localStorage.removeItem(LS); } catch {}
+    setBase(""); setKeyC(""); setModel(""); setAktif(false);
+  }
+  return (
+    <div style={{ padding: "0 2px", marginTop: 10 }}>
+      <div className="v6-lbl">💬 BANSOS CHAT/TEKS {aktif ? "🟢 aktif" : ""} (buat otak Sutradara)</div>
+      <div className="v6-note">Punya gateway gaya OpenAI-compatible gratis (base URL + key)? Dipakai <b>duluan</b> buat chat Sutradara di Studio & wizard — yang di menu ini cuma pengaturan, eksekusinya tetap di fitur masing-masing. Model kosong = <b>auto</b>. {aktif ? "" : "Belum diisi = pakai mesin bawaan."}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+        <input className="v6-inp" placeholder="Base URL (mis. https://xxx.com/v1)" value={base} onChange={e => setBase(e.target.value)} />
+        <input className="v6-inp" placeholder="API key bansos chat" value={keyC} onChange={e => setKeyC(e.target.value)} />
+        <input className="v6-inp" placeholder="Model (opsional — mis. gpt-4o-mini; kosong = auto)" value={model} onChange={e => setModel(e.target.value)} />
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="v6-btn" style={{ flex: 1 }} onClick={save}>💾 Simpan bansos chat</button>
+          {aktif && <button className="v6-btn" style={{ background: "none", border: "1px solid #ffffff2a" }} onClick={clear}>🗑</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VideoProvidersCard() {
   const [list, setList] = useState<VidProv[]>([]);
   const [label, setLabel] = useState(""); const [base, setBase] = useState("");
@@ -543,7 +577,12 @@ function SayaPage({ refresh }: { refresh: () => void }) {
         <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,var(--v6-teal),#0e7490)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "#04211f" }}>V</div>
         <div className="tt">Kreator VERVE<div style={{ fontSize: 10.5, color: "#8b8b98", fontWeight: 500 }}>Studio video & musik di HP kamu 🚀</div></div>
       </div>
-      <div style={{ padding: "0 2px" }}>
+      <div className="v6-cardrow" style={{ cursor: "default", marginTop: 14 }}>
+        <span style={{ fontSize: 20 }}>🏦</span>
+        <div className="tt" style={{ fontSize: 13 }}>Dompet Bansos AI<div style={{ fontSize: 10.5, color: "#8b8b98", fontWeight: 500 }}>Kredit gratis hasil buruanmu (referral/share orang) ditempel di kartu-kartu bawah ini: 💬 Chat/teks · 🔑 Musik (suno) · 🏹 Video. Semuanya tersimpan HANYA di HP ini, dan sekali masuk langsung jalan di fitur yang cocok. 🖼️ Gambar & 🎙️ Suara: fase berikut ya bro.</div></div>
+      </div>
+      <BansosChatCard />
+      <div style={{ padding: "0 2px", marginTop: 10 }}>
         <div className="v6-lbl">🔑 API KEY SUNO (buat musik AI)</div>
         <input className="v6-inp" placeholder="Tempel API key di sini (kosongkan = mode gratis)" value={key} onChange={e => setKey(e.target.value)} />
         <div className="v6-lbl">PROVIDER</div>
@@ -1557,8 +1596,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         kartu_gas_menunggu: dirPending.map((o) => o.op),
         hasil_animasi_terakhir: animLastRef.current || "belum pernah dianimasikan sesi ini",
       };
+      // 🏦 v12.3: bansos chat (dari Dompet Bansos di menu Saya) — dipakai duluan kalau disetel
+      const dhead: Record<string, string> = { "Content-Type": "application/json" };
+      try { const bc = JSON.parse(localStorage.getItem("verve_bansos_chat_v1") || "null"); if (bc && bc.base && bc.key) { dhead["x-bansos-chat-base"] = String(bc.base); dhead["x-bansos-chat-key"] = String(bc.key); if (bc.model) dhead["x-bansos-chat-model"] = String(bc.model); } } catch {}
       const r = await fetch("/api/hcnsec/director", {
-        method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
+        method: "POST", headers: dhead, signal: ac.signal,
         body: JSON.stringify({ message: msg, ctx, history: dirLog.slice(-6) }),
       }).finally(() => clearTimeout(wd));
       const j = await r.json().catch(() => ({}));
@@ -2945,7 +2987,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
           <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#0b0e13", borderRadius: 10, border: "1px solid #ffffff12" }}>
             {!dirLog.length && (
-              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "animasikan semua gambar jadi video hidup" · "hidupkan adegan 2" · "matikan animasi adegan 1" · "zoom pelan semua" · "keterangan otomatis" · "musiknya kecilin 40%" · "render sekarang".</div>
+              <div style={{ color: "#8b93a3", fontSize: 12 }}>Contoh: "animasikan semua gambar jadi video hidup" · "hidupkan adegan 2" · "matikan animasi adegan 1" · "zoom pelan semua" · "keterangan otomatis" · "musiknya kecilin 40%" · "render sekarang". 🏦 Kunci bansos (video/chat) diatur di menu Saya — bukan lewat chat ini.</div>
             )}
             {dirLog.map((m, i) => (
               m.me === "me" ? (

@@ -4,6 +4,7 @@
 // (klien menampilkan tombol Gas/Batal). Self-contained: tidak mengubah lib bersama.
 import { NextResponse } from "next/server";
 import { FAST_CHAT_MODELS } from "@/lib/types";
+import { bansosChatConfig } from "@/lib/bansos";
 import { safeParseJSON } from "@/lib/json-util";
 
 export const maxDuration = 60;
@@ -200,19 +201,25 @@ export async function POST(req: Request) {
     ];
 
     // Fallback antarmodel cepat (pola sama seperti lib chat, tapi parameter milik route ini sendiri)
+    // 🏦 v12.3: kalau pembuat punya bansos chat (base+key sendiri), ia DIDAHULUKAN — pilihan sadarnya.
     const models = FAST_CHAT_MODELS.slice(0, 5);
     const timeouts = [20, 25, 30, 40, 45];
+    const bansos = bansosChatConfig(req.headers);
+    const plan: { url: string; key: string; model: string; tag: string; to: number }[] = [
+      ...(bansos ? [{ url: `${bansos.base}/chat/completions`, key: bansos.key, model: bansos.model || "auto", tag: `bansos:${bansos.model || "auto"}`, to: 45 }] : []),
+      ...models.map((m, i) => ({ url: `${BASE_URL}/chat/completions`, key, model: m, tag: m, to: timeouts[Math.min(i, timeouts.length - 1)] })),
+    ];
     const errs: string[] = [];
-    for (let i = 0; i < models.length; i++) {
+    for (let i = 0; i < plan.length; i++) {
       try {
         const ac = new AbortController();
-        const to = setTimeout(() => ac.abort(), timeouts[Math.min(i, timeouts.length - 1)] * 1000);
+        const to = setTimeout(() => ac.abort(), plan[i].to * 1000);
         let data: any;
         try {
-          const r = await fetch(`${BASE_URL}/chat/completions`, {
+          const r = await fetch(plan[i].url, {
             method: "POST",
-            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: models[i], messages, temperature: 0.35, max_tokens: 1600, stream: false }),
+            headers: { Authorization: `Bearer ${plan[i].key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: plan[i].model, messages, temperature: 0.35, max_tokens: 1600, stream: false }),
             signal: ac.signal,
           });
           const txt = await r.text();
@@ -226,9 +233,9 @@ export async function POST(req: Request) {
         const isStudio = String(ctx.mode || "") === "studio";
         const nSlides = Array.isArray(ctx.durasi_tiap_adegan) ? ctx.durasi_tiap_adegan.length : (Number(ctx.jumlah_adegan) || 0);
         const { ops, dropped } = isStudio ? cleanStudioOps(parsed.ops, nSlides) : cleanOps(parsed.ops, nScenes);
-        return NextResponse.json({ reply, ops, dropped, model_used: models[i] });
+        return NextResponse.json({ reply, ops, dropped, model_used: plan[i].tag });
       } catch (e) {
-        errs.push(`${models[i]}: ${e instanceof Error ? e.message.slice(0, 120) : "?"}`);
+        errs.push(`${plan[i].tag}: ${e instanceof Error ? e.message.slice(0, 120) : "?"}`);
       }
     }
     return NextResponse.json({ error: `Sutradara lagi pusing — semua model gagal. Coba sebentar lagi. (${errs[0] || ""})` }, { status: 502 });
