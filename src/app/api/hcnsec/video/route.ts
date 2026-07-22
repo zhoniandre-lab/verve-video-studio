@@ -4,28 +4,8 @@ import { generateVideo, pollVideo } from "@/lib/hcnsec";
 
 export async function POST(req: Request) {
   try {
-    const { prompt, imageUrl, duration, model, aspectRatio, poll, negativePrompt, enhance,
-      taskId, endpoint, pollOnly } = await req.json();
-
-    // 🎬 v11.7: LANJUTKAN polling task yang SUDAH dibuat (tanpa bikin task baru = hemat kredit).
-    // Dipakai tombol 🎥 Hidupkan di Lahan: POST pertama bisa pulang 202 kalau klip belum jadi.
-    if (pollOnly && taskId) {
-      const pollEp: string = endpoint || "/videos/generations";
-      let res: any = { id: taskId, endpoint: pollEp, status: "pending", video_url: "" };
-      let waited = 0; const interval = 3000; const maxWait = 26000;
-      while (waited < maxWait) {
-        await new Promise((r) => setTimeout(r, interval));
-        waited += interval;
-        const p = await pollVideo(String(taskId), pollEp);
-        res = { ...res, ...p };
-        if (res.video_url || res.status === "ready" || res.status === "succeeded") break;
-        if (res.status === "error" || res.status === "failed") break;
-      }
-      if (!res.video_url && res.status !== "ready" && res.status !== "succeeded") {
-        return NextResponse.json({ ...res, error: "Klip masih dimasak server — pantau terus ya bro." }, { status: 202 });
-      }
-      return NextResponse.json(res);
-    }
+    const { prompt, imageUrl, duration, model, aspectRatio, poll, negativePrompt, enhance } =
+      await req.json();
 
     if (!prompt || !String(prompt).trim()) {
       return NextResponse.json({ error: "Prompt tidak boleh kosong", video_url: "", status: "error" }, { status: 400 });
