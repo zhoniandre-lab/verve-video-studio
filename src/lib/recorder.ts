@@ -619,8 +619,8 @@ function drawFrame(s: DrawState) {
       grain: s.grainAmt || 0,
       kbZoom: zoomBase, kbDx: kbdx, kbDy: kbdy,
     });
-    // stiker & teks lepas waktu (start/dur sendiri — digeser di track)
-    paintFloatingStickers(ctx, W, H, optsArr, s.time, (s as any).bars); // 🌈 v13.4: spektrum render = data frekuensi asli per-frame
+    // teks lepas waktu (start/dur sendiri — digeser di track)
+    // 💎 v13.9: paintFloatingStickers PINDAH ke lapisan hidup OV2 (digambar tiap frame) — lihat di bawah
     paintFloatingTexts(ctx, W, H, optsArr, s.time);
   }
 
@@ -700,6 +700,12 @@ function drawFrame(s: DrawState) {
   if (gO2) {
   // ===== SPECTRUM STICKER (di atas text — subscribe/like/bell/disc/wave) =====
   drawSpectrumSticker(ctx, s);
+
+  // 💎 v13.9 PANGGUNG HIDUP — stiker lepas-waktu (@bars/@wavepro/@ring spektrum musik) digambar
+  // TIAP FRAME di lapisan hidup ini. Dulu nempel di lapisan A yang ke-cache (≈96 ember per klip
+  // ≈ 2,4fps cap) → spektrum kaku/"belum wah" meski data FFT-nya benar. Bonus: kini di ATAS
+  // glow-wash → batang lebih terang. Di jalur lukis-penuh (only:"all") hasilnya tetap sama.
+  if (useV5) paintFloatingStickers(ctx, W, H, (s.slideOpts || []) as SlideOpt[], s.time, (s as any).bars);
 
   // Progress bar
   ctx.fillStyle="rgba(255,255,255,0.12)"; ctx.fillRect(0,H-3,W,3);
@@ -1967,7 +1973,9 @@ async function renderWebCodecs(b:any){
     };
     if (o.text) grab(o.text);
     (o.texts || []).forEach(grab);
-    (o.stickers || []).forEach((st2: any) => { if (typeof st2.emoji === "string" && st2.emoji[0] === "@") dynSlides.add(si); });
+    // 💎 v13.9: hanya stiker "@" TERPAKU (tanpa start sendiri) yang butuh lukis-penuh per-frame;
+    // yang lepas-waktu (punya start — @bars/@wavepro/@ring/@cta) sudah dilayani lapisan hidup OV2
+    (o.stickers || []).forEach((st2: any) => { if (typeof st2.emoji === "string" && st2.emoji[0] === "@" && st2.start == null) dynSlides.add(si); });
   });
   if (vidMap && vidMap.size) { for (const si of vidMap.keys()) dynSlides.add(si); } // 🎬 v11.8: slide ber-video = lukis penuh tiap frame
   const hasBComplex = !!(captions && captions.length) || !!((b as any).textLayers && (b as any).textLayers.length);

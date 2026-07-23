@@ -1229,7 +1229,10 @@ function specDivOf(spec: Uint8Array | Float32Array | number[] | null | undefined
 function specAtOf(spec: Uint8Array | Float32Array | number[], i: number, N: number, div: number): number {
   const idx = 2 + Math.floor((i / N) * Math.min(spec.length * 0.62, 900));
   const v = Number(spec[Math.min(spec.length - 1, Math.max(0, idx))]) / div;
-  return v < 0 ? 0 : v > 1 ? 1 : v;
+  const vv = v < 0 ? 0 : v > 1 ? 1 : v;
+  // 💎 v13.9: kurva respons tampilan — bagian pelan ikut terangkat agar panggung terasa hidup,
+  // puncak tetap jujur (rumus SAMA dipakai preview & render → yang kau lihat = yang kau unduh)
+  return Math.min(1, Math.pow(vv, 0.72) * 1.12);
 }
 
 export const ANIM_STICKERS: AnimStickerDef[] = [
