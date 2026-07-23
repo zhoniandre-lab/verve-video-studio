@@ -68,29 +68,69 @@ const ID_EN: Record<string, string> = {
   miskin: "poor", kaya: "rich", berdagang: "selling", pasar: "market", sekolah: "school", pulang: "homecoming",
 };
 
-/** Bangun kueri Inggris dari adegan. Sumber emas: visual_prompt (SUDAH Inggris), dibersihkan dari kata gaya. */
-export function kueriDariScene(visualPrompt: string, sceneDesc: string): string {
+/* 🎬 v13.11.2 PETA EMOJI KARAKTER & EMO — buat kueri sinematik "ibu & anak kenangan, sedih terasa". */
+const PERAN_EN: Record<string, string> = {
+  ibu: "mother", mama: "mother", mamah: "mother", emak: "mother",
+  bapak: "father", ayah: "father", papa: "father", pake: "father",
+  anak: "child", kakek: "grandfather", nenek: "grandmother",
+  istri: "wife", suami: "husband", cucu: "grandchild", adik: "sibling", kakak: "sibling",
+};
+const MOOD_EN: Record<string, string> = {
+  sedih: "sad", haru: "emotional", rindu: "longing", sepi: "lonely", kesepian: "lonely",
+  bahagia: "happy", senang: "happy", marah: "angry", takut: "scared", cemas: "anxious",
+  damai: "peaceful", romantis: "romantic", kecewa: "disappointed", syukur: "grateful",
+};
+
+/** Tema dari kartu karakter (maks 2 kata Inggris) — jangkar "ibu & anak" di TIAP kueri gudang. */
+export function temaDariKarakter(karts: { nama?: string; peran?: string }[]): string {
+  const kata: string[] = [];
+  for (const k of karts || []) {
+    const tok = `${k?.nama || ""} ${k?.peran || ""}`.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    for (const w of tok) {
+      const en = PERAN_EN[w];
+      if (en && !kata.includes(en)) kata.push(en);
+      if (kata.length >= 2) return kata.join(" ");
+    }
+  }
+  return kata.join(" ");
+}
+
+/** Bangun kueri Inggris SINEMATIK: tema karakter + emosi DIDAHULUKAN, kata adegan menyusul hemat.
+    Sumber adegan: visual_prompt (SUDAH Inggris), dibersihkan dari kata gaya. */
+export function kueriDariScene(visualPrompt: string, sceneDesc: string, tema = "", mood = ""): string {
   const kata = (visualPrompt || "")
     .toLowerCase()
     .replace(/[^a-z\s]/g, " ")
     .split(/\s+/)
     .filter(Boolean)
     .filter((w) => w.length > 2 && !KATA_BUANG.has(w));
-  const unik: string[] = [];
+  const adegan: string[] = [];
   for (const w of kata) {
-    if (!unik.includes(w)) unik.push(w);
-    if (unik.length >= 5) break; // kueri pendek = hasil gudang lebih luas
+    if (!adegan.includes(w)) adegan.push(w);
+    if (adegan.length >= 3) break; // adegan hemat — tema & emosi didahulukan
   }
-  if (unik.length >= 2) return unik.join(" ");
+  const temaW = (tema || "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 2);
+  const moodW = MOOD_EN[(mood || "").toLowerCase().trim()];
+  const gab: string[] = [];
+  for (const w of [...temaW, ...(moodW ? [moodW] : []), ...adegan]) {
+    if (!gab.includes(w)) gab.push(w);
+    if (gab.length >= 5) break;
+  }
+  if (gab.length >= 2) return gab.join(" ");
   // Cadangan: terjemahan mini dari scene_desc Indonesia
   const u2: string[] = [];
   for (const w of (sceneDesc || "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean)) {
     const t = ID_EN[w];
     if (t && !u2.includes(t)) u2.push(t);
-    if (u2.length >= 4) break;
+    if (u2.length >= 3) break;
   }
-  if (u2.length) return u2.join(" ");
-  return "cinematic nature"; // cadangan terakhir — netral, pasti ada hasil
+  const gab2: string[] = [];
+  for (const w of [...temaW, ...(moodW ? [moodW] : []), ...u2]) {
+    if (!gab2.includes(w)) gab2.push(w);
+    if (gab2.length >= 5) break;
+  }
+  if (gab2.length) return gab2.join(" ");
+  return "emotional family memories"; // cadangan terakhir — tetap sinematik & mengharukan
 }
 
 /** Pilih klip paling pas buat durasi adegan: cukup panjang (biar bisa dipotong), sedekat mungkin target.

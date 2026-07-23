@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { avWarm } from "@/lib/avault";
-import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, type VidPick } from "@/lib/stockvid";
+import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, temaDariKarakter, type VidPick } from "@/lib/stockvid";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
@@ -745,7 +745,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     if (!board) return;
     const sc = board.scenes[i];
     setVidSheet(i); setVidErr(""); setVidRes([]); setVidNote("");
-    const q0 = kueriDariScene(sc.visual_prompt, sc.scene_desc);
+    const q0 = kueriDariScene(sc.visual_prompt, sc.scene_desc, temaDariKarakter(chars), sc.mood); // 🎬 v13.11.2 sinematik
     setVidQ(q0);
     void jalankanCariVid(q0);
   }
@@ -767,13 +767,14 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   async function saranVidSemua() {
     if (!board || vidAllBusy) return;
     setVidAllBusy(true);
+    const tema = temaDariKarakter(chars); // 🎬 v13.11.2: jangkar ibu&anak di semua kueri
     let ok = 0; let lebar = 0;
     const dipakai = new Set<number>(); // 🧯 v13.11.1 ANTI-KEMBAR: satu klip hanya boleh tampil SEKALI se-film
     board.scenes.forEach((sc) => { if (sc.vidOn && sc.vid) dipakai.add(sc.vid.id); });
     for (let i = 0; i < board.scenes.length; i++) {
       const sc = board.scenes[i];
       if (sc.vidOn && sc.vid) { ok++; continue; }
-      const r = await cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc), rasaIndo);
+      const r = await cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc, tema, sc.mood), rasaIndo);
       if (r.ok && r.hasil.length) {
         if (r.lebar) lebar++;
         const best = pilihKlipTerbaik(r.hasil, perScene, dipakai);
@@ -1308,8 +1309,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     const per = Math.round((totalEff / doneScenes.length) * 100) / 100;
     const builtSlides = doneScenes.map((sc) => ({
       id: uidL("c"),
-      imageUrl: sc.vidOn && sc.vid ? sc.vid.thumb : (sc.url as string), // 🎞️ v13.11: poster video = pengganti gambar (render hari ini UTUH)
-      ...(sc.vidOn && sc.vid ? { vidSrc: sc.vid.src, vidSd: sc.vid.sd, vidDur: sc.vid.dur, vidBy: sc.vid.by } : {}), // bekal Fase 2 (frame video hidup)
+      imageUrl: sc.vidOn && sc.vid ? sc.vid.thumb : (sc.url as string), // 🎞️ poster = pengganti gambar (fallback aman)
+      ...(sc.vidOn && sc.vid ? { videoUrl: sc.vid.src } : {}), // 🎬 v13.11.2 FASE 2: pipa resmi v11.8 — Studio & render melukis VIDEO BERGERAK
     }));
     const slideOptsById: Record<string, unknown> = {};
     builtSlides.forEach((sl, i) => {
@@ -1743,6 +1744,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <span style={{ fontSize: 16 }}>{rasaIndo ? "☑️" : "⬜"}</span>
                 <span>🇮🇩 <b>Rasa Indonesia</b> — cari stok wajah/lokasi Nusantara dulu. Stok habis → otomatis dilebarkan ke dunia (dilapor jujur).</span>
               </label>
+              {board && board.scenes.some((sc) => sc.vid) ? (
+                <button className="lh-btn sec" style={{ width: "100%", marginTop: 6, opacity: 0.85 }} onClick={() => { setBoard((b) => b && ({ ...b, scenes: b.scenes.map((sc) => (sc.vid ? { ...sc, vid: null, vidOn: false } : sc)) })); flash("🧹 Semua pilihan video dilupakan — tekan Sarankan SEMUA lagi buat saran SINEMATIK baru"); }}>
+                  🧹 Lupakan semua pilihan video (buat di-sarankan ulang)
+                </button>
+              ) : null}
               </>
             )}
           </div>
