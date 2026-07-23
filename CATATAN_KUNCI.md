@@ -31,6 +31,12 @@
 3. **Validasi spektrum v13.9 di HP**: dia belum render ulang sejak fix layer OV2. Tunggu verdict screenshot.
 4. Thumbnail v13.8 (Anton + auto sisi gelap) belum dites ulang.
 
+## SEDANG DIBANGUN — 🎞️ LEMARI VIDEO (stock video Pexels)
+Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa ganti**, visual **campur bebas per adegan** (video stock ↔ gambar AI).
+- Fase 0 (SELESAI @kunci-2026-07-23): route `src/app/api/hcnsec/stock-video/route.ts` — butuh env `PEXELS_API_KEY` (user sedang bikin kunci gratis). Tanpa kunci → 503 `TANPA_KUNCI`. GERBANG proxy-audio SUDAH lolos video/mp4 (regex content-type ada mp4|webm|video) → TIDAK diubah.
+- Fase 1 berikutnya: UI auto-pick per adegan (kata kunci dari scene, id→en) + tombol 🔄 Ganti (sheet pencarian) + preview. Jangan sentuh fitur lama.
+- Fase 2: render frame video (elemen <video> per slide; strategi blob-URL biar anti-CORS & seek enteng; jujur soal beratnya di HP — sarankan 720p buat HP).
+
 ## Backlog (pilihan user, belum dieksekusi)
 - 🏦 Lemari besi lagu Supabase Storage (copy permanen, bunuh masalah link kedaluwarsa selamanya; butuh bucket + service key env; free 1GB)
 - 🔇 Mute per-track di lanehead, karaoke per-line, hook overlay, Share, Sutradara cost-preview, credit chips
