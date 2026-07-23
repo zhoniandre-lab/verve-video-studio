@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { avWarm } from "@/lib/avault";
+import { cariStokVideo, kueriDariScene, pilihKlipTerbaik, type VidPick } from "@/lib/stockvid";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
@@ -95,6 +96,7 @@ type Scene = {
   scene: number; scene_desc: string; lyric_line: string; visual_prompt: string; mood: string;
   status: "idle" | "loading" | "done" | "error";
   url?: string; err?: string;
+  vid?: VidPick | null; vidOn?: boolean; // 🎞️ v13.11 LEMARI VIDEO — visual boleh video stok (gratis) ATAU gambar AI
 };
 type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
 
@@ -233,6 +235,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [naskah, setNaskah] = useState("");
   const [board, setBoard] = useState<Board | null>(null);
   const [genAllBusy, setGenAllBusy] = useState(false);
+  /* 🎞️ v13.11 LEMARI VIDEO — pencarian & pemilih stock video (gerbang /api/hcnsec/stock-video) */
+  const [vidSheet, setVidSheet] = useState<number | null>(null); // indeks adegan yang lagi milih
+  const [vidQ, setVidQ] = useState("");
+  const [vidRes, setVidRes] = useState<VidPick[]>([]);
+  const [vidBusy, setVidBusy] = useState(false);
+  const [vidErr, setVidErr] = useState("");
+  const [vidAllBusy, setVidAllBusy] = useState(false);
   const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board" | "lyrics" | "song" | "charlock">("");
   const [err, setErr] = useState<{ code: string; msg: string } | null>(null);
   /* ---- SUNO ---- */
@@ -447,7 +456,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const estDurSec = useMemo(() => Math.round(naskah.split(/\s+/).filter(Boolean).length / 2.6), [naskah]);
   const boardDone = board ? board.scenes.filter((s) => s.status === "done").length : 0;
   /* ---- garis waktu gabungan (pembagian rata mengikuti durasi lagu) ---- */
-  const doneScenes = useMemo(() => (board ? board.scenes.filter((s) => s.status === "done" && !!s.url) : []), [board]);
+  const doneScenes = useMemo(() => (board ? board.scenes.filter((s) => (s.status === "done" && !!s.url) || (s.vidOn && !!s.vid)) : []), [board]); // 🎞️ v13.11: adegan video stok ikut sah
   const totalDur = song?.duration && song.duration > 0 ? Math.round(song.duration) : Math.max(1, doneScenes.length) * 6;
   // 🛡 v11.2: sumber audio pratinjau — langsung dulu, otomatis pindah ke proxy kalau link langsung gagal
   const pvSrc = song ? (pvProxy ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(song.url)}` : song.url) : "";
@@ -705,7 +714,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     let ok = 0;
     for (let i = 0; i < board.scenes.length; i++) {
       const sc = board.scenes[i];
-      if (sc.status === "done") { ok++; continue; }
+      if (sc.status === "done" || (sc.vidOn && sc.vid)) { ok++; continue; } // 🎞️ v13.11: adegan video = selesai, HEMAT kredit gambar
       const good = await genScene(i, sc);
       if (good) ok++;
       await new Promise((r) => setTimeout(r, 500));
@@ -716,6 +725,49 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
 
   function updateScene(i: number, patch: Partial<Scene>) {
     setBoard((b) => b && ({ ...b, scenes: b.scenes.map((s, j) => (j === i ? { ...s, ...patch } : s)) }));
+  }
+
+  /* 🎞️ v13.11 LEMARI VIDEO — otomatis sarankan + BISA diganti manual (keputusan final di tangan bro) */
+  function bukaVidSheet(i: number) {
+    if (!board) return;
+    const sc = board.scenes[i];
+    setVidSheet(i); setVidErr(""); setVidRes([]);
+    const q0 = kueriDariScene(sc.visual_prompt, sc.scene_desc);
+    setVidQ(q0);
+    void jalankanCariVid(q0);
+  }
+  async function jalankanCariVid(q: string) {
+    setVidBusy(true); setVidErr("");
+    const r = await cariStokVideo(q, 1, 8);
+    setVidBusy(false);
+    if (!r.ok) { setVidErr(r.err); setVidRes([]); return; }
+    setVidRes(r.hasil);
+    if (!r.hasil.length) setVidErr("Gudang kosong buat kata itu — coba kata lain (Inggris) ya bro.");
+  }
+  function pilihVid(i: number | null, v: VidPick) {
+    if (i == null || !board) return;
+    updateScene(i, { vid: v, vidOn: true });
+    setVidSheet(null);
+    flash(`🎞️ Adegan ${i + 1} pakai video ${v.dur} detik dari gudang (bebas pakai)`);
+  }
+  async function saranVidSemua() {
+    if (!board || vidAllBusy) return;
+    setVidAllBusy(true);
+    let ok = 0;
+    for (let i = 0; i < board.scenes.length; i++) {
+      const sc = board.scenes[i];
+      if (sc.vidOn && sc.vid) { ok++; continue; }
+      const r = await cariStokVideo(kueriDariScene(sc.visual_prompt, sc.scene_desc), 1, 8);
+      if (r.ok && r.hasil.length) {
+        const best = pilihKlipTerbaik(r.hasil, perScene);
+        if (best) { updateScene(i, { vid: best, vidOn: true }); ok++; }
+      }
+      await new Promise((r2) => setTimeout(r2, 350)); // sopan ke gudang + HP tetap lega
+    }
+    setVidAllBusy(false);
+    flash(ok === board.scenes.length
+      ? `🎞️ ${ok}/${board.scenes.length} adegan kebagian video! Tinjau satu-satu ya bro`
+      : `⚠️ ${ok}/${board.scenes.length} adegan dapat video — yang kosong cari manual dari kartunya`);
   }
 
   /* ================= SUNO (dengan pengerasan anti-macet) ================= */
@@ -1236,7 +1288,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     }
     const totalEff = durEff > 1 ? Math.round(durEff) : totalDur;
     const per = Math.round((totalEff / doneScenes.length) * 100) / 100;
-    const builtSlides = doneScenes.map((sc) => ({ id: uidL("c"), imageUrl: sc.url as string }));
+    const builtSlides = doneScenes.map((sc) => ({
+      id: uidL("c"),
+      imageUrl: sc.vidOn && sc.vid ? sc.vid.thumb : (sc.url as string), // 🎞️ v13.11: poster video = pengganti gambar (render hari ini UTUH)
+      ...(sc.vidOn && sc.vid ? { vidSrc: sc.vid.src, vidSd: sc.vid.sd, vidDur: sc.vid.dur, vidBy: sc.vid.by } : {}), // bekal Fase 2 (frame video hidup)
+    }));
     const slideOptsById: Record<string, unknown> = {};
     builtSlides.forEach((sl, i) => {
       const sc = doneScenes[i];
@@ -1655,12 +1711,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 {busy === "board" ? "⏳ Sutradara AI menyusun..." : "🎬 Susun Storyboard (AI)"}
               </button>
             ) : (
+              <>
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="lh-btn sec" style={{ flex: 1 }} disabled={busy === "board" || genAllBusy} onClick={buildBoard}>↻ Susun ulang</button>
                 <button className="lh-btn" style={{ flex: 2 }} disabled={genAllBusy} onClick={genAllScenes}>
                   {genAllBusy ? `⏳ Menggambar ${boardDone}/${board.scenes.length}...` : boardDone === board.scenes.length ? `✅ ${board.scenes.length}/${board.scenes.length} siap` : `🖼 Generate SEMUA (${boardDone}/${board.scenes.length})`}
                 </button>
               </div>
+              <button className="lh-btn sec" style={{ width: "100%" }} disabled={vidAllBusy || busy === "board"} onClick={() => void saranVidSemua()}>
+                {vidAllBusy ? "⏳ Mengaduk-aduk gudang video..." : "🎞️ Sarankan video stok SEMUA adegan (gratis, bebas pakai)"}
+              </button>
+              </>
             )}
           </div>
 
@@ -1691,6 +1752,31 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                       {sc.status === "loading" ? "⏳ Menggambar..." : sc.status === "done" ? "↻ Ulangi adegan ini" : "🖼 Generate gambar"}
                     </button>
                   </div>
+                  {/* 🎞️ v13.11 LEMARI VIDEO — campur bebas: adegan ini boleh video stok ATAU gambar AI */}
+                  <div style={{ marginTop: 8, borderTop: "1px dashed rgba(255,255,255,.14)", paddingTop: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className="lh-mini">🎞️ <b>Video stok</b> (bebas pakai)</span>
+                      <div style={{ flex: 1 }} />
+                      {sc.vidOn && sc.vid ? <span className="lh-mini ok">dipakai ✅</span> : null}
+                    </div>
+                    {sc.vidOn && sc.vid ? (
+                      <video className="lh-scene-img" style={{ marginTop: 6 }} src={sc.vid.sd} poster={sc.vid.thumb} muted loop playsInline autoPlay />
+                    ) : sc.vid ? (
+                      <img className="lh-scene-img" style={{ marginTop: 6, opacity: 0.5 }} src={sc.vid.thumb} alt="calon video" />
+                    ) : null}
+                    {sc.vid ? <p className="lh-note" style={{ margin: "4px 0" }}>⏱ {sc.vid.dur} detik · 🎬 {sc.vid.by} · lisensi Pexels (bebas, tanpa atribusi)</p> : null}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} onClick={() => bukaVidSheet(i)}>
+                        {sc.vid ? "🔄 Ganti / cari lagi" : "🎞️ Cari video buat adegan ini"}
+                      </button>
+                      {sc.vid ? (
+                        <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} onClick={() => updateScene(i, { vidOn: !sc.vidOn })}>
+                          {sc.vidOn ? "🎨 Balik ke gambar AI" : "🎞️ Pakai video ini"}
+                        </button>
+                      ) : null}
+                    </div>
+                    {sc.vidOn && sc.vid && !sc.url ? <p className="lh-note" style={{ margin: "6px 0 0" }}>ℹ️ Adegan ini tanpa gambar AI — hemat kredit gambar.</p> : null}
+                  </div>
                 </div>
               ))}
 
@@ -1702,6 +1788,28 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <p className="lh-note">Berikutnya: <b>🎵 Panggung Lagu</b> (lirik 2 pilihan + kredit jujur + polling sabar anti-macet) → lalu <b>v8.0</b>: lagu & adegan otomatis nyatu → tombol <b>Masuk Studio Edit</b>.</p>
               </div>
 
+              {vidSheet !== null && (
+                <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(3,6,12,0.92)", overflowY: "auto", padding: "14px 14px 90px" }}>
+                  <div className="lh-card" style={{ position: "sticky", top: 0, zIndex: 2 }}>
+                    <div className="lh-h2">🎞️ Lemari Video — Adegan {vidSheet + 1}</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input className="lh-ta" style={{ flex: 1, height: 42, minHeight: 0, padding: "8px 10px" }} value={vidQ} onChange={(e) => setVidQ(e.target.value)} placeholder="kata kunci Inggris · mis: elderly woman rain" />
+                      <button className="lh-btn" style={{ marginTop: 0, width: 90 }} disabled={vidBusy} onClick={() => void jalankanCariVid(vidQ)}>{vidBusy ? "⏳" : "🔍 Cari"}</button>
+                    </div>
+                    <button className="lh-btn sec" style={{ width: "100%" }} onClick={() => setVidSheet(null)}>✕ Tutup</button>
+                  </div>
+                  {vidErr ? <p className="lh-note" style={{ color: "#ffb199" }}>{vidErr}</p> : null}
+                  {vidBusy ? <p className="lh-note">⏳ Mengaduk-aduk gudang…</p> : null}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+                    {vidRes.map((v) => (
+                      <button key={v.id} onClick={() => pilihVid(vidSheet, v)} style={{ padding: 0, border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, overflow: "hidden", background: "#0b1220", textAlign: "left", cursor: "pointer" }}>
+                        <img src={v.thumb} alt="" style={{ width: "100%", height: 96, objectFit: "cover", display: "block" }} />
+                        <div style={{ padding: "6px 8px", fontSize: 11, color: "#cbd5e1" }}>⏱ {v.dur}d · 🎬 {v.by}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button className="lh-btn" onClick={() => setStep(8)}>Lanjut: Panggung Lagu 🎵</button>
             </>
           )}
@@ -1916,7 +2024,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
           <div className="lh-card">
             <div className="lh-h2">▶ Pratinjau gabungan</div>
             <div className="lh-player">
-              {doneScenes[pvIdx] && <img key={pvIdx} className="lh-pv-img" src={doneScenes[pvIdx].url} alt={`adegan ${doneScenes[pvIdx].scene}`} />}
+              {doneScenes[pvIdx] && (doneScenes[pvIdx].vidOn && doneScenes[pvIdx].vid ? (
+                <video key={pvIdx} className="lh-pv-img" src={doneScenes[pvIdx].vid!.sd} poster={doneScenes[pvIdx].vid!.thumb} muted loop playsInline autoPlay />
+              ) : (
+                <img key={pvIdx} className="lh-pv-img" src={doneScenes[pvIdx].url} alt={`adegan ${doneScenes[pvIdx].scene}`} />
+              ))}
               {!!doneScenes[pvIdx]?.lyric_line && (
                 <div className="lh-pv-cap"><span>🎵 {doneScenes[pvIdx].lyric_line}</span></div>
               )}

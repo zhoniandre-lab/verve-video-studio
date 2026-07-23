@@ -33,8 +33,9 @@
 
 ## SEDANG DIBANGUN — 🎞️ LEMARI VIDEO (stock video Pexels)
 Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa ganti**, visual **campur bebas per adegan** (video stock ↔ gambar AI).
-- Fase 0 (SELESAI @kunci-2026-07-23): route `src/app/api/hcnsec/stock-video/route.ts` — butuh env `PEXELS_API_KEY` (user sedang bikin kunci gratis). Tanpa kunci → 503 `TANPA_KUNCI`. GERBANG proxy-audio SUDAH lolos video/mp4 (regex content-type ada mp4|webm|video) → TIDAK diubah.
-- Fase 1 berikutnya: UI auto-pick per adegan (kata kunci dari scene, id→en) + tombol 🔄 Ganti (sheet pencarian) + preview. Jangan sentuh fitur lama.
+- Fase 0 (SELESAI @kunci-2026-07-23): route `src/app/api/hcnsec/stock-video/route.ts` — butuh env `PEXELS_API_KEY` (✅ SUDAH TERPASANG & TERVERIFIKASI LIVE: cari "matahari" → 1364 hasil; file Pexels CORS `*`; GERBANG proxy lolos video/mp4).
+- Fase 1 (SELESAI @v13.11-lemari-video-lock): `src/lib/stockvid.ts` (cariStokVideo / kueriDariScene id→en / pilihKlipTerbaik) + lahan-studio.tsx — tombol "Sarankan video SEMUA", blok 🎞️ per adegan (preview muter + 🔄 Ganti sheet + 🎨/🎞️ toggle campur), doneScenes sah tanpa gambar AI, genAll hemat kredit, pratinjau step-9 video muter, masukStudio: poster thumbnail jadi gambar slide + vidSrc/vidSd/vidDur ikut ke draft. KUNCI PEXELS ADA DI VERCEL ENV (jangan dicetak di mana pun).
+- Fase 2 BERIKUTNYA: render frame video hidup di Studio (elemen <video> per slide; strategi blob-URL anti-CORS & seek enteng; recorder paintClips menggambar video frame; jujur soal beratnya di HP — sarankan 720p). Data vid* di slide SUDAH menunggu.
 - Fase 2: render frame video (elemen <video> per slide; strategi blob-URL biar anti-CORS & seek enteng; jujur soal beratnya di HP — sarankan 720p buat HP).
 
 ## Backlog (pilihan user, belum dieksekusi)
