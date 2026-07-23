@@ -32,6 +32,18 @@ export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariH
   }
 }
 
+/** 🇮🇩 Cari pintar RASA INDONESIA: coba dulu "+ indonesia"; stok Nusantara kosong → dilebarkan ke gudang dunia (dilapor JUJUR via lebar=true). */
+export async function cariStokVideoSmart(q: string, rasaIndo: boolean): Promise<CariHasil & { lebar: boolean }> {
+  const kunci = (q || "").trim();
+  if (kunci.length < 2) return { ok: false, hasil: [], total: 0, err: "Kata kunci terlalu pendek bro.", lebar: false };
+  if (!rasaIndo) { const r0 = await cariStokVideo(kunci); return { ...r0, lebar: false }; }
+  const rIndo = await cariStokVideo(/indonesia|nusantara/i.test(kunci) ? kunci : `${kunci} indonesia`);
+  if (rIndo.ok && rIndo.hasil.length) return { ...rIndo, lebar: false };
+  // Stok Indo habis ATAU pencarian Indo gagal → lebarkan (tetap dicoba, pantang pulang kosong)
+  const rLebar = await cariStokVideo(kunci);
+  return { ...rLebar, lebar: rLebar.ok && rLebar.hasil.length > 0 };
+}
+
 /* Kata "gaya diri" (bukan ISI adegan) — dibuang dari kueri biar hasil gudang relevan.
    wp animal: woman/man SENGAJA tidak dibuang — "elderly woman crying" justru kueri emas. */
 const KATA_BUANG = new Set(
@@ -81,13 +93,17 @@ export function kueriDariScene(visualPrompt: string, sceneDesc: string): string 
   return "cinematic nature"; // cadangan terakhir — netral, pasti ada hasil
 }
 
-/** Pilih klip paling pas buat durasi adegan: cukup panjang (biar bisa dipotong), sedekat mungkin target. */
-export function pilihKlipTerbaik(hasil: VidPick[], targetDur: number): VidPick | null {
+/** Pilih klip paling pas buat durasi adegan: cukup panjang (biar bisa dipotong), sedekat mungkin target.
+    🧯 v13.11.1 ANTI-KEMBAR: klip di `hindariId` (sudah dipakai adegan lain) DISINGKIRKAN dulu;
+    kalau daftar jadi kosong total → baru boleh kembar (daripada adegan tanpa video). */
+export function pilihKlipTerbaik(hasil: VidPick[], targetDur: number, hindariId?: Set<number>): VidPick | null {
   if (!hasil.length) return null;
+  const segar = hindariId && hindariId.size ? hasil.filter((v) => !hindariId.has(v.id)) : hasil;
+  const pool = segar.length ? segar : hasil;
   const t = targetDur > 0 ? targetDur : 6;
-  let best = hasil[0];
+  let best = pool[0];
   let bestSkor = -Infinity;
-  for (const v of hasil) {
+  for (const v of pool) {
     const cukup = v.dur >= t * 0.9 ? 100 : 0; // klip lebih panjang dari adegan = aman dipotong
     const skor = cukup - Math.abs(v.dur - t) * 5 + Math.min(v.w || 0, 1280) / 100;
     if (skor > bestSkor) {

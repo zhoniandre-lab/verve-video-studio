@@ -44,6 +44,7 @@ Aturan penting:
 10. BENANG MERAH: pilih SATU benda cerita NYATA dari naskah (mis: baju ibu yang tersimpan di lemari) — wajib muncul di minimal 3 adegan dan disebut jelas di VISUAL_EN adegan-adegan itu. Benda cerita BUKAN pakaian yang sedang dipakai tokoh (itu wilayah kunci identitas).
 11. DESKRIPSI = AKSI KONKRET tokoh + benda nyata (mis: anak membuka pintu lemari tua yang berdecit, tangan gemetar mengusap baju batik ibu) — BUKAN untaian kata sifat. DILARANG adegan metafora abstrak tanpa aksi nyata.
 12. VISUAL_EN bergaya realisme dokumenter sinematik: aksi nyata + benda kunci + ruang nyata yang masuk akal (lemari kayu tua, kamar sempit berdebu, halaman rumah sore hari). Foto beneran yang bisa disyut kamera, bukan ilustrasi mimpi.
+13. ANTI-KEMBAR KERAS: DILARANG mengulang hal yang sama antar adegan. DESKRIPSI tak boleh mengulang aksi/kejadian yang sama; VISUAL_EN tak boleh sama/mirip kata-per-kata; LIRIK tak boleh identik persis dengan LIRIK adegan lain (refrain boleh dirasakan, tapi kalimatnya WAJIB variasi). Kalau naskah terasa berulang, TUGASMU menggali momen kecil BERBEDA dari tiap baris naskah — tidak ada dua adegan kembar dalam satu film.
 
 Mulai output tepat di bawah MULAI-FORMAT dan akhiri sebelum AKHIR-FORMAT.`;
 

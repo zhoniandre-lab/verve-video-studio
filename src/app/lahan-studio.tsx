@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { avWarm } from "@/lib/avault";
-import { cariStokVideo, kueriDariScene, pilihKlipTerbaik, type VidPick } from "@/lib/stockvid";
+import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, type VidPick } from "@/lib/stockvid";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
@@ -242,6 +242,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [vidBusy, setVidBusy] = useState(false);
   const [vidErr, setVidErr] = useState("");
   const [vidAllBusy, setVidAllBusy] = useState(false);
+  const [vidNote, setVidNote] = useState("");
+  // 🇮🇩 v13.11.1: mode RASA INDONESIA (default NYALA) — pilihan bro diingat HP
+  const [rasaIndo, setRasaIndo] = useState<boolean>(() => { try { return localStorage.getItem("verve_vidindo_v1") !== "0"; } catch { return true; } });
+  // 🧯 v13.11.1 ANTI-KEMBAR: id klip yang sudah dipakai adegan mana pun — dilarang kepilih ulang
+  const vDipakai = useMemo(() => { const t = new Set<number>(); board?.scenes.forEach((sc) => { if (sc.vidOn && sc.vid) t.add(sc.vid.id); }); return t; }, [board]);
   const [busy, setBusy] = useState<"" | "suggest" | "research" | "cerita" | "board" | "lyrics" | "song" | "charlock">("");
   const [err, setErr] = useState<{ code: string; msg: string } | null>(null);
   /* ---- SUNO ---- */
@@ -616,7 +621,15 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       }));
       if (!scenes.length) throw new Error("Adegan kosong dari AI, coba lagi.");
       setBoard({ style_visual: j.style_visual || "cinematic", color_grade: j.color_grade || "#f59e0b", scenes });
-      flash(`🎬 ${scenes.length} adegan tersusun — tinggal digambar`);
+      // 🧯 v13.11.1 DETEKTOR KEMBAR: Sutradara ngulang adegan (desc+lirik nyaris sama) → lapor jujur & suruh kocok ulang
+      const kunci: string[] = [];
+      const kembar: number[] = [];
+      scenes.forEach((s2) => {
+        const k = `${s2.scene_desc}||${s2.lyric_line}`.toLowerCase().replace(/\s+/g, " ").trim();
+        if (kunci.includes(k)) kembar.push(s2.scene); else kunci.push(k);
+      });
+      if (kembar.length) flash(`⚠️ Adegan ${kembar.join(", ")} isinya KEMBAR dengan adegan sebelumnya — tekan "↻ Susun ulang" ya bro, adegan wajib beda-beda!`);
+      else flash(`🎬 ${scenes.length} adegan tersusun — tinggal digambar`);
     } catch (e) {
       setErr({ code: "board", msg: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -731,17 +744,18 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   function bukaVidSheet(i: number) {
     if (!board) return;
     const sc = board.scenes[i];
-    setVidSheet(i); setVidErr(""); setVidRes([]);
+    setVidSheet(i); setVidErr(""); setVidRes([]); setVidNote("");
     const q0 = kueriDariScene(sc.visual_prompt, sc.scene_desc);
     setVidQ(q0);
     void jalankanCariVid(q0);
   }
   async function jalankanCariVid(q: string) {
-    setVidBusy(true); setVidErr("");
-    const r = await cariStokVideo(q, 1, 8);
+    setVidBusy(true); setVidErr(""); setVidNote("");
+    const r = await cariStokVideoSmart(q, rasaIndo); // 🇮🇩 v13.11.1: Nusantara dulu, habis → dilebarkan (dilapor)
     setVidBusy(false);
     if (!r.ok) { setVidErr(r.err); setVidRes([]); return; }
     setVidRes(r.hasil);
+    if (r.lebar) setVidNote("🇮🇩 Stok rasa Indonesia habis buat kata itu — dilebarkan ke gudang dunia. Coba kata lain kalau mau tetap Nusantara.");
     if (!r.hasil.length) setVidErr("Gudang kosong buat kata itu — coba kata lain (Inggris) ya bro.");
   }
   function pilihVid(i: number | null, v: VidPick) {
@@ -753,21 +767,25 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   async function saranVidSemua() {
     if (!board || vidAllBusy) return;
     setVidAllBusy(true);
-    let ok = 0;
+    let ok = 0; let lebar = 0;
+    const dipakai = new Set<number>(); // 🧯 v13.11.1 ANTI-KEMBAR: satu klip hanya boleh tampil SEKALI se-film
+    board.scenes.forEach((sc) => { if (sc.vidOn && sc.vid) dipakai.add(sc.vid.id); });
     for (let i = 0; i < board.scenes.length; i++) {
       const sc = board.scenes[i];
       if (sc.vidOn && sc.vid) { ok++; continue; }
-      const r = await cariStokVideo(kueriDariScene(sc.visual_prompt, sc.scene_desc), 1, 8);
+      const r = await cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc), rasaIndo);
       if (r.ok && r.hasil.length) {
-        const best = pilihKlipTerbaik(r.hasil, perScene);
-        if (best) { updateScene(i, { vid: best, vidOn: true }); ok++; }
+        if (r.lebar) lebar++;
+        const best = pilihKlipTerbaik(r.hasil, perScene, dipakai);
+        if (best) { dipakai.add(best.id); updateScene(i, { vid: best, vidOn: true }); ok++; }
       }
       await new Promise((r2) => setTimeout(r2, 350)); // sopan ke gudang + HP tetap lega
     }
     setVidAllBusy(false);
-    flash(ok === board.scenes.length
-      ? `🎞️ ${ok}/${board.scenes.length} adegan kebagian video! Tinjau satu-satu ya bro`
-      : `⚠️ ${ok}/${board.scenes.length} adegan dapat video — yang kosong cari manual dari kartunya`);
+    flash((ok === board.scenes.length
+      ? `🎞️ ${ok}/${board.scenes.length} adegan kebagian video BEDA-BEDA! Tinjau satu-satu ya bro`
+      : `⚠️ ${ok}/${board.scenes.length} adegan dapat video — yang kosong cari manual dari kartunya`)
+      + (lebar ? ` · 🇮🇩 ${lebar} adegan dilebarkan (stok Nusantara tipis kata itu)` : ""));
   }
 
   /* ================= SUNO (dengan pengerasan anti-macet) ================= */
@@ -1721,6 +1739,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               <button className="lh-btn sec" style={{ width: "100%" }} disabled={vidAllBusy || busy === "board"} onClick={() => void saranVidSemua()}>
                 {vidAllBusy ? "⏳ Mengaduk-aduk gudang video..." : "🎞️ Sarankan video stok SEMUA adegan (gratis, bebas pakai)"}
               </button>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8, fontSize: 12, color: "#cbd5e1", cursor: "pointer" }} onClick={() => { const nx = !rasaIndo; setRasaIndo(nx); try { localStorage.setItem("verve_vidindo_v1", nx ? "1" : "0"); } catch { /* abaikan */ } }}>
+                <span style={{ fontSize: 16 }}>{rasaIndo ? "☑️" : "⬜"}</span>
+                <span>🇮🇩 <b>Rasa Indonesia</b> — cari stok wajah/lokasi Nusantara dulu. Stok habis → otomatis dilebarkan ke dunia (dilapor jujur).</span>
+              </label>
               </>
             )}
           </div>
@@ -1800,8 +1822,9 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                   </div>
                   {vidErr ? <p className="lh-note" style={{ color: "#ffb199" }}>{vidErr}</p> : null}
                   {vidBusy ? <p className="lh-note">⏳ Mengaduk-aduk gudang…</p> : null}
+                  {vidNote ? <p className="lh-note" style={{ color: "#9fd3ff" }}>{vidNote}</p> : null}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-                    {vidRes.map((v) => (
+                    {vidRes.filter((v) => { const punya = vidSheet != null ? board?.scenes[vidSheet]?.vid : null; return !vDipakai.has(v.id) || (punya != null && punya.id === v.id); }).map((v) => (
                       <button key={v.id} onClick={() => pilihVid(vidSheet, v)} style={{ padding: 0, border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, overflow: "hidden", background: "#0b1220", textAlign: "left", cursor: "pointer" }}>
                         <img src={v.thumb} alt="" style={{ width: "100%", height: 96, objectFit: "cover", display: "block" }} />
                         <div style={{ padding: "6px 8px", fontSize: 11, color: "#cbd5e1" }}>⏱ {v.dur}d · 🎬 {v.by}</div>
