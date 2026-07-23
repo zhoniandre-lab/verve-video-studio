@@ -2110,13 +2110,14 @@ async function renderWebCodecs(b:any){
   muxer.finalize();
   onProgress?.(1); onStage?.("✅ Selesai!");
   const __fd = (ms:number)=> (ms/1000).toFixed(1)+"d";
-  onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup}`);
+  onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup} · mesin WEBCODECS(prefer-hw)`); // ⚡ v13.10: label mesin permanen utk diagnosa
   return new Blob([muxer.target.buffer],{type:"video/mp4"});
 }
 
 async function renderMediaRecorder(b:any){
   const {canvas,imgs,audio,fps,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
   onStage?.("⚠️ Mesin cadangan (realtime) — render berjalan sepanjang durasi video; biarkan layar menyala sampai selesai ya bro.");
+  const __t0 = performance.now(); // ⚡ v13.10: stopwatch telemetri mesin cadangan
   const stream:MediaStream = (canvas as any).captureStream(fps);
   let audioDest:MediaStreamAudioDestinationNode|null=null, actx:AudioContext|null=null;
   if (audio){
@@ -2198,6 +2199,7 @@ async function renderMediaRecorder(b:any){
   const blob=await done;
   try { vidMap?.forEach((o) => o.v.pause()); } catch {} // 🎬 v11.8: tidurkan klip setelah render
   onStage?.("✅ Selesai!"); onProgress?.(1);
+  onStage?.(`⏱ Telemetri: total ${((performance.now()-__t0)/1000).toFixed(1)}d · mesin MEDIARECORDER(realtime)`); // ⚡ v13.10
   return blob;
 }
 

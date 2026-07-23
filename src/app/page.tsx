@@ -2585,9 +2585,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const gf = buildClipFilter(filterPreset, qualitySharp ? { ...adj } : adj);
       const resMap: Record<number, [number, number]> = { 480: [854, 480], 720: [1280, 720], 1080: [1920, 1080], 1440: [2560, 1440], 2160: [3840, 2160] };
       const [w, h] = resMap[exRes] || [1280, 720];
-      const rt0 = performance.now();
+      // ⏱ v13.10 ETA JUJUR — jam baru berjalan saat FRAME PERTAMA keluar. Dulu dihitung sejak tombol
+      // dipencet → setup (decode lagu + analisis FFT + muat gambar ≈ 30–60d) ikut terproyeksi →
+      // ETA bohong menjerit "34 menit" di progres 2% (laporan bro). Sekarang: laju frame murni.
+      let rEta0 = 0;
       const renderEta = (p: number): string => {
-        const dt = (performance.now() - rt0) / 1000;
+        if (!rEta0) return "menghitung…";
+        const dt = (performance.now() - rEta0) / 1000;
         const eta = Math.ceil((dt / Math.max(p, 0.01)) * (1 - p));
         return formatDur(Math.max(0, Math.min(eta, 5999)));
       };
@@ -2613,7 +2617,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         bgMode, bgColor,
         sharpen: qualitySharp,
         mobileOptimized: isMobile,
-        onProgress: (p: number) => { setProgress(p); if (p > 0.02 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); },
+        onProgress: (p: number) => { if (!rEta0 && p > 0) rEta0 = performance.now(); setProgress(p); if (p > 0.005 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); },
         onStage: (s: string) => setStageText(s),
       } as any);
       // v8.1 SANITY: file super-kecil untuk durasi panjang = render busuk (frame kosong)

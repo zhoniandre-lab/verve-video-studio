@@ -1247,9 +1247,15 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
       ctx.globalAlpha = 0.32; ctx.fillStyle = "#0b1220";
       roundRectPath(ctx, -wTot / 2 - lane * 0.7, -hMax - s * 0.3, wTot + lane * 1.4, hMax + s * 0.6, s * 0.18); ctx.fill();
       ctx.globalAlpha = 1;
-      const gd = ctx.createLinearGradient(0, -hMax, 0, 0);
-      gd.addColorStop(0, "#f472b6"); gd.addColorStop(0.55, "#a78bfa"); gd.addColorStop(1, "#2dd4bf");
-      ctx.shadowColor = "rgba(45,212,191,.55)"; ctx.shadowBlur = s * 0.16;
+      // ⚡ v13.10: gradien di-cache per-kanvas (membuat ulang tiap frame itu pemborosan murni)
+      const cvG = ctx.canvas as any;
+      if (!cvG.__barGd || cvG.__barGdH !== Math.round(hMax)) {
+        const gtmp = ctx.createLinearGradient(0, -hMax, 0, 0);
+        gtmp.addColorStop(0, "#f472b6"); gtmp.addColorStop(0.55, "#a78bfa"); gtmp.addColorStop(1, "#2dd4bf");
+        cvG.__barGd = gtmp; cvG.__barGdH = Math.round(hMax);
+      }
+      const gd: CanvasGradient = cvG.__barGd;
+      ctx.shadowColor = "rgba(45,212,191,.55)"; ctx.shadowBlur = s * 0.05; // ⚡ shadowBlur = blur CPU di HP (mahal) → dilembutkan
       ctx.fillStyle = gd;
       // memori puncak per-kanvas (jatuh pelan → terasa hidup seperti equalizer studio)
       const cvAny = ctx.canvas as any;
@@ -1365,13 +1371,13 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
       ctx.save();
       ctx.lineCap = "round"; ctx.lineJoin = "round";
       ctx.lineWidth = s * 0.085;
-      ctx.strokeStyle = "rgba(45,212,191,.95)"; ctx.shadowColor = "#2dd4bf"; ctx.shadowBlur = s * 0.22;
+      ctx.strokeStyle = "rgba(45,212,191,.95)"; ctx.shadowColor = "#2dd4bf"; ctx.shadowBlur = s * 0.08; // ⚡ v13.10: lembut & irit
       wave(-1, s * 1.5, 0);
       ctx.lineWidth = s * 0.06;
       ctx.strokeStyle = "rgba(167,139,250,.8)"; ctx.shadowColor = "#a78bfa";
       wave(-1, s * 0.95, s * 0.03);
       ctx.globalAlpha = 0.32; // pantulan lantai
-      ctx.strokeStyle = "rgba(45,212,191,.9)"; ctx.shadowBlur = s * 0.1;
+      ctx.strokeStyle = "rgba(45,212,191,.9)"; ctx.shadowBlur = s * 0.04; // ⚡ v13.10
       wave(1, s * 1.05, s * 0.16);
       ctx.restore();
     } },
@@ -1387,7 +1393,7 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
       const gd = ctx.createLinearGradient(-s, -s, s, s);
       gd.addColorStop(0, "#f472b6"); gd.addColorStop(0.5, "#a78bfa"); gd.addColorStop(1, "#2dd4bf");
       ctx.strokeStyle = gd; ctx.lineCap = "round";
-      ctx.shadowColor = "rgba(167,139,250,.6)"; ctx.shadowBlur = s * 0.18;
+      ctx.shadowColor = "rgba(167,139,250,.6)"; ctx.shadowBlur = s * 0.06; // ⚡ v13.10
       let bass = 0;
       for (let i = 0; i < N; i++) {
         const v = has ? specAtOf(spec!, i, N, sdiv)
