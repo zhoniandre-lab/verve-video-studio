@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { renderSlideshow, downloadBlob } from "@/lib/recorder";
+import { renderSlideshow, downloadBlob, vidPlan } from "@/lib/recorder";
 import { renderGif } from "@/lib/gif";
 import { makeAutoThumbBlob } from "@/lib/thumb";
 import { avWarm, avPut } from "@/lib/avault";
@@ -1054,9 +1054,32 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return img.complete && img.naturalWidth ? img : null;
   }
   // 🎬 v11.8: muat klip video (CORS bersih; sekali gagal → coba proxy same-origin; gagal lagi → mati = gambar still)
+  // 📦 v13.14 UNDUH-UTUH untuk PREVIEW juga — latar belakang, antre SATU-SATU; begitu jadi blob lokal,
+  // scrub & seek di Studio bebas patah (Android gemar memangkas buffer streaming di tengah jalan).
+  const vidBlobQRef = useRef<Promise<void>>(Promise.resolve());
+  function queueVidBlob(v: HTMLVideoElement, url: string) {
+    const el = v as any;
+    if (el.__blobQ || el.__blobOk || el.__dead) return;
+    if (!/^https?:/i.test(url)) return;
+    el.__blobQ = 1;
+    vidBlobQRef.current = vidBlobQRef.current.then(async () => {
+      if (el.__dead || el.__blobOk) return;
+      try {
+        const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 60000);
+        const r = await fetch(url, { signal: ctl.signal }); clearTimeout(to);
+        if (!r.ok) return;
+        const b = await r.blob();
+        if (!b.size || el.__dead) return;
+        const resume = !v.paused && !v.ended; const pos = v.currentTime; const pb = v.playbackRate || 1;
+        v.src = URL.createObjectURL(b); el.__blobOk = 1; // ganti ke blob lokal — posisi & main/tidur dipertahankan
+        const back = () => { try { v.currentTime = pos; } catch {} try { v.playbackRate = pb; } catch {} if (resume) v.play().catch(() => {}); };
+        if (v.readyState >= 1) back(); else v.addEventListener("loadedmetadata", back, { once: true });
+      } catch { /* gagal → streaming asli tetap jalan, tak ada yang rusak */ }
+    }).catch(() => {});
+  }
   function getVideo(url: string): HTMLVideoElement | null {
     let v = vidsRef.current.get(url);
-    if (v) return (v as any).__dead ? null : v;
+    if (v) { if (!(v as any).__dead) queueVidBlob(v, url); return (v as any).__dead ? null : v; }
     v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
     v.addEventListener("error", () => {
@@ -1066,6 +1089,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     });
     v.src = url;
     vidsRef.current.set(url, v);
+    queueVidBlob(v, url);
     return v;
   }
   function blitPrevVid(v: HTMLVideoElement, W: number, H: number, slot: number): HTMLCanvasElement | null {
@@ -1079,23 +1103,33 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
     else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
     const cx = c.getContext("2d")!;
-    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "low";
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high"; // 🎞️ v13.14: dulu "low" → preview buram
     cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
     return c;
   }
-  // Sinkron putar/tidur dengan status preview; saat di-scrub (pause) ikutkan posisi ke clipT
-  function syncPrevVideos(vC: HTMLVideoElement | null, vN: HTMLVideoElement | null, clipT: number) {
+  // 🎞️ v13.14 PREVIEW IKUT MATEMATIKA RENDER (vidPlan): klip di-RATE (slow-mo/cepat) + di-LOOP penuh
+  // mengisi slot. DULU: main 1× natural lalu currentTime dijepit duration-0.06 → video jalan beberapa
+  // detik lalu MEMBEKU sepanjang sisa slot (persis laporan bro). Kini: gerak terus sampai slide ganti.
+  function syncPrevVideos(vC: HTMLVideoElement | null, vN: HTMLVideoElement | null, clipT: number, clipDur: number, spd: number) {
     const manage = (v: HTMLVideoElement | null, isCur: boolean) => {
       if (!v || (v as any).__dead) return;
+      const vd = v.duration || 0;
+      const ok = vd > 0.2 && isFinite(vd);
+      const pl = ok ? vidPlan(clipT, vd, Math.max(0.5, clipDur || vd), isCur ? spd : 1) : null;
+      const want = ok && isCur ? Math.max(0, Math.min(pl!.pos, vd - 0.05)) : 0;
       if (playingRef.current) {
-        if (v.paused) {
-          try { const want = isCur ? Math.max(0, Math.min(clipT, (v.duration || 1) - 0.06)) : 0; if (v.ended || Math.abs(v.currentTime - want) > 0.8) v.currentTime = want; } catch {}
+        try { if (!v.loop) v.loop = true; } catch {}
+        if (isCur && pl) { try { if (Math.abs(v.playbackRate - pl.rate) > 0.01) v.playbackRate = pl.rate; } catch {} }
+        else if (!isCur) { try { if (v.playbackRate !== 1) v.playbackRate = 1; } catch {} }
+        if (v.paused || v.ended) {
+          try { v.currentTime = want; } catch {}
           void v.play().catch(() => {});
+        } else if (isCur && ok && Math.abs(v.currentTime - want) > 0.45) {
+          try { v.currentTime = want; } catch {} // terseret buffering/trim → resync lembut ke posisi rencana
         }
       } else {
         if (!v.paused) v.pause();
-        const want = isCur ? Math.max(0, Math.min(clipT, (v.duration || 1) - 0.06)) : 0;
-        try { if (Math.abs(v.currentTime - want) > 0.15) v.currentTime = want; } catch {}
+        try { if (Math.abs(v.currentTime - want) > 0.08) v.currentTime = want; } catch {}
       }
     };
     manage(vC, true); manage(vN, false);
@@ -1135,7 +1169,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const vidN = (L.nextIdx !== L.idx && sl[L.nextIdx] && sl[L.nextIdx].videoUrl) ? getVideo(sl[L.nextIdx].videoUrl!) : null;
     let curDraw: any = cur; let nxtDraw: any = nxt;
     if (vidC || vidN) {
-      syncPrevVideos(vidC, vidN, L.clipT);
+      syncPrevVideos(vidC, vidN, L.clipT, L.clipDur, (optCur as any)?.spd || 1); // 🎞️ v13.14
       if (vidC && vidC.readyState >= 2 && vidC.videoWidth) { const b0 = blitPrevVid(vidC, W, H, 0); if (b0) curDraw = b0; }
       if (vidN && vidN.readyState >= 2 && vidN.videoWidth) { const b1 = blitPrevVid(vidN, W, H, 1); if (b1) nxtDraw = b1; }
     }

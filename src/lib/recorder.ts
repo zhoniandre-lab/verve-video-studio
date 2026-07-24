@@ -427,7 +427,7 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
     rate = durasiKlip/durasiSlot dijepit [0.5, 1.4] → gerak minimal 15fps (film-ish, bukan patah).
     Sambungan siklus disembunyikan CROSSFADE: deck aktif memudar, deck pasangan muncul dari awal —
     gerak TIDAK PERNAH berhenti & TIDAK ADA lompatan kasar. */
-function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
+export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
   const RMIN = 0.5, RMAX = 1.4;
   let rate = vd / (slot > 0.2 ? slot : vd);

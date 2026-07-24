@@ -57,3 +57,11 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 4. Alur: patch → tsc(0) → build(0) → smoke test grep literal minified di `.next/static/chunks/*.js` (chunk name REGENERATE tiap build, selalu grep -l segar) → commit pesan Indonesia kaya → push → tag lock + branch `backup/*` → `git ls-remote` verify.
 5. Uji logika DSP dulu di Node sandbox sebelum shipping.
 6. Akhiri tiap sesi: ringkasan bro + langkah tes di HP bernomor + pengingat 1 baris cabut token.
+
+## v13.14 (2026-07-24) 🎞️ PREVIEW STUDIO VIDEO HIDUP — koreksi diagnosis PENTING
+- KELIRU besar sesi sebelumnya: v13.11.3–v13.13 menambal jalur RENDER, padahal keluhan bro = **PREVIEW di STUDIO saat edit**. Dua jalur beda!
+- Biang nyata di preview (page.tsx lama): `syncPrevVideos` mainkan klip 1× natural & `currentTime` dijepit `duration-0.06` → klip 6-30 detik di slot 39,6s **jalan sebentar lalu MEMBEKU sisa slot**; tanpa rate, tanpa loop; smoothing "low" → buram; streaming → scrub patah (buffer-trim Android).
+- Bedah (7 titik): `vidPlan` diekspor dari recorder.ts; preview `syncPrevVideos(clipT,clipDur,spd)` kini pakai vidPlan (rate slow/cepat + `loop=true` + resync drift >0.45s + posisi scrub persis rencana); `queueVidBlob` unduh-utuh di latar → blob lokal (seek/scrub offline); smoothing "high".
+- Reuse murni mesin render. Tak disentuh: renderWebCodecs/renderMediaRecorder, lahan, storyboard, stockvid, avault, editing.ts.
+- Uji: tests/vidplan.test.mjs 🏆 lulus; tsc:0 build:0; smoke `__blobOk`/`__blobQ`/"high"/loop=!0 di chunk.
+- Catatan jujur: crossfade siklus di preview BELUM ada (single deck + loop native; render tetap A/B crossfade). Misteri "durasi 07:03" & telemetri mesin masih belum dijawab bro.
