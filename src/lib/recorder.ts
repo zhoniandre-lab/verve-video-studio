@@ -393,6 +393,18 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
   if (vig && (vigStr || 0) > 0.01) { cx.globalAlpha = vigStr!; cx.drawImage(vig, 0, 0, W, H); cx.globalAlpha = 1; }
 }
 
+/** 🐢 v13.11.4 PAS-PANJANG: regang/perlambat klip biar PAS mengisi slot lagu (ide bro: "di-slow-kan").
+    rate = durasiKlip/durasiSlot, dijepit [0.3, 1.5]: klip pendek → slow-mo anggun (maks 3.3×, tetap paham),
+    klip panjang → percepat tipis. Kalau MASIH kurang panjang (kasus ekstrem) → di-LOOP di waktu yang sudah diregang. */
+function vidStretchWant(raw: number, vd: number, slot: number): number {
+  if (!(vd > 0.2) || !(slot > 0.2)) return Math.max(0, Math.min(raw, Math.max(0, vd - 0.06)));
+  let rate = vd / slot;
+  if (rate < 0.3) rate = 0.3; else if (rate > 1.5) rate = 1.5;
+  let w = Math.max(0, raw) * rate;
+  if (w >= vd) w %= vd;
+  return Math.min(w, Math.max(0, vd - 0.06));
+}
+
 function seekVid(v: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((res) => {
     if (!v || v.readyState < 2) return res();
@@ -2021,9 +2033,9 @@ async function renderWebCodecs(b:any){
     if (vidMap && vidMap.size) {
       const vC = vidMap.get(slideIdx);
       const vN = inTrans ? vidMap.get(nextIdx) : undefined;
-      // 🔁 v13.11.3 ANTI-BEKU: waktu di-LOOP modulo durasi klip — klip 6d mengisi slot 40d tetap BERGERAK (dulu patung beku di frame akhir)
-      if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; const vd0 = vC.v.duration || 1; let w0 = Math.max(0, t - s0); if (vd0 > 0.2 && w0 >= vd0) w0 %= vd0; await seekVid(vC.v, Math.min(w0, Math.max(0, vd0 - 0.06))); blitVid(vC.v, vC.c, (b as any).vigVideo, (b as any).vigStrV); }
-      if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; const vd1 = vN.v.duration || 1; let w1 = Math.max(0, t - s1); if (vd1 > 0.2 && w1 >= vd1) w1 %= vd1; await seekVid(vN.v, Math.min(w1, Math.max(0, vd1 - 0.06))); blitVid(vN.v, vN.c, (b as any).vigVideo, (b as any).vigStrV); }
+      // 🐢 v13.11.4 PAS-PANJANG: klip diregang PAS mengisi slot lagu (slow-mo anggun / percepat tipis / loop sesudah diregang)
+      if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; const slot0 = timeline ? (((timeline as any).durs?.[slideIdx]) ?? slideDur) : slideDur; await seekVid(vC.v, vidStretchWant(t - s0, vC.v.duration || 1, slot0)); blitVid(vC.v, vC.c, (b as any).vigVideo, (b as any).vigStrV); }
+      if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; const slot1 = timeline ? (((timeline as any).durs?.[nextIdx]) ?? slideDur) : slideDur; await seekVid(vN.v, vidStretchWant(t - s1, vN.v.duration || 1, slot1)); blitVid(vN.v, vN.c, (b as any).vigVideo, (b as any).vigStrV); }
     }
     const optCur = slideOpts ? (slideOpts as any)[slideIdx] : null;
     const aDur = animDurOf(optCur);
@@ -2182,8 +2194,12 @@ async function renderMediaRecorder(b:any){
       for (const [si, o] of vidMap) {
         const active = si === slideIdx || (inTrans && si === nextIdx);
         if (active) {
-          // 🔁 v13.11.3: mesin realtime juga di-LOOP — klip habis diputar gulung ulang, bukan membeku
-          const vdm = o.v.duration || 1; let wantm = Math.max(0, t - (timeline ? (timeline.starts[si] ?? 0) : si * perSlide));
+          // 🐢 v13.11.4 PAS-PANJANG (realtime): playbackRate digigit biar klip PAS mengisi slot lagu —
+          // klip pendek jadi SLOW-MO MULUS bawaan pemutar (gerak lambat tetap lembut), panjang → percepat tipis; ekstrem → LOOP seusai regang.
+          const vdm = o.v.duration || 1; const slotm = timeline ? (((timeline as any).durs?.[si]) ?? perSlide) : perSlide;
+          let ratem = vdm / (slotm > 0.2 ? slotm : vdm); if (ratem < 0.3) ratem = 0.3; else if (ratem > 1.5) ratem = 1.5;
+          try { if (Math.abs(o.v.playbackRate - ratem) > 0.001) o.v.playbackRate = ratem; } catch {}
+          let wantm = Math.max(0, t - (timeline ? (timeline.starts[si] ?? 0) : si * perSlide)) * ratem;
           if (vdm > 0.2 && wantm >= vdm) wantm %= vdm;
           if (o.v.paused || o.v.ended) {
             try { if (o.v.ended || Math.abs(o.v.currentTime - wantm) > 0.6) o.v.currentTime = Math.min(wantm, Math.max(0, vdm - 0.06)); } catch {}
