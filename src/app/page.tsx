@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import { renderSlideshow, downloadBlob, vidPlan } from "@/lib/recorder";
+import { renderSlideshow, downloadBlob, vidPlan, vidLoopPrev } from "@/lib/recorder";
 import { renderGif } from "@/lib/gif";
 import { makeAutoThumbBlob } from "@/lib/thumb";
 import { avWarm, avPut } from "@/lib/avault";
@@ -1054,28 +1054,60 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return img.complete && img.naturalWidth ? img : null;
   }
   // 🎬 v11.8: muat klip video (CORS bersih; sekali gagal → coba proxy same-origin; gagal lagi → mati = gambar still)
-  // 📦 v13.14 UNDUH-UTUH untuk PREVIEW juga — latar belakang, antre SATU-SATU; begitu jadi blob lokal,
-  // scrub & seek di Studio bebas patah (Android gemar memangkas buffer streaming di tengah jalan).
-  const vidBlobQRef = useRef<Promise<void>>(Promise.resolve());
+  // 📦 v13.15 UNDUH-UTUH PREVIEW dibagi: SATU unduhan per URL dipakai 2 deck sekaligus (irit data & RAM HP);
+  // begitu jadi blob lokal, scrub/seek di Studio bebas patah (Android gemar memangkas buffer streaming).
+  const vidBlobPRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  function vidBlobP(url: string): Promise<string | null> {
+    let p = vidBlobPRef.current.get(url);
+    if (!p) {
+      p = (async () => {
+        try {
+          const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 60000);
+          const r = await fetch(url, { signal: ctl.signal }); clearTimeout(to);
+          if (!r.ok) return null;
+          const b = await r.blob();
+          return b.size ? URL.createObjectURL(b) : null;
+        } catch { return null; }
+      })();
+      vidBlobPRef.current.set(url, p);
+    }
+    return p;
+  }
   function queueVidBlob(v: HTMLVideoElement, url: string) {
     const el = v as any;
     if (el.__blobQ || el.__blobOk || el.__dead) return;
     if (!/^https?:/i.test(url)) return;
     el.__blobQ = 1;
-    vidBlobQRef.current = vidBlobQRef.current.then(async () => {
-      if (el.__dead || el.__blobOk) return;
+    vidBlobP(url).then(ou => {
+      if (!ou || el.__dead || el.__blobOk) return;
       try {
-        const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 60000);
-        const r = await fetch(url, { signal: ctl.signal }); clearTimeout(to);
-        if (!r.ok) return;
-        const b = await r.blob();
-        if (!b.size || el.__dead) return;
         const resume = !v.paused && !v.ended; const pos = v.currentTime; const pb = v.playbackRate || 1;
-        v.src = URL.createObjectURL(b); el.__blobOk = 1; // ganti ke blob lokal — posisi & main/tidur dipertahankan
+        v.src = ou; el.__blobOk = 1; // ganti ke blob lokal — posisi & main/tidur dipertahankan
         const back = () => { try { v.currentTime = pos; } catch {} try { v.playbackRate = pb; } catch {} if (resume) v.play().catch(() => {}); };
         if (v.readyState >= 1) back(); else v.addEventListener("loadedmetadata", back, { once: true });
-      } catch { /* gagal → streaming asli tetap jalan, tak ada yang rusak */ }
+      } catch { /* gagal → streaming asli tetap jalan */ }
     }).catch(() => {});
+  }
+  // 🎞️ v13.15 DECK KEMBAR per slide (A/B) untuk crossfade loop — kunci: slide.id (2 slide boleh pakai klip sama)
+  const decksRef = useRef<Map<string, { url: string; a: HTMLVideoElement; b: HTMLVideoElement }>>(new Map());
+  function getDeckPair(id: string, url: string): { a: HTMLVideoElement; b: HTMLVideoElement } {
+    let d = decksRef.current.get(id);
+    if (d && d.url === url) return d;
+    if (d) { try { d.a.pause(); d.b.pause(); } catch {} decksRef.current.delete(id); }
+    const mk = () => {
+      const v = document.createElement("video");
+      v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
+      v.addEventListener("error", () => {
+        const el = v as any;
+        if (!el.__retried) { el.__retried = 1; v.src = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`; }
+        else el.__dead = true;
+      });
+      v.src = url; queueVidBlob(v, url);
+      return v;
+    };
+    d = { url, a: mk(), b: mk() };
+    decksRef.current.set(id, d);
+    return d;
   }
   function getVideo(url: string): HTMLVideoElement | null {
     let v = vidsRef.current.get(url);
@@ -1107,33 +1139,45 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
     return c;
   }
-  // 🎞️ v13.14 PREVIEW IKUT MATEMATIKA RENDER (vidPlan): klip di-RATE (slow-mo/cepat) + di-LOOP penuh
-  // mengisi slot. DULU: main 1× natural lalu currentTime dijepit duration-0.06 → video jalan beberapa
-  // detik lalu MEMBEKU sepanjang sisa slot (persis laporan bro). Kini: gerak terus sampai slide ganti.
-  function syncPrevVideos(vC: HTMLVideoElement | null, vN: HTMLVideoElement | null, clipT: number, clipDur: number, spd: number) {
-    const manage = (v: HTMLVideoElement | null, isCur: boolean) => {
+  // 🌀 v13.15 LOOP LUMAT di PREVIEW: 2 deck + crossfade KONTINYU (peran dari vidLoopPrev — diuji di
+  // tests/vidloop.test.mjs). Deck yang menang fade LANJUT main tanpa mundur → sambungan tak kasat mata.
+  function syncPrevDecks(pr: { a: HTMLVideoElement; b: HTMLVideoElement } | null, vN: HTMLVideoElement | null, role: { outD: "a" | "b"; outPos: number; inD: "a" | "b" | null; inPos: number; x: number }, rate: number) {
+    const running = playingRef.current;
+    const setD = (v: HTMLVideoElement | null, td: number, play: boolean) => {
       if (!v || (v as any).__dead) return;
       const vd = v.duration || 0;
-      const ok = vd > 0.2 && isFinite(vd);
-      const pl = ok ? vidPlan(clipT, vd, Math.max(0.5, clipDur || vd), isCur ? spd : 1) : null;
-      const want = ok && isCur ? Math.max(0, Math.min(pl!.pos, vd - 0.05)) : 0;
-      if (playingRef.current) {
-        try { if (!v.loop) v.loop = true; } catch {}
-        if (isCur && pl) { try { if (Math.abs(v.playbackRate - pl.rate) > 0.01) v.playbackRate = pl.rate; } catch {} }
-        else if (!isCur) { try { if (v.playbackRate !== 1) v.playbackRate = 1; } catch {} }
-        if (v.paused || v.ended) {
-          try { v.currentTime = want; } catch {}
-          void v.play().catch(() => {});
-        } else if (isCur && ok && Math.abs(v.currentTime - want) > 0.45) {
-          try { v.currentTime = want; } catch {} // terseret buffering/trim → resync lembut ke posisi rencana
-        }
+      const want = td <= 0 ? 0 : (vd > 0.2 && isFinite(vd) ? Math.min(td, Math.max(0, vd - 0.04)) : td);
+      try { if (v.loop) v.loop = false; } catch {}
+      if (running && play) {
+        try { if (Math.abs(v.playbackRate - rate) > 0.01) v.playbackRate = rate; } catch {}
+        if (v.paused || v.ended) { try { v.currentTime = want; } catch {} void v.play().catch(() => {}); }
+        else if (Math.abs(v.currentTime - want) > 0.3) { try { v.currentTime = want; } catch {} } // resync terseret buffer
       } else {
         if (!v.paused) v.pause();
         try { if (Math.abs(v.currentTime - want) > 0.08) v.currentTime = want; } catch {}
       }
     };
-    manage(vC, true); manage(vN, false);
-    vidsRef.current.forEach((ov) => { if (ov !== vC && ov !== vN && !ov.paused) ov.pause(); });
+    if (pr) {
+      const out = role.outD === "a" ? pr.a : pr.b;
+      const par = out === pr.a ? pr.b : pr.a;
+      const inn = role.inD ? (role.inD === "a" ? pr.a : pr.b) : null;
+      setD(out, role.outPos, true);
+      setD(inn || par, inn ? role.inPos : 0, !!inn); // pasangan diparkir di 0, disuruh main hanya saat fade
+    }
+    if (vN) { // slide BERIKUTNYA: cukup bergerak dari awal (hanya dipakai saat dissolve antar-slide)
+      if (running) {
+        try { if (vN.playbackRate !== 1) vN.playbackRate = 1; } catch {}
+        if (vN.paused || vN.ended) { try { vN.currentTime = 0; } catch {} void vN.play().catch(() => {}); }
+      } else {
+        if (!vN.paused) vN.pause();
+        try { if (Math.abs(vN.currentTime) > 0.08) vN.currentTime = 0; } catch {}
+      }
+    }
+    const live = new Set<HTMLVideoElement>();
+    if (pr) { live.add(pr.a); live.add(pr.b); }
+    if (vN) live.add(vN);
+    vidsRef.current.forEach(ov => { if (!live.has(ov) && !ov.paused) ov.pause(); });
+    decksRef.current.forEach(dd => { if (!live.has(dd.a) && !dd.a.paused) dd.a.pause(); if (!live.has(dd.b) && !dd.b.paused) dd.b.pause(); });
   }
   const playingRef = useRef(false);
   // getClockT dibuat stabil (ref-based) — jangan tangkap state `playing`/`curT`
@@ -1164,13 +1208,35 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const optNxt = sl[L.nextIdx] ? optsRef.current[sl[L.nextIdx].id] : null;
     const cur = getImage(sl[L.idx].imageUrl);
     const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(sl[L.nextIdx].imageUrl) : null;
-    // 🎬 v11.8: kalau slide punya klip video AI, gambar diganti kanvas buffer berisi frame video terkini
-    const vidC = sl[L.idx].videoUrl ? getVideo(sl[L.idx].videoUrl!) : null;
+    // 🎬 v11.8 + 🌀 v13.15: slide video digambar dari DECK KEMBAR — sambungan loop di-CROSSFADE sutra
+    const slNow = sl[L.idx];
+    const spdC = (optCur as any)?.spd || 1;
+    const pr = slNow.videoUrl ? getDeckPair(slNow.id, slNow.videoUrl!) : null;
     const vidN = (L.nextIdx !== L.idx && sl[L.nextIdx] && sl[L.nextIdx].videoUrl) ? getVideo(sl[L.nextIdx].videoUrl!) : null;
     let curDraw: any = cur; let nxtDraw: any = nxt;
-    if (vidC || vidN) {
-      syncPrevVideos(vidC, vidN, L.clipT, L.clipDur, (optCur as any)?.spd || 1); // 🎞️ v13.14
-      if (vidC && vidC.readyState >= 2 && vidC.videoWidth) { const b0 = blitPrevVid(vidC, W, H, 0); if (b0) curDraw = b0; }
+    if (pr || vidN) {
+      const vd = pr?.a?.duration || 0;
+      const okV = !!(pr && vd > 0.2 && isFinite(vd));
+      const rate = okV ? vidPlan(0, vd, Math.max(0.5, L.clipDur || vd), spdC).rate : 1;
+      const role = okV
+        ? vidLoopPrev(L.clipT * rate, vd)
+        : { outD: "a" as const, outPos: Math.max(0, Math.min(L.clipT, (vd || 1) - 0.06)), inD: null, inPos: 0, x: 0 };
+      syncPrevDecks(pr, vidN, role, rate);
+      if (pr) {
+        const liveV = (v: HTMLVideoElement | null) => (v && !(v as any).__dead && v.readyState >= 2 && v.videoWidth) ? v : null;
+        const out = liveV(role.outD === "a" ? pr.a : pr.b);
+        const inn = liveV(role.inD ? (role.inD === "a" ? pr.a : pr.b) : null);
+        if (out && blitPrevVid(out, W, H, 0)) {
+          const xe = role.x * role.x * (3 - 2 * role.x); // smoothstep — fade makin lembut
+          if (inn && xe > 0.004) {
+            const bx = blitPrevVid(inn, W, H, 2);
+            if (bx) { const c0 = vidBufRef.current[0]!; const cx0 = c0.getContext("2d")!; cx0.save(); cx0.globalAlpha = Math.min(1, xe); cx0.drawImage(bx, 0, 0); cx0.restore(); }
+          }
+          curDraw = vidBufRef.current[0];
+        } else if (inn && blitPrevVid(inn, W, H, 2)) {
+          curDraw = vidBufRef.current[2];
+        }
+      }
       if (vidN && vidN.readyState >= 2 && vidN.videoWidth) { const b1 = blitPrevVid(vidN, W, H, 1); if (b1) nxtDraw = b1; }
     }
     const gf = buildClipFilter(filterRef.current, adjRef.current);

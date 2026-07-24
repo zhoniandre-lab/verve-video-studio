@@ -445,6 +445,26 @@ export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: 
   return { cyc, pos, inX, x, rate, act: cyc % 2 === 0 ? "a" : "b" };
 }
 
+/** 🌀 v13.15 LOOP LUMAT KONTINU (khusus PREVIEW Studio) — beda dari vidPlan (render): setelah crossfade
+    selesai, deck yang menang TIDAK mundur ke 0 — dia LANJUT main (overlap memakan durasi; periode = vd−XF).
+    Target posisi tiap deck MONOTON naik → realtime mulus tanpa seek yang terlihat. Diuji di tests/vidloop.test.mjs.
+    st = detik konten (clipT × rate). Keluaran: deck luar (lapis bawah, penuh) & deck masuk (fade-in, alpha x). */
+export function vidLoopPrev(st: number, vd: number): { outD: "a" | "b"; outPos: number; inD: "a" | "b" | null; inPos: number; x: number } {
+  const s = Math.max(0, st);
+  if (!(vd > 0.4) || !isFinite(vd)) return { outD: "a", outPos: s, inD: null, inPos: 0, x: 0 };
+  const XF = Math.min(0.5, vd * 0.15);
+  const P = vd - XF;
+  if (!(P > 0) || s < P) return { outD: "a", outPos: Math.min(s, vd), inD: null, inPos: 0, x: 0 };
+  const k = Math.floor(s / P);          // fade ke-k (1,2,3…): deck (k−1) keluar, deck k masuk
+  const q = s - k * P;                   // posisi dalam jendela [0..P)
+  if (q > XF) {                          // di antara dua fade: deck k lanjut sendirian
+    return { outD: k % 2 ? "b" : "a", outPos: q, inD: null, inPos: 0, x: 0 };
+  }
+  const x = XF > 0 ? Math.min(1, q / XF) : 1;
+  const outA = (k - 1) % 2 === 0;        // fade ganjil: A→B · genap: B→A
+  return { outD: outA ? "a" : "b", outPos: Math.min(q + P, vd), inD: outA ? "b" : "a", inPos: q, x };
+}
+
 function seekVid(v: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((res) => {
     if (!v || v.readyState < 2) return res();

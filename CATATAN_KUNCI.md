@@ -65,3 +65,10 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - Reuse murni mesin render. Tak disentuh: renderWebCodecs/renderMediaRecorder, lahan, storyboard, stockvid, avault, editing.ts.
 - Uji: tests/vidplan.test.mjs 🏆 lulus; tsc:0 build:0; smoke `__blobOk`/`__blobQ`/"high"/loop=!0 di chunk.
 - Catatan jujur: crossfade siklus di preview BELUM ada (single deck + loop native; render tetap A/B crossfade). Misteri "durasi 07:03" & telemetri mesin masih belum dijawab bro.
+
+## v13.15 (2026-07-24) 🌀 LOOP LUMAT PREVIEW — sambungan loop di-studio di-crossfade kontinyu
+- Laporan bro: gerak-terus v13.14 "sudah bagus", tapi pergantian loop masih KASAR (loop native HP = potongan keras). Minta: "buat sehalus banget".
+- Solusi: `vidLoopPrev(st,vd)` (recorder.ts, ADDITIF — vidPlan/render tak disentuh): 2 deck/slide + crossfade KONTINYU; pemenang fade LANJUT tanpa rewind (periode = vd−XF, XF=min(0.5, vd·0.15)). Target tiap deck monoton → realtime tanpa seek terlihat. Alpha pakai smoothstep.
+- page.tsx: `getDeckPair(slideId,url)` (2 slide boleh pakai klip sama), `syncPrevDecks(pr,vidN,role,rate)`, drawFrame komposit out+in(alpha), slot buffer ke-3 utk pasangan, unduh-utuh dibagi via `vidBlobP(url)` (SATU unduhan per URL utk 2 deck — irit data/RAM).
+- TEST DULU sesuai perintah: `tests/vidloop.test.mjs` permanen — kontinuitas posisi tiap deck, NOL rewind terlihat, NOL lompatan besar, alpha kontinu, klip 6/30/45/1s + degenerate → 🏆 lulus. vidPlan 14/14 tetap lulus. tsc 0, build 0, smoke `outPos`/`inD`/globalAlpha/`__blobOk` OK.
+- Beda jujur preview vs render: render (vidPlan) me-rewind XF kecil tiap sambungan (deterministik utk ekspor); preview lebih sutra (kontinyu). Kalau bro mau ekspor ikut skema ini → kerjaan v13.16 (ubah vidPlan + uji).
