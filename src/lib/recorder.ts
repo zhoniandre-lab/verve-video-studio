@@ -335,7 +335,7 @@ async function prepareImages(sources: string[], W:number, H:number, onStage?:(s:
 // Painter tidak perlu tahu soal video: frame <video> disalin ke kanvas itu tiap tick.
 // Gagal muat / kena blokir CORS → slide otomatis tetap gambar still (aman, tidak ada layar hitam).
 /** 🌀 v13.12: deck ganda per slide (muatan byte sama, dekode terpisah) + 1 kanvas komposit. */
-type VidDeck = { a: HTMLVideoElement; b: HTMLVideoElement; c: HTMLCanvasElement };
+type VidDeck = { a: HTMLVideoElement; b: HTMLVideoElement; c: HTMLCanvasElement; objUrl?: string }; // 📦 v13.13: objUrl = blob lokal unduhan utuh (direvoke seusai render)
 
 async function prepareVideos(
   videos: (string | null | undefined)[], W: number, H: number,
@@ -347,40 +347,61 @@ async function prepareVideos(
   if (!idxs.length) return out;
   const loadVid = (v: HTMLVideoElement, src: string) => new Promise<boolean>((res) => {
     let done = false;
-    const fin = (ok: boolean) => { if (done) return; done = true; res(ok); };
+    const fin = (ok: boolean) => { done || (done = true, res(ok)); };
     v.addEventListener("loadeddata", () => fin(true), { once: true });
     v.addEventListener("error", () => fin(false), { once: true });
     setTimeout(() => fin(false), 25_000);
     v.src = src;
   });
+  // 📦 v13.13 UNDUH UTUH DULU (biang "awal lancar belakangan PATAH" = Android memangkas buffer media pas render
+  // jalan: seek awal mulus, seek ujung nunggu jaringan → frame basi diulang). Jadi blob-URL LOKAL → seek 100%
+  // offline, trimming Android tak berkutik. Gagal unduh → jatuh hormat ke jalur streaming lama (klip AI data:/blob: tetap jalan).
+  const unduhKlip = async (src: string): Promise<Blob | null> => {
+    const coba = async (u2: string) => { const r = await fetch(u2); if (!r.ok) throw new Error("HTTP " + r.status); const bb = await r.blob(); if (bb.size < 80_000) throw new Error("kecil/busuk"); return bb; };
+    try { return await coba(src); } catch { /* lanjut GERBANG */ }
+    if (/^https?:/.test(src)) { try { return await coba(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(src)}`); } catch { return null; } }
+    return null;
+  };
   for (const { u, i } of idxs) {
-    onStage?.(`Memuat klip video ${i + 1}...`);
     const mkVid = () => { const vv = document.createElement("video"); vv.muted = true; vv.playsInline = true; vv.preload = "auto"; vv.crossOrigin = "anonymous"; return vv; };
     const v = mkVid();
-    let ok = await loadVid(v, u);
-    let srcFix = u; // 🌀 sumber yang TERBUKTI berhasil — deck B memakai yang sama (cache browser mempercepat)
-    if (!ok && /^https?:/.test(u)) { srcFix = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`; ok = await loadVid(v, srcFix); } // jalur cadangan same-origin
-    if (!ok || !v.videoWidth) { onStage?.(`⚠️ Klip video ${i + 1} gagal dimuat — slide tetap gambar still.`); continue; }
-    const v2 = mkVid(); // 🌀 v13.12 deck B pasangan crossfade
-    await loadVid(v2, srcFix);
-    // 🧱 v13.11.3 SANGGA DULU (anti-patah): render dilarang gas sebelum klip cukup ter-buffer.
-    // Dulu byte baru secuil render sudah jalan → seek mentok → frame BASI dilukis berulang (laporan bro).
-    onStage?.(`🧱 Menyangga klip video ${i + 1} (anti-patah)...`);
-    await new Promise<void>((res) => {
-      const cukup = () => { try { const d = v.duration || 0; const bb = v.buffered; return d > 0 && bb.length > 0 && bb.end(bb.length - 1) >= d * 0.9; } catch { return false; } };
-      if (cukup()) return res();
-      const poll = setInterval(() => { if (cukup()) { clearInterval(poll); res(); } }, 350);
-      v.addEventListener("canplaythrough", () => { clearInterval(poll); res(); }, { once: true });
-      setTimeout(() => { clearInterval(poll); res(); }, 45_000); // modal kesabaran 45d/klip — tetap jujur jalan di sinyal tipis
-    });
+    let ok = false;
+    let objUrl = "";
+    let srcStream = u;
+    onStage?.(`📦 Mengunduh klip video ${i + 1} utuh (anti-jaringan)...`);
+    const blob = await unduhKlip(u);
+    if (blob) {
+      objUrl = URL.createObjectURL(blob);
+      ok = await loadVid(v, objUrl);
+      if (!ok || !v.videoWidth) {
+        try { URL.revokeObjectURL(objUrl); } catch { /* abaikan */ }
+        objUrl = ""; ok = false; // blob busuk → hormat balik ke streaming
+      }
+    }
+    if (!ok) {
+      // jalur streaming klasik (tetap dijaga gerbang buffer — untuk blob:/data: atau unduhan gagal total)
+      ok = await loadVid(v, u);
+      if (!ok && /^https?:/.test(u)) { srcStream = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`; ok = await loadVid(v, srcStream); }
+      if (!ok || !v.videoWidth) { onStage?.(`⚠️ Klip video ${i + 1} gagal dimuat — slide tetap gambar still.`); continue; }
+      onStage?.(`🧱 Menyangga klip video ${i + 1} (streaming)...`);
+      await new Promise<void>((res) => {
+        const cukup = () => { try { const d = v.duration || 0; const bb = v.buffered; return d > 0 && bb.length > 0 && bb.end(bb.length - 1) >= d * 0.9; } catch { return false; } };
+        if (cukup()) return res();
+        const poll = setInterval(() => { if (cukup()) { clearInterval(poll); res(); } }, 350);
+        v.addEventListener("canplaythrough", () => { clearInterval(poll); res(); }, { once: true });
+        setTimeout(() => { clearInterval(poll); res(); }, 45_000);
+      });
+    }
+    const v2 = mkVid(); // 🌀 deck B pasangan crossfade — sumber yang SUDAH TERBUKTI (blob lokal: gratis)
+    await loadVid(v2, objUrl || srcStream);
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const cx = c.getContext("2d")!;
     cx.drawImage(imgs[i], 0, 0);
     cx.drawImage(v, 0, 0, W, H);
-    if (!canvasReadable(c)) { onStage?.(`⚠️ Klip video ${i + 1} diblokir CORS — slide tetap gambar still.`); continue; }
+    if (!canvasReadable(c)) { onStage?.(`⚠️ Klip video ${i + 1} diblokir CORS — slide tetap gambar still.`); if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch { /* abaikan */ } } continue; }
     cx.drawImage(imgs[i], 0, 0); // kembalikan poster still (frame video dilukis saat render)
     imgs[i] = c;
-    out.set(i, { a: v, b: v2, c });
+    out.set(i, { a: v, b: v2, c, objUrl });
   }
   return out;
 }
@@ -406,11 +427,15 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
     rate = durasiKlip/durasiSlot dijepit [0.5, 1.4] → gerak minimal 15fps (film-ish, bukan patah).
     Sambungan siklus disembunyikan CROSSFADE: deck aktif memudar, deck pasangan muncul dari awal —
     gerak TIDAK PERNAH berhenti & TIDAK ADA lompatan kasar. */
-function vidPlan(raw: number, vd: number, slot: number): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
+function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
   const RMIN = 0.5, RMAX = 1.4;
   let rate = vd / (slot > 0.2 ? slot : vd);
   if (rate < RMIN) rate = RMIN; else if (rate > RMAX) rate = RMAX;
+  // ⏱ v13.13: kendali MANUAL dari bro — setelah jepit auto, dikali pilihannya sendiri (0.25×..2×)
+  const sMul = spd >= 0.25 && spd <= 2 ? spd : 1;
+  rate *= sMul;
+  if (rate < 0.25) rate = 0.25; else if (rate > 2) rate = 2;
   const st = Math.max(0, raw) * rate;
   const cyc = Math.floor(st / vd);
   const pos = st - cyc * vd;
@@ -427,7 +452,7 @@ function seekVid(v: HTMLVideoElement, t: number): Promise<void> {
     let done = false;
     const fin = () => { if (done) return; done = true; v.removeEventListener("seeked", fin); res(); };
     v.addEventListener("seeked", fin);
-    setTimeout(fin, 260);
+    setTimeout(fin, 400); // 📦 v13.13: napas lebih (blob lokal tetap kilat)
     try { v.currentTime = t; } catch { fin(); }
   });
 }
@@ -2050,14 +2075,14 @@ async function renderWebCodecs(b:any){
       const vN = inTrans ? vidMap.get(nextIdx) : undefined;
       // 🌀 v13.12 LOOP LUMAT A/B: deck aktif dilukis penuh; di jendela crossfade deck pasangan muncul alpha 0→1 (sambungan KASAT MATA hilang)
       if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; const slot0 = timeline ? (((timeline as any).durs?.[slideIdx]) ?? slideDur) : slideDur;
-        const pl = vidPlan(t - s0, vC.a.duration || vC.b.duration || 1, slot0);
+        const pl = vidPlan(t - s0, vC.a.duration || vC.b.duration || 1, slot0, ((slideOpts as any)?.[slideIdx]?.spd) || 1); // ⏱ v13.13
         const act = pl.act === "a" ? vC.a : vC.b; const nxt = pl.act === "a" ? vC.b : vC.a;
         await seekVid(act, Math.min(pl.pos, (act.duration || 1) - 0.06));
         blitVid(act, vC.c, (b as any).vigVideo, (b as any).vigStrV);
         if (pl.inX) { await seekVid(nxt, pl.x * Math.min(0.5, (nxt.duration || 1) * 0.15)); blitVid(nxt, vC.c, null, 0, pl.x); }
       }
       if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; const slot1 = timeline ? (((timeline as any).durs?.[nextIdx]) ?? slideDur) : slideDur;
-        const pl2 = vidPlan(t - s1, vN.a.duration || vN.b.duration || 1, slot1);
+        const pl2 = vidPlan(t - s1, vN.a.duration || vN.b.duration || 1, slot1, ((slideOpts as any)?.[nextIdx]?.spd) || 1); // ⏱ v13.13
         const act2 = pl2.act === "a" ? vN.a : vN.b; const nxt2 = pl2.act === "a" ? vN.b : vN.a;
         await seekVid(act2, Math.min(pl2.pos, (act2.duration || 1) - 0.06));
         blitVid(act2, vN.c, (b as any).vigVideo, (b as any).vigStrV);
@@ -2225,7 +2250,7 @@ async function renderMediaRecorder(b:any){
           // di jendela crossfade deck pasangan ikut main dari awal → sambungan tersamar silang, GERAK TAK PERNAH BERHENTI.
           const vdm = o.a.duration || o.b.duration || 1; const slotm = timeline ? (((timeline as any).durs?.[si]) ?? perSlide) : perSlide;
           const raw = Math.max(0, t - (timeline ? (timeline.starts[si] ?? 0) : si * perSlide));
-          const pl = vidPlan(raw, vdm, slotm);
+          const pl = vidPlan(raw, vdm, slotm, ((slideOpts as any)?.[si]?.spd) || 1); // ⏱ v13.13
           const act = pl.act === "a" ? o.a : o.b; const nxt = pl.act === "a" ? o.b : o.a;
           try { if (Math.abs(act.playbackRate - pl.rate) > 0.001) act.playbackRate = pl.rate; } catch {}
           const want = Math.min(pl.pos, vdm - 0.06);
@@ -2258,7 +2283,7 @@ async function renderMediaRecorder(b:any){
   };
   requestAnimationFrame(tick);
   const blob=await done;
-  try { vidMap?.forEach((o) => { o.a.pause(); o.b.pause(); }); } catch {} // 🌀 v13.12: tidurkan KEDUA deck setelah render
+  try { vidMap?.forEach((o) => { o.a.pause(); o.b.pause(); if (o.objUrl) { try { URL.revokeObjectURL(o.objUrl); } catch { /* abaikan */ } } }); } catch {} // 📦 v13.13: tidurkan deck + bebaskan blob
   onStage?.("✅ Selesai!"); onProgress?.(1);
   onStage?.(`⏱ Telemetri: total ${((performance.now()-__t0)/1000).toFixed(1)}d · mesin MEDIARECORDER(realtime)`); // ⚡ v13.10
   return blob;

@@ -96,7 +96,7 @@ type Scene = {
   scene: number; scene_desc: string; lyric_line: string; visual_prompt: string; mood: string;
   status: "idle" | "loading" | "done" | "error";
   url?: string; err?: string;
-  vid?: VidPick | null; vidOn?: boolean; // 🎞️ v13.11 LEMARI VIDEO — visual boleh video stok (gratis) ATAU gambar AI
+  vid?: VidPick | null; vidOn?: boolean; vidSpd?: number; // 🎞️ v13.11 LEMARI VIDEO · ⏱ v13.13 kecepatan manual klip stok
 };
 type Board = { style_visual: string; color_grade: string; scenes: Scene[] };
 
@@ -1319,6 +1319,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       slideOptsById[sl.id] = {
         dur: per,
         trans: "dissolve",
+        ...(sc.vidOn && sc.vid && sc.vidSpd && sc.vidSpd !== 1 ? { spd: sc.vidSpd } : {}), // ⏱ v13.13: kecepatan manual ikut ke render
           texts: cap
           ? [{
               id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
@@ -1804,6 +1805,18 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                       ) : null}
                     </div>
                     {sc.vidOn && sc.vid && !sc.url ? <p className="lh-note" style={{ margin: "6px 0 0" }}>ℹ️ Adegan ini tanpa gambar AI — hemat kredit gambar.</p> : null}
+                    {sc.vidOn && sc.vid ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                        <span className="lh-mini">⏱</span>
+                        <select className="lh-sel" style={{ flex: 1 }} value={sc.vidSpd ?? 1} onChange={(e) => updateScene(i, { vidSpd: +e.target.value })}>
+                          <option value={1}>Kecepatan: Otomatis pas slot (disaranin)</option>
+                          <option value={0.75}>Lebih lambat 0.75× (dreamy)</option>
+                          <option value={0.5}>Sangat lambat 0.5× (puisi)</option>
+                          <option value={1.25}>Lebih cepat 1.25×</option>
+                          <option value={1.6}>Cepat 1.6×</option>
+                        </select>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
