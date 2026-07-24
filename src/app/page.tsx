@@ -1139,11 +1139,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
     return c;
   }
-  // 🌀 v13.15 LOOP LUMAT di PREVIEW: 2 deck + crossfade KONTINYU (peran dari vidLoopPrev — diuji di
-  // tests/vidloop.test.mjs). Deck yang menang fade LANJUT main tanpa mundur → sambungan tak kasat mata.
-  function syncPrevDecks(pr: { a: HTMLVideoElement; b: HTMLVideoElement } | null, vN: HTMLVideoElement | null, role: { outD: "a" | "b"; outPos: number; inD: "a" | "b" | null; inPos: number; x: number }, rate: number) {
+  type PrevRole = { outD: "a" | "b"; outPos: number; inD: "a" | "b" | null; inPos: number; x: number };
+  // 🌀🌉 v13.15/16 LOOP LUMAT + SERAH-TERIMA ANTAR-VIDEO: slide AKTIF & BERIKUTNYA sama-sama deck kembar
+  // dengan RATE & POSISI VISUALNYA sendiri (bukan dari 0 @ 1×) → dissolve tak membeku, nol rewind, nol pop.
+  function syncPrevDecks(
+    prC: { a: HTMLVideoElement; b: HTMLVideoElement } | null, roleC: PrevRole | null, rateC: number,
+    prN: { a: HTMLVideoElement; b: HTMLVideoElement } | null, roleN: PrevRole | null, rateN: number,
+  ) {
     const running = playingRef.current;
-    const setD = (v: HTMLVideoElement | null, td: number, play: boolean) => {
+    const setD = (v: HTMLVideoElement | null, td: number, play: boolean, rate: number) => {
       if (!v || (v as any).__dead) return;
       const vd = v.duration || 0;
       const want = td <= 0 ? 0 : (vd > 0.2 && isFinite(vd) ? Math.min(td, Math.max(0, vd - 0.04)) : td);
@@ -1157,25 +1161,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         try { if (Math.abs(v.currentTime - want) > 0.08) v.currentTime = want; } catch {}
       }
     };
-    if (pr) {
+    const managePair = (pr: { a: HTMLVideoElement; b: HTMLVideoElement }, role: PrevRole, rate: number) => {
       const out = role.outD === "a" ? pr.a : pr.b;
       const par = out === pr.a ? pr.b : pr.a;
       const inn = role.inD ? (role.inD === "a" ? pr.a : pr.b) : null;
-      setD(out, role.outPos, true);
-      setD(inn || par, inn ? role.inPos : 0, !!inn); // pasangan diparkir di 0, disuruh main hanya saat fade
-    }
-    if (vN) { // slide BERIKUTNYA: cukup bergerak dari awal (hanya dipakai saat dissolve antar-slide)
-      if (running) {
-        try { if (vN.playbackRate !== 1) vN.playbackRate = 1; } catch {}
-        if (vN.paused || vN.ended) { try { vN.currentTime = 0; } catch {} void vN.play().catch(() => {}); }
-      } else {
-        if (!vN.paused) vN.pause();
-        try { if (Math.abs(vN.currentTime) > 0.08) vN.currentTime = 0; } catch {}
-      }
-    }
+      setD(out, role.outPos, true, rate);
+      setD(inn || par, inn ? role.inPos : 0, !!inn, rate); // pasangan diparkir di 0, main hanya saat fade
+    };
+    if (prC && roleC) managePair(prC, roleC, rateC);
+    if (prN && roleN) managePair(prN, roleN, rateN);
     const live = new Set<HTMLVideoElement>();
-    if (pr) { live.add(pr.a); live.add(pr.b); }
-    if (vN) live.add(vN);
+    if (prC) { live.add(prC.a); live.add(prC.b); }
+    if (prN) { live.add(prN.a); live.add(prN.b); }
     vidsRef.current.forEach(ov => { if (!live.has(ov) && !ov.paused) ov.pause(); });
     decksRef.current.forEach(dd => { if (!live.has(dd.a) && !dd.a.paused) dd.a.pause(); if (!live.has(dd.b) && !dd.b.paused) dd.b.pause(); });
   }
@@ -1208,26 +1205,35 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const optNxt = sl[L.nextIdx] ? optsRef.current[sl[L.nextIdx].id] : null;
     const cur = getImage(sl[L.idx].imageUrl);
     const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(sl[L.nextIdx].imageUrl) : null;
-    // 🎬 v11.8 + 🌀 v13.15: slide video digambar dari DECK KEMBAR — sambungan loop di-CROSSFADE sutra
+    // 🎬 v11.8 + 🌀🌉 v13.15/16: DECK KEMBAR untuk slide AKTIF & BERIKUTNYA. Isi dihitung dari WAKTU
+    // MUNCUL VISUAL (tt − start + transDur sebelum), BUKAN clipT yang dijepit → video lama tak membeku
+    // saat dissolve, video baru masuk nyambung (rate & posisi menerus), nol rewind di serah-terima.
     const slNow = sl[L.idx];
     const spdC = (optCur as any)?.spd || 1;
     const pr = slNow.videoUrl ? getDeckPair(slNow.id, slNow.videoUrl!) : null;
-    const vidN = (L.nextIdx !== L.idx && sl[L.nextIdx] && sl[L.nextIdx].videoUrl) ? getVideo(sl[L.nextIdx].videoUrl!) : null;
+    const slNxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? sl[L.nextIdx] : null;
+    const prN = slNxt?.videoUrl ? getDeckPair(slNxt.id, slNxt.videoUrl!) : null;
     let curDraw: any = cur; let nxtDraw: any = nxt;
-    if (pr || vidN) {
-      const vd = pr?.a?.duration || 0;
-      const okV = !!(pr && vd > 0.2 && isFinite(vd));
-      const rate = okV ? vidPlan(0, vd, Math.max(0.5, L.clipDur || vd), spdC).rate : 1;
-      const role = okV
-        ? vidLoopPrev(L.clipT * rate, vd)
-        : { outD: "a" as const, outPos: Math.max(0, Math.min(L.clipT, (vd || 1) - 0.06)), inD: null, inPos: 0, x: 0 };
-      syncPrevDecks(pr, vidN, role, rate);
-      if (pr) {
-        const liveV = (v: HTMLVideoElement | null) => (v && !(v as any).__dead && v.readyState >= 2 && v.videoWidth) ? v : null;
-        const out = liveV(role.outD === "a" ? pr.a : pr.b);
-        const inn = liveV(role.inD ? (role.inD === "a" ? pr.a : pr.b) : null);
+    if (pr || prN) {
+      const roleOf = (pair: { a: HTMLVideoElement; b: HTMLVideoElement } | null, stVisual: number, slot: number, spd: number): { role: PrevRole; rate: number } => {
+        const vd = pair?.a?.duration || 0;
+        const ok = !!(pair && vd > 0.2 && isFinite(vd));
+        const rate = ok ? vidPlan(0, vd, Math.max(0.5, slot || vd), spd).rate : 1;
+        const st = Math.max(0, stVisual) * rate;
+        const role: PrevRole = ok
+          ? vidLoopPrev(st, vd)
+          : { outD: "a", outPos: Math.max(0, Math.min(st, (vd || 1) - 0.06)), inD: null, inPos: 0, x: 0 };
+        return { role, rate };
+      };
+      const RC = pr ? roleOf(pr, tt - (tl.starts[L.idx] || 0) + (L.idx > 0 ? (tl.tdurs[L.idx - 1] || 0) : 0), L.clipDur, spdC) : null;
+      const RN = prN ? roleOf(prN, tt - (tl.starts[L.nextIdx] || 0) + (tl.tdurs[L.idx] || 0), tl.durs[L.nextIdx] || 1, (optNxt as any)?.spd || 1) : null;
+      syncPrevDecks(pr, RC?.role || null, RC?.rate || 1, prN, RN?.role || null, RN?.rate || 1);
+      const liveV = (v: HTMLVideoElement | null) => (v && !(v as any).__dead && v.readyState >= 2 && v.videoWidth) ? v : null;
+      if (pr && RC) {
+        const out = liveV(RC.role.outD === "a" ? pr.a : pr.b);
+        const inn = liveV(RC.role.inD ? (RC.role.inD === "a" ? pr.a : pr.b) : null);
         if (out && blitPrevVid(out, W, H, 0)) {
-          const xe = role.x * role.x * (3 - 2 * role.x); // smoothstep — fade makin lembut
+          const xe = RC.role.x * RC.role.x * (3 - 2 * RC.role.x); // smoothstep — fade makin lembut
           if (inn && xe > 0.004) {
             const bx = blitPrevVid(inn, W, H, 2);
             if (bx) { const c0 = vidBufRef.current[0]!; const cx0 = c0.getContext("2d")!; cx0.save(); cx0.globalAlpha = Math.min(1, xe); cx0.drawImage(bx, 0, 0); cx0.restore(); }
@@ -1237,7 +1243,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           curDraw = vidBufRef.current[2];
         }
       }
-      if (vidN && vidN.readyState >= 2 && vidN.videoWidth) { const b1 = blitPrevVid(vidN, W, H, 1); if (b1) nxtDraw = b1; }
+      if (prN && RN) { const outN = liveV(RN.role.outD === "a" ? prN.a : prN.b); if (outN) { const b1 = blitPrevVid(outN, W, H, 1); if (b1) nxtDraw = b1; } }
     }
     const gf = buildClipFilter(filterRef.current, adjRef.current);
     // 🎬 v11.4: Ken Burns KERAS per-klip (medan kb) — tanpa itu, perilaku lama (6% halus) utuh

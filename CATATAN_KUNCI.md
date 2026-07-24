@@ -72,3 +72,10 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - page.tsx: `getDeckPair(slideId,url)` (2 slide boleh pakai klip sama), `syncPrevDecks(pr,vidN,role,rate)`, drawFrame komposit out+in(alpha), slot buffer ke-3 utk pasangan, unduh-utuh dibagi via `vidBlobP(url)` (SATU unduhan per URL utk 2 deck — irit data/RAM).
 - TEST DULU sesuai perintah: `tests/vidloop.test.mjs` permanen — kontinuitas posisi tiap deck, NOL rewind terlihat, NOL lompatan besar, alpha kontinu, klip 6/30/45/1s + degenerate → 🏆 lulus. vidPlan 14/14 tetap lulus. tsc 0, build 0, smoke `outPos`/`inD`/globalAlpha/`__blobOk` OK.
 - Beda jujur preview vs render: render (vidPlan) me-rewind XF kecil tiap sambungan (deterministik utk ekspor); preview lebih sutra (kontinyu). Kalau bro mau ekspor ikut skema ini → kerjaan v13.16 (ubah vidPlan + uji).
+
+## v13.16 (2026-07-24) 🌉 TRANSISI ANTAR-VIDEO LUMAT
+- Laporan bro: loop sudah halus, giliran transisi video→video berikutnya kasar.
+- 3 biang (diagnosa dari kode): ① video lama MEMBEKU selama dissolve (locate menjepit clipT di clipDur); ② video baru masuk dari 0 @ rate 1× lalu saat serah-terima deck-nya REWIND + ganti ke rate rencana (pop ganda); ③ alpha dissolve linear.
+- Bedah: preview kini pakai WAKTU MUNCUL VISUAL absolut (st = tt − starts[i] + transDur sebelum) → video lama terus bergerak selama memudar; slide BERIKUTNYA juga deck kembar dengan rate & posisi NYAMBUNG sejak detik pertama muncul (nol rewind saat flip); syncPrevDecks mengelola 2 pasangan deck. editing.ts: alpha dissolve & zoom sinematik pakai smoothstep (ujung tetap 0→1 — berlaku preview DAN render, jadi ekspor ikut lebih sutra).
+- Tak disentuh: locate/buildTimeline (matematika timeline aman), vidPlan render, lahan, storyboard.
+- Uji: vidloop 🏆 + vidplan 🏆 (tak berubah), tsc 0 build 0, smoke `*(3-2*` + `1.06-.06*l` OK. getVideo kini tak dipakai preview (dibiarkan — bisa berguna; vidsRef pauser tetap jalan).

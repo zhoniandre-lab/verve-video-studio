@@ -396,10 +396,11 @@ export function paintTransition(
   if (type === "none") { drawBase(ctx, nxt, W, H, { ...nxtP, alpha: 1 }); return; }
   switch (type) {
     case "dissolve": {
-      // 🎞 v13.8 SINEMATIK — kamera tak berhenti saat transisi: cur menjauh pelan,
-      // nxt menenang dari dekat. Menutup rasa "kaku/jelek" pada crossfade panjang.
-      drawBase(ctx, cur, W, H, { ...curP, zoom: curP.zoom * (1 + 0.04 * t) });
-      drawBase(ctx, nxt, W, H, { ...nxtP, zoom: nxtP.zoom * (1.06 - 0.06 * t), alpha: nxtP.alpha * t });
+      // 🎞 v13.8 SINEMATIK + 🌉 v13.16 ALPHA SUTRA: kurva smoothstep (pelan→cepat→pelan) menutup rasa
+      // "kasar" pada dissolve. Titik ujung identik (0→1), gerak kamera sinematik dipertahankan.
+      const te = t * t * (3 - 2 * t);
+      drawBase(ctx, cur, W, H, { ...curP, zoom: curP.zoom * (1 + 0.04 * te) });
+      drawBase(ctx, nxt, W, H, { ...nxtP, zoom: nxtP.zoom * (1.06 - 0.06 * te), alpha: nxtP.alpha * te });
       break;
     }
     case "fadeblack": case "fadewhite": {
