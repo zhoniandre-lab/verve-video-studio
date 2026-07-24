@@ -357,6 +357,16 @@ async function prepareVideos(
     let ok = await loadVid(v, u);
     if (!ok && /^https?:/.test(u)) ok = await loadVid(v, `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`); // jalur cadangan same-origin
     if (!ok || !v.videoWidth) { onStage?.(`⚠️ Klip video ${i + 1} gagal dimuat — slide tetap gambar still.`); continue; }
+    // 🧱 v13.11.3 SANGGA DULU (anti-patah): render dilarang gas sebelum klip cukup ter-buffer.
+    // Dulu byte baru secuil render sudah jalan → seek mentok → frame BASI dilukis berulang (laporan bro).
+    onStage?.(`🧱 Menyangga klip video ${i + 1} (anti-patah)...`);
+    await new Promise<void>((res) => {
+      const cukup = () => { try { const d = v.duration || 0; const bb = v.buffered; return d > 0 && bb.length > 0 && bb.end(bb.length - 1) >= d * 0.9; } catch { return false; } };
+      if (cukup()) return res();
+      const poll = setInterval(() => { if (cukup()) { clearInterval(poll); res(); } }, 350);
+      v.addEventListener("canplaythrough", () => { clearInterval(poll); res(); }, { once: true });
+      setTimeout(() => { clearInterval(poll); res(); }, 45_000); // modal kesabaran 45d/klip — tetap jujur jalan di sinyal tipis
+    });
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const cx = c.getContext("2d")!;
     cx.drawImage(imgs[i], 0, 0);
@@ -2011,8 +2021,9 @@ async function renderWebCodecs(b:any){
     if (vidMap && vidMap.size) {
       const vC = vidMap.get(slideIdx);
       const vN = inTrans ? vidMap.get(nextIdx) : undefined;
-      if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; await seekVid(vC.v, Math.max(0, Math.min(t - s0, (vC.v.duration || 1) - 0.06))); blitVid(vC.v, vC.c, (b as any).vigVideo, (b as any).vigStrV); }
-      if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; await seekVid(vN.v, Math.max(0, Math.min(t - s1, (vN.v.duration || 1) - 0.06))); blitVid(vN.v, vN.c, (b as any).vigVideo, (b as any).vigStrV); }
+      // 🔁 v13.11.3 ANTI-BEKU: waktu di-LOOP modulo durasi klip — klip 6d mengisi slot 40d tetap BERGERAK (dulu patung beku di frame akhir)
+      if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; const vd0 = vC.v.duration || 1; let w0 = Math.max(0, t - s0); if (vd0 > 0.2 && w0 >= vd0) w0 %= vd0; await seekVid(vC.v, Math.min(w0, Math.max(0, vd0 - 0.06))); blitVid(vC.v, vC.c, (b as any).vigVideo, (b as any).vigStrV); }
+      if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; const vd1 = vN.v.duration || 1; let w1 = Math.max(0, t - s1); if (vd1 > 0.2 && w1 >= vd1) w1 %= vd1; await seekVid(vN.v, Math.min(w1, Math.max(0, vd1 - 0.06))); blitVid(vN.v, vN.c, (b as any).vigVideo, (b as any).vigStrV); }
     }
     const optCur = slideOpts ? (slideOpts as any)[slideIdx] : null;
     const aDur = animDurOf(optCur);
@@ -2171,8 +2182,11 @@ async function renderMediaRecorder(b:any){
       for (const [si, o] of vidMap) {
         const active = si === slideIdx || (inTrans && si === nextIdx);
         if (active) {
-          if (o.v.paused) {
-            try { const s0 = timeline ? (timeline.starts[si] ?? 0) : si * perSlide; const want = Math.max(0, Math.min(t - s0, (o.v.duration || 1) - 0.06)); if (o.v.ended || Math.abs(o.v.currentTime - want) > 0.6) o.v.currentTime = want; } catch {}
+          // 🔁 v13.11.3: mesin realtime juga di-LOOP — klip habis diputar gulung ulang, bukan membeku
+          const vdm = o.v.duration || 1; let wantm = Math.max(0, t - (timeline ? (timeline.starts[si] ?? 0) : si * perSlide));
+          if (vdm > 0.2 && wantm >= vdm) wantm %= vdm;
+          if (o.v.paused || o.v.ended) {
+            try { if (o.v.ended || Math.abs(o.v.currentTime - wantm) > 0.6) o.v.currentTime = Math.min(wantm, Math.max(0, vdm - 0.06)); } catch {}
             void o.v.play().catch(() => {});
           }
           blitVid(o.v, o.c, (b as any).vigVideo, (b as any).vigStrV);
