@@ -17,7 +17,7 @@ export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariH
     const j: any = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) {
       if (j.code === "TANPA_KUNCI")
-        return { ok: false, hasil: [], total: 0, err: "🔑 Kunci Pexels belum terpasang di server — lapor admin ya bro." };
+        return { ok: false, hasil: [], total: 0, err: "🔑 Kunci gudang video belum terpasang di server — lapor admin ya bro." };
       if (j.code === "KECEPETAN")
         return { ok: false, hasil: [], total: 0, err: "⏳ Terlalu sering cari dalam 10 menit — tarik napas dulu ya bro." };
       return { ok: false, hasil: [], total: 0, err: j.error || `Gudang gagal dihubungi (HTTP ${r.status})` };
@@ -97,7 +97,11 @@ export function temaDariKarakter(karts: { nama?: string; peran?: string }[]): st
 
 /** Bangun kueri Inggris SINEMATIK: tema karakter + emosi DIDAHULUKAN, kata adegan menyusul hemat.
     Sumber adegan: visual_prompt (SUDAH Inggris), dibersihkan dari kata gaya. */
-export function kueriDariScene(visualPrompt: string, sceneDesc: string, tema = "", mood = ""): string {
+/* 🧺 v13.17 GAYA SINEMATIK BERGILIR — diputar per adegan (index % jumlah) supaya KUERI tiap adegan
+   beda → klip yang keluar beda-beda, rasa film (bukan "itu-itu aja"). */
+export const GAYA_EN = ["cinematic", "slow motion", "close up", "wide shot", "golden hour", "aerial view"];
+
+export function kueriDariScene(visualPrompt: string, sceneDesc: string, tema = "", mood = "", gaya = ""): string {
   const kata = (visualPrompt || "")
     .toLowerCase()
     .replace(/[^a-z\s]/g, " ")
@@ -111,10 +115,11 @@ export function kueriDariScene(visualPrompt: string, sceneDesc: string, tema = "
   }
   const temaW = (tema || "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 2);
   const moodW = MOOD_EN[(mood || "").toLowerCase().trim()];
+  const gayaW = (gaya || "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 2); // 🧺 v13.17
   const gab: string[] = [];
-  for (const w of [...temaW, ...(moodW ? [moodW] : []), ...adegan]) {
+  for (const w of [...temaW, ...(moodW ? [moodW] : []), ...gayaW, ...adegan]) {
     if (!gab.includes(w)) gab.push(w);
-    if (gab.length >= 5) break;
+    if (gab.length >= 6) break; // slot +1 untuk gaya — tema & emosi tetap didahulukan
   }
   if (gab.length >= 2) return gab.join(" ");
   // Cadangan: terjemahan mini dari scene_desc Indonesia
@@ -152,4 +157,19 @@ export function pilihKlipTerbaik(hasil: VidPick[], targetDur: number, hindariId?
     }
   }
   return best;
+}
+
+/** 🧺 v13.17 PILIH BERVARIASI — peringkat seperti pilihKlipTerbaik, tapi pemenangnya DIACAK dari
+    5 kandidat terbaik (bukan juara 1 terus). Anti-kembar `hindariId` TETAP dihormati duluan.
+    Efek: generate ulang / adegan lain tak lagi menampilkan klip yang itu-itu saja. */
+export function pilihKlipBervariasi(hasil: VidPick[], targetDur: number, hindariId?: Set<number>, jumlahKandidat = 5): VidPick | null {
+  if (!hasil.length) return null;
+  const segar = hindariId && hindariId.size ? hasil.filter((v) => !hindariId.has(v.id)) : hasil;
+  const pool = segar.length ? segar : hasil;
+  const t = targetDur > 0 ? targetDur : 6;
+  const skor = (v: VidPick) =>
+    (v.dur >= t * 0.9 ? 100 : 0) - Math.abs(v.dur - t) * 5 + Math.min(v.w || 0, 1280) / 100 + (Math.min(v.dur, t) / t) * 20;
+  const peringkat = [...pool].sort((a, b) => skor(b) - skor(a));
+  const atas = peringkat.slice(0, Math.max(1, Math.min(jumlahKandidat, peringkat.length)));
+  return atas[Math.floor(Math.random() * atas.length)];
 }

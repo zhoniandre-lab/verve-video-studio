@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { avWarm } from "@/lib/avault";
-import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, temaDariKarakter, type VidPick } from "@/lib/stockvid";
+import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, pilihKlipBervariasi, temaDariKarakter, GAYA_EN, type VidPick } from "@/lib/stockvid";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
@@ -774,10 +774,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     for (let i = 0; i < board.scenes.length; i++) {
       const sc = board.scenes[i];
       if (sc.vidOn && sc.vid) { ok++; continue; }
-      const r = await cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc, tema, sc.mood), rasaIndo);
+      const gaya = GAYA_EN[i % GAYA_EN.length]; // 🧺 v13.17: gaya sinematik bergilir → kueri tiap adegan beda
+      const r = await cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc, tema, sc.mood, gaya), rasaIndo);
       if (r.ok && r.hasil.length) {
         if (r.lebar) lebar++;
-        const best = pilihKlipTerbaik(r.hasil, perScene, dipakai);
+        const best = pilihKlipBervariasi(r.hasil, perScene, dipakai); // 🧺 acak dari 5 terbaik, bukan juara 1 terus
         if (best) { dipakai.add(best.id); updateScene(i, { vid: best, vidOn: true }); ok++; }
       }
       await new Promise((r2) => setTimeout(r2, 350)); // sopan ke gudang + HP tetap lega
