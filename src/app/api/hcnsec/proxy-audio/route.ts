@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     }
 
     const ctRaw = r.headers.get("content-type") || "";
-    if (ctRaw && !/(audio|video|mpeg|mp4|aac|wav|ogg|webm|m4a|flac|opus|octet-stream|binary|force-download)/i.test(ctRaw)) {
+    if (ctRaw && !/(audio|video|image|jpe?g|png|webp|mpeg|mp4|aac|wav|ogg|webm|m4a|flac|opus|octet-stream|binary|force-download)/i.test(ctRaw)) { // 🩹 v13.17.1: image/* untuk thumbnail Pixabay
       return NextResponse.json({ error: `Bukan media (content-type: ${ctRaw.slice(0, 60)})` }, { status: 415 });
     }
     const ct = ctRaw || "audio/mpeg";

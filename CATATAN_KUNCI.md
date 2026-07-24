@@ -86,3 +86,7 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - LAYER 2 — VARIASI pencarian: GAYA_EN 6 gaya sinematik bergilir per adegan (cinematic/slow motion/close up/wide shot/golden hour/aerial view) → kueri tiap adegan beda; `kueriDariScene(+gaya)` (≤6 kata, tema&emosi didahulukan); `pilihKlipBervariasi` = peringkat lama tapi juara DIACAK dari 5 kandidat terbaik (anti-kembar hindariId tetap prioritas). Sheet 🔄 manual & pilihKlipTerbaik lama tak diubah.
 - UJI DULU: tests/stokgudang.test.mjs permanen (12 uji: jangkar tema, kata gaya, hemat kata, fallback, variasi >1 & ≤5, anti-kembar 0 bocor, fallback penuh, deterministik lama) 🏆; vidloop 🏆; vidplan 🏆; tsc 0 build 0; smoke PIXABAY_API_KEY di server chunk + "slow motion" di client chunk.
 - PANDUAN KUNCI PIXABAY (kirim ke bro): pixabay.com → daftar gratis → buka pixabay.com/api/docs/ (key tampil di halaman itu) → Vercel project → Settings → Environment Variables → `PIXABAY_API_KEY` → Save → Redeploy (aktif setelah redeploy; tanpa key pun app tetap jalan Pexels-only).
+
+### v13.17.1 tambalan — thumbnail Pixabay diblok GERBANG (415)
+- Bukti live: video Pixabay via proxy 200/mp4 ✅, tapi thumb 415 — cdn.pixabay kadang mengirim `image/jpeg` dan regex media GERBANG belum mengakui `image`. Risiko: poster rusak → render bisa menggantung menunggu gambar.
+- Bedah 1 baris: regex proxy-audio + `image|jpe?g|png|webp`. tsc 0 build 0 smoke OK.
