@@ -145,7 +145,7 @@ export function pilihKlipTerbaik(hasil: VidPick[], targetDur: number, hindariId?
   let bestSkor = -Infinity;
   for (const v of pool) {
     const cukup = v.dur >= t * 0.9 ? 100 : 0; // klip lebih panjang dari adegan = aman dipotong
-    const skor = cukup - Math.abs(v.dur - t) * 5 + Math.min(v.w || 0, 1280) / 100;
+    const skor = cukup - Math.abs(v.dur - t) * 5 + Math.min(v.w || 0, 1280) / 100 + (Math.min(v.dur, t) / t) * 20; // 🌀 v13.12: makin mendekati slot makin juara
     if (skor > bestSkor) {
       bestSkor = skor;
       best = v;

@@ -36,7 +36,7 @@ function pilihFile(files: any[]): { src: string; sd: string; w: number; h: numbe
   if (!mp4.length) return null;
   const kecilKeBesar = [...mp4].sort((a, b) => (a?.width || 0) - (b?.width || 0));
   const layak = kecilKeBesar.filter((f) => (f?.width || 99999) >= 640);
-  const utama = layak.find((f) => (f?.width || 0) >= 850) || layak[0] || kecilKeBesar[kecilKeBesar.length - 1];
+  const utama = kecilKeBesar.find((f) => (f?.width || 99999) >= 1100) || layak[0] || kecilKeBesar[kecilKeBesar.length - 1]; // 🌀 v13.12: bidik HD 1280 — hasil donlod tajam ("nggak jelas" hilang)
   const ringan = kecilKeBesar.find((f) => (f?.width || 99999) >= 480) || kecilKeBesar[0];
   return { src: utama.link, sd: ringan.link, w: utama?.width || 0, h: utama?.height || 0 };
 }
