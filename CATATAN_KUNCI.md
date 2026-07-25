@@ -111,3 +111,9 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - Bedah: jalur itu kini panggil /api/hcnsec/transcribe (cascade Groq→HCNSEC — pembaca kata per kata hitungan detik), kata dipetakan ke baris via segmen; pendengar browser jadi CADANGAN dengan flash jujur "🐌 lagu didengarkan sepanjang durasi". Suara+teks TTS dikenal: instan (tak diubah). Whitelist transcribe +vercel.app (jalur proxy sendiri).
 - Cara CapCut memang begitu: ASR ber-stempel waktu kata diproses server-side lebih cepat dari realtime — bukan mendengarkan ulang.
 - tsc 0 build 0; smoke client ("hitungan detik, bukan dengar lagu", "jatuh ke pendengar browser") + server ✓.
+
+## v13.21 (2026-07-25) 📦 WHISPER TERIMA BYTES — TERBUKTI live sebelum klaim
+- Biang (screenshot bro): lagu proyek berbentuk blob:/upload HP → helper menolak "audio bukan URL online" → jatuh ke pendengar browser = "dengar lagu sampai habis". Dalih "Lirik lagu" pun diam-diam skip AI bila lagu blob (perkiraan = tak serasi).
+- Bedah: route transcribe dukung multipart/form-data (bytes langsung) DI SAMPING JSON URL; fd per kandidat; helper klien transcribeAudio(src,hint,lang) SATU PINTU utk lirik & musik/suara; guard >4,5MB (batas body Vercel hobby) pesan jujur.
+- BUKTI live (dites sebelum klaim): multipart file 2.100.342B → ok:true engine "Groq Whisper (gratis)" 19 kata; pintu URL lama tetap ok:true 18 kata (tak ada yang rusak).
+- Catatan jujur: lagu HP >4,5MB ditolak dengan pesan (Vercel hobby body limit) — pakai link lagu online/generate.
