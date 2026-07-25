@@ -147,3 +147,11 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - CATATAN diagnosa: flash hijau hanya 1,8 detik (setStageText timeout 1800) → konfirmasi sukses memang kilat; Log Klinis kini yang jadi bukti abadi sukses/gagal. Toast merah zIndex 81 DI ATAS sheet (toast 📦 tampak di screenshot bro) → batal dugaan ketutup.
 - tsc 0 build 0; 4 suite ✅ (wavpotong 34 cek: +5 uji diagGaris); smoke "LOG KLINIS · jalur" & "verve_cc_diag_v1" ✓.
 - MENUNGGU: satu foto/salinan LOG KLINIS dari HP bro kalau gagal lagi → bedah SATU titik pasti. Opsi B (sembunyikan tombol keterangan otomatis sementara) ditawarkan, belum dipilih.
+
+## v13.26 (2026-07-25) 🧪 UJI KETERANGAN TAMPIL HULU→HILIR — PUTUSAN SANDBOX: rantai SEHAT
+- Laporan bro paling jernih: "lirik itu memang ADA tapi TIDAK TAMPIL di videonya" + dugaannya "masih perlu edit-edit, nggak otomatis sesuai suara masuk".
+- Pemeriksaan kode: paintFloatingTexts (editing.ts) melukis teks lepas-waktu pada jendelanya (start..start+dur, paintClipText clipT=t−start) dan dipanggil PREVIEW (page.tsx drawFrame) & EKSPOR (recorder renderSlideshow) — fungsi sama.
+- Uji baru tests/keterangan_tampil.test.mjs (ekstrak+eval KODE ASLI: lyricTextStyle, capWordsToClips, insertFloatingTexts dari page.tsx + allClipTexts, paintFloatingTexts dari editing.ts): skenario bro 7 slide × 39,64s + 139 kata → 20 baris lyr_ karaoke sah (gaya #ffd93d, karaoke relatif pas) → 20/20 masuk track NOL dibuang diam-diam, mapping jendela benar → SEMUA 20 baris TERLUKIS pada detiknya (stub lukis perekam), tak bocor waktu, slide dipangkas pun tetap terlukis. 13 cek ✅.
+- PUTUSAN DIDUKUNG BUKTI: kalau baris ADA dengan waktu X → PASTI dilukis pada X (preview & ekspor). ⇒ "lirik ada tapi tak tampil" berarti: (a) baris itu artifak "⚠️ perkiraan cerdas" lama (waktu MERATA — memang meleset = persis keluhan "perlu edit-edit"), atau (b) run tak pernah sukses sampai insert, atau (c) preview tak diputar ke detik baris itu. Penentu pasti: 🔬 LOG KLINIS (v13.25) di sheet.
+- Dua macam keterangan dijelaskan ke bro: 🤖 serasi otomatis (stempel AI per kata — selaras, tanpa edit) vs ⚠️ perkiraan cerdas (meleset — perlu ⚓ geser).
+- tsc 0 build 0; 5 suite ✅ (keterangan_tampil jadi permanen ke-5). Tidak ada perubahan src produk (tambah test + catatan).
