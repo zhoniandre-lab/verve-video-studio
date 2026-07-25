@@ -2227,6 +2227,26 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } finally { clearTimeout(to); }
   }
 
+  // 📝👁️ v13.24 KETERANGAN TAMPIL — kata hasil AI → ClipText karaoke per baris (id lyr_),
+  // persis artefak jalur Lirik: KELIHATAN di timeline track teks & menyala kata demi kata saat waktunya.
+  function capWordsToClips(ws2: CapWord[], tplId: string, sizeR: number, yR: number): ClipText[] {
+    const lineIds = [...new Set(ws2.map(w => w.line))].sort((a, b) => a - b);
+    const style = lyricTextStyle(tplId, sizeR, yR);
+    return lineIds.map((li) => {
+      const wsL = ws2.filter(w => w.line === li);
+      const startM = wsL.length ? Math.min(...wsL.map(w => w.start)) : 0;
+      const endM = wsL.length ? Math.max(...wsL.map(w => w.end)) : startM + 0.8;
+      return {
+        id: uid("lyr"),
+        txt: wsL.map(w => w.text).join(" "),
+        ...style,
+        start: _r2(Math.max(0, startM)),
+        dur: _r2(Math.max(0.8, endM - startM)),
+        karaokeWords: wsL.map(w => ({ w: w.text, start: _r2(Math.max(0, w.start - startM)), end: _r2(Math.max(0.1, w.end - startM)) })),
+      } as ClipText;
+    }).filter(t => t.txt.trim().length > 0);
+  }
+
   async function doAutoCaptions(forceFrom?: string) { // 🎬 v11.5: Sutradara boleh memilihkan sumber (lirik/musik/suara)
     const from = forceFrom ?? ccFrom;
     if (forceFrom) setCcFrom(forceFrom); // saklar UI ikut sinkron supaya panel Keterangan tidak bingung
@@ -2300,8 +2320,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           acc += seg;
         });
         pushHist();
-        setCapWords(words);
-        flash(`💬 ${sentences.length} baris keterangan dibuat (sinkron narasi)`);
+        if (capWords.length) setCapWords([]); // 📝👁️ v13.24: lapisan melayang dikosongkan — tak dobel & tak ghost
+        const textsSuara = capWordsToClips(words, ccTpl, ccSize, ccY);
+        insertFloatingTexts(textsSuara);
+        seekPreview(textsSuara[0]?.start || 0); // jarum lompat → TAMPIL seketika walau belum tekan ▶
+        flash(`💬 ${textsSuara.length} baris keterangan MASUK TRACK TEKS 🎼 (sinkron narasi) — menyala kata demi kata saat waktunya`);
       } else {
         // ⚡ v13.20 SERASI CAPCUT: transkripsi SERVER (Whisper cascade Groq→HCNSEC) — hitungan DETIK,
         // bukan dengar lagu sepanjang durasinya. Pendengar browser jadi cadangan terakhir (diberi tahu jujur).
@@ -2364,9 +2387,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         try { rec.stop(); } catch {}
         }
         if (!words.length) throw new Error(`Tidak ada ucapan terdeteksi${gagalW ? ` — AI server: ${gagalW.slice(0, 60)}` : ""}. Pastikan suara jelas & volume nyala.`);
+        // 📝👁️ v13.24 KETERANGAN TAMPIL: tulis ke TRACK TEKS (bukan lapisan melayang tak-kelihatan) —
+        // kelihatan LANGSUNG di timeline seperti CapCut + karaoke menyala selaras waktu nyanyi (stempel asli AI).
         pushHist();
-        setCapWords(words);
-        flash(engineName2 ? `💬 ${lineNo} baris keterangan ditulis ${engineName2} 🤖 — hitungan detik, serasi otomatis!` : `💬 ${lineNo} baris keterangan terdeteksi (eksperimen — cek hasilnya)`);
+        if (capWords.length) setCapWords([]);
+        const textsCap = capWordsToClips(words, ccTpl, ccSize, ccY);
+        insertFloatingTexts(textsCap);
+        seekPreview(textsCap[0]?.start || 0);
+        flash(engineName2 ? `💬 ${textsCap.length} baris keterangan MASUK TRACK TEKS 🎼 — ${engineName2} 🤖 kata demi kata berstempel asli, selaras suara nyanyi!` : `💬 ${textsCap.length} baris keterangan masuk TRACK TEKS (eksperimen — cek hasilnya)`);
       }
       setModal(null); setTool(null);
     } catch (e: any) { setErr(e); }
