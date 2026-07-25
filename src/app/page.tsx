@@ -3321,7 +3321,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTextStart={moveTextStart} onTextDur={moveTextDur}
         onTextMoved={(sid: string, tid: string = "") => { pilihObjek("teks"); setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
         onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
-        onSel={(id: string) => { pilihObjek("clip"); setSelId(id); setClipBar(true); }}
+        onSel={(id: string) => { if (!id) { setSelId(""); setClipBar(false); return; } pilihObjek("clip"); setSelId(id); setClipBar(true); }} // v13.34: id kosong = LEPAS blok (normal biasa)
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
@@ -3811,9 +3811,8 @@ function TimelineV6(p: any) {
     if (!(d.kind === "reorder" || d.kind === "aud" || d.kind === "txt" || d.kind === "stk")) return false;
     const dy = e.clientY - (d.startY || 0); const dx = e.clientX - d.startX;
     // klip: geser vertikal = ANGKAT jalur video; SEMUA objek elemen (audio/teks/stiker): vertikal = pindah BARIS
-    const vertikal = d.kind === "reorder" && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;
-    const tahanLama = d.kind === "reorder" && (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // v9.0: "angkat kolam" CUMA klip video — objek elemen TAK PERNAH dicuri dari genggaman jari
-    if (!vertikal && !tahanLama) return false;
+    const vertikal = (d.kind === "aud" || d.kind === "txt" || d.kind === "stk") && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6; // v13.34: ANGKAT-JALUR via klip video DIBONGKAR total (perampas gestur pindah-klip); jalur ELEMEN tetap bisa pindah baris vertikal
+    if (!vertikal) return false; // v13.34 BONGKAR pembajak 620ms: tahan SELAMA APAPUN = tetap urusan objek — gestur pindah klip tak lagi dicuri mode angkat-jalur
     startLaneLift(laneIdOfDrag(d), e.clientY);
     return true;
   }
@@ -3898,7 +3897,7 @@ function TimelineV6(p: any) {
   function onClipDown(e: React.PointerEvent, i: number) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     const sid = slides[i].id;
-    p.onSel(sid);
+    p.onSel(sid === selId ? "" : sid); // v13.34: ketuk sekali = BLOK; ketuk objek yang sama lagi = LEPAS blok, normal biasa
     const target = e.target as HTMLElement;
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
