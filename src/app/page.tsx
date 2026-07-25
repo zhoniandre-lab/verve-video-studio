@@ -2306,10 +2306,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         // ⚡ v13.20 SERASI CAPCUT: transkripsi SERVER (Whisper cascade Groq→HCNSEC) — hitungan DETIK,
         // bukan dengar lagu sepanjang durasinya. Pendengar browser jadi cadangan terakhir (diberi tahu jujur).
         let words: CapWord[] = [];
-        let gagalW = ""; let engineName2 = "";
+        let gagalW = ""; let engineName2 = ""; let janganDengar = false; // 🔁 v13.23: unggahan potongan gagal → JANGAN lempar ke pendengar 4½ menit
         setStageText("🤖 AI menulis keterangan dari audio — hitungan detik, bukan dengar lagu sampai habis...");
         try {
           const j: any = await transcribeAudio(srcUrl, "", /^id/i.test(ccLang || "") ? "id" : "", (m) => setStageText(m)); // 📦 v13.21: blob HP pun ikut AI · ✂️ v13.22: lagu BESAR dipotong per bagian
+          janganDengar = !!(j && j.janganDengar); // 🔁 v13.23
           if (j?.ok && Array.isArray(j.words) && j.words.length) {
               const segs: any[] = Array.isArray(j.segments) ? j.segments : [];
               words = (j.words as any[]).map((w) => {
@@ -2323,6 +2324,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         } catch { gagalW = "AI tak terjangkau (jaringan)"; }
         let lineNo = words.length ? (words[words.length - 1].line + 1) : 0;
         if (!words.length) {
+        // 🔁 v13.23: unggahan potongan gagal = gangguan sesaat → jujur minta ketuk lagi, BUKAN dengar lagu 4½ menit
+        if (janganDengar) throw new Error(`📦 ${(gagalW || "potongan lagu gagal terkirim").slice(0, 90)} — itu gangguan sesaat (jaringan/antre AI), bukan vonis harus dengar lagu. Ketuk "Buat keterangan" sekali lagi — potongan biasanya langsung lolos.`);
         if (gagalW) flash(`🐌 AI server tak tersedia (${gagalW.slice(0, 70)}) — jatuh ke pendengar browser: lagu DIDENGARKAN sepanjang durasinya, jangan ditutup...`);
         // speech recognition live (Chrome) — CADANGAN TERAKHIR (LAMA: 1× durasi lagu)
         const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;

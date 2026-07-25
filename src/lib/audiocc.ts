@@ -97,14 +97,20 @@ export async function transcribeBlobBesar(
     fd.append("file", wav, `bagian-${c.idx + 1}.wav`);
     if (hint) fd.append("hint", hint);
     if (lang) fd.append("lang", lang);
-    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 90_000);
-    let j: any = null;
-    try {
-      const r = await fetch("/api/hcnsec/transcribe", { method: "POST", body: fd, signal: ctl.signal });
-      j = await r.json().catch(() => null);
-    } catch { j = null; }
-    finally { clearTimeout(to); }
-    if (!j?.ok) return { ok: false, error: `bagian ${c.idx + 1}/${potong.length} gagal: ${String(j?.error || "AI tak terjangkau (jaringan)").slice(0, 80)}` };
+    let j: any = null; let salahTerakhir = ""; let kaliCoba = 1;
+    for (let coba = 0; coba < 2 && !j?.ok; coba++) { // 🔁 v13.23: sekali coba-ulang otomatis — jaringan HP goyang ≠ gagal total
+      kaliCoba = coba + 1;
+      if (coba) { onTahap?.(`🔁 Bagian ${c.idx + 1}/${potong.length} mencoba ulang sekali lagi...`); await new Promise((r) => setTimeout(r, 2000)); }
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 90_000);
+      try {
+        const r = await fetch("/api/hcnsec/transcribe", { method: "POST", body: fd, signal: ctl.signal });
+        j = await r.json().catch(() => null);
+      } catch { j = null; }
+      finally { clearTimeout(to); }
+      if (!j?.ok) salahTerakhir = String(j?.error || "AI tak terjangkau (jaringan)");
+    }
+    // 🛑 v13.23: unggahan potongan gagal == gangguan sesaat → janganDengar (klien JANGAN lempar ke pendengar realtime)
+    if (!j?.ok) return { ok: false, janganDengar: true, error: `bagian ${c.idx + 1}/${potong.length} gagal ${kaliCoba}× (${salahTerakhir.slice(0, 70)})` };
     for (const w of Array.isArray(j.words) ? j.words : []) words.push({ w: String(w?.w || ""), start: (Number(w?.start) || 0) + c.start, end: (Number(w?.end) || 0) + c.start });
     for (const s of Array.isArray(j.segments) ? j.segments : []) segments.push({ text: String(s?.text || ""), start: (Number(s?.start) || 0) + c.start, end: (Number(s?.end) || 0) + c.start });
     if (j.text) texts.push(String(j.text).trim());

@@ -126,3 +126,10 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - Uji: tests/wavpotong.test.mjs BARU 29 cek 🏁 (rencana potong menutup durasi tanpa celah/tumpang, ukuran WAV ≤ pagar, PCM16 jepit, tajuk RIFF sah) + vidplan/vidloop/stokgudang tetap ✅; tsc 0; build 0; smoke literal "Lagu besar — AI membaca bagian" & "lagu tak bisa dibuka di HP ini" ✓.
 - Benang merah file: DITAMBAH audiocc.ts & wavpotong.test.mjs; DISENTUH page.tsx (import, komentar+tanda, pagar→potong, 2 panggilan) & catatan ini; TAK disentuh: api/hcnsec/*, lahan-studio, recorder, editing, stockvid, hcnsec, css.
 - Cadangan jujur: kalau decode gagal (format aneh/memori HP habis) atau AI server down → pesan jujur → fallback 🐌 pendengar browser tetap ada (tak dihapus).
+
+## v13.23 (2026-07-25) 🔁 POTONG GAGAL ≠ VONIS DENGAR LAGU — coba-ulang otomatis + pesan jujur
+- Momen: bro kirim screenshot toast "📦 Lagu besar — AI membaca bagian 3/3" → mesin potong JALAN sampai potong terakhir, tapi keterangan tak muncul; chip masih "148 kata" (sisa percobaan LAMA).
+- BUKTI live skenario persis (lagu tiruan 277,5s, 3 potong berurutan 3,20/3,20/2,48MB ke transkripsi live): SEMUA ok 5,1–7,1 detik/potong, total ±19 detik, 372 kata tersambung offset benar (kata pertama @0,38s — terakhir @277,98s). ⇒ sisi server+format+multipotong sehat; kalau di HP macet di potong 3 = jaringan perangkat.
+- Bedah (4 titik, 2 file): transcribeBlobBesar kini COBA-ULANG 1× otomatis per potong (jeda 2 detik, tahap "🔁 mencoba ulang sekali lagi"); kalau tetap gagal → hasil {ok:false, janganDengar:true, error:"bagian X/Y gagal 2× (...)"}; jalur musik/suara menangkap janganDengar → lempar error jujur merah "ketuk Buat keterangan sekali lagi" — TAK lagi lempar diam-diam ke pendengar browser 4½ menit. Pendengar 🐌 tetap ada untuk kasus non-unggahan (decode gagal / AI server down / lagu kecil).
+- tsc 0 build 0; 4 suite ✅ (vidplan, vidloop, stokgudang, wavpotong); smoke ("mencoba ulang sekali lagi", "gangguan sesaat", janganDengar) ✓.
+- MENUNGGU jawaban diagnostik bro (a/b/c/d): toast hijau→sukses? / 🐌? / merah? untuk menentukan sentuhan berikut (visibility sukses vs jaringan).
