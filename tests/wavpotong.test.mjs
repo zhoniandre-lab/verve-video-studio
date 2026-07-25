@@ -16,7 +16,7 @@ let js = src.slice(i0, i1)
   .replace(/: DataView/g, "")
   .replace(/: string/g, "")
   .replace(/: number/g, "");
-const P = new Function(`${js}; return { WHISPER_RATE, WHISPER_CHUNK_SEC, WHISPER_MAX_UNGGAH, byteWav, rencanaChunk, floatKePcm16, isiHeaderWav };`)();
+const P = new Function(`${js}; return { WHISPER_RATE, WHISPER_CHUNK_SEC, WHISPER_MAX_UNGGAH, byteWav, rencanaChunk, floatKePcm16, isiHeaderWav, diagGaris, CC_DIAG_KUNCI, CC_DIAG_MAKS };`)();
 console.log("✂️📦 Menguji fungsi ASLI dari src/lib/audiocc.ts (ekstrak+eval, tipe TS dilucuti)");
 
 let gagal = 0;
@@ -80,6 +80,15 @@ T("byteWav negatif dijepit 44", P.byteWav(-5) === 44);
   T("rate 16000 & byteRate 32000", dv.getUint32(24, true) === 16000 && dv.getUint32(28, true) === 32000);
   T("blockAlign 2 & 16-bit", dv.getUint16(32, true) === 2 && dv.getUint16(34, true) === 16);
   T('sihir "data" & ukurannya', ascii(36, 4) === "data" && dv.getUint32(40, true) === n * 2);
+}
+
+// 6) 🔬 Log klinis (v13.25) — baris rapi & terukur
+{
+  T("diagGaris nol detik", P.diagGaris(0, "🎬", "mulai") === "+0.0s 🎬 mulai", P.diagGaris(0, "🎬", "mulai"));
+  T("diagGaris 1,2 detik", P.diagGaris(1234, "✅", "hai") === "+1.2s ✅ hai", P.diagGaris(1234, "✅", "hai"));
+  T("waktu negatif dijepit 0", P.diagGaris(-99, "x", "y").startsWith("+0.0s"));
+  T("teks 200 huruf dipotong rapi (148)", P.diagGaris(0, "x", "y".repeat(200)).length === 148, `${P.diagGaris(0, "x", "y".repeat(200)).length}`);
+  T("kunci LS & batas baris waras", P.CC_DIAG_KUNCI === "verve_cc_diag_v1" && P.CC_DIAG_MAKS >= 40 && P.CC_DIAG_MAKS <= 200, `${P.CC_DIAG_KUNCI} · ${P.CC_DIAG_MAKS}`);
 }
 
 console.log(gagal ? `\n💥 ${gagal} uji GAGAL` : "\n🏁 SEMUA UJI LULUS — lagu besar siap dipotong & dibaca AI");

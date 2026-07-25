@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob, vidPlan, vidLoopPrev } from "@/lib/recorder";
-import { transcribeBlobBesar } from "@/lib/audiocc";
+import { transcribeBlobBesar, ccDiagMulai, ccDiag, ccDiagBaca } from "@/lib/audiocc";
 import { renderGif } from "@/lib/gif";
 import { makeAutoThumbBlob } from "@/lib/thumb";
 import { avWarm, avPut } from "@/lib/avault";
@@ -2211,8 +2211,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!rb || !rb.ok) return null;
       const b = await rb.blob();
       if (!b || !b.size) return null;
+      ccDiag("🧳", `lagu blob ${(b.size / 1e6).toFixed(2)}MB → ${b.size > 4_500_000 ? "jalur POTONG" : "unggah langsung"}`);
       if (b.size > 4_500_000) { // ✂️📦 v13.22: lagu BESAR dibaca di HP, dipotong WAV, diunggah per bagian — BUKAN didengarkan realtime
         clearTimeout(to);
+        ccDiag("🚪", "masuk jalur potong WAV 16kHz per 100 detik");
         return await transcribeBlobBesar(b, hint, lang, onTahap);
       }
       const fd = new FormData();
@@ -2251,6 +2253,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const from = forceFrom ?? ccFrom;
     if (forceFrom) setCcFrom(forceFrom); // saklar UI ikut sinkron supaya panel Keterangan tidak bingung
     setLoading("cc"); setError("");
+    ccDiagMulai(`keterangan:${from}`, `klik — templat ${ccTpl} · bahasa ${ccLang}`); // 🔬 v13.25
     try {
       const tpl = CC_TEMPLATES.find(t => t.id === ccTpl) || CC_TEMPLATES[0];
       setCapStyle(tpl.capStyle as any);
@@ -2290,6 +2293,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         } as ClipText));
         pushHist();
         insertFloatingTexts(texts);
+        ccDiag("📝", `${texts.length} baris lirik → TRACK TEKS`);
         flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? `diselaraskan ${engineName} 🤖 serasi otomatis!` : `⚠️ perkiraan cerdas — AI belum jalan: ${whisperErr || "kunci belum dipasang"}`}. Baris pertama mulai ${formatDur(texts[0]?.start || 0)} — poles di ⚓ panel ini`);
         setModal(null); setTool(null);
         setLoading(null); setTimeout(() => setStageText(""), 100);
@@ -2324,6 +2328,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const textsSuara = capWordsToClips(words, ccTpl, ccSize, ccY);
         insertFloatingTexts(textsSuara);
         seekPreview(textsSuara[0]?.start || 0); // jarum lompat → TAMPIL seketika walau belum tekan ▶
+        ccDiag("📝", `${textsSuara.length} baris narasi → TRACK TEKS`);
         flash(`💬 ${textsSuara.length} baris keterangan MASUK TRACK TEKS 🎼 (sinkron narasi) — menyala kata demi kata saat waktunya`);
       } else {
         // ⚡ v13.20 SERASI CAPCUT: transkripsi SERVER (Whisper cascade Groq→HCNSEC) — hitungan DETIK,
@@ -2341,14 +2346,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
                 for (let si = 0; si < segs.length; si++) { line = si; if ((Number(segs[si]?.end) || 0) >= (Number(w?.start) || 0) - 0.05) break; } // kata → baris segmennya
                 return { text: String(w?.w || "").trim(), start: Math.max(0.05, Number(w?.start) || 0), end: Math.max(0.1, Number(w?.end) || 0), line };
               }).filter((w) => w.text);
-              if (words.length) engineName2 = String(j.engine || "Whisper AI");
+              if (words.length) { engineName2 = String(j.engine || "Whisper AI"); ccDiag("🧮", `AI balas: ${words.length} kata, ${segs.length} segmen`); }
               else gagalW = "AI tidak menemukan ucapan di audio ini";
           } else gagalW = String(j?.error || "AI tak terjangkau (jaringan)").slice(0, 110);
         } catch { gagalW = "AI tak terjangkau (jaringan)"; }
         let lineNo = words.length ? (words[words.length - 1].line + 1) : 0;
         if (!words.length) {
         // 🔁 v13.23: unggahan potongan gagal = gangguan sesaat → jujur minta ketuk lagi, BUKAN dengar lagu 4½ menit
+        if (janganDengar) ccDiag("🛑", "unggah potongan gagal → minta ketuk ulang (BUKAN dengar lagu)");
         if (janganDengar) throw new Error(`📦 ${(gagalW || "potongan lagu gagal terkirim").slice(0, 90)} — itu gangguan sesaat (jaringan/antre AI), bukan vonis harus dengar lagu. Ketuk "Buat keterangan" sekali lagi — potongan biasanya langsung lolos.`);
+        ccDiag("🐌", `FALLBACK pendengar browser (cara LAMA) — alasan: ${gagalW.slice(0, 60)}`);
         if (gagalW) flash(`🐌 AI server tak tersedia (${gagalW.slice(0, 70)}) — jatuh ke pendengar browser: lagu DIDENGARKAN sepanjang durasinya, jangan ditutup...`);
         // speech recognition live (Chrome) — CADANGAN TERAKHIR (LAMA: 1× durasi lagu)
         const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -2394,10 +2401,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const textsCap = capWordsToClips(words, ccTpl, ccSize, ccY);
         insertFloatingTexts(textsCap);
         seekPreview(textsCap[0]?.start || 0);
+        ccDiag("📝", `${textsCap.length} baris keterangan MASUK TRACK TEKS; jarum→${(textsCap[0]?.start || 0).toFixed(1)}s`);
         flash(engineName2 ? `💬 ${textsCap.length} baris keterangan MASUK TRACK TEKS 🎼 — ${engineName2} 🤖 kata demi kata berstempel asli, selaras suara nyanyi!` : `💬 ${textsCap.length} baris keterangan masuk TRACK TEKS (eksperimen — cek hasilnya)`);
       }
       setModal(null); setTool(null);
-    } catch (e: any) { setErr(e); }
+    } catch (e: any) { ccDiag("💥", String(e?.message || e || "galat tak dikenal").slice(0, 120)); setErr(e); }
     setLoading(null); setTimeout(() => setStageText(""), 100);
   }
   function clearCaptions() { pushHist(); setCapWords([]); flash("Keterangan dihapus"); }
@@ -4322,6 +4330,26 @@ const ANIM_STICKER_PREVIEW: Record<string, string> = {
 /* ==================================================================
    EDITOR SHEETS (semua panel alat)
    ================================================================== */
+function DiagPanel() { // 🔬 v13.25 LOG KLINIS — bukti tiap langkah di HP; foto/salin → bro (berhenti nebak)
+  const [ketuk, setKetuk] = useState(0);
+  const [tersalin, setTersalin] = useState(false);
+  void ketuk;
+  const lines = ccDiagBaca();
+  if (!lines.length) return null;
+  return (
+    <div style={{ marginTop: 10, border: "1px solid rgba(56,189,248,.4)", borderRadius: 12, padding: "8px 10px", background: "rgba(8,47,73,.4)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <b style={{ fontSize: 10.5, color: "#7dd3fc", lineHeight: 1.4 }}>{lines[0]}</b>
+        <span style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
+          <button style={{ fontSize: 10, padding: "4px 8px", borderRadius: 8, background: "rgba(255,255,255,.08)", color: "#e2e8f0", border: "1px solid rgba(255,255,255,.15)" }} onClick={() => setKetuk(v => v + 1)}>🔄</button>
+          <button style={{ fontSize: 10, padding: "4px 8px", borderRadius: 8, background: "rgba(255,255,255,.08)", color: "#e2e8f0", border: "1px solid rgba(255,255,255,.15)" }} onClick={() => { try { navigator.clipboard?.writeText(lines.join("\n")); } catch { /* diam */ } setTersalin(true); setTimeout(() => setTersalin(false), 1500); }}>{tersalin ? "✅" : "📋 salin"}</button>
+        </span>
+      </div>
+      <div style={{ marginTop: 6, maxHeight: 128, overflowY: "auto", fontFamily: "ui-monospace,monospace", fontSize: 9.5, lineHeight: 1.6, color: "#bae6fd", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{lines.slice(1).join("\n")}</div>
+    </div>
+  );
+}
+
 function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
   const A = api;
   const close = () => setTool(null);
@@ -4700,6 +4728,7 @@ function KeteranganSheet({ api: A, onClose }: any) {
         {!!A.capWords.length && (
           <div className="v6-okbox">✅ {A.capWords.length} kata keterangan aktif (gaya: {tpl.label}). <b onClick={A.clearCaptions} style={{ cursor: "pointer", textDecoration: "underline" }}>Hapus</b></div>
         )}
+        <DiagPanel />
         {!!A.lyrList?.length && (
           <div style={{ marginTop: 12, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}>
             <b style={{ fontSize: 12.5 }}>⚓ Geser waktu lirik</b>
