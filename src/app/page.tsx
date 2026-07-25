@@ -699,6 +699,8 @@ const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "stiker",  icon: "😀",  label: "Stiker" },
   { id: "speed",   icon: "⚡",  label: "Speed" },
   { id: "transisi", icon: "🔀", label: "Transisi" },
+  { id: "geserkir", icon: "◀", label: "Kiri" },
+  { id: "geserkan", icon: "▶", label: "Kanan" },
 ];
 const AUDIO_MENU: { id: string; icon: string; label: string; bdg?: string }[] = [
   { id: "upload",  icon: "🎵", label: "Suara (upload dari HP)" },
@@ -1661,6 +1663,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "stiker": setTool("stiker"); break;
       case "speed": setTool("speed"); break;
       case "transisi": setTool("transisi"); break;
+      case "geserkir": // 🗺️ v13.18: pindah urutan TANPA harus tahu tekan-tahan-seret
+        if (selIndex > 0) { pushHist(); moveSlide(selIndex, selIndex - 1); flash("◀ Adegan digeser ke kiri"); }
+        else flash("Sudah paling kiri bro");
+        break;
+      case "geserkan":
+        if (selIndex >= 0 && selIndex < slides.length - 1) { pushHist(); moveSlide(selIndex, selIndex + 1); flash("▶ Adegan digeser ke kanan"); }
+        else flash("Sudah paling kanan bro");
+        break;
     }
   }
 
@@ -3403,6 +3413,8 @@ function packRows(items: { st: number; dd: number; row?: number }[]): number[] {
 function TimelineV6(p: any) {
   const { slides, slideOptsById, timeline, selId, curT, musicUrl, musicName, ttsUrl, voiceUrl } = p;
   const PXS0 = clampN(Number(p.pxs) || PXS, TL_MIN_PXS, TL_MAX_PXS);
+  // 💡 v13.18: panduan gestur sekali-tampil (fitur track SUDAH ada — masalahnya orang tak tahu)
+  const [hintOn, setHintOn] = useState<boolean>(() => { try { return localStorage.getItem("verve_tlhint_v1") !== "0"; } catch { return true; } });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
@@ -4154,6 +4166,12 @@ function TimelineV6(p: any) {
             </div>
           </div>
           {/* garis penanda tetap di tengah layar */}
+          {hintOn && (
+            <div className="v6e-tlhint">
+              <span>💡 <b>Cubit</b> track = zoom · <b>tahan TEPI</b> klip = pangkas · <b>tahan TENGAH</b> klip = pindah urutan · <b>⤢</b> muat 1 layar · <b>╫ Bagi</b> di garis · ketuk klip = buka alat di bawah</span>
+              <button aria-label="tutup panduan" onClick={() => { setHintOn(false); try { localStorage.setItem("verve_tlhint_v1", "0"); } catch {} }}>✕</button>
+            </div>
+          )}
           {dispTotal > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
           {/* tombol zoom: ketuk → semua proyek muat 1 layar; cubit di track = perbesar/persempit */}
           {dispTotal > 0 && (
@@ -4163,11 +4181,11 @@ function TimelineV6(p: any) {
                 if (!el) return;
                 zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
                 p.onZoom(clampN((el.clientWidth - 24) / dispTotal, TL_MIN_PXS, TL_MAX_PXS));
-              }}>⤢</button>
+              }}>⤢ Pas</button>
           )}
           {dispTotal > 0 && (
             <button className="v6e-tlsplit" title="✂ Bagi klip tepat di garis penanda waktu (ala OpenCut/CapCut)"
-              onClick={() => p.onSplit && p.onSplit()}>╫</button>
+              onClick={() => p.onSplit && p.onSplit()}>╫ Bagi</button>
           )}
           {Math.abs(PXS0 - PXS) > 1 && (
             <button className="v6e-tlfp" title="Kembali ke skala normal" onClick={() => {
@@ -4175,6 +4193,19 @@ function TimelineV6(p: any) {
               if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
               p.onZoom(PXS);
             }}>{PXS0 > PXS ? "🔍+" : "🔍−"}</button>
+          )}
+          {/* 🔎 v13.18: zoom ketuk BERLABEL (cubit tetap jalan — ini buat yang tak menemukannya) */}
+          {dispTotal > 0 && (
+            <button className="v6e-tlzm v6e-tlzm-out" title="Persempit timeline (zoom out)"
+              onClick={() => { const el = scrollRef.current; if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 }; p.onZoom(clampN(PXS0 * 0.72, TL_MIN_PXS, TL_MAX_PXS)); }}>−</button>
+          )}
+          {dispTotal > 0 && (
+            <button className="v6e-tlzm v6e-tlzm-in" title="Perbesar timeline (zoom in)"
+              onClick={() => { const el = scrollRef.current; if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 }; p.onZoom(clampN(PXS0 / 0.72, TL_MIN_PXS, TL_MAX_PXS)); }}>+</button>
+          )}
+          {!hintOn && (
+            <button className="v6e-tlhelp" title="Tampilkan panduan gestur track"
+              onClick={() => { setHintOn(true); try { localStorage.removeItem("verve_tlhint_v1"); } catch {} }}>?</button>
           )}
         </div>
       </div>

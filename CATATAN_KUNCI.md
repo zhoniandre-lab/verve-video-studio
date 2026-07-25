@@ -90,3 +90,10 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 ### v13.17.1 tambalan — thumbnail Pixabay diblok GERBANG (415)
 - Bukti live: video Pixabay via proxy 200/mp4 ✅, tapi thumb 415 — cdn.pixabay kadang mengirim `image/jpeg` dan regex media GERBANG belum mengakui `image`. Risiko: poster rusak → render bisa menggantung menunggu gambar.
 - Bedah 1 baris: regex proxy-audio + `image|jpe?g|png|webp`. tsc 0 build 0 smoke OK.
+
+## v13.18 (2026-07-25) 🗺️ SPRINT A ep.1: TRACK KETEMUAN — fitur yang ADA dibuat ketemuan
+- Diagnosa jujur: track TERNYATA sudah CapCut-class (pinch zoom berjangkar + tombol fit ╫split, press-hold trim handle, reorder seret + auto-scroll tepi, magnet snap, split/dup/hapus/speed/transisi per klip, undo). Biang keluhan bro = PENEMUAN & label, bukan fitur minim.
+- Bedah ADDITIF (mesin gesture CSS/JS tak disentuh): chip panduan gestur timeline (ditutup-able, persist `verve_tlhint_v1`, buka lagi via tombol "?" selalu-ada); tombol zoom −/+ berjangkar playhead + label "⤢ Pas" & "╫ Bagi" (dulu ikon murni); alat CLIP_TOOLS baru ◀Kiri/▶Kanan (moveSlide ketuk + pushHist, guard ujung).
+- 7 patch page.tsx + CSS append-only (globals.css). tsc 0 build 0; smoke chunk ("Cubit", "Persempit timeline")+css chunk ✓; 3 suite uji video/stok tetap 🏆.
+- Struktur penting TimelineV6 utk sesi depan: TL_MIN_PXS 0.6/MAX 140, PXS default, zoomAnchorRef, gstBind SATU PINTU gesture, CLIP_TOOLS@689/MAIN_TOOLS@674, onClipTool@1641, moveSlide@1699, removeSlideAt@1695, doSplitAtPlayhead, CLIP_TOOLS bar JSX@3226, Sutradara sendDirectorStudio@1811 (ctx kaya + ops + BANSOS CHAT verve_bansos_chat_v1 sudah ada sejak v12.3!), EditorSheets@3310, CSS .v6e-tl* di globals.
+- LANJUTAN SPRINT B (disepakati berurutan): Sutradara — toleran typo, FAQ edit diperkaya di mesin bawaan /api/hcnsec/director, kartu perintah cepat di atas chat, ingatkan bro isi Dompet Bansos (menu Saya). LALU SPRINT C: tooltip "?", bersih label, tema.
