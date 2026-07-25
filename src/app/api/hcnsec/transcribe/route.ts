@@ -25,50 +25,61 @@ export async function POST(req: Request) {
     if (!calon.length)
       return NextResponse.json({ ok: false, code: "TANPA_KUNCI_WHISPER", error: "Belum ada kunci Whisper (GROQ_API_KEY/HCNSEC_API_KEY) di server — perkiraan cerdas dipakai. Isi kunci Groq GRATIS (console.groq.com → API Keys) lalu Redeploy, biar serasi otomatis ala CapCut." });
 
-    const j = await req.json().catch(() => ({}));
-    const u = String(j.audio_url || "");
-    if (!/^https?:\/\//.test(u)) {
-      return NextResponse.json({ ok: false, error: "audio_url harus URL http(s) — audio lokal pakai perkiraan cerdas" });
-    }
-    // Whitelist longgar (CDN AI) — anti open-proxy
-    let allowed = false;
-    try {
-      const h = new URL(u).hostname.toLowerCase();
-      allowed = h.includes("hcnsec") || h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe")
-        || h.includes("sunor") || h.includes("cdn") || h.includes("r2") || h.includes("s3")
-        || h.includes("oss") || h.includes("aliyuncs") || h.includes("blob") || h.includes("aimusic")
-        || h.includes("googleapis") || h.includes("googleusercontent") || h.includes("vercel.app"); // ⚡ v13.20: jalur proxy same-origin
-    } catch { allowed = false; }
-    if (!allowed) return NextResponse.json({ ok: false, error: "domain_not_allowed" });
+    // 📦 v13.21 DUA PINTU — (a) JSON {audio_url} online · (b) MULTIPART BYTES langsung dari HP.
+    // (b) = obat biang "AI server: audio bukan URL online" — lagu blob:/upload lokal kini ikut AI.
+    const ctReq = req.headers.get("content-type") || "";
+    let j: any = {};
+    let ab: ArrayBuffer | null = null;
+    let srcType = "audio/mpeg";
+    if (ctReq.includes("multipart/form-data")) {
+      const form = await req.formData().catch(() => null);
+      const f: any = form ? form.get("file") : null;
+      if (!f || typeof f.arrayBuffer !== "function")
+        return NextResponse.json({ ok: false, error: "file audio wajib diisi (multipart/form-data)" }, { status: 400 });
+      ab = await f.arrayBuffer();
+      if (f.type) srcType = f.type;
+      j = { hint: form!.get("hint") || "", lang: form!.get("lang") || "", model: form!.get("model") || "" };
+    } else {
+      j = await req.json().catch(() => ({}));
+      const u = String(j.audio_url || "");
+      if (!/^https?:\/\//.test(u)) {
+        return NextResponse.json({ ok: false, error: "audio_url harus URL http(s) — atau unggah file (multipart) untuk lagu dari HP" });
+      }
+      // Whitelist longgar (CDN AI) — anti open-proxy
+      let allowed = false;
+      try {
+        const h = new URL(u).hostname.toLowerCase();
+        allowed = h.includes("hcnsec") || h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe")
+          || h.includes("sunor") || h.includes("cdn") || h.includes("r2") || h.includes("s3")
+          || h.includes("oss") || h.includes("aliyuncs") || h.includes("blob") || h.includes("aimusic")
+          || h.includes("googleapis") || h.includes("googleusercontent") || h.includes("vercel.app");
+      } catch { allowed = false; }
+      if (!allowed) return NextResponse.json({ ok: false, error: "domain_not_allowed" });
 
-    // 1) Unduh audio dari CDN provider
-    const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 30_000);
-    const ar = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "audio/*,*/*" }, signal: ac.signal, cache: "no-store" });
-    clearTimeout(t);
-    if (!ar.ok) return NextResponse.json({ ok: false, error: `fetch audio upstream ${ar.status}` });
-    const ab = await ar.arrayBuffer();
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 30_000);
+      const ar = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "audio/*,*/*" }, signal: ac.signal, cache: "no-store" });
+      clearTimeout(t);
+      if (!ar.ok) return NextResponse.json({ ok: false, error: `fetch audio upstream ${ar.status}` });
+      ab = await ar.arrayBuffer();
+      if (ar.headers.get("content-type")) srcType = ar.headers.get("content-type")!;
+    }
     if (!ab || ab.byteLength < 10_000) return NextResponse.json({ ok: false, error: "audio terlalu kecil/kosong" });
     if (ab.byteLength > 40 * 1024 * 1024) return NextResponse.json({ ok: false, error: "audio terlalu besar (>40MB)" });
 
-    // 2) Teruskan ke Whisper (OpenAI-compatible via HCNSEC) — minta timestamp per kata + segmen
-    const fd = new FormData();
-    fd.append("file", new Blob([ab], { type: ar.headers.get("content-type") || "audio/mpeg" }), "lagu.mp3");
-    fd.append("model", String(j.model || "whisper-1"));
-    fd.append("response_format", "verbose_json");
-    fd.append("timestamp_granularities[]", "word");
-    fd.append("timestamp_granularities[]", "segment");
-    fd.append("language", String(j.lang || "id"));
-    if (j.hint) fd.append("prompt", String(j.hint).slice(0, 700)); // bias lirik asli → akurasi naik
-
+    // 2) Teruskan ke Whisper — timestamp per kata + segmen (fd dibentuk segar per kandidat)
     const salah: string[] = [];
     let wj: any = null; let mesin = "";
     for (const c of calon) {
       try {
         const fd2 = new FormData();
-        fd.forEach((v, k) => { if (k !== "file") fd2.append(k, v); });
-        fd2.append("file", new Blob([ab], { type: ar.headers.get("content-type") || "audio/mpeg" }), "lagu.mp3");
-        fd2.set("model", c.model || String(j.model || "whisper-1"));
+        fd2.append("file", new Blob([ab], { type: srcType }), "lagu.mp3");
+        fd2.append("model", c.model || String(j.model || "whisper-1"));
+        fd2.append("response_format", "verbose_json");
+        fd2.append("timestamp_granularities[]", "word");
+        fd2.append("timestamp_granularities[]", "segment");
+        fd2.append("language", String(j.lang || "id"));
+        if (j.hint) fd2.append("prompt", String(j.hint).slice(0, 700)); // bias lirik asli → akurasi naik
         const wc = new AbortController();
         const wt = setTimeout(() => wc.abort(), 50_000);
         const wr = await fetch(`${c.base}/audio/transcriptions`, {
