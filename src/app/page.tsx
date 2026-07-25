@@ -3325,6 +3325,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
+        onScrub={(t: number) => { stopPreview(); seekPreview(t); }} // v13.31: geser-saat-play = STOP + waktu ikut jari
         onSplit={doSplitAtPlayhead} // ✂ v12.7: tombol ╫ melayang di track — sekali ketuk tepat di penanda
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
@@ -3625,13 +3626,20 @@ function TimelineV6(p: any) {
     const el = scrollRef.current;
     if (!el || !p.playing || scrubHoldRef.current) return;
     const target = clampN(curT * PXS0, 0, Math.max(0, contentW - el.clientWidth));
-    if (Math.abs(el.scrollLeft - target) > 0.5) el.scrollLeft = target;
+    if (Math.abs(el.scrollLeft - target) > 0.5) { progScrollRef.current = target; el.scrollLeft = target; } // v13.31: tandai ini scroll program
   }, [curT, p.playing, contentW, PXS0]);
 
   // saat tidak diputar: geser konten = geser waktu (garis tengah sebagai penanda posisi)
+  const progScrollRef = useRef(-1); // v13.31: pembeda scroll PROGRAM (pelacak playhead) vs scroll JARI
   function onTlScroll(e: any) {
-    if (p.playing || suppressSeekRef.current || pinchZRef.current || dragRef.current) return; // v12.5: jari drag (trim/asset) → scroll tak boleh memicu loncat waktu
+    if (suppressSeekRef.current || pinchZRef.current || dragRef.current) return; // v12.5: jari drag (trim/asset) → scroll tak boleh memicu loncat waktu
     const sl = e.target.scrollLeft;
+    // ⏸🖐 v13.31 SENTUH = TUMBU — lagi PLAY lalu jari menggeser track → putar STOP + waktu ikut jari (ala CapCut)
+    if (p.playing) {
+      if (Math.abs(sl - progScrollRef.current) <= 4) return; // gerakan pelacak otomatis kita sendiri → abaikan
+      p.onScrub?.(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
+      return;
+    }
     p.onSeek(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
   }
 
@@ -4149,7 +4157,7 @@ function TimelineV6(p: any) {
                   <div key={s.id} style={{ display: "flex", alignItems: "center", position: "relative" }}>
                     <div
                       className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px) scale(1.06)` : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined }}
+                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px)` : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined }} // v13.31: ukuran TETAP hasil setting — tidak melebar/kembali awal saat digeser
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
                       {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
@@ -4159,7 +4167,7 @@ function TimelineV6(p: any) {
                         <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
                         <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>❯</span>
                       </>}
-                      {i < slides.length - 1 && (() => {
+                      {i < slides.length - 1 && selId !== s.id && selId !== slides[i + 1]?.id && (() => { // v13.31 ANTI-GANGGU: klip tetangga terpilih → chip transisi minggir dulu, handle leluasa
                         const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
                         const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
                         return (
