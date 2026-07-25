@@ -117,3 +117,12 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - Bedah: route transcribe dukung multipart/form-data (bytes langsung) DI SAMPING JSON URL; fd per kandidat; helper klien transcribeAudio(src,hint,lang) SATU PINTU utk lirik & musik/suara; guard >4,5MB (batas body Vercel hobby) pesan jujur.
 - BUKTI live (dites sebelum klaim): multipart file 2.100.342B → ok:true engine "Groq Whisper (gratis)" 19 kata; pintu URL lama tetap ok:true 18 kata (tak ada yang rusak).
 - Catatan jujur: lagu HP >4,5MB ditolak dengan pesan (Vercel hobby body limit) — pakai link lagu online/generate.
+
+## v13.22 (2026-07-25) ✂️📦 WHISPER LAGU BESAR — batas 4,5MB DITEMBUS (potong per bagian), TERBUKTI live
+- Biang (keluhan bro "masih harus dengar lagu"): lagu HP 4–5 mnt (Suno dll) = 5–8MB → kena pagar unggah Vercel 4,5MB → v13.21 menolak jujur → klien jatuh ke pendengar browser 🐌 = "dengar lagu sampai habis" lagi.
+- Bedah (5 titik page.tsx + 2 file BARU): src/lib/audiocc.ts — decode lagu SEKALI di HP (WebAudio, BUKAN didengarkan) → mono 16kHz (telinga asli Whisper) → potong per 100 detik → WAV PCM16 ±3,2MB/potong (di bawah pagar) → unggah multipart BERURUTAN → kata & segmen disatukan + offset waktu potong. Pagar >4,5MB di transcribeAudio kini manggil transcribeBlobBesar; dua panggilan (lirik & musik/suara) ikut melaporkan tahap ("📦 bagian 1/3").
+- BUKTI live (tes_sebelum_klaim): WAV 16kHz mono PCM16 dirakit FUNGSI ASLI audiocc.ts → unggah multipart filename bagian-1.wav + hint + lang=id ke verve-video-studio.vercel.app/api/hcnsec/transcribe → HTTP 200 dalam **2,1 detik**, ok:true, **34 kata** berstempel per kata, engine "Groq Whisper (gratis)" — ucapan Indonesia ("Masih tersimpan bajumu...") tertangkap akurat. Rute server TAK disentuh.
+- Estimasi lagu 277 detik: 3 potong × ±2–4 dtk → total ±10–15 detik (vs dulu 277 detik dengar realtime).
+- Uji: tests/wavpotong.test.mjs BARU 29 cek 🏁 (rencana potong menutup durasi tanpa celah/tumpang, ukuran WAV ≤ pagar, PCM16 jepit, tajuk RIFF sah) + vidplan/vidloop/stokgudang tetap ✅; tsc 0; build 0; smoke literal "Lagu besar — AI membaca bagian" & "lagu tak bisa dibuka di HP ini" ✓.
+- Benang merah file: DITAMBAH audiocc.ts & wavpotong.test.mjs; DISENTUH page.tsx (import, komentar+tanda, pagar→potong, 2 panggilan) & catatan ini; TAK disentuh: api/hcnsec/*, lahan-studio, recorder, editing, stockvid, hcnsec, css.
+- Cadangan jujur: kalau decode gagal (format aneh/memori HP habis) atau AI server down → pesan jujur → fallback 🐌 pendengar browser tetap ada (tak dihapus).

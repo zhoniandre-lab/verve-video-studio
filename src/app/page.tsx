@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob, vidPlan, vidLoopPrev } from "@/lib/recorder";
+import { transcribeBlobBesar } from "@/lib/audiocc";
 import { renderGif } from "@/lib/gif";
 import { makeAutoThumbBlob } from "@/lib/thumb";
 import { avWarm, avPut } from "@/lib/avault";
@@ -2197,8 +2198,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
 
   // 📦 v13.21 SATU PINTU TRANSKRIPSI — URL online → JSON; blob:/data: (lagu dari HP/brankas) →
-  // unggah BYTES langsung (batas unggah server ±4,5MB dijaga dengan pesan jujur, bukan gagal misterius).
-  async function transcribeAudio(src: string, hint = "", lang = ""): Promise<any | null> {
+  // unggah BYTES langsung. ✂️ v13.22: blob >4,5MB TAK LAGI ditolak/didengarkan realtime —
+  // lagu dipotong WAV 16kHz per 100 detik (audiocc.ts) & diunggah per bagian: tetap hitungan detik.
+  async function transcribeAudio(src: string, hint = "", lang = "", onTahap?: (msg: string) => void): Promise<any | null> {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 75_000);
     try {
       if (/^https?:/.test(src)) {
@@ -2209,8 +2211,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!rb || !rb.ok) return null;
       const b = await rb.blob();
       if (!b || !b.size) return null;
-      if (b.size > 4_500_000)
-        return { ok: false, error: "lagu dari HP ini lebih besar 4,5MB (batas unggah server) — pakai lagu hasil generate (link online) biar AI menyelaraskannya." };
+      if (b.size > 4_500_000) { // ✂️📦 v13.22: lagu BESAR dibaca di HP, dipotong WAV, diunggah per bagian — BUKAN didengarkan realtime
+        clearTimeout(to);
+        return await transcribeBlobBesar(b, hint, lang, onTahap);
+      }
       const fd = new FormData();
       fd.append("file", b, "lagu.mp3");
       if (hint) fd.append("hint", hint);
@@ -2246,7 +2250,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         let engineName = "Whisper AI"; let whisperErr = ""; // 🔊🩹 v13.19: nama mesin & alasan gagal — jujur, bukan diam
         setStageText("🤖 AI menyelaraskan lirik dengan lagu (Whisper — hitungan detik)...");
         try {
-          const j = await transcribeAudio(musicUrl, lines.slice(0, 8).map(l => l.text).join(" / "), "id"); // 📦 v13.21: blob HP pun ikut AI
+          const j = await transcribeAudio(musicUrl, lines.slice(0, 8).map(l => l.text).join(" / "), "id", (m) => setStageText(m)); // 📦 v13.21: blob HP pun ikut AI · ✂️ v13.22: lagu BESAR dipotong per bagian
           if (j?.ok && Array.isArray(j.words) && j.words.length > 3) {
             spans = alignWordsToLines(lines, j.words, dur);
             if (spans) { engine = "ai"; engineName = String(j.engine || "Whisper AI"); }
@@ -2305,7 +2309,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         let gagalW = ""; let engineName2 = "";
         setStageText("🤖 AI menulis keterangan dari audio — hitungan detik, bukan dengar lagu sampai habis...");
         try {
-          const j: any = await transcribeAudio(srcUrl, "", /^id/i.test(ccLang || "") ? "id" : ""); // 📦 v13.21: blob HP pun ikut AI
+          const j: any = await transcribeAudio(srcUrl, "", /^id/i.test(ccLang || "") ? "id" : "", (m) => setStageText(m)); // 📦 v13.21: blob HP pun ikut AI · ✂️ v13.22: lagu BESAR dipotong per bagian
           if (j?.ok && Array.isArray(j.words) && j.words.length) {
               const segs: any[] = Array.isArray(j.segments) ? j.segments : [];
               words = (j.words as any[]).map((w) => {
