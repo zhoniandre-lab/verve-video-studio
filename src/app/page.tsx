@@ -44,6 +44,28 @@ const CC_SOURCES = [
   { id: "lirik", lb: "🎵 Lirik lagu (dari Lahan/Suno)" },
 ];
 const _r2 = (v: number) => Math.round(v * 100) / 100;
+
+// ===== 🎧 v13.28 SUTRADARA PAHAM LOKAL — deteksi niat "keterangan otomatis" TOLERAN TYPO =====
+// Dice bigram antar kata: "ketermgan"~".keterangan"≈0,75 — typo tebal pun tetap paham. Tanpa jaringan/AI.
+function gram2(w: string): Set<string> { const g = new Set<string>(); for (let i = 0; i < w.length - 1; i++) g.add(w.slice(i, i + 2)); return g; }
+function miripKata(a: string, b: string): number {
+  const A = gram2(a); const B = gram2(b);
+  if (!A.size || !B.size) return 0;
+  let hit = 0; A.forEach((g) => { if (B.has(g)) hit++; });
+  return (2 * hit) / (A.size + B.size);
+}
+function adaKataMirip(kata: string[], target: string[], ambang: number): boolean {
+  return kata.some((k) => target.some((t) => miripKata(k, t) >= ambang));
+}
+/** Niat "buat/pasang keterangan otomatis"? (niat HAPUS sengaja ditolak — beda perkara) */
+function mintaKeteranganOtomatis(teks: string): boolean {
+  const kata = teks.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!kata.length) return false;
+  if (adaKataMirip(kata, ["hapus", "buang", "hilangkan", "bersihkan", "delete", "reset"], 0.62)) return false;
+  const objek = adaKataMirip(kata, ["keterangan", "caption", "subtitle", "lirik", "karaoke"], 0.55);
+  const aksi = adaKataMirip(kata, ["otomatis", "sinkron", "selaras", "pasang", "buat", "buatkan", "bikinkan", "nyalakan", "jadi", "gas"], 0.58);
+  return objek && aksi;
+}
 const normTok = (s: string) => s.toLowerCase().replace(/[^a-z0-9']/g, "");
 interface LyricLine { text: string; words: string[]; pause: number }
 interface LineSpan { start: number; end: number; kws: { w: string; start: number; end: number }[] }
@@ -1822,6 +1844,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const msg = text.trim();
     if (!msg || dirBusy) return;
     dirPush("me", msg);
+    // 🎧 v13.28: paham LOKAL (tanpa tunggu AI jauh, toleran typo) — keterangan otomatis langsung gas
+    if (mintaKeteranganOtomatis(msg)) {
+      dirPush("sys", "📝 Dipahami lokal: minta keterangan otomatis — langsung gas, tanpa antre AI jauh. Sumber dipilih otomatis (lirik/musik/suara), lirik lama otomatis diganti anti-dobel.");
+      gasStudioOp({ op: "auto_caption" });
+      return;
+    }
     setDirBusy(true);
     const ac = new AbortController();
     const wd = setTimeout(() => ac.abort(), 45000); // keluarga anti-beku
