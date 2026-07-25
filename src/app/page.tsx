@@ -4079,6 +4079,21 @@ function TimelineV6(p: any) {
 
         {/* tracks (garis penanda DIAM di tengah — konten yang bergerak di bawahnya) */}
         <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          {/* v13.29 GELEMBUNG WAKTU ala CapCut/VN: angka detik LIVE melayang saat objek digeser / dipanjang-pendekkan.
+              Murni MEMBACA dragRef yang sudah dipelihara gesture lama (v9.1) — tidak menulis/mengubah apa pun. */}
+          {(() => {
+            const d = dragRef.current as any;
+            if (!d || !d.armed || (d.maxD || 0) < 3 || d.kind === "reorder" || p.playing) return null;
+            const dxT = ((d.lastX ?? d.startX) - d.startX) / PXS0;
+            let num: number | null = null; let lbl = "";
+            if (d.kind === "trim") { num = clampN((d.startDur || 0) + (d.side === "l" ? -dxT : dxT), 0.4, 600); lbl = d.side === "l" ? "pangkas kiri" : "pangkas kanan"; }
+            else if (d.kind === "txt" || d.kind === "stk") { num = clampN((d.st0 || 0) + dxT, 0, 7190); lbl = d.kind === "txt" ? "geser teks" : "geser stiker"; }
+            else if (d.kind === "txtd" || d.kind === "stkd") { num = clampN((d.dur0 || 3) + dxT, 0.3, 600); lbl = "durasi"; }
+            else if (d.kind === "aud") { num = clampN((d.off0 || 0) + dxT, 0, 7200); lbl = "geser audio"; }
+            if (num === null || !isFinite(num)) return null;
+            const durKind = d.kind === "trim" || d.kind === "txtd" || d.kind === "stkd";
+            return <div className="v6e-draginfo"><b>{durKind ? num.toFixed(1) + "d" : formatDur(num)}</b><span>{lbl}</span></div>;
+          })()}
           <div className="v6e-tl-scrollwrap" ref={scrollRef} onScroll={onTlScroll}
             onPointerDown={onWrapDown} onPointerMove={onWrapMove} onPointerUp={onWrapUp} onPointerCancel={onWrapUp}
             style={{ position: "relative", touchAction: "pan-x pan-y" }}>
@@ -4088,14 +4103,14 @@ function TimelineV6(p: any) {
                 {/* 🧲 v12.7 GARIS MAGNET — muncul sekilas ketika seretan nempel (tepi klip / penanda / irama) */}
                 {snapAt !== null && <div className="v6e-snapline" style={{ left: snapAt * PXS0 }} />}
                 {/* ruler waktu (adaptif ikut zoom) */}
-                <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
+                <div className="v6e-ruler" style={{ height: 26, position: "relative", marginBottom: 3, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
                   {Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep; return (
-                    <span key={k} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
+                    <span key={k} className="v6e-tick" style={{ position: "absolute", left: sec * PXS0, top: 3, transform: "translateX(4px)", fontSize: 10.5, color: "#c8cedb", fontWeight: 700, fontVariantNumeric: "tabular-nums", letterSpacing: "0.2px" }}>
                       {formatDur(sec)}
                     </span>
                   ); })}
                   {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < dispTotal ? (
-                    <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-2px)", fontSize: 8.5, color: "#4b5260", fontWeight: 600 }}>·</span>
+                    <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 4, transform: "translateX(-2px)", fontSize: 10, color: "#565e6c", fontWeight: 700 }}>·</span>
                   ) : null; })}
                   {/* penanda ketukan musik (estimasi dari gelombang) — bantu potong/teks pas irama */}
                   {p.musicBeats?.length ? p.musicBeats.slice(0, 900).map((b: number, bi: number) => {

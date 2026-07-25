@@ -1584,3 +1584,39 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6e-tlzm-in  { right:168px; }
 .v6e-tlhelp { position:absolute; left:56px; top:2px; z-index:8; width:24px; height:24px; border-radius:7px;
   background:#12151cf2; color:#5eead4; border:1px solid #14b8a655; font-size:12px; font-weight:800; cursor:pointer; }
+
+/* ================= v13.29 RASA CAPCUT — polesan visual murni (logika tak disentuh) ================= */
+/* 1) Playhead PUTIH tegas ala CapCut (dulu teal menumpuk warna bar lagu) */
+.v6e-playhead-fixed { background:#fafafa; width:2.5px; box-shadow:0 0 0 .5px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.6); }
+.v6e-playhead-fixed::before { border-top-color:#fafafa; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+/* 2) Penggaris: garis tick di sisi angka */
+.v6e-tick::before { content:""; position:absolute; left:-5px; top:1px; height:11px; width:1.5px; border-radius:1px; background:rgba(255,255,255,.32); }
+/* 3) Klip terpilih ala CapCut: bingkai PUTIH + handle lebih gemuk (sasaran jari lebih gampang) */
+.v6e-clip.sel { border-color:#fff; box-shadow:0 0 0 1.5px rgba(255,255,255,.85), 0 6px 18px rgba(0,0,0,.42); }
+.v6e-clip .hdl { width:22px; font-size:11.5px; font-weight:900; background:rgba(255,255,255,.96); }
+/* 4) Rail kiri dirampingkan biar track lebih luas */
+.v6e-tl-rail { width:46px; padding:0 4px; gap:5px; }
+.v6e-rail-tile { height:48px; background:#101017; font-size:16px; }
+.v6e-rail-tile span { font-size:7px; color:#aeb3bf; }
+/* 5) Baris kontrol: tombol-tombol bulat konsisten */
+.v6e-ctrl .cbtn { width:42px; height:42px; border-radius:13px; font-size:18px; }
+.v6e-ctrl .cbtn:active { background:rgba(255,255,255,.1); }
+.v6e-ctrl .play { width:56px; height:56px; font-size:29px; }
+/* 6) Baris waktu: angka detik berjalan besar & stabil */
+.v6e-timerow { font-size:11.5px; }
+.v6e-timerow b { font-size:14.5px; font-variant-numeric:tabular-nums; letter-spacing:.3px; }
+/* 7) Toolbar bawah: ukuran & jarak seragam, label lebih terbaca */
+.v6e-tools { gap:4px; padding:9px 8px calc(11px + env(safe-area-inset-bottom)); }
+.v6e-tlbtn { min-width:58px; font-size:20px; gap:5px; }
+.v6e-tlbtn span { font-size:9.5px; color:#b7bdc9; }
+/* 8) Topbar rapi */
+.v6e-tbtn { color:#e8ebf1; font-size:18px; }
+/* 9) Chip teks & balok audio lebih halus */
+.v6e-textchip { border-radius:10px; background:#23232b; border-color:rgba(255,255,255,.12); }
+.v6e-audioclip { border-radius:11px; }
+/* 10) Gelembung waktu saat seret (CapCut/VN) */
+.v6e-draginfo { position:absolute; left:50%; top:0; transform:translate(-50%,-30%); z-index:20; pointer-events:none;
+  display:flex; align-items:baseline; gap:7px; background:rgba(10,12,16,.94); border:1px solid rgba(255,255,255,.2);
+  padding:6px 13px; border-radius:999px; box-shadow:0 8px 22px rgba(0,0,0,.55); backdrop-filter:blur(6px); white-space:nowrap; }
+.v6e-draginfo b { font-size:13px; font-variant-numeric:tabular-nums; letter-spacing:.3px; color:#fff; }
+.v6e-draginfo span { font-size:9.5px; font-weight:700; color:#9fb2c8; }

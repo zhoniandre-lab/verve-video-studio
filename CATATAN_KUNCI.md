@@ -170,3 +170,14 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - KUNCI: tag v13.28-sutradara-paham-keterangan-lock + backup branch + ls-remote (ritual sama, HEAD stabil 6 suite 🏁).
 - Spektrum (jawaban berbasis kode, recorder.ts): render SUDAH pre-compute spectrum LUT di awal ("Menganalisis audio" — downsample 11kHz mono), stiker @bars/@wavepro/@ring dilukis dari data musik RIIL per frame pada lapisan overlay terpisah (cache A/OV1/B/OV2) → gambar video dasar TAK tersentuh; ongkos hanya analisis beberapa detik. Keluhan lawas "bar dikit & ngk jelas" pernah ditambal (v13.9, batang tak menciut jadi titik). ⇒ tambah spektrum AMAN utk kualitas render.
 - tsc 0 build 0; 6 suite ✅; smoke "Dipahami lokal: minta keterangan otomatis" ✓.
+
+## v13.29 RASA CAPCUT (2026-07-25)
+Minta bro: UI/UX studio dirasakan kurang nyaman; suka gaya track CapCut; mau track stabil digeser/dipanjang-pendekkan + playhead stabil berpenggaris. Referensi: CapCut mobile (playhead putih, bingkai seleksi putih, handle gemuk, gelembung waktu saat seret), VN (angka detik saat seret), InShot (toolbar rata rapi).
+ISI (murni visual + 1 overlay render-only — LOGIKA GESTURE/STATE NOL disentuh):
+- Ruler 26px, angka 10.5px terang + garis tick, titik minor terang, tabular-nums.
+- Playhead PUTIH + bayangan gelap (dulu teal menumpuk warna bar lagu teal).
+- Klip terpilih: bingkai PUTIH ala CapCut; handle pangkas 15px→22px (sasaran jari).
+- Rail kiri 56→46px; kontrol play/undo/redo bulat konsisten; timer berjalan 14.5px tabular; toolbar label 9.5px #b7bdc9; chip teks/audio radius diperhalus.
+- GELEMBUNG WAKTU .v6e-draginfo: angka detik LIVE melayang di tengah atas track saat objek digeser/panjang-pendekkan (trim/txt/txtd/stk/stkd/aud). Hanya MEMBACA dragRef hasil mesin gesture v9.1 — tidak menulis apa pun; hilang sendiri saat jari lepas.
+Tidak disentuh: gstBind/armDrag/apply*/packRows/lane-lift/magnet/seek/zoom, Sutradara, audiocc, recorder, routes, wizard.
+Gerbang: tsc 0, build 0, 6 suite ✅, smoke CSS+JS chunk ✓ (cls .next/static/chunks/2aur_kg5kdgcy.css).
