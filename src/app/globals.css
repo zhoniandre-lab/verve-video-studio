@@ -1620,3 +1620,18 @@ b.ok, b.warn, b.err { color:inherit; }
   padding:6px 13px; border-radius:999px; box-shadow:0 8px 22px rgba(0,0,0,.55); backdrop-filter:blur(6px); white-space:nowrap; }
 .v6e-draginfo b { font-size:13px; font-variant-numeric:tabular-nums; letter-spacing:.3px; color:#fff; }
 .v6e-draginfo span { font-size:9.5px; font-weight:700; color:#9fb2c8; }
+
+/* ================= v13.30 SUSUN & BLOK ================= */
+/* 11) Handle pangkas: lebih tebal + zona jari melebar KELUAR klip (peka ala CapCut) */
+.v6e-clip .hdl { width:26px; font-size:12.5px; }
+.v6e-clip .hdl::after { content:""; position:absolute; top:0; bottom:0; width:16px; }
+.v6e-clip .hdl.l::after { left:-16px; }
+.v6e-clip .hdl.r::after { right:-16px; }
+/* 12) Pembatas antar-gambar = tombol TRANSISI segede CapCut (jelas & gampang diketuk) */
+.v6e-trans-chip { width:26px; height:26px; right:-13px; font-size:12.5px; border-radius:9px; z-index:5; box-shadow:0 2px 8px rgba(0,0,0,.55); }
+/* 13) Garis sisip saat susun ulang klip */
+.v6e-track { position:relative; }
+.v6e-insertline { position:absolute; top:5px; bottom:5px; width:3.5px; border-radius:2px; background:var(--v6-teal); box-shadow:0 0 9px rgba(45,212,191,.75); z-index:6; pointer-events:none; }
+/* 14) Audio terpilih = BLOK putih + tombol ⚙ setting */
+.v6e-audioclip.selaud { outline:2.5px solid #fff; outline-offset:1px; box-shadow:0 6px 16px rgba(0,0,0,.4); }
+.v6e-audgear { position:absolute; right:4px; top:4px; width:22px; height:22px; border-radius:7px; background:rgba(4,10,9,.72); color:#fff; font-size:12px; display:flex; align-items:center; justify-content:center; z-index:6; cursor:pointer; }

@@ -3301,7 +3301,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       {/* ============ WAKTU — v12.8 SATU ROL: rol kosmetik pembagian-genap DIHAPUS (angka 00:34/01:08 bukan detik nyata
           dan membingungkan). Satu-satunya penggaris = skala detik asli di dalam track, persis seperti CapCut. ============ */}
       <div className="v6e-timerow">
-        <span><b>{formatDur(curT)}</b> / {formatDur(durT)}</span>
+        <span><b>{formatDur(curT)}</b> / {formatDur(Math.max(clipsTotal || 0, musicDur || 0, ttsDur || 0, voiceDur || 0))}</span>
         <span className="v6e-timerow-tip">🕒 penggaris detik di track — cubit utk zoom</span>
       </div>
 
@@ -3569,6 +3569,8 @@ function TimelineV6(p: any) {
   const zoomAnchorRef = useRef<{ t: number; vx: number } | null>(null);
   const suppressSeekRef = useRef(false);
   const [, force] = useState(0);
+  // 🟦 v13.30: objek audio TERPILIH (BLOK) — ketuk 1 = blok putih, ketuk ulang/⚙ = buka setting
+  const [selAud, setSelAud] = useState<string>("");
   // v8.4 ANGKAT JALUR: tekan-tahan objek lalu seret VERTIKAL (atau tahan lama diam) = SELURUH jalurnya ikut jari, bebas dipindah ke mana saja
   const laneLiftRef = useRef<{ id: string } | null>(null);
   const [laneLift, setLaneLift] = useState<string>("");
@@ -3636,6 +3638,7 @@ function TimelineV6(p: any) {
   // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
     scrubHoldRef.current = true;
+    try { const t = e.target as HTMLElement; if (!t.closest || !t.closest(".v6e-audioclip")) setSelAud(""); } catch {} // v13.30: sentuh di luar bar audio = blok lepas
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     if (tlPtrs.current.size >= 2) {
@@ -3703,9 +3706,23 @@ function TimelineV6(p: any) {
     const dx = clientX - d.startX;
     if (Math.abs(dx) > 8) d.moved = true;
     if (!d.moved) return;
-    const w = clipW(d.i) + 4;
-    const to = clampN(d.i + Math.round(dx / w), 0, slides.length - 1);
-    if (to !== d.to) { d.to = to; force(v => v + 1); }
+    d.dx = dx; // v13.30: klip IKUT jari (sebelumnya cuma ghost — terasa ngaco)
+    // v13.30 SASARAN TENGAH ala CapCut: slot jatuh ditentukan titik TENGAH tiap klip (bukan lebar klip sendiri),
+    // jadi klip 8,8d vs 2,5d pun mendarat persis di tempat jari; lepas jari = yang lain manggung geser otomatis.
+    const el = scrollRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const fx = clientX - r.left + el.scrollLeft - halfW; // posisi jari diukur dari klip pertama
+      let x = 0; let slot = slides.length - 1;
+      const kept: number[] = slides.map((_: Slide, j: number) => j).filter((j: number) => j !== d.i);
+      for (let k = 0; k < kept.length; k++) {
+        const w = clipW(kept[k]); // langkah = lebar klip + 12 (flex gap 4 + spacer 4 + gap 4)
+        if (fx < x + w / 2) { slot = k; break; }
+        x += w + 12; slot = k + 1;
+      }
+      if (slot !== d.to) { d.to = slot; try { (navigator as any).vibrate?.(6); } catch {} } // getar tipis tiap pindah slot
+    }
+    force(v => v + 1);
   }
   function applyTrim(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
@@ -4127,13 +4144,12 @@ function TimelineV6(p: any) {
                 const sel = s.id === selId;
                 const isOutro = s.id.startsWith("outro");
                 const d = dragRef.current;
-                const ghost = d?.kind === "reorder" && d.moved && d.to === i && d.i !== i;
                 const lifting = d?.kind === "reorder" && (d as any).armed && d.i === i;
                 return (
                   <div key={s.id} style={{ display: "flex", alignItems: "center", position: "relative" }}>
                     <div
                       className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                      style={{ width: clipW(i), opacity: ghost ? 0.35 : 1 }}
+                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px) scale(1.06)` : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined }}
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
                       {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
@@ -4156,6 +4172,14 @@ function TimelineV6(p: any) {
                   </div>
                 );
               })}
+              {/* v13.30 GARIS SISIP ala CapCut — slot jatuh berpendar teal persis di bawah jari */}
+              {(() => {
+                const dd2 = dragRef.current as any;
+                if (!dd2 || dd2.kind !== "reorder" || !dd2.moved || typeof dd2.to !== "number") return null;
+                let lx = 0; const keptIdx = slides.map((_: Slide, j: number) => j).filter((j: number) => j !== dd2.i);
+                for (let k = 0; k < Math.min(dd2.to, keptIdx.length); k++) lx += clipW(keptIdx[k]) + 12;
+                return <div className="v6e-insertline" style={{ left: lx - 6 }} />;
+              })()}
               {slides.length > 0 && (
                 <button className="v6e-outro" onClick={p.onAddOutro} title="Akhiran">
                   🏁<span>Akhiran</span>
@@ -4235,11 +4259,11 @@ function TimelineV6(p: any) {
                                   const aDragY = lifting && dd3.kind === "aud" && typeof dd3.lastY === "number" ? Math.round(dd3.lastY - (dd3.startY || 0)) : 0; // v9.0: IKUT jari terus — tanpa syarat
                                   const wpx = Math.max(90, (rd.dur || 4) * PXS0);
                                   return (
-                                    <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — TAP = setting audio · TAHAN = GENGGAM — ikut jari bebas (⇄ maju/mundur · ⇅ jalur)"}
+                                    <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""} ${selAud === rd.key ? "selaud" : ""}`} title={rd.nm + " — TAP = setting audio · TAHAN = GENGGAM — ikut jari bebas (⇄ maju/mundur · ⇅ jalur)"}
                                       onPointerDown={(e) => onAudDown(e, rd.key)}
-                                      onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
+                                      onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } if (selAud !== rd.key) { setSelAud(rd.key); return; } p.onAddAudio(); }} // v13.30: ketuk 1 = BLOK, ketuk ulang = setting
                                       style={{ position: "absolute", left: rd.off * PXS0, top: 4, width: wpx, height: 46, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
-                                      <i style={{ fontStyle: "normal" }}>{rd.icon}</i>
+                                      <i style={{ fontStyle: "normal" }}>{rd.icon}</i>{selAud === rd.key && <span className="v6e-audgear" title="Setelan audio" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); p.onAddAudio(); }}>⚙</span>}
                                       <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
                                         (() => {
                                           const pk: number[] | null = (rd.key === "m" ? p.musicPeaks : rd.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
