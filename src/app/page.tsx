@@ -1589,8 +1589,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       try {
         const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
         const d = arr.find((x: any) => x.id === openDraftId);
-        if (d) applySnapshot(d);
-      } catch {}
+        if (d) { applySnapshot(d); setTimeout(() => flash(`📂 Proyek dibuka: ${String(d.title || "").slice(0, 42)}`), 350); } // v13.35: sebut nama — yang kebuka kelihatan, anti "kebuka proyek lama diam-diam"
+        else setTimeout(() => flash("⚠️ Proyek dari Lahan tak ketemu di HP (gagal tersimpan?) — mulai kosong atau pilih dari tab Proyek"), 350);
+      } catch { setTimeout(() => flash("⚠️ Gagal membaca draf HP — mulai kosong"), 350); }
     }
     if (cmd?.preset) {
       const c = cmd.preset;

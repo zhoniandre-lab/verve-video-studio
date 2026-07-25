@@ -1353,6 +1353,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       arr.unshift(draft);
       while (arr.length > 12) arr.pop();
       localStorage.setItem("verve_drafts_v1", JSON.stringify(arr));
+      // 🧾 v13.35 SERAH-TERIMA ANTI-BASI: bukti tulis — baca ulang HP; proyek baru HARUS benar-benar
+      // tercatat sebelum mengantar. Gagal → JUJUR (lebih baik begitu daripada studio kebuka isi LAMA diam-diam).
+      const cek = JSON.parse(localStorage.getItem("verve_drafts_v1") || "[]");
+      if (!cek.some((x: any) => x && x.id === draft.id)) throw new Error("proyek tak tercatat di HP (memori penuh? hapus draf lama di tab Proyek)");
       if (pvAudioRef.current) { pvAudioRef.current.pause(); setPvPlaying(false); }
       flash("🎬 Proyek gabungan terkirim ke Studio!");
       if (gotoEditor) gotoEditor(draft.id);
