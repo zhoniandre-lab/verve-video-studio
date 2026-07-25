@@ -2216,6 +2216,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (!lines.length) throw new Error("Lirik kosong setelah dibersihkan.");
         let spans: LineSpan[] | null = null;
         let engine: "ai" | "perkiraan" = "perkiraan";
+        let engineName = "Whisper AI"; let whisperErr = ""; // 🔊🩹 v13.19: nama mesin & alasan gagal — jujur, bukan diam
         if (/^https?:/.test(musicUrl)) {
           setStageText("🤖 AI menyelaraskan lirik dengan lagu (Whisper)...");
           try {
@@ -2230,9 +2231,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             const j = await r.json().catch(() => null);
             if (j?.ok && Array.isArray(j.words) && j.words.length > 3) {
               spans = alignWordsToLines(lines, j.words, dur);
-              if (spans) engine = "ai";
+              if (spans) { engine = "ai"; engineName = String(j.engine || "Whisper AI"); }
+            } else if (j?.error) {
+              whisperErr = String(j.error).slice(0, 110);
             }
-          } catch {}
+          } catch (e: any) { whisperErr = e?.name === "AbortError" ? "AI kelamaan menjawab (>55d)" : "AI tak terjangkau (jaringan)"; }
         }
         if (!spans) { setStageText("🧮 Menaksir irama lirik (perkiraan cerdas)..."); spans = estimateLyricLines(lines, dur); }
         const style = lyricTextStyle(ccTpl, ccSize, ccY);
@@ -2246,7 +2249,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         } as ClipText));
         pushHist();
         insertFloatingTexts(texts);
-        flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? "diselaraskan AI 🤖" : "perkiraan cerdas"}. Baris pertama mulai ${formatDur(texts[0]?.start || 0)} — poles di ⚓ panel ini`);
+        flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? `diselaraskan ${engineName} 🤖 serasi otomatis!` : `⚠️ perkiraan cerdas — AI belum jalan: ${whisperErr || "kunci belum dipasang"}`}. Baris pertama mulai ${formatDur(texts[0]?.start || 0)} — poles di ⚓ panel ini`);
         setModal(null); setTool(null);
         setLoading(null); setTimeout(() => setStageText(""), 100);
         return;

@@ -177,6 +177,16 @@ function extractUrl(item: any): string | null {
 
 interface GenImageResult { url: string; model: string; size: string; prompt: string; }
 
+// 🖼️🩹 v13.19 SADAR KATALOG — tanya gateway model gambar apa yang BENAR-BENAR dibuka akun (cache 10 mnt).
+// Biang "No available channel": kita menawar model yang gateway tak jual. Kini yang dijual didahulukan.
+let katalogCache: { t: number; ids: string[] } | null = null;
+async function katalogGambar(): Promise<string[] | null> {
+  if (katalogCache && Date.now() - katalogCache.t < 10 * 60 * 1000) return katalogCache.ids;
+  try { const ids = await listGatewayModels(); katalogCache = { t: Date.now(), ids }; return ids; }
+  catch { return null; }
+}
+const RE_MODEL_GAMBAR = /image|flux|seedream|doubao|dall|sdxl|sd3|imagen|kolors|hunyuan|ideogram|recraft|playground|dreamina/i;
+
 export async function generateImage(prompt: string, styleSuffix?: string, opts?: { modelFirst?: string }): Promise<GenImageResult> { // v10.1: seed/referensi DICABUT — bikin gateway nggantung → "Failed to fetch"
   // Generate selalu 1024x1024 (native), resize/crop di client
   const fullPrompt = styleSuffix
@@ -184,9 +194,18 @@ export async function generateImage(prompt: string, styleSuffix?: string, opts?:
     : `${prompt}, no text, no watermark, sharp focus, centered composition`;
   const errors: string[] = [];
   // 🔒 v10.0 SATU WAJAH: model yang BERHASIL di-pin paling depan → semua adegan semodel, wajah sedarah
-  const order = opts?.modelFirst && IMAGE_MODELS.includes(opts.modelFirst)
+  let order = opts?.modelFirst && IMAGE_MODELS.includes(opts.modelFirst)
     ? [opts.modelFirst, ...IMAGE_MODELS.filter((m) => m !== opts.modelFirst)]
     : IMAGE_MODELS;
+  const kat = await katalogGambar().catch(() => null);
+  let katInfo = "";
+  if (kat && kat.length) {
+    const tersedia = order.filter((m) => kat.includes(m));
+    const ekstra = kat.filter((id) => RE_MODEL_GAMBAR.test(id) && !order.includes(id)).slice(0, 4); // model gambar lain dagangan gateway
+    const sisa = order.filter((m) => !kat.includes(m));
+    order = [...new Set([...tersedia, ...ekstra, ...sisa])]; // dagangan nyata didahulukan; daftar lama jadi cadangan ekor
+    katInfo = kat.slice(0, 5).join(", ");
+  }
   for (const model of order) {
     for (const fmt of ["url", "b64_json"] as const) {
       try {
@@ -204,7 +223,7 @@ export async function generateImage(prompt: string, styleSuffix?: string, opts?:
       }
     }
   }
-  throw new ApiError(`Gagal generate gambar.\n${errors.slice(0,3).join("\n")}\n\n💡 Coba style lain atau upload gambar sendiri.`, 500);
+  throw new ApiError(`Gagal generate gambar.\n${errors.slice(0,3).join("\n")}\n\n💡 Coba style lain atau upload gambar sendiri.${katInfo ? `\n\n📒 Katalog gateway-mu (kirim daftar ini ke admin kalau masih gagal): ${katInfo}` : ""}`, 500);
 }
 
 // ===== TTS =====
