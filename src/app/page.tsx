@@ -2231,6 +2231,25 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
   // 📝👁️ v13.24 KETERANGAN TAMPIL — kata hasil AI → ClipText karaoke per baris (id lyr_),
   // persis artefak jalur Lirik: KELIHATAN di timeline track teks & menyala kata demi kata saat waktunya.
+  // 🧹 v13.27 ANTI-ZOMBIE: jalankan keterangan = GANTI baris lirik lama (id lyr_), BUKAN menumpuk.
+  //  (pola sama dengan "Sinkron ulang dari nol" Sutradara — satu pintu di sini biar SEMUA jalur ikut)
+  function bersihkanLirikLama() {
+    setSlideOptsById(prev => {
+      const next: Record<string, SlideOpt> = { ...prev }; let ada = false;
+      for (const sid of Object.keys(next)) {
+        const o: any = next[sid];
+        if (!o?.texts?.length) continue;
+        const keep = o.texts.filter((t: any) => !/^lyr_/.test(t?.id || ""));
+        if (keep.length !== o.texts.length) {
+          ada = true;
+          if (!keep.length) { const o2 = { ...o }; delete o2.texts; next[sid] = o2; }
+          else next[sid] = { ...o, texts: keep };
+        }
+      }
+      return ada ? next : prev;
+    });
+  }
+
   function capWordsToClips(ws2: CapWord[], tplId: string, sizeR: number, yR: number): ClipText[] {
     const lineIds = [...new Set(ws2.map(w => w.line))].sort((a, b) => a - b);
     const style = lyricTextStyle(tplId, sizeR, yR);
@@ -2250,8 +2269,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
 
   async function doAutoCaptions(forceFrom?: string) { // 🎬 v11.5: Sutradara boleh memilihkan sumber (lirik/musik/suara)
-    const from = forceFrom ?? ccFrom;
-    if (forceFrom) setCcFrom(forceFrom); // saklar UI ikut sinkron supaya panel Keterangan tidak bingung
+    const okFrom = typeof forceFrom === "string" && forceFrom ? forceFrom : ""; // 🩹 v13.27: tombol Hasilkan menyeret EVENT ketukan — BUKAN sumber!
+    const from = okFrom || ccFrom;
+    if (okFrom) setCcFrom(okFrom); // saklar UI ikut sinkron supaya panel Keterangan tidak bingung
     setLoading("cc"); setError("");
     ccDiagMulai(`keterangan:${from}`, `klik — templat ${ccTpl} · bahasa ${ccLang}`); // 🔬 v13.25
     try {
@@ -2292,8 +2312,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           karaokeWords: sp.kws.map(k => ({ w: k.w, start: _r2(Math.max(0, k.start - sp.start)), end: _r2(Math.max(0.1, k.end - sp.start)) })),
         } as ClipText));
         pushHist();
+        bersihkanLirikLama(); // 🧹 v13.27: zombie lama dibuang dulu — re-run tak menumpuk
         insertFloatingTexts(texts);
-        ccDiag("📝", `${texts.length} baris lirik → TRACK TEKS`);
+        ccDiag("📝", `${texts.length} baris lirik → TRACK TEKS (lirik lama diganti)`);
         flash(`💬 ${texts.length} baris lirik masuk track teks — ${engine === "ai" ? `diselaraskan ${engineName} 🤖 serasi otomatis!` : `⚠️ perkiraan cerdas — AI belum jalan: ${whisperErr || "kunci belum dipasang"}`}. Baris pertama mulai ${formatDur(texts[0]?.start || 0)} — poles di ⚓ panel ini`);
         setModal(null); setTool(null);
         setLoading(null); setTimeout(() => setStageText(""), 100);
@@ -2324,6 +2345,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           acc += seg;
         });
         pushHist();
+        bersihkanLirikLama(); // 🧹 v13.27
         if (capWords.length) setCapWords([]); // 📝👁️ v13.24: lapisan melayang dikosongkan — tak dobel & tak ghost
         const textsSuara = capWordsToClips(words, ccTpl, ccSize, ccY);
         insertFloatingTexts(textsSuara);
@@ -2346,6 +2368,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
                 for (let si = 0; si < segs.length; si++) { line = si; if ((Number(segs[si]?.end) || 0) >= (Number(w?.start) || 0) - 0.05) break; } // kata → baris segmennya
                 return { text: String(w?.w || "").trim(), start: Math.max(0.05, Number(w?.start) || 0), end: Math.max(0.1, Number(w?.end) || 0), line };
               }).filter((w) => w.text);
+              if (!segs.length && words.length > 8) { // 🧩 v13.27: segmen kosong → JANGAN satu baris raksasa selebar lagu
+                let li = 0; let prevE = -99;
+                words = words.map((w) => { if (prevE >= 0 && w.start - prevE > 1.1) li++; prevE = w.end; return { ...w, line: li }; });
+                ccDiag("🧩", `tanpa segmen — dikelompokkan per jeda hening >1,1s → ${li + 1} baris`);
+              }
               if (words.length) { engineName2 = String(j.engine || "Whisper AI"); ccDiag("🧮", `AI balas: ${words.length} kata, ${segs.length} segmen`); }
               else gagalW = "AI tidak menemukan ucapan di audio ini";
           } else gagalW = String(j?.error || "AI tak terjangkau (jaringan)").slice(0, 110);
@@ -2397,6 +2424,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         // 📝👁️ v13.24 KETERANGAN TAMPIL: tulis ke TRACK TEKS (bukan lapisan melayang tak-kelihatan) —
         // kelihatan LANGSUNG di timeline seperti CapCut + karaoke menyala selaras waktu nyanyi (stempel asli AI).
         pushHist();
+        bersihkanLirikLama(); // 🧹 v13.27
         if (capWords.length) setCapWords([]);
         const textsCap = capWordsToClips(words, ccTpl, ccSize, ccY);
         insertFloatingTexts(textsCap);
