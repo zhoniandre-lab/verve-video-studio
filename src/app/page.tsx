@@ -4157,7 +4157,7 @@ function TimelineV6(p: any) {
                   <div key={s.id} style={{ display: "flex", alignItems: "center", position: "relative" }}>
                     <div
                       className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px)` : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined }} // v13.31: ukuran TETAP hasil setting — tidak melebar/kembali awal saat digeser
+                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px) scale(${Math.min(1, Math.round(86 / clipW(i) * 100) / 100)})` : undefined, transition: lifting && (d as any)?.moved ? "none" : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined }} // v13.32: TEKAN-LAMA = NGE-KECIL jadi pil ringkas (klip panjang gampang dipindah); LEPAS = balik PENUH ke ukuran setting — durasi terkunci ID klip, bukan reset awal
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
                       {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
@@ -4167,19 +4167,32 @@ function TimelineV6(p: any) {
                         <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
                         <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>❯</span>
                       </>}
-                      {i < slides.length - 1 && selId !== s.id && selId !== slides[i + 1]?.id && (() => { // v13.31 ANTI-GANGGU: klip tetangga terpilih → chip transisi minggir dulu, handle leluasa
-                        const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
-                        const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
-                        return (
-                          <span className={`v6e-trans-chip ${tr === "none" ? "off" : ""}`} title="Transisi — ketuk untuk ganti"
-                            onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>{em}</span>
-                        );
-                      })()}
                     </div>
                     <div style={{ width: 4 }} />
                   </div>
                 );
               })}
+              {/* v13.32 PEMBATAS TRANSISI ala CapCut — chip utuh persis di TENGAH garis sambungan dua objek,
+                  SELALU tampil (tak pernah hilang), di luar kotak klip jadi tak kepotong & tak makan handle */}
+              {slides.length > 1 && (() => {
+                let x = 0; const chips: { i: number; cx: number }[] = [];
+                slides.forEach((s2: Slide, i2: number) => {
+                  x += clipW(i2);
+                  if (i2 < slides.length - 1) chips.push({ i: i2, cx: x + 6 }); // titik tengah jeda 12px antar-klip
+                  x += 12;
+                });
+                return chips.map((c) => {
+                  const s2 = slides[c.i];
+                  const tr2 = canonicalTrans(slideOptsById[s2.id]?.trans ?? p.transition ?? "dissolve");
+                  const em2 = tr2 === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr2)?.emoji || "🔀");
+                  return (
+                    <span key={`dv${s2.id}`} className={`v6e-trans-divider ${tr2 === "none" ? "off" : ""}`} title="Transisi antar gambar — ketuk untuk ganti"
+                      style={{ left: c.cx - 13 }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); p.onTrans(s2.id); }}>{em2}</span>
+                  );
+                });
+              })()}
               {/* v13.30 GARIS SISIP ala CapCut — slot jatuh berpendar teal persis di bawah jari */}
               {(() => {
                 const dd2 = dragRef.current as any;

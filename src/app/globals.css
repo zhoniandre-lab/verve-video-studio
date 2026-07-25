@@ -1635,3 +1635,10 @@ b.ok, b.warn, b.err { color:inherit; }
 /* 14) Audio terpilih = BLOK putih + tombol ⚙ setting */
 .v6e-audioclip.selaud { outline:2.5px solid #fff; outline-offset:1px; box-shadow:0 6px 16px rgba(0,0,0,.4); }
 .v6e-audgear { position:absolute; right:4px; top:4px; width:22px; height:22px; border-radius:7px; background:rgba(4,10,9,.72); color:#fff; font-size:12px; display:flex; align-items:center; justify-content:center; z-index:6; cursor:pointer; }
+
+/* ================= v13.32 PEMBATAS & PIL ================= */
+/* Chip transisi PEMBATAS: utuh di tengah sambungan dua objek (pengganti chip lama yang kepotong di dalam klip) */
+.v6e-trans-divider { position:absolute; top:50%; transform:translateY(-50%); width:26px; height:26px; z-index:7;
+  background:#fff; color:#111; border-radius:9px; border:1.5px solid rgba(0,0,0,.25); box-shadow:0 2px 8px rgba(0,0,0,.55);
+  font-size:12.5px; display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:manipulation; }
+.v6e-trans-divider.off { background:rgba(255,255,255,.35); color:#111; }
