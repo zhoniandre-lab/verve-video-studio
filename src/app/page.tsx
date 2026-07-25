@@ -3710,6 +3710,21 @@ function TimelineV6(p: any) {
     return true;
   }
 
+  // 🖐 v13.33 GESER DI MANA SAJA — geser boleh DIMULAI DI ATAS OBJEK: kalau jari langsung bergerak
+  // HORIZONTAL sebelum objek "terangkat", kendali jari diserahkan ke penggulir track (ala CapCut).
+  // Menahan 0,22 detik dulu tetap = genggam objek. Scroll memicu onSeek/onScrub seperti biasa.
+  function panStart(d: any, clientX: number) {
+    clearTimeout(armTRef.current);
+    suppressClickRef.current = true; // cegah ketuk-palsu (pilih/buka menu) setelah menggulir
+    d.kind = "pan"; d.armed = false; d.moved = false; d.panX = clientX;
+  }
+  function panMove(d: any, clientX: number) {
+    const el = scrollRef.current; if (!el) return;
+    const nx = clampN(el.scrollLeft - (clientX - (d.panX ?? clientX)), 0, Math.max(0, el.scrollWidth - el.clientWidth));
+    if (nx !== el.scrollLeft) el.scrollLeft = nx;
+    d.panX = clientX;
+  }
+
   function applyReorder(d: any, clientX: number) {
     const dx = clientX - d.startX;
     if (Math.abs(dx) > 8) d.moved = true;
@@ -3821,6 +3836,7 @@ function TimelineV6(p: any) {
   }
   // lepas jari → sahkan pindah jalur (atau tolak sopan kalau NUMPUK)
   function commitObjRow(d: any) {
+    if (!d || d.kind === "pan") return; // v13.33: habis menggulir — tak ada yang dipindah
     setSnapAt(null);
     if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
     if (!d || !d.armed || !(d.kind === "aud" || d.kind === "txt" || d.kind === "stk") || d.rowTo == null) return;
@@ -3892,9 +3908,12 @@ function TimelineV6(p: any) {
   }
   function onClipMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
-    if (!d || d.kind !== "reorder") return;
+    if (!d) return;
+    if (d.kind === "pan") { panMove(d, e.clientX); return; } // v13.33: jari sedang menggulir track
+    if (d.kind !== "reorder") return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline
+      const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
+      if (Math.abs(dx0) > 12 && Math.abs(dx0) >= Math.abs(dy0)) { panStart(d, e.clientX); } // dulu MATI = track ngadat (keluhan bro)
       return;
     }
     dragUpdate(e, d);
@@ -3905,6 +3924,7 @@ function TimelineV6(p: any) {
     dragRef.current = null;
     stopEdge();
     if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
+    if (d && d.kind === "pan") return; // v13.33: habis menggulir — tak ada objek berpindah
     if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
@@ -3936,10 +3956,12 @@ function TimelineV6(p: any) {
   }
   function onAudMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
-    if (!d || d.kind !== "aud") return;
+    if (!d) return;
+    if (d.kind === "pan") { panMove(d, e.clientX); return; } // v13.33
+    if (d.kind !== "aud") return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      if (Math.abs(dx0) > 12) { if (Math.abs(dx0) >= Math.abs(dy0)) { panStart(d, e.clientX); } else { dragRef.current = null; clearTimeout(armTRef.current); } } // v13.33: horizontal = GULIR track; dulu MATI
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
@@ -3974,10 +3996,12 @@ function TimelineV6(p: any) {
   }
   function onTxtMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
-    if (!d || (d.kind !== "txt" && d.kind !== "txtd")) return;
+    if (!d) return;
+    if (d.kind === "pan") { panMove(d, e.clientX); return; } // v13.33
+    if (d.kind !== "txt" && d.kind !== "txtd") return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      if (Math.abs(dx0) > 12) { if (Math.abs(dx0) >= Math.abs(dy0)) { panStart(d, e.clientX); } else { dragRef.current = null; clearTimeout(armTRef.current); } } // v13.33: horizontal = GULIR track; dulu MATI
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
@@ -4012,10 +4036,12 @@ function TimelineV6(p: any) {
   }
   function onStkMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
-    if (!d || (d.kind !== "stk" && d.kind !== "stkd")) return;
+    if (!d) return;
+    if (d.kind === "pan") { panMove(d, e.clientX); return; } // v13.33
+    if (d.kind !== "stk" && d.kind !== "stkd") return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      if (Math.abs(dx0) > 12) { if (Math.abs(dx0) >= Math.abs(dy0)) { panStart(d, e.clientX); } else { dragRef.current = null; clearTimeout(armTRef.current); } } // v13.33: horizontal = GULIR track; dulu MATI
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
@@ -4153,11 +4179,12 @@ function TimelineV6(p: any) {
                 const isOutro = s.id.startsWith("outro");
                 const d = dragRef.current;
                 const lifting = d?.kind === "reorder" && (d as any).armed && d.i === i;
+                const pillK = Math.min(1, Math.round(86 / clipW(i) * 100) / 100); // v13.33: faktor ciut pil (klip panjang → ~86px, enak dibawa)
                 return (
                   <div key={s.id} style={{ display: "flex", alignItems: "center", position: "relative" }}>
                     <div
                       className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px) scale(${Math.min(1, Math.round(86 / clipW(i) * 100) / 100)})` : undefined, transition: lifting && (d as any)?.moved ? "none" : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined }} // v13.32: TEKAN-LAMA = NGE-KECIL jadi pil ringkas (klip panjang gampang dipindah); LEPAS = balik PENUH ke ukuran setting — durasi terkunci ID klip, bukan reset awal
+                      style={{ width: clipW(i), transform: lifting && (d as any)?.moved ? `translateX(${(d as any)?.dx || 0}px) translateY(-6px) scale(${pillK}, ${pillK < 1 ? 0.74 : 1})` : undefined, transition: lifting && (d as any)?.moved ? "none" : undefined, zIndex: lifting && (d as any)?.moved ? 9 : undefined, boxShadow: lifting && (d as any)?.moved ? "0 14px 30px rgba(0,0,0,.6)" : undefined }} // v13.33: TEKAN-LAMA = pil melayang proporsional ikut jari; LEPAS = balik PENUH ke ukuran setting (durasi terkunci ID klip)
                       onPointerDown={(e) => onClipDown(e, i)}
                     >
                       {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
