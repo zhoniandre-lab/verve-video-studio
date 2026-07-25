@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       allowed = h.includes("hcnsec") || h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe")
         || h.includes("sunor") || h.includes("cdn") || h.includes("r2") || h.includes("s3")
         || h.includes("oss") || h.includes("aliyuncs") || h.includes("blob") || h.includes("aimusic")
-        || h.includes("googleapis") || h.includes("googleusercontent");
+        || h.includes("googleapis") || h.includes("googleusercontent") || h.includes("vercel.app"); // ⚡ v13.20: jalur proxy same-origin
     } catch { allowed = false; }
     if (!allowed) return NextResponse.json({ ok: false, error: "domain_not_allowed" });
 

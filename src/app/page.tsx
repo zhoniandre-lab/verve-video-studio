@@ -2282,13 +2282,42 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         setCapWords(words);
         flash(`💬 ${sentences.length} baris keterangan dibuat (sinkron narasi)`);
       } else {
-        // speech recognition live (Chrome)
+        // ⚡ v13.20 SERASI CAPCUT: transkripsi SERVER (Whisper cascade Groq→HCNSEC) — hitungan DETIK,
+        // bukan dengar lagu sepanjang durasinya. Pendengar browser jadi cadangan terakhir (diberi tahu jujur).
+        let words: CapWord[] = [];
+        let gagalW = ""; let engineName2 = "";
+        setStageText("🤖 AI menulis keterangan dari audio — hitungan detik, bukan dengar lagu sampai habis...");
+        if (/^https?:/.test(srcUrl)) {
+          try {
+            const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 75_000);
+            const r = await fetch("/api/hcnsec/transcribe", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ audio_url: srcUrl, lang: /^id/i.test(ccLang || "") ? "id" : undefined }),
+              signal: ctl.signal,
+            });
+            clearTimeout(to);
+            const j: any = await r.json().catch(() => null);
+            if (j?.ok && Array.isArray(j.words) && j.words.length) {
+              const segs: any[] = Array.isArray(j.segments) ? j.segments : [];
+              words = (j.words as any[]).map((w) => {
+                let line = 0;
+                for (let si = 0; si < segs.length; si++) { line = si; if ((Number(segs[si]?.end) || 0) >= (Number(w?.start) || 0) - 0.05) break; } // kata → baris segmennya
+                return { text: String(w?.w || "").trim(), start: Math.max(0.05, Number(w?.start) || 0), end: Math.max(0.1, Number(w?.end) || 0), line };
+              }).filter((w) => w.text);
+              if (words.length) engineName2 = String(j.engine || "Whisper AI");
+              else gagalW = "AI tidak menemukan ucapan di audio ini";
+            } else gagalW = String(j?.error || "transkripsi gagal").slice(0, 110);
+          } catch (e: any) { gagalW = e?.name === "AbortError" ? "AI kelamaan (>75 detik)" : "AI tak terjangkau (jaringan)"; }
+        } else gagalW = "audio bukan URL online (mis. upload lokal) — AI server tak menjangkaunya";
+        let lineNo = words.length ? (words[words.length - 1].line + 1) : 0;
+        if (!words.length) {
+        if (gagalW) flash(`🐌 AI server tak tersedia (${gagalW.slice(0, 70)}) — jatuh ke pendengar browser: lagu DIDENGARKAN sepanjang durasinya, jangan ditutup...`);
+        // speech recognition live (Chrome) — CADANGAN TERAKHIR (LAMA: 1× durasi lagu)
         const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SR) throw new Error("Browser ini belum dukung transkripsi otomatis. Pakai Chrome Android/PC, atau audio TTS yang teksnya diketahui.");
+        if (!SR) throw new Error(`Transkripsi AI belum jalan: ${gagalW || "tanpa sebab"} — pasang kunci Grok GRATIS (console.groq.com → API Keys → Vercel GROQ_API_KEY → Redeploy), atau pilih sumber "Lirik lagu" kalau lagunya dari Lahan.`);
         const rec = new SR();
         rec.lang = ccLang; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
-        const words: CapWord[] = [];
-        let lineNo = 0;
+        lineNo = 0;
         let lastEndAt = 0; let lastStartAt = 0;
         rec.onresult = (ev: any) => {
           const now = performance.now() / 1000 - t0;
@@ -2318,10 +2347,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           setTimeout(res, (dur + 2) * 1000);
         });
         try { rec.stop(); } catch {}
-        if (!words.length) throw new Error("Tidak ada ucapan terdeteksi. Pastikan suara jelas & volume nyala.");
+        }
+        if (!words.length) throw new Error(`Tidak ada ucapan terdeteksi${gagalW ? ` — AI server: ${gagalW.slice(0, 60)}` : ""}. Pastikan suara jelas & volume nyala.`);
         pushHist();
         setCapWords(words);
-        flash(`💬 ${lineNo} baris keterangan terdeteksi (eksperimen — cek hasilnya)`);
+        flash(engineName2 ? `💬 ${lineNo} baris keterangan ditulis ${engineName2} 🤖 — hitungan detik, serasi otomatis!` : `💬 ${lineNo} baris keterangan terdeteksi (eksperimen — cek hasilnya)`);
       }
       setModal(null); setTool(null);
     } catch (e: any) { setErr(e); }

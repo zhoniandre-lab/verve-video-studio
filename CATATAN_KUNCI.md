@@ -105,3 +105,9 @@ Keputusan user 2026-07-23: provider **Pexels**, cara pilih **otomatis + bisa gan
 - Obat 2: route transcribe cascade GROQ (GROQ_API_KEY, model whisper-large-v3-turbo, stempel per-kata — cara CapCut menyeraskan) → HCNSEC. Respons +`engine`. Kode jujur: TANPA_KUNCI_WHISPER / WHISPER_GAGAL (berisi alasan tiap mesin). Klien doAutoCaptions: engineName+whisperErr masuk flash ("diselaraskan X" vs "⚠️ perkiraan cerdas — AI belum jalan: ...").
 - AKSI BRO: buat kunci Groq gratis (console.groq.com → API Keys) → Vercel env GROQ_API_KEY → Redeploy. Itu jawaban "CapCut pakai apa": ASR keluarga Whisper ber-stempel kata; Groq menghostingnya gratis.
 - tsc 0 build 0; smoke server: api.groq.com+whisper-large-v3-turbo+Katalog gateway-mu ✓ client: flash jujur ✓.
+
+## v13.20 (2026-07-25) ⚡ KETERANGAN OTOMATIS KILAT — biang "dengar lagu sampai habis" dibunuh
+- Biang (bukti kode): jalur "Audio musik/suara" memutar lagu REALTIME + webkitSpeechRecognition → 1× durasi lagu (4½ mnt!) & waktu kata di-fake per segmen. Itu keluhan bro "harus dengar sampai habis + nggak serasi".
+- Bedah: jalur itu kini panggil /api/hcnsec/transcribe (cascade Groq→HCNSEC — pembaca kata per kata hitungan detik), kata dipetakan ke baris via segmen; pendengar browser jadi CADANGAN dengan flash jujur "🐌 lagu didengarkan sepanjang durasi". Suara+teks TTS dikenal: instan (tak diubah). Whitelist transcribe +vercel.app (jalur proxy sendiri).
+- Cara CapCut memang begitu: ASR ber-stempel waktu kata diproses server-side lebih cepat dari realtime — bukan mendengarkan ulang.
+- tsc 0 build 0; smoke client ("hitungan detik, bukan dengar lagu", "jatuh ke pendengar browser") + server ✓.
