@@ -3047,9 +3047,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : null;
   }
   function onStageDown(e: React.PointerEvent) {
-    // 🎬 v15.3 PLAY STOP SAAT SENTUH PANGGUNG — 1 sentuh di mana pun di panggung = stop preview.
-    // Logika lain (pinch / pan / drag teks / drag stiker) tetap jalan di bawah — TIDAK diganggu.
-    if (playingRef.current) { stopPreview(); }
     ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     if (ptrsRef.current.size >= 2) {
@@ -3274,11 +3271,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       </header>
 
       {/* ============ STAGE ============ */}
-      {/* 🎬 v15.3B PLAY STOP SAAT SENTUH PANGGUNG — handler stop dipasang di STAGE-WRAP (seluruh panggung),
-          bukan hanya canvas, supaya sentuh di zona hitam / area kosong sekitar video juga kena. */}
       <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
            style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
-           onPointerDown={(e) => { if (playingRef.current) { stopPreview(); } }}
            onClick={fullStage ? () => setFullStage(false) : undefined}>
         <div className="v6e-stage">
           <canvas ref={canvasRef}
@@ -3331,6 +3325,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       {/* ============ TIMELINE ============ */}
       <TimelineV6
         slides={slides} slideOptsById={slideOptsById} timeline={timeline} selId={selId} curT={curT} playing={playing}
+        onPlayStop={() => stopPreview()} // 🎬 v15.3C — handler track manggil ini kalau user sentuh/geser saat playing
         selTextSid={selTextSid} selStik={selStik}
         laneOrder={laneOrder} onLaneOrder={(o: string[]) => { saveLaneOrder(o); flash("⠿ Susunan jalur disimpan — track kini ngikut tatananmu"); }}
         pxs={tlPxs} onZoom={(v: number) => setTlPxs(clampN(v, 0.6, 140))}
@@ -3883,6 +3878,7 @@ function TimelineV6(p: any) {
 
   function onClipDown(e: React.PointerEvent, i: number) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh/geser klip di track = stop preview
     const sid = slides[i].id;
     p.onSel(sid);
     const target = e.target as HTMLElement;
@@ -3911,6 +3907,7 @@ function TimelineV6(p: any) {
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
     if (gstRef.current) return; // v9.1: SATU gesture
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — tarik handle pangkas = stop preview
     e.stopPropagation();
     const sid = slides[i].id;
     p.onSel(sid);
@@ -3928,6 +3925,7 @@ function TimelineV6(p: any) {
   // seret balok audio (tekan-tahan → geser posisi mulai)
   function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh balok audio = stop preview
     e.stopPropagation(); // v9.1: dulu BOCOR ke pembungkus jalur — sumber 'kadang kaku/ngaco'
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
@@ -3963,6 +3961,7 @@ function TimelineV6(p: any) {
   // seret chip TEKS di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi) — per lapisan (tid)
   function onTxtDown(e: React.PointerEvent, sid: string, mode: "move" | "dur", t: any, tid: string = "") {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip teks = stop preview
     e.stopPropagation();
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
@@ -4001,6 +4000,7 @@ function TimelineV6(p: any) {
   // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
   function onStkDown(e: React.PointerEvent, sid: string, stid: string, mode: "move" | "dur", st: any) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip stiker = stop preview
     e.stopPropagation();
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
@@ -4037,6 +4037,7 @@ function TimelineV6(p: any) {
   }
 
   function rulerDown(e: React.PointerEvent) {
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh ruler = stop preview (biar gak lompat sendiri)
     const el = scrollRef.current; if (!el || !dispTotal) return;
     const r = el.getBoundingClientRect();
     const x = e.clientX - r.left + el.scrollLeft - halfW;
