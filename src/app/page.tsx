@@ -3856,7 +3856,8 @@ function TimelineV6(p: any) {
     startLaneLift(laneIdOfDrag(d), e.clientY);
     return true;
   }
-  // v8.6: baris tujuan saat objek diseret vertikal di KOLAM BEBAS + VALIDASI tabrakan waktu semua jenis objek
+  // v8.6: baris tujuan saat objek diseret vertikal di KOLAM BEBAS + VALIDASI tabrakan waktu
+  // 🎯 v15.12A — teks/stiker BEBAS overlap (visual stack aja), audio TETAP strict (gak boleh numpuk).
   function applyObjRow(e: React.PointerEvent, d: any) {
     const list = [...elmRowEls.current.entries()].sort((a, b) => a[0] - b[0]);
     if (!list.length) return;
@@ -3864,7 +3865,9 @@ function TimelineV6(p: any) {
     for (const [r, el] of list) { const rc = el.getBoundingClientRect(); if (e.clientY <= rc.top + rc.height / 2) { to = r; break; } }
     const stNow = clampN(((d.kind === "aud" ? d.off0 : d.st0) || 0) + (d.lastX - d.startX) / PXS0, 0, 7190);
     const ddNow = d.dur0 || (elmPoolRef.current.find((x: any) => x.key === d.key)?.dd) || 3;
-    const bad = (elmPoolRef.current || []).some((it: any) => it.key !== d.key && it.row === to && stNow < it.st + it.dd - 0.04 && it.st < stNow + ddNow - 0.04);
+    // 🎯 v15.12A — audio strict, teks/stiker bebas (visual stack)
+    const strict = d.kind === "aud";
+    const bad = strict && (elmPoolRef.current || []).some((it: any) => it.key !== d.key && it.row === to && stNow < it.st + it.dd - 0.04 && it.st < stNow + ddNow - 0.04);
     d.rowTo = to; d.rowBad = bad;
     const cur = rowDropRef.current;
     if (!cur || cur.r !== to || cur.bad !== bad) { const nv = { r: to, bad }; rowDropRef.current = nv; setRowDrop(nv); }

@@ -1247,8 +1247,11 @@ body:has(.cc2-root) { background: var(--v-bg); }
 .v6e-audioclip .wv { display:flex; align-items:center; gap:2px; height:22px; }
 .v6e-audioclip .wv i { width:2.5px; background:rgba(4,33,31,.65); border-radius:2px; }
 .v6e-audioclip .nm { font-size:11px; font-weight:800; white-space:nowrap; }
-.v6e-textchip { height:52px; border-radius:9px; background:#26262e; border:1px solid rgba(255,255,255,.14); color:#fff; padding:0 12px;
-  display:flex; align-items:center; font-size:11px; font-weight:700; cursor:pointer; flex:0 0 auto; }
+.v6e-textchip { height:52px; border-radius:9px; background:#26262e; border:1px solid rgba(255,255,255,.14); color:#fff; padding:0 12px 0 22px; /* 🎯 v15.12B ruang untuk handle drag ≡ di kiri */
+  display:flex; align-items:center; font-size:11px; font-weight:700; cursor:grab; flex:0 0 auto; position:relative; } /* 🎯 cursor:grab = sinyal 'bisa di-drag' */
+/* 🎯 v15.12B HANDLE DRAG VISUAL ≡ di kiri chip teks/stiker — user tau ini bisa diseret */
+.v6e-textchip::before { content:"≡"; position:absolute; left:4px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,.5); font-size:14px; font-weight:900; pointer-events:none; line-height:1; }
+.v6e-textchip:active { cursor:grabbing; }
 .v6e-playhead { position:absolute; top:-6px; bottom:-4px; width:2px; background:#fff; z-index:5; pointer-events:none; }
 .v6e-playhead::before { content:""; position:absolute; top:-5px; left:-4px; width:10px; height:10px; border-radius:50%; background:#fff; }
 /* garis penanda tetap di tengah layar (ala CapCut): konten timeline yang bergerak di bawahnya */
