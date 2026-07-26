@@ -3703,6 +3703,13 @@ function TimelineV6(p: any) {
     p.onSeek(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
   }
 
+  // ---- 🎯 v15.19 EMPTY-DOWN: handler KHUSUS area kosong parent (di luar track).
+  // Dipasang di .v6e-tl-inner (parent). Cuma fire kalau target === currentTarget,
+  // artinya user tap LANGSUNG di parent (area kosong luar track), bukan di child klip/teks/dll.
+  function onEmptyDown(e: React.PointerEvent) {
+    if (e.target !== e.currentTarget) return; // skip kalau bubble dari child
+    if (p.onDeselect) p.onDeselect();
+  }
   // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
     // 🎯 v15.10A — tap di area KOSONG (bukan bubble dari child) = deselect klip yg lagi diblok.
@@ -4188,7 +4195,10 @@ function TimelineV6(p: any) {
 
   return (
     <div className="v6e-tl">
-      <div className="v6e-tl-inner">
+      <div className="v6e-tl-inner"
+        onPointerDown={onEmptyDown /* 🎯 v15.19 — tap di area kosong LUAR track (di parent) = deselect. Skip kalau target = child */}
+        onPointerMove={(e) => { /* 🎯 v15.19 SCROLL DELEGASI — kalau pointer ada di tlPtrs (down di track), terusin scroll */ if (!tlPtrs.current.has(e.pointerId)) return; tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY }); onWrapMove(e); }}
+        onPointerUp={(e) => { if (!tlPtrs.current.has(e.pointerId)) return; onWrapUp(e); }}>
         {/* rail kiri */}
         <div className="v6e-tl-rail" style={{ paddingTop: 0 }}>
           <button className={`v6e-rail-tile ${p.audMuted ? "" : ""}`} onClick={p.onMute} title="Bisukan audio">
