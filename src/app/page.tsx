@@ -3436,16 +3436,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               </span>
             </div>
           ))}
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}> {/* v14.3: rata tengah, input di bawah BOLEH menyusut */}
             <input
               value={dirInp}
               onChange={(e) => setDirInp(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); } }}
               placeholder="perintah… (Enter)"
-              style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+              style={{ flex: 1, minWidth: 0, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }} /* v14.3: minWidth 0 = kunci — bawaan HP ~180px tak lagi mendesak tombol */
             />
             <MicTeks onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia (gaya santai, boleh salah ketik)" title="🎤 Bicara ke Sutradara — ketuk, ngomong, ketuk ⏹, teks terisi" />
-            <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
+            <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} title="Kirim perintah ke Sutradara" style={{ flexShrink: 0, minWidth: 44, height: 40, background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 10, padding: "0 12px", fontSize: 16, fontWeight: 800, cursor: "pointer" }}>➤</button> {/* v14.3: dikunci lega, tak bisa kepesek lagi */}
           </div>
           {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}
         </div>

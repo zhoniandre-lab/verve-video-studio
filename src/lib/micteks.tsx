@@ -78,7 +78,7 @@ export default function MicTeks(p: {
   }
 
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0 }}> {/* v14.3: mic anti-pesek */}
       <button
         type="button"
         onClick={() => { if (stt === "rec") selesai(); else if (stt !== "up") void mulai(); }}
