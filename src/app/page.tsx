@@ -3047,6 +3047,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : null;
   }
   function onStageDown(e: React.PointerEvent) {
+    // 🎬 v15.3 PLAY STOP SAAT SENTUH PANGGUNG — 1 sentuh di mana pun di panggung = stop preview.
+    // Logika lain (pinch / pan / drag teks / drag stiker) tetap jalan di bawah — TIDAK diganggu.
+    if (playingRef.current) { stopPreview(); }
     ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     if (ptrsRef.current.size >= 2) {
