@@ -4126,7 +4126,7 @@ function TimelineV6(p: any) {
                 </div>
 
             {/* JALUR VIDEO — ikut susunan bebas, bisa diangkat & dipindah juga */}
-            <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0 }}>
+            <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0, position: "relative" }}>
               {/* v12.4 KEPALA REL — label jalur ala OpenCut: sticky kiri, 0 lebar → waktu klip tidak bergeser, pointer-events none → gesture tak tersentuh */}
               <div className="v6e-lanehead" aria-hidden="true"><span><b className="dot" />Visual · {slides.length}</span></div>
               {slides.map((s: Slide, i: number) => {
@@ -4146,18 +4146,34 @@ function TimelineV6(p: any) {
                       {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
                       <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                       {sel && <>
-                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
-                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>❯</span>
+                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>‹</span>
+                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>›</span>
                       </>}
-                      {i < slides.length - 1 && (() => {
-                        const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
-                        const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
-                        return (
-                          <span className={`v6e-trans-chip ${tr === "none" ? "off" : ""}`} title="Transisi — ketuk untuk ganti"
-                            onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>{em}</span>
-                        );
-                      })()}
+                      {/* 🔀 v15.2 TRANSISI TENGAH — chip pindah ke BARIS BARU antara 2 klip (lihat .v6e-track parent).
+                          TIDAK ganggu handle pangkas/geser klip. */}
                     </div>
+                    {/* 🔀 v15.2 — chip transisi di BARIS BARU (parent track), di antara 2 klip, TIDAK di dalam clip.
+                        Posisi absolute: tepat di tengah celah = (clip-i.end + clip-(i+1).start) / 2.
+                        Saat user mau pangkas klip-i atau klip-(i+1), chip TIDAK ganggu. */}
+                    {i < slides.length - 1 && (() => {
+                      const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
+                      const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
+                      // kumulatif offset (kiri klip = awal klip-i = sum dur 0..i-1)
+                      let offL = 0;
+                      for (let k = 0; k < i; k++) offL += clipW(k);
+                      const wL = clipW(i);
+                      const wR = clipW(i + 1);
+                      // celah = 4px (margin antar clip di .v6e-clip parent)
+                      const centerX = offL + wL + 2; // titik tengah celah
+                      return (
+                        <button key={"tmid-" + s.id} className={`v6e-trans-mid ${tr === "none" ? "off" : ""}`}
+                          style={{ left: centerX }}
+                          title={`Transisi: ${tr} — ketuk untuk ganti`}
+                          onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>
+                          {em}
+                        </button>
+                      );
+                    })()}
                     <div style={{ width: 4 }} />
                   </div>
                 );
