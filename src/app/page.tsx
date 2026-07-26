@@ -2818,10 +2818,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setVideoBlob(null);
     setStageText("Menyiapkan render...");
     let wakeLock: any = null;
+    let lastBeat = 0; let rendering = false; let relock: any = null; let macetItv: any = null; // 🛡 v14.7 RENDER JAGA
     try {
       await ensureFontsLoaded().catch(() => {});
       // v8.1: tahan layar tetap menyala selama render (HP lock = render rusak/kepotong)
       try { wakeLock = await (navigator as any).wakeLock?.request?.("screen"); } catch {}
+      // 🛡 v14.7 RENDER JAGA — (a) layar DITAHAN ULANG otomatis tiap kembali dari minimize/lock (HP mencabut izin diam-diam)
+      lastBeat = performance.now(); rendering = true;
+      relock = async () => { if (rendering && document.visibilityState === "visible") { try { wakeLock = await (navigator as any).wakeLock?.request?.("screen"); } catch {} } };
+      document.addEventListener("visibilitychange", relock);
+      // 🛡 (c) DETEKTOR MACET JUJUR: frame diam >4dtk saat layar terlihat = dikabari manusiawi, tak lagi diam membisu
+      macetItv = setInterval(() => { const diam = (performance.now() - lastBeat) / 1000; if (rendering && diam > 4 && document.visibilityState === "visible") setStageText(`⚠️ Render tampak macet ${Math.round(diam)} dtk — usahakan TIDAK pindah aplikasi; kalau diam terus, ulangi render ya bro`); }, 1500);
       // v8.1: lewati klip tanpa gambar (dataURL raksasa dipangkas hemat memori saat simpan draf)
       const useSlides = slides.filter(s => s.imageUrl && s.imageUrl.length > 8);
       if (!useSlides.length) throw new Error("Semua klip tidak punya gambar (data terpangkas hemat memori) — rakit ulang draf dari Lahan ya bro.");
@@ -2878,7 +2885,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         bgMode, bgColor,
         sharpen: qualitySharp,
         mobileOptimized: isMobile,
-        onProgress: (p: number) => { if (!rEta0 && p > 0) rEta0 = performance.now(); setProgress(p); if (p > 0.005 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); },
+        onProgress: (p: number) => { lastBeat = performance.now(); /* 🛡 v14.7 denyut */ if (!rEta0 && p > 0) rEta0 = performance.now(); setProgress(p); if (p > 0.005 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); },
         onStage: (s: string) => setStageText(s),
       } as any);
       // v8.1 SANITY: file super-kecil untuk durasi panjang = render busuk (frame kosong)
@@ -2894,7 +2901,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       persistSnapshot(true);
       genMetadata().catch(() => {});
     } catch (e: any) { setErr(e); }
-    finally { try { wakeLock?.release?.(); } catch {} }
+    finally { rendering = false; if (relock) document.removeEventListener("visibilitychange", relock); if (macetItv) clearInterval(macetItv); try { wakeLock?.release?.(); } catch {} } // 🛡 v14.7: jagaan dicopot rapi
     setLoading(null); setTimeout(() => setStageText(""), 2500);
   }
   async function doRenderGif() {
@@ -3244,6 +3251,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     <div className="v6e-root">
       {/* ============ TOPBAR ============ */}
       <header className="v6e-top">
+        {loading === "render" && (
+          <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 95, background: "linear-gradient(90deg,#7f1d1d,#b91c1c)", color: "#fff", fontSize: 12, fontWeight: 800, padding: "7px 10px", textAlign: "center", letterSpacing: 0.2, boxShadow: "0 2px 12px rgba(0,0,0,.5)", pointerEvents: "none" }}>
+            🔴 RENDER JALAN — JANGAN tutup / minimize / pindah aplikasi (HP suka membunuh proses lama)
+          </div>
+        )}
         <button className="v6e-tbtn" title="Tutup" onClick={() => { persistSnapshot(true); stopPreview(); onExit(); }}>✕</button>
         <button className="v6e-tbtn" title="Cari alat" onClick={() => flash("🔍 Ketuk alat di toolbar bawah ya bro")}>🔍</button>
         <button className="v6e-tbtn" title="Judul proyek" onClick={() => {
