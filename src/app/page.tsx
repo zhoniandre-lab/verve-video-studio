@@ -853,7 +853,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [videoUrl, setVideoUrl] = useState("");
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   /* ---------- ekspor v6 ---------- */
-  const [tlPxs, setTlPxs] = useState(() => { try { return Number(localStorage.getItem("verve_tl_scale")) || 56; } catch { return 56; } });
+  const [tlPxs, setTlPxs] = useState(() => { try { return Number(localStorage.getItem("verve_tl_scale")) || 72; } catch { return 72; } }); // v15.2B CapCut-style
   useEffect(() => { try { localStorage.setItem("verve_tl_scale", String(tlPxs)); } catch {} }, [tlPxs]);
   const [exTab, setExTab] = useState<"video" | "gif">("video");
   const [exRes, setExRes] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").r || 1080; } catch { return 1080; } });
@@ -3544,8 +3544,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 /* ==================================================================
    TIMELINE v6 — rail kiri + 3 track + playhead + seek ruler
    ================================================================== */
-const PXS = 56; // px per detik (default — skala bisa dizoom cubit di timeline)
-const TL_MIN_PXS = 0.6, TL_MAX_PXS = 140; // batas zoom skala timeline (0.6px/d → proyek 1 jam muat di layar)
+const PXS = 72; // v15.2B px per detik (CapCut-style — gambar lebih besar di track, enak dilihat tanpa zoom)
+const TL_MIN_PXS = 0.6, TL_MAX_PXS = 180; // v15.2B batas zoom (0.6px/d → 1 jam muat; 180px/d → klip pendek tetap jelas)
 /* v8.5 PEMADAT JALUR: objek boleh berbagi baris KALAU waktunya tidak numpuk — ala CapCut.
    Baris 0 diisi dulu; objek dengan row pilihan pengguna dihormati; celah kosong dirapikan. */
 function packRows(items: { st: number; dd: number; row?: number }[]): number[] {
@@ -3691,7 +3691,7 @@ function TimelineV6(p: any) {
     if (tlPtrs.current.size === 0) scrubHoldRef.current = false;
   }
 
-  function clipW(i: number): number { return Math.max(38, (timeline?.durs?.[i] || 0) * PXS0); }
+  function clipW(i: number): number { return Math.max(80, (timeline?.durs?.[i] || 0) * PXS0); } // v15.2B min 80px (gambar jelas walau klip 1dt)
 
   /* ---- TEKAN-TAHAN & SERET (klip reorder / trim / audio offset) + AUTO-SCROLL tepi ---- */
   const armTRef = useRef<any>(null);
@@ -4157,21 +4157,18 @@ function TimelineV6(p: any) {
                         Saat user mau pangkas klip-i atau klip-(i+1), chip TIDAK ganggu. */}
                     {i < slides.length - 1 && (() => {
                       const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
-                      const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
                       // kumulatif offset (kiri klip = awal klip-i = sum dur 0..i-1)
                       let offL = 0;
                       for (let k = 0; k < i; k++) offL += clipW(k);
                       const wL = clipW(i);
-                      const wR = clipW(i + 1);
                       // celah = 4px (margin antar clip di .v6e-clip parent)
                       const centerX = offL + wL + 2; // titik tengah celah
                       return (
                         <button key={"tmid-" + s.id} className={`v6e-trans-mid ${tr === "none" ? "off" : ""}`}
                           style={{ left: centerX }}
                           title={`Transisi: ${tr} — ketuk untuk ganti`}
-                          onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>
-                          {em}
-                        </button>
+                          onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}
+                          aria-label="Garis transisi" />
                       );
                     })()}
                     <div style={{ width: 4 }} />
