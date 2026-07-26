@@ -3709,7 +3709,8 @@ function TimelineV6(p: any) {
     if (e.target === e.currentTarget && p.onDeselect) { p.onDeselect(); }
     scrubHoldRef.current = true;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+    // 🎯 v15.18 — JANGAN setPointerCapture di wrap — supaya handler child (klip, handle, teks) bisa jalan normal.
+    // gstBind (window listener) di pemanggil child udah cukup.
     if (tlPtrs.current.size >= 2) {
       const pts = [...tlPtrs.current.values()];
       const el = scrollRef.current;
@@ -4187,7 +4188,7 @@ function TimelineV6(p: any) {
 
   return (
     <div className="v6e-tl">
-      <div className="v6e-tl-inner" onPointerDown={onWrapDown /* 🎯 v15.17A — biar area kosong di luar track row juga bisa scroll + deselect */}>
+      <div className="v6e-tl-inner">
         {/* rail kiri */}
         <div className="v6e-tl-rail" style={{ paddingTop: 0 }}>
           <button className={`v6e-rail-tile ${p.audMuted ? "" : ""}`} onClick={p.onMute} title="Bisukan audio">
