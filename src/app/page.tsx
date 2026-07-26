@@ -3703,6 +3703,13 @@ function TimelineV6(p: any) {
     p.onSeek(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
   }
 
+  // ---- 🎯 v15.19 EMPTY-DOWN: handler KHUSUS area kosong parent (di luar track).
+  // Dipasang di .v6e-tl-inner (parent). Cuma fire kalau target === currentTarget,
+  // artinya user tap LANGSUNG di parent (area kosong luar track), bukan di child klip/teks/dll.
+  function onEmptyDown(e: React.PointerEvent) {
+    if (e.target !== e.currentTarget) return; // skip kalau bubble dari child
+    if (p.onDeselect) p.onDeselect();
+  }
   // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
     // 🎯 v15.10A — tap di area KOSONG (bukan bubble dari child) = deselect klip yg lagi diblok.
@@ -3957,10 +3964,16 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
       const dx = e.clientX - d.startX, dy = e.clientY - (d.startY || 0);
-      // 🎯 v15.9B SCROLL TIMELINE — touch-action:pan-x pan-y di clip & wrapper, jadi
-      // browser handle scroll native. JS handler di sini cuma untuk armed drag (vertikal/tahan lama).
-      // Kalau drag dibatalin (geser > 12px sebelum arm), reset state supaya tap berikutnya bersih.
-      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      // 🎯 v15.20A REORDER LANGSUNG — drag > 8px (horizontal/vertikal) = REORDER klip, tanpa nunggu 220ms.
+      // Drag vertikal > 4px (mayoritas) = angkat klip (reorder). Drag horizontal > 8px = ganti posisi.
+      // scroll native cuma kalau user GAK drag vertikal.
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      if (absDx > 8 || absDy > 8) {
+        // 🎯 v15.20B LANGSUNG ARMED — drag langsung set armed=true. Bypass 220ms delay.
+        d.armed = true; clearTimeout(armTRef.current);
+        try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
+        return;
+      }
       return;
     }
     dragUpdate(e, d);
@@ -4188,7 +4201,10 @@ function TimelineV6(p: any) {
 
   return (
     <div className="v6e-tl">
-      <div className="v6e-tl-inner">
+      <div className="v6e-tl-inner"
+        onPointerDown={onEmptyDown /* 🎯 v15.19 — tap di area kosong LUAR track (di parent) = deselect. Skip kalau target = child */}
+        onPointerMove={(e) => { /* 🎯 v15.19 SCROLL DELEGASI — kalau pointer ada di tlPtrs (down di track), terusin scroll */ if (!tlPtrs.current.has(e.pointerId)) return; tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY }); onWrapMove(e); }}
+        onPointerUp={(e) => { if (!tlPtrs.current.has(e.pointerId)) return; onWrapUp(e); }}>
         {/* rail kiri */}
         <div className="v6e-tl-rail" style={{ paddingTop: 0 }}>
           <button className={`v6e-rail-tile ${p.audMuted ? "" : ""}`} onClick={p.onMute} title="Bisukan audio">

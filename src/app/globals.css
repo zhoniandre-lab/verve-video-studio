@@ -1199,8 +1199,8 @@ body:has(.cc2-root) { background: var(--v-bg); }
 .v6e-timerow-tip { font-size:10px; color:#5b6472; font-weight:600; }
 
 /* ---------- TIMELINE ---------- */
-.v6e-tl { flex:0 0 auto; background:#000; padding:2px 0 24px; touch-action:pan-x pan-y; } /* 🎯 v15.17B — touch-action di parent biar area kosong bawah juga bisa scroll */
-.v6e-tl-inner { display:flex; align-items:stretch; touch-action:pan-x pan-y; } /* 🎯 v15.17B — sama, biar handler di parent bisa kena */
+.v6e-tl { flex:0 0 auto; background:#000; padding:2px 0 24px; touch-action:pan-x pan-y; } /* 🎯 v15.17B + v15.19 — touch-action parent biar area kosong juga bisa scroll */
+.v6e-tl-inner { display:flex; align-items:stretch; touch-action:pan-x pan-y; } /* 🎯 v15.17B + v15.19 — biar handler di parent bisa kena tanpa blokir child */
 .v6e-tl-scrollwrap { overflow-x:auto; overflow-y:auto; scrollbar-width:none; max-height:min(46dvh,400px); overscroll-behavior:contain; touch-action:pan-x pan-y; padding-bottom:8px; } /* 🎯 v15.15A — padding dalam scrollwrap biar track row terakhir ada ruang */
 .v6e-tl-scrollwrap::-webkit-scrollbar { display:none; }
 .v6e-tl-inner { display:flex; align-items:stretch; }
