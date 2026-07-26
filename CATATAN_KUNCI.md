@@ -9,13 +9,12 @@
 - User: HP only (Samsung + Chrome Android), Lampung/Curup, tes malam hari, kirim screenshot buat diagnosis. Bahasa: Indonesia santai "bro", JUJUR — akui kesalahan sendiri dengan bukti, jangan nebak ("kubuktikan dulu").
 
 ## Versi Terkunci Saat Ini
-- **main = v13.10 TURBO JUJUR = commit `a6c1688`** (bersih, nothing to commit)
+- **main = v15.3D PLAY STOP LOCK = commit `7f6047f`** (HEAD saat ini)
 - Tag lock + backup branch (semua verified di remote):
-  - `v13.7-rilis-sempurna-lock` (@e74a85a) — spektrum unit fix, SELARAS audio sync, judul terkunci, auto thumbnail
-  - `v13.7.1-brankas-lagu-lock` (@a7482b5) — brankas IndexedDB buat link lagu AI yang kedaluwarsa (avault.ts)
-  - `v13.8-panggung-mahal-lock` (@754f3e7) — FFT512 sungguhan, @waves/@wavepro/@ring premium, dissolve sinematik, thumbnail Anton + adaptif luminansi
-  - `v13.9-panggung-hidup-lock` (@a6b8e94) — spektrum pindah ke layer OV2 (mulus 30fps), dynSlides pinned-only, kurva pow(0.72)×1.12
-  - `v13.10-turbo-jujur-lock` (@a6c1688) — ETA jujur (dari frame pertama), telemetri berlabel mesin (WEBCODECS/MEDIARECORDER), shadowBlur diiritkan, cache gradient @bars
+  - `v15.0-kunci-v14-lock` — paket v15.0 final
+  - `v15.1B-handle-pangkas-sensitif-lock` — handle pangkas 28px + ikon ‹/›
+  - `v15.2D-transisi-capcut-fix-lock` (@9250fb4) — transisi tengah sticky ala CapCut
+  - `v15.3D-play-stop-lock` (@7f6047f) — stop di 8 titik track (onWrapDown + dragUpdate + 6 handler khusus). JUJUR: 3 iterasi sebelumnya (v15.3 / v15.3B / v15.3C) BELUM berhasil menangkap maksud user. v15.3D mungkin juga masih kurang pas — user sudah lelah dan minta lanjut. Pelajaran: kalau gagal 3x, MINTA DEMONSTRASI LANGSUNG (voice note / video pendek) daripada nebak dari teks.
 
 ## Yang SUDAH JALAN (jangan dirusak)
 - Spektrum: FFT512 (bukan band-RMS), bars 0..1, beats, bassLevels; @bars glass-plate + peak-caps; curve respons shared preview=render.
