@@ -3376,6 +3376,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTextMoved={(sid: string, tid: string = "") => { pilihObjek("teks"); setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
         onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
         onSel={(id: string) => { pilihObjek("clip"); setSelId(id); setClipBar(true); }}
+        onSelect={(id: string) => { pilihObjek("clip"); setSelId(id); /* 🎯 v15.10C — toggle blok, TANPA buka toolbar setting. Toolbar setting muncul terpisah (double-tap). */ }}
         onDeselect={() => { setSelId(""); setClipBar(false); }} // 🎯 v15.9A — toggle off blok klip
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
@@ -3702,10 +3703,7 @@ function TimelineV6(p: any) {
 
   // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
-    // 🎬 v15.3D PLAY STOP — sentuh/geser di MANA PUN di track (seluruh scrollwrap) = stop preview.
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
-    // 🎯 v15.9C — tap di area KOSONG (bukan bubble dari child) = deselect klip yg lagi diblok.
-    // Cek: kalau target === currentTarget, berarti tap LANGSUNG di wrapper (area kosong, bukan clip).
+    // 🎯 v15.10A — tap di area KOSONG (bukan bubble dari child) = deselect klip yg lagi diblok.
     if (e.target === e.currentTarget && p.onDeselect) { p.onDeselect(); }
     scrubHoldRef.current = true;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -3724,9 +3722,14 @@ function TimelineV6(p: any) {
     }
   }
   function onWrapMove(e: React.PointerEvent) {
-    // 🎬 v15.3E — JAMINAN: pointer move di MANA PUN di track (area kosong atau objek, di luar canvas) = stop.
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
+    // 🎬 v15.10B — pointer move di area KOSONG cuma stop kalau DRAG beneran.
+    // Tap sekilas (gak ada drag) = tidak stop. Cek: kalau dx/dy kecil, skip.
     if (!tlPtrs.current.has(e.pointerId)) return;
+    const last = tlPtrs.current.get(e.pointerId);
+    if (last) {
+      const dx = Math.abs(e.clientX - last.x), dy = Math.abs(e.clientY - last.y);
+      if ((dx > 4 || dy > 4) && p.playing && p.onPlayStop) { p.onPlayStop(); }
+    }
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const pz = pinchZRef.current;
     if (pz && tlPtrs.current.size >= 2) {
@@ -3909,12 +3912,12 @@ function TimelineV6(p: any) {
   }
   const laneRowRef = (lid: string) => (el: HTMLElement | null) => { if (el) laneRowRefs.current.set(lid, el); else laneRowRefs.current.delete(lid); };
   function dragUpdate(e: React.PointerEvent, d: any) {
-    // 🎬 v15.3D PLAY STOP — JAMINAN: kalau drag beneran jalan (armed), stop SEKALIGUS.
-    // Idempoten sama onWrapDown di atas — kalau drag dibatalin, onWrapDown yang handle.
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
+    // 🎬 v15.10B PLAY STOP — STOP hanya saat DRAG beneran (armed). Tap sekilas = tidak stop.
+    // Stop di SINI, SETELAH cek armed, biar beneran cuma drag.
     d.lastX = e.clientX; (d as any).lastY = e.clientY; updEdge(e.clientX);
     d.maxD = Math.max(d.maxD || 0, Math.abs(e.clientX - d.startX), Math.abs(e.clientY - (d.startY || 0))); // v9.0: total gerak dua sumbu — penentu TAP vs DRAG
     if (!d.armed) return;
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.10B — stop DI DALAM armed, biar sensitif ke drag
     if (maybePromoteLane(e, d)) return; // vertikal / tahan lama → angkat jalur
     if (d.kind === "trim") applyTrim(d, e.clientX);
     else if (d.kind === "reorder") applyReorder(d, e.clientX);
@@ -3962,16 +3965,28 @@ function TimelineV6(p: any) {
     dragRef.current = null;
     stopEdge();
     if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
-    // 🎯 v15.9A TOGGLE BLOK — kalau user cuma tap (tanpa drag), toggle blok klip tsb.
+    // 🎯 v15.10C TOGGLE BLOK MURNI — kalau user cuma tap (tanpa drag), toggle blok TANPA buka toolbar.
     if (d && d.kind === "reorder" && !d.moved) {
-      const cur = p.selId; // ID klip yang sedang diblok
-      if (cur === d.sid) { p.onDeselect?.(); } else { p.onSel(d.sid); }
+      const cur = p.selId;
+      const now = Date.now();
+      // double-tap detector: tap kedua dalam 320ms di klip yang sama = buka toolbar setting
+      const lastT = (d as any).lastTapT || 0;
+      const lastS = (d as any).lastTapSid || "";
+      if (now - lastT < 320 && lastS === d.sid && p.onSel) {
+        // DOUBLE-TAP → buka toolbar setting
+        p.onSel(d.sid);
+        (d as any).lastTapT = 0; (d as any).lastTapSid = "";
+      } else {
+        // SINGLE-TAP → toggle blok tanpa toolbar
+        if (cur === d.sid) { p.onDeselect?.(); } else { p.onSelect?.(d.sid); }
+        (d as any).lastTapT = now; (d as any).lastTapSid = d.sid;
+      }
     }
     if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
     if (gstRef.current) return; // v9.1: SATU gesture
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — tarik handle pangkas = stop preview
+    // 🎬 v15.10B — JANGAN stop di tap, stop saat drag beneran.
     e.stopPropagation();
     const sid = slides[i].id;
     p.onSel(sid);
@@ -3989,7 +4004,7 @@ function TimelineV6(p: any) {
   // seret balok audio (tekan-tahan → geser posisi mulai)
   function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh balok audio = stop preview
+    // 🎬 v15.10B — JANGAN stop di tap. Stop saat drag beneran (lihat dragUpdate).
     e.stopPropagation(); // v9.1: dulu BOCOR ke pembungkus jalur — sumber 'kadang kaku/ngaco'
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
@@ -4029,7 +4044,7 @@ function TimelineV6(p: any) {
   // seret chip TEKS di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi) — per lapisan (tid)
   function onTxtDown(e: React.PointerEvent, sid: string, mode: "move" | "dur", t: any, tid: string = "") {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip teks = stop preview
+    // 🎬 v15.10B — JANGAN stop di tap. Stop saat drag beneran (lihat dragUpdate).
     e.stopPropagation();
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
@@ -4072,7 +4087,7 @@ function TimelineV6(p: any) {
   // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
   function onStkDown(e: React.PointerEvent, sid: string, stid: string, mode: "move" | "dur", st: any) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip stiker = stop preview
+    // 🎬 v15.10B — JANGAN stop di tap. Stop saat drag beneran (lihat dragUpdate).
     e.stopPropagation();
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
@@ -4113,7 +4128,7 @@ function TimelineV6(p: any) {
   }
 
   function rulerDown(e: React.PointerEvent) {
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh ruler = stop preview (biar gak lompat sendiri)
+    // 🎬 v15.10B — JANGAN stop di tap ruler. Stop saat drag beneran (lihat dragUpdate via pointermove).
     const el = scrollRef.current; if (!el || !dispTotal) return;
     const r = el.getBoundingClientRect();
     const x = e.clientX - r.left + el.scrollLeft - halfW;
