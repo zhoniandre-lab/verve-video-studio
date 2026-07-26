@@ -8,6 +8,7 @@ import { avWarm, avPut } from "@/lib/avault";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
+import MicTeks from "@/lib/micteks"; // 🎤📝 v14.0 NGOMONG = TEKS
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -3443,6 +3444,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               placeholder="perintah… (Enter)"
               style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
             />
+            <MicTeks onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia (gaya santai, boleh salah ketik)" title="🎤 Bicara ke Sutradara — ketuk, ngomong, ketuk ⏹, teks terisi" />
             <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
           </div>
           {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}

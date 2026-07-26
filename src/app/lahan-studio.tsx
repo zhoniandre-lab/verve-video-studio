@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import MicTeks from "@/lib/micteks"; // 🎤📝 v14.0 NGOMONG = TEKS
 import { avWarm } from "@/lib/avault";
 import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, pilihKlipBervariasi, temaDariKarakter, GAYA_EN, type VidPick } from "@/lib/stockvid";
 import {
@@ -1423,6 +1424,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
             />
+            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+              <MicTeks onText={(t) => setTopic((v) => (v ? v + " " : "") + t)} hint="niat cerita lagu bahasa Indonesia" title="🎤 Ngomong niat ceritamu — teks terisi sendiri" />
+              <span style={{ fontSize: 10.5, color: "#7c8698" }}>males ngetik? ngomong aja 🎤</span>
+            </div>
             <div className="lh-chips">
               {["rindu ibu cerita jadi lagu", "maaf ibu aku terlambat", "lagu untuk ayah tersayang", "ibu engkau yang terbaik"].map((p) => (
                 <button key={p} className="lh-chip" onClick={() => setTopic(p)}>{p}</button>
@@ -1710,6 +1715,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               value={naskah}
               onChange={(e) => setNaskah(e.target.value)}
             />
+            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+              <MicTeks onText={(t) => setNaskah((v) => (v ? v + "\n" : "") + t)} hint="baris naskah adegan bahasa Indonesia" title="🎤 Ngomong satu adegan — masuk sebagai baris baru" />
+              <span style={{ fontSize: 10.5, color: "#7c8698" }}>dikte adegan pakai suara 🎤</span>
+            </div>
             <p className="lh-note">{naskahLines.length} adegan · ±{estDurSec} detik narasi (kecepatan baca normal) · {naskah.split(/\s+/).filter(Boolean).length} kata</p>
             <div className="lh-kv"><span>Cek hook</span><b>{naskahLines[0] ? (naskahLines[0].length > 5 ? `“${naskahLines[0]}” — bayangkan ini muncul 3 detik pertama, cukup bikin berhenti scroll?` : "…") : "Belum ada naskah"}</b></div>
             <div className="lh-kv"><span>Saran audiens</span><b>{solutionFor(intentEff)}</b></div>
