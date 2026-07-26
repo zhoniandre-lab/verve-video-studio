@@ -207,3 +207,12 @@ Bro: v15.1 (22px) masih KURANG SENSITIP. Permintaan: (1) lebih mudah dicubit, (2
 
 ## v15.1 HANDLE PANGKAS SENSITIF (2026-07-26) — lebih mudah dicubit (CALON, DITOLAK bro)
 Permintaan bro: "tombol kayak pemanah di ujung objek buat panjang pendek bisa atur, lebih mudah saat saya mau btarik gambar, lebih sensitip". Bedah CSS PURE (.v6e-clip .hdl, 1 file globals.css, append-only): LEBAR 15px → 22px (standar CapCut, gampang dicubit ibu jari Samsung); font 10px → 14px + berat 900 (simbol ‖ lebih jelas); glow tosca + box-shadow 0 0 0 2px + 0 2px 8px (kelihatan di timeline gelap); AREA TANGKAP +10px via ::before (di LUAR visual, TIDAK motong clip); :active = teal + scaleX 1.18 (umpan balik saat disentuh). TIDAK disentuh: .v6e-clip JSX/page.tsx (gesture handler onHdlDown sudah ada di v13.28), .v6e-track, .v6e-trans-chip, .v6e-playhead, simpan-muat, semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau, smoke .v6e-clip .hdl di chunk CSS ✓. Diff: 13 baris +, 4 baris -. Tag calon: v15.1-handle-pangkas-sensitif. Lock final: setelah bro cubit handle di HP & konfirmasi "lebih gampang". Lanjut v15.2 TRANSISI TENGAH.
+
+## v15.2 TRANSISI TENGAH (2026-07-26) — chip pindah ke BARIS BARU (CALON)
+Bro: "Tombol transisi tadi berada di tengah antara objek biar tidak ganggu saat saya mau geser objek mau perpanjang atau mau pendekin". Bedah (1 file page.tsx + 1 file globals.css):
+- HAPUS chip .v6e-trans-chip dari DALAM .v6e-clip (yang dulu ketutup handle pangkas/geser)
+- TAMBAH chip .v6e-trans-mid di PARENT .v6e-track, posisi absolute tepat di tengah celah antara 2 klip
+- Class baru .v6e-trans-mid: 22px tosca, border tosca, scale 1.18 saat disentuh
+- Posisi centerX = sum(clipW 0..i) + clipW(i) + 2 (tengah celah 4px)
+- click handler → p.onTrans(s.id) → sheet Transisi dengan klip-i aktif
+TIDAK disentuh: handle pangkas (.hdl) tetap di dalam clip; gesture drag/reorder clip; sheet Transisi (tool === 'transisi'); .v6e-clip JSX; semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau, smoke .v6e-trans-mid di chunk CSS ✓. Diff: 36 baris +, 11 baris -. Tag calon: v15.2-transisi-tengah. Lock final: setelah bro cubit chip tengah & konfirmasi "tidak ganggu handle pangkas/geser".
