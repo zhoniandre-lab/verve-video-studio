@@ -2492,6 +2492,38 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     });
     if (!onlyId) setLyrOff(v => Math.round((v + delta) * 10) / 10);
   }
+  /** 🎬 v15.4 LIRIK OTOMATIS PAS PER-DETIK — set start ABSOLUT (mis: 1:23.5) untuk satu baris.
+   *  Pakai format "M:SS" atau "M:SS.s" atau detik desimal. Mis: "0:23", "1:05.5", "42.7" → 42.7 dtk. */
+  function setLyricStart(onlyId: string, timeStr: string) {
+    let t = 0;
+    const s = String(timeStr || "").trim();
+    if (!s) return;
+    if (s.includes(":")) {
+      const m = s.split(":");
+      const mn = Math.max(0, parseInt(m[0] || "0", 10) || 0);
+      const sc = Math.max(0, parseFloat(m[1] || "0") || 0);
+      t = mn * 60 + sc;
+    } else {
+      t = Math.max(0, parseFloat(s) || 0);
+    }
+    pushHist();
+    setSlideOptsById(prev => {
+      const next: Record<string, SlideOpt> = { ...prev };
+      for (const sid of Object.keys(next)) {
+        const o: any = next[sid];
+        if (!o?.texts?.length) continue;
+        let changed = false;
+        const texts = o.texts.map((tx: any) => {
+          if (!/^lyr_/.test(tx?.id || "")) return tx;
+          if (onlyId && tx.id !== onlyId) return tx;
+          changed = true;
+          return { ...tx, start: Math.max(0, Math.round(t * 100) / 100) };
+        });
+        if (changed) next[sid] = { ...o, texts };
+      }
+      return next;
+    });
+  }
 
   /** v8.2.1: bersihkan caption bawaan adegan yang MENEMPEL di klip (dari Lahan v8.0) — lirik karaoke baru aman. */
   function clearLegacyPills() {
@@ -3482,7 +3514,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             ratio, setRatio, bgMode, setBgMode, bgColor, setBgColor,
             ccFrom, setCcFrom, ccLang, setCcLang, ccTpl, setCcTpl, ccSize, setCcSize, ccY, setCcY,
             capWords, capStyle, doAutoCaptions, clearCaptions,
-            lyrOff, lyrList: lyrScan.list, legacyPills: lyrScan.legacy, nudgeLyrics, clearLegacyPills,
+            lyrOff, lyrList: lyrScan.list, legacyPills: lyrScan.legacy, nudgeLyrics, setLyricStart, clearLegacyPills,
             addSticker, delSticker, uploadOverlayImg, moveSticker,
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
@@ -4856,7 +4888,16 @@ function KeteranganSheet({ api: A, onClose }: any) {
             <div style={{ marginTop: 6, maxHeight: 210, overflowY: "auto", display: "grid", gap: 5 }}>
               {A.lyrList.map((L: any, i: number) => (
                 <div key={L.id || i} style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,.04)", borderRadius: 10, padding: "5px 8px" }}>
-                  <span style={{ fontSize: 9.5, color: "#8b8b98", width: 34, flex: "0 0 auto" }}>{formatDur(L.start || 0)}</span>
+                  {/* 🎬 v15.4 — input waktu mulai per baris (format M:SS atau detik) — user bisa ketik 0:23 langsung */}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={formatDur(L.start || 0)}
+                    onBlur={(ev) => { if (ev.target.value !== formatDur(L.start || 0)) A.setLyricStart(L.id, ev.target.value); }}
+                    onKeyDown={(ev) => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); }}
+                    style={{ fontSize: 9.5, color: "#22d3ee", width: 42, flex: "0 0 auto", background: "rgba(34,211,238,.08)", border: "1px solid rgba(34,211,238,.3)", borderRadius: 6, padding: "2px 4px", textAlign: "center", fontFamily: "ui-monospace,monospace" }}
+                    title="Ketik waktu mulai (mis: 0:23, 1:05.5, atau 42.7) lalu ketuk luar / Enter"
+                  />
                   <span style={{ flex: 1, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{L.txt}</span>
                   <button className="v6-chip" style={{ padding: "2px 9px", flex: "0 0 auto" }} onClick={() => A.nudgeLyrics(-0.3, L.id)}>◀</button>
                   <button className="v6-chip" style={{ padding: "2px 9px", flex: "0 0 auto" }} onClick={() => A.nudgeLyrics(0.3, L.id)}>▶</button>
