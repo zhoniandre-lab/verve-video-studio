@@ -216,3 +216,17 @@ Bro: "Tombol transisi tadi berada di tengah antara objek biar tidak ganggu saat 
 - Posisi centerX = sum(clipW 0..i) + clipW(i) + 2 (tengah celah 4px)
 - click handler → p.onTrans(s.id) → sheet Transisi dengan klip-i aktif
 TIDAK disentuh: handle pangkas (.hdl) tetap di dalam clip; gesture drag/reorder clip; sheet Transisi (tool === 'transisi'); .v6e-clip JSX; semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau, smoke .v6e-trans-mid di chunk CSS ✓. Diff: 36 baris +, 11 baris -. Tag calon: v15.2-transisi-tengah. Lock final: setelah bro cubit chip tengah & konfirmasi "tidak ganggu handle pangkas/geser".
+
+## v15.2B TRANSISI TENGAH ALA CAPCUT + GAMBAR LEBIH BESAR (2026-07-26) — CALON
+Bro kirim contoh CapCut sebagai referensi. 2 keluhan:
+1. Chip transisi di VERVE (tosca 22px) KEBESARAN — CapCut cuma garis putih TIPIS
+2. Gambar di track VERVE (default 56px/dtk) KEKECILAN — CapCut tampil ukuran sebenarnya
+
+PERBAIKAN ALA CAPCUT (1 file page.tsx + 1 file globals.css):
+- 🔀 v15.2 (tosca 22px chip) → v15.2B (GARIS PUTIH TIPIS 3px ala CapCut, glow tosca saat disentuh jadi 5px)
+- 📏 Default PXS 56 → 72 (CapCut-style: gambar lebih besar di track, enak dilihat tanpa zoom)
+- 📏 Min clipW 38 → 80 (gambar tetap jelas walau klip 1 detik)
+- 📏 Max zoom PXS 140 → 180 (makin deket = makin gede, bisa lihat detail)
+- 📏 Default tlPxs 56 → 72 (sesuai PXS)
+
+TIDAK disentuh: handle pangkas (.hdl), gesture drag/reorder/trim, sheet Transisi, semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau, smoke `v6e-trans-mid{width:3px;background:#fff}` + hover `width:5px;background:#19c2b8` di chunk CSS ✓. Diff: 17 baris +, 16 baris -. Tag calon: v15.2B-transisi-capcut. Lock final: setelah bro bilang "garis putih sudah pas & gambar lebih besar".
