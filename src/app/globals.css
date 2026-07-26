@@ -1211,10 +1211,19 @@ body:has(.cc2-root) { background: var(--v-bg); }
   background:#1a1a22; touch-action:none; }
 .v6e-clipface { position:absolute; inset:0; background-repeat:repeat-x; background-size:auto 100%; background-position:left center; pointer-events:none; font-style:normal; }
 .v6e-clip.sel { border-color:var(--v6-teal); box-shadow:0 0 0 2px rgba(45,212,191,.30), 0 6px 18px rgba(0,0,0,.35); }
-.v6e-clip .hdl { position:absolute; top:0; bottom:0; width:15px; display:flex; align-items:center; justify-content:center;
-  background:rgba(255,255,255,.92); color:#111; font-size:10px; z-index:3; touch-action:none; }
-.v6e-clip .hdl.l { left:0; border-radius:8px 0 0 8px; }
-.v6e-clip .hdl.r { right:0; border-radius:0 8px 8px 0; }
+.v6e-clip .hdl { position:absolute; top:0; bottom:0; width:22px; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.92); color:#111; font-size:14px; font-weight:900; z-index:3; touch-action:none;
+  box-shadow:0 0 0 2px rgba(25,194,184,.6),0 2px 8px rgba(0,0,0,.45);
+  transition:background .12s, transform .12s; }
+.v6e-clip .hdl.l { left:0; border-radius:10px 0 0 10px; }
+.v6e-clip .hdl.r { right:0; border-radius:0 10px 10px 0; }
+.v6e-clip .hdl::after { content:"‖"; color:#04211f; font-weight:900; opacity:.55; }
+.v6e-clip .hdl:active { background:var(--v6-teal); transform:scaleX(1.18); }
+.v6e-clip .hdl:active::after { opacity:1; color:#04211f; }
+/* Area tangkap lebih luas (di luar visual) — 10px ekstra ke dalam klip */
+.v6e-clip .hdl.l::before, .v6e-clip .hdl.r::before { content:""; position:absolute; top:0; bottom:0; width:10px; }
+.v6e-clip .hdl.l::before { right:100%; }
+.v6e-clip .hdl.r::before { left:100%; }
 .v6e-clip .dur { position:absolute; left:4px; bottom:3px; font-size:9px; font-weight:800; color:#fff; background:rgba(0,0,0,.55); padding:1px 5px; border-radius:5px; z-index:2; }
 .v6e-trans-chip { position:absolute; right:-7px; top:50%; transform:translateY(-50%); width:16px; height:16px; z-index:4;
   background:#fff; color:#111; border-radius:5px; font-size:9px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
