@@ -4090,14 +4090,14 @@ function TimelineV6(p: any) {
                 {/* 🧲 v12.7 GARIS MAGNET — muncul sekilas ketika seretan nempel (tepi klip / penanda / irama) */}
                 {snapAt !== null && <div className="v6e-snapline" style={{ left: snapAt * PXS0 }} />}
                 {/* ruler waktu (adaptif ikut zoom) */}
-                <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
+                <div className="v6e-ruler" style={{ height: 26, position: "relative", marginBottom: 3, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
                   {Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep; return (
-                    <span key={k} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
+                    <span key={k} className="v6e-tick" style={{ position: "absolute", left: sec * PXS0, top: 3, transform: "translateX(4px)", fontSize: 10.5, color: "#c8cedb", fontWeight: 700, fontVariantNumeric: "tabular-nums", letterSpacing: "0.2px" }}>
                       {formatDur(sec)}
                     </span>
                   ); })}
                   {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < dispTotal ? (
-                    <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-2px)", fontSize: 8.5, color: "#4b5260", fontWeight: 600 }}>·</span>
+                    <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 4, transform: "translateX(-2px)", fontSize: 10, color: "#565e6c", fontWeight: 700 }}>·</span>
                   ) : null; })}
                   {/* penanda ketukan musik (estimasi dari gelombang) — bantu potong/teks pas irama */}
                   {p.musicBeats?.length ? p.musicBeats.slice(0, 900).map((b: number, bi: number) => {
@@ -4130,16 +4130,21 @@ function TimelineV6(p: any) {
                         <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>❮</span>
                         <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>❯</span>
                       </>}
-                      {i < slides.length - 1 && (() => {
-                        const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
-                        const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
-                        return (
-                          <span className={`v6e-trans-chip ${tr === "none" ? "off" : ""}`} title="Transisi — ketuk untuk ganti"
-                            onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>{em}</span>
-                        );
-                      })()}
                     </div>
                     <div style={{ width: 4 }} />
+                    {/* v14.1 PEMBATAS TRANSISI ala CapCut — chip 26px utuh persis di TENGAH sambungan antar objek:
+                        SELALU tampil, di LUAR kotak klip (tak kepotong overflow, tak menutupi handle atas-bawah).
+                        Jangkar = baris klip (memang position:relative) → CSS track NOL diubah. Ketuk tetap p.onTrans lama. */}
+                    {i < slides.length - 1 && (() => {
+                      const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
+                      const em = tr === "none" ? "✂" : ((TRANSITIONS as any[]).find(t => t.id === tr)?.emoji || "🔀");
+                      return (
+                        <span className={`v6e-trans-divider ${tr === "none" ? "off" : ""}`} title="Transisi antar gambar — ketuk untuk ganti"
+                          style={{ left: clipW(i) - 9 }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}>{em}</span>
+                      );
+                    })()}
                   </div>
                 );
               })}

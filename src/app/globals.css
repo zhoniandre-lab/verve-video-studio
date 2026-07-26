@@ -1595,3 +1595,38 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6-micteks:disabled { cursor:wait; }
 @keyframes v6micpulse { 0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,.45);} 50% { box-shadow:0 0 0 5px rgba(239,68,68,0);} }
 .v6-micteks-msg { font-size:10.5px; color:#9fb2c8; max-width:52vw; }
+
+/* ================= v14.1 WAJAH CAPCUT — polesan visual murni (logika & gesture NOL disentuh) ================= */
+/* 1) Playhead PUTIH tegas ala CapCut (dulu teal menumpuk warna balok lagu) */
+.v6e-playhead-fixed { background:#fafafa; width:2.5px; box-shadow:0 0 0 .5px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.6); }
+.v6e-playhead-fixed::before { border-top-color:#fafafa; filter:drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+/* 2) Penggaris: garis tick di sisi angka detik */
+.v6e-tick::before { content:""; position:absolute; left:-5px; top:1px; height:11px; width:1.5px; border-radius:1px; background:rgba(255,255,255,.32); }
+/* 3) Klip terpilih: bingkai PUTIH tegas + handle pangkas 22px (sasaran jari) */
+.v6e-clip.sel { border-color:#fff; box-shadow:0 0 0 1.5px rgba(255,255,255,.85), 0 6px 18px rgba(0,0,0,.42); }
+.v6e-clip .hdl { width:22px; font-size:11.5px; font-weight:900; background:rgba(255,255,255,.96); }
+/* 4) Rail kiri ramping → track lebih luas */
+.v6e-tl-rail { width:46px; padding:0 4px; gap:5px; }
+.v6e-rail-tile { height:48px; background:#101017; font-size:16px; }
+.v6e-rail-tile span { font-size:7px; color:#aeb3bf; }
+/* 5) Baris kontrol: tombol bulat konsisten */
+.v6e-ctrl .cbtn { width:42px; height:42px; border-radius:13px; font-size:18px; }
+.v6e-ctrl .cbtn:active { background:rgba(255,255,255,.1); }
+.v6e-ctrl .play { width:56px; height:56px; font-size:29px; }
+/* 6) Angka detik berjalan: besar & stabil */
+.v6e-timerow { font-size:11.5px; }
+.v6e-timerow b { font-size:14.5px; font-variant-numeric:tabular-nums; letter-spacing:.3px; }
+/* 7) Toolbar bawah seragam */
+.v6e-tools { gap:4px; padding:9px 8px calc(11px + env(safe-area-inset-bottom)); }
+.v6e-tlbtn { min-width:58px; font-size:20px; gap:5px; }
+.v6e-tlbtn span { font-size:9.5px; color:#b7bdc9; }
+/* 8) Topbar rapi */
+.v6e-tbtn { color:#e8ebf1; font-size:18px; }
+/* 9) Chip teks & balok audio lebih halus */
+.v6e-textchip { border-radius:10px; background:#23232b; border-color:rgba(255,255,255,.12); }
+.v6e-audioclip { border-radius:11px; }
+/* 10) PEMBATAS TRANSISI — chip 26px utuh di tengah sambungan (jangkar: baris klip yg memang relative; .v6e-track TIDAK diubah) */
+.v6e-trans-divider { position:absolute; top:50%; transform:translateY(-50%); width:26px; height:26px; z-index:7;
+  background:#fff; color:#111; border-radius:9px; border:1.5px solid rgba(0,0,0,.25); box-shadow:0 2px 8px rgba(0,0,0,.55);
+  font-size:12.5px; display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:manipulation; }
+.v6e-trans-divider.off { background:rgba(255,255,255,.35); color:#111; }
