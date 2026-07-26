@@ -3315,6 +3315,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
             style={{ touchAction: "none" }} />
           <div className={`selbox ${selId ? "on" : ""}`} />
+          {/* 🎯 v15.11 LABEL RASIO — biar user tau rasio video yg lagi diedit (9:16 / 16:9 / 1:1) */}
+          <div className="ratio-badge">{ratio}</div>
           {/* v8.3: tombol hapus CEPAT di panggung saat objek (teks/stiker) terpilih */}
           {(selTextSid || selStik) && !tool && (
             <button className="v6e-stagedel" title="Hapus objek terpilih" onClick={(e) => { e.stopPropagation(); delSelObj(); }}>🗑</button>
