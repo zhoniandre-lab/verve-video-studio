@@ -1608,15 +1608,18 @@ b.ok, b.warn, b.err { color:inherit; }
 @keyframes v6micpulse { 0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,.45);} 50% { box-shadow:0 0 0 5px rgba(239,68,68,0);} }
 .v6-micteks-msg { font-size:10.5px; color:#9fb2c8; max-width:52vw; }
 
-/* v15.2B TRANSISI TENGAH ALA CAPCUT — garis putih TIPIS di celah 2 klip (bukan tombol besar).
-   TIDAK ganggu handle pangkas/geser klip. Posisi absolute di tengah celah 2 klip. */
-.v6e-trans-mid { position:absolute; top:0; bottom:0; transform:translateX(-50%); z-index:6;
-  width:3px; cursor:pointer; touch-action:manipulation; pointer-events:auto;
-  background:rgba(255,255,255,.85); border-radius:2px;
-  box-shadow:0 0 0 1px rgba(0,0,0,.4);
+/* v15.2D TRANSISI TENGAH STICKY ala CapCut — garis putih TIPIS di celah 2 klip.
+   v15.2E Fix: pakai 1 overlay absolute 1 layer (bukan per-clip), posisi dihitung dari track → BERGERAK otomatis.
+   TIDAK ganggu handle pangkas/geser klip. */
+.v6e-trans-overlay { z-index: 5; }
+.v6e-trans-mid { position:absolute; top:6px; bottom:6px; transform:translateX(-50%); z-index:5;
+  width:2px; cursor:pointer; touch-action:manipulation;
+  background:rgba(255,255,255,.95); border-radius:1px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.55), 0 0 6px rgba(255,255,255,.3);
   transition:background .12s, width .12s, box-shadow .12s; }
 .v6e-trans-mid:hover, .v6e-trans-mid:active {
-  background:#19c2b8; width:5px; box-shadow:0 0 12px rgba(25,194,184,.9);
+  background:#19c2b8; width:5px;
+  box-shadow:0 0 0 1px #04211f, 0 0 14px rgba(25,194,184,.95);
 }
-.v6e-trans-mid.off { background:rgba(255,255,255,.35); }
+.v6e-trans-mid.off { background:rgba(255,255,255,.4); box-shadow:0 0 0 1px rgba(0,0,0,.4); }
 .v6e-trans-mid.off:hover, .v6e-trans-mid.off:active { background:#6b7280; }

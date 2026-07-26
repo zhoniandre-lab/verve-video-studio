@@ -244,3 +244,17 @@ PERBAIKAN (1 file page.tsx + 1 file globals.css):
 - CSS: .v6e-track tambah position:relative → anchor posisi absolute child
 
 TIDAK disentuh: handle pangkas (.hdl), gesture, sheet Transisi, semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau. Tag calon: v15.2C-transisi-sticky.
+
+## v15.2D TRANSISI TENGAH STICKY ala CapCut — FIX POSISI CHIP (2026-07-26) — CALON
+MASALAH v15.2C: chip transisi di-render DI DALAM wrapper per-klip `<div style={{display:"flex", position:"relative"}}>`. Wrapper ini child dari `.v6e-track` (display:flex, gap:4px). Karena wrapper punya position:relative sendiri, chip `position:absolute; left:centerX` dihitung dari wrapper (lebar = clipW(i)), BUKAN dari track. MAKANYA CHIP DIAM DI TEMPAT (centerX selalu pas di ujung wrapper yang cuma selebar klip).
+
+Solusi v15.2D (RESET PENDEKATAN):
+1. **Hapus wrapper per-klip** — render clip LANGSUNG sebagai flex child di `.v6e-track` (sibling flex)
+2. **1 OVERLAY absolute** 1 layer (di LUAR slides.map) yang nge-render SEMUA chip transisi sekaligus — child absolute di-anchor ke `.v6e-track` (position:relative) → BERGERAK otomatis saat handle pangkas / drag clip
+3. Clip tetap flex item dengan `flex:0 0 auto` dan `width: clipW(i)` → layout track tetap, gap:4px tetap
+4. Chip 2px putih tipis (ala CapCut mobile), 5px tosca saat disentuh, TIDAK ada wrapper yang nge-block
+5. Pointer events: overlay=none, chip=auto → tap ke clip gak keganggu, tap ke chip kena
+
+Bukti: tsc 0, build 0, 6/6 suite hijau, smoke `v6e-trans-overlay + v6e-trans-mid{width:2px}` di chunk CSS ✓.
+Diff: page.tsx (1 blok) hapus wrapper per-klip + tambah overlay absolute di .v6e-track; globals.css tweak chip 3px→2px + .v6e-trans-overlay class.
+Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".

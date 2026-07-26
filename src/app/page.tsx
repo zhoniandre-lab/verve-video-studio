@@ -4136,47 +4136,51 @@ function TimelineV6(p: any) {
                 const ghost = d?.kind === "reorder" && d.moved && d.to === i && d.i !== i;
                 const lifting = d?.kind === "reorder" && (d as any).armed && d.i === i;
                 return (
-                  <div key={s.id} style={{ display: "flex", alignItems: "center", position: "relative" }}>
-                    <div
-                      className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                      style={{ width: clipW(i), opacity: ghost ? 0.35 : 1 }}
-                      onPointerDown={(e) => onClipDown(e, i)}
-                    >
-                      {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
-                      {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
-                      <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
-                      {sel && <>
-                        <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>‹</span>
-                        <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>›</span>
-                      </>}
-                      {/* 🔀 v15.2 TRANSISI TENGAH — chip pindah ke BARIS BARU antara 2 klip (lihat .v6e-track parent).
-                          TIDAK ganggu handle pangkas/geser klip. */}
-                    </div>
-                    {/* 🔀 v15.2 — chip transisi di BARIS BARU (parent track), di antara 2 klip, TIDAK di dalam clip.
-                        Posisi absolute: tepat di tengah celah = (clip-i.end + clip-(i+1).start) / 2.
-                        Saat user mau pangkas klip-i atau klip-(i+1), chip TIDAK ganggu. */}
-                    {i < slides.length - 1 && (() => {
-                      const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
-                      // v15.2C: posisi STICKY ke ujung kanan clip-i (bergerak saat handle pangkas / drag clip).
-                      // parent .v6e-track: display:flex, gap:4px → tiap clip dipisah 4px.
-                      // offL = posisi kiri clip-i = sum(clipW 0..i-1) + (i * 4px gap)
-                      let offL = 0;
-                      for (let k = 0; k < i; k++) offL += clipW(k) + 4;
-                      const wL = clipW(i);
-                      // celah antara clip-i dan clip-(i+1) = 4px → centerX = ujung kanan clip-i + 2px (tengah celah)
-                      const centerX = offL + wL + 2;
-                      return (
-                        <button key={"tmid-" + s.id} className={`v6e-trans-mid ${tr === "none" ? "off" : ""}`}
-                          style={{ left: centerX }}
-                          title={`Transisi: ${tr} — ketuk untuk ganti`}
-                          onClick={(e) => { e.stopPropagation(); p.onTrans(s.id); }}
-                          aria-label="Garis transisi" />
-                      );
-                    })()}
-                    <div style={{ width: 4 }} />
+                  <div
+                    key={s.id}
+                    className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
+                    style={{ width: clipW(i), opacity: ghost ? 0.35 : 1, flex: "0 0 auto" }}
+                    onPointerDown={(e) => onClipDown(e, i)}
+                  >
+                    {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
+                    {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
+                    <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
+                    {sel && <>
+                      <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>‹</span>
+                      <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>›</span>
+                    </>}
                   </div>
                 );
               })}
+              {/* 🔀 v15.2D TRANSISI TENGAH STICKY ala CapCut — overlay absolute 1 layer, render SEMUA chip sekaligus di LUAR clip.
+                  Posisinya dihitung dari TRACK (bukan dari clip), jadi BERGERAK otomatis saat handle pangkas / drag clip.
+                  parent .v6e-track: display:flex, gap:4px → tiap clip dipisah 4px. offL = sum(clipW 0..i-1) + (i * 4px gap). */}
+              {slides.length > 1 && (() => {
+                const chips: any[] = [];
+                for (let i = 0; i < slides.length - 1; i++) {
+                  let offL = 0;
+                  for (let k = 0; k < i; k++) offL += clipW(k) + 4;
+                  const wL = clipW(i);
+                  // celah 4px → centerX = ujung kanan clip-i + 2px (tengah celah)
+                  const centerX = offL + wL + 2;
+                  const tr = canonicalTrans(slideOptsById[slides[i].id]?.trans ?? p.transition ?? "dissolve");
+                  chips.push({ i, s: slides[i], centerX, tr });
+                }
+                return (
+                  <div className="v6e-trans-overlay" style={{ position: "absolute", left: 0, top: 0, bottom: 0, right: 0, pointerEvents: "none" }}>
+                    {chips.map(c => (
+                      <button
+                        key={"tmid-" + c.s.id}
+                        className={`v6e-trans-mid ${c.tr === "none" ? "off" : ""}`}
+                        style={{ left: c.centerX, pointerEvents: "auto" }}
+                        title={`Transisi: ${c.tr} — ketuk untuk ganti`}
+                        onClick={(e) => { e.stopPropagation(); p.onTrans(c.s.id); }}
+                        aria-label="Garis transisi"
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
               {slides.length > 0 && (
                 <button className="v6e-outro" onClick={p.onAddOutro} title="Akhiran">
                   🏁<span>Akhiran</span>
