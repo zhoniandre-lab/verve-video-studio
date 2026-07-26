@@ -3657,6 +3657,10 @@ function TimelineV6(p: any) {
 
   // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
+    // 🎬 v15.3D PLAY STOP — sentuh/geser di MANA PUN di track (seluruh scrollwrap) = stop preview.
+    // PENTING: dipasang di level wrapper, bukan di handler khusus, supaya tetap kena walau
+    // drag dibatalin (mis: onClipMove batal kalau gerak > 12px sebelum 220ms).
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     scrubHoldRef.current = true;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
@@ -3857,6 +3861,9 @@ function TimelineV6(p: any) {
   }
   const laneRowRef = (lid: string) => (el: HTMLElement | null) => { if (el) laneRowRefs.current.set(lid, el); else laneRowRefs.current.delete(lid); };
   function dragUpdate(e: React.PointerEvent, d: any) {
+    // 🎬 v15.3D PLAY STOP — JAMINAN: kalau drag beneran jalan (armed), stop SEKALIGUS.
+    // Idempoten sama onWrapDown di atas — kalau drag dibatalin, onWrapDown yang handle.
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     d.lastX = e.clientX; (d as any).lastY = e.clientY; updEdge(e.clientX);
     d.maxD = Math.max(d.maxD || 0, Math.abs(e.clientX - d.startX), Math.abs(e.clientY - (d.startY || 0))); // v9.0: total gerak dua sumbu — penentu TAP vs DRAG
     if (!d.armed) return;
