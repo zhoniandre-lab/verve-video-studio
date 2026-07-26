@@ -3503,6 +3503,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             <Ngomong lang={micLang} onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia gaya santai (boleh salah ketik): keterangan otomatis, transisi, zoom pelan, animasikan adegan, kecilkan musik, render, karaoke, lirik, narasi" title="🎤 Bicara perintah ke Sutradara — ketuk, ngomong, ketuk ⏹ (<60d)" /> {/* v14.5 */}
             <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
           </div>
+          {/* 🎬 v15.6 SUTRADARA LEBIH PINTAR — 4 quick-action pintas yang jalan instan (offline, tanpa AI jauh).
+              1-tap buat user HP yg gak mau ngetik. */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+            <button onClick={() => { void sendDirectorStudio("keterangan otomatis"); }} disabled={dirBusy} style={{ background: "rgba(168,85,247,.12)", color: "#d8b4fe", border: "1px solid rgba(168,85,247,.35)", borderRadius: 7, padding: "6px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>📝 Keterangan</button>
+            <button onClick={() => { void sendDirectorStudio("zoom pelan semua"); }} disabled={dirBusy} style={{ background: "rgba(20,184,166,.12)", color: "#5eead4", border: "1px solid rgba(20,184,166,.35)", borderRadius: 7, padding: "6px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🎬 Zoom pelan</button>
+            <button onClick={() => { void sendDirectorStudio("musiknya kecilin 40%"); }} disabled={dirBusy || !musicUrl} style={{ background: "rgba(34,197,94,.12)", color: "#86efac", border: "1px solid rgba(34,197,94,.35)", borderRadius: 7, padding: "6px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer", opacity: musicUrl ? 1 : .5 }}>🔉 Musik 60%</button>
+            <button onClick={() => { void sendDirectorStudio("render sekarang"); }} disabled={dirBusy || !!videoUrl} style={{ background: "rgba(239,68,68,.12)", color: "#fca5a5", border: "1px solid rgba(239,68,68,.35)", borderRadius: 7, padding: "6px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🎥 Render</button>
+          </div>
           {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}
         </div>
       )}
