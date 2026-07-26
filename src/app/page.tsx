@@ -8,6 +8,7 @@ import { avWarm, avPut } from "@/lib/avault";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
+import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -1563,7 +1564,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!snap.coverThumb && prevThumb) snap.coverThumb = prevThumb;
       if (idx >= 0) arr[idx] = snap; else arr.unshift(snap);
       while (arr.length > MAX_DRAFTS) arr.pop();
-      localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+      const teksSimpan = JSON.stringify(arr);
+      try { localStorage.setItem(DRAFTS_KEY, teksSimpan); } catch { flash("⚠️ GAGAL SIMPAN — memori HP penuh. Hapus draf lama di tab Proyek, lalu 💾 ulangi."); return; } // v14.5 SIMPAN-JUJUR #1 (biang 'setting balik ke versi lama')
+      try { const bacaBalik = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); if (!bacaBalik.some((x: any) => x?.id === snap.id)) throw new Error("readback"); } catch { flash("⚠️ SIMPANAN RAGU — HP tak memastikan tulisan nempel. Coba 💾 sekali lagi."); return; } // v14.5 SIMPAN-JUJUR #2 bukti-tulis
       if (!draftId) setDraftId(snap.id);
       onSaved();
       if (manual) flash("✅ Proyek tersimpan");
@@ -1590,6 +1593,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
         const d = arr.find((x: any) => x.id === openDraftId);
         if (d) applySnapshot(d);
+        else flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya"); // v14.5 JUJUR #3: tidak senyap lagi
       } catch {}
     }
     if (cmd?.preset) {
@@ -3443,6 +3447,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               placeholder="perintah… (Enter)"
               style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
             />
+            <Ngomong onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia gaya santai (boleh salah ketik): keterangan otomatis, transisi, zoom pelan, animasikan adegan, kecilkan musik, render, karaoke, lirik, narasi" title="🎤 Bicara perintah ke Sutradara — ketuk, ngomong, ketuk ⏹ (<60d)" /> {/* v14.5 */}
             <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
           </div>
           {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}

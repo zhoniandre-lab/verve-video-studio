@@ -21,6 +21,7 @@ import {
   solutionFor, monetizationHint, deviceAdvice, DATA_GAPS,
 } from "@/lib/brain/audience";
 import { getAudioPeaks } from "@/lib/waveform";
+import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 
 const LAHAN_KEY = "verve_lahan_v1";
 const BRAIN_KEY = "verve_brain_v1";
@@ -1423,6 +1424,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
             />
+            <Ngomong onText={(t) => setTopic((v) => (v ? v + " " : "") + t)} hint="niat cerita lagu Indonesia: rindu ibu, sedih, perjuangan, keluarga, cinta, kampung halaman, doa" title="🎤 Ngomong niat ceritamu — teks terisi otomatis" /> {/* v14.5 */}
             <div className="lh-chips">
               {["rindu ibu cerita jadi lagu", "maaf ibu aku terlambat", "lagu untuk ayah tersayang", "ibu engkau yang terbaik"].map((p) => (
                 <button key={p} className="lh-chip" onClick={() => setTopic(p)}>{p}</button>
@@ -1710,6 +1712,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               value={naskah}
               onChange={(e) => setNaskah(e.target.value)}
             />
+            <Ngomong onText={(t) => setNaskah((v) => (v ? v + "\n" : "") + t)} hint="naskah adegan cerita bahasa Indonesia: baris pembuka hook, tiap baris satu adegan" title="🎤 Dikte naskah per adegan — kalimatmu jadi baris baru" /> {/* v14.5 */}
             <p className="lh-note">{naskahLines.length} adegan · ±{estDurSec} detik narasi (kecepatan baca normal) · {naskah.split(/\s+/).filter(Boolean).length} kata</p>
             <div className="lh-kv"><span>Cek hook</span><b>{naskahLines[0] ? (naskahLines[0].length > 5 ? `“${naskahLines[0]}” — bayangkan ini muncul 3 detik pertama, cukup bikin berhenti scroll?` : "…") : "Belum ada naskah"}</b></div>
             <div className="lh-kv"><span>Saran audiens</span><b>{solutionFor(intentEff)}</b></div>

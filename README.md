@@ -39,6 +39,7 @@ Kamu melanjutkan proyek ini dari serah-terima. Baca urut, jangan lompat.
 |---|---|
 | `main` | (cek `git log -1`) = **v13.28 LOCK yang pemilik bilang "bagus"** (`de817ff`) **+ v14.4 PAMIT** (2 file baru, 0 baris lama diubah) |
 | Kunci persetujuan pemilik | tag `v13.28-sutradara-paham-keterangan-lock` = `de817ff` |
+| Terbaru di atas beku | v14.5 SUARA PAHAM + SIMPAN JUJUR (mic→teks di Sutradara/niat/naskah via `src/lib/ngomong.tsx` + bukti-tulis anti "setting hilang") — CALON |
 | Semua eksperimen yang dia tolak | AMAN di branch backup, **tidak aktif** (lihat §5) |
 | Cara cek kebenaran remote | `git ls-remote origin refs/heads/main` |
 
