@@ -230,3 +230,17 @@ PERBAIKAN ALA CAPCUT (1 file page.tsx + 1 file globals.css):
 - 📏 Default tlPxs 56 → 72 (sesuai PXS)
 
 TIDAK disentuh: handle pangkas (.hdl), gesture drag/reorder/trim, sheet Transisi, semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau, smoke `v6e-trans-mid{width:3px;background:#fff}` + hover `width:5px;background:#19c2b8` di chunk CSS ✓. Diff: 17 baris +, 16 baris -. Tag calon: v15.2B-transisi-capcut. Lock final: setelah bro bilang "garis putih sudah pas & gambar lebih besar".
+
+## v15.2C TRANSISI TENGAH STICKY (2026-07-26) — CALON
+Bro perbandingan CapCut vs VERVE: "Tombol transisinya mandak situ aja terus dan belum berada di posisi tengah tengah antar objek, dia kayak masih masuk di dalam objek, itu slah. Dan cukup kecil aja sebagai penanda, nanti ketika saya pilih transisi baru dia mengikuti gambar transisinya apa".
+
+MASALAH: chip diam di posisi awal (offsetX statis), tidak bergerak saat handle pangkas / drag clip. CSS .v6e-track tidak punya position:relative, jadi child absolute jadi ke-anchor ke parent lain.
+
+PERBAIKAN (1 file page.tsx + 1 file globals.css):
+- v15.2B (garis 3px) → v15.2C (tetap garis 3px, TAPI POSISI STICKY ke ujung kanan clip-i)
+- offL = sum(clipW 0..i-1) + (i * 4px gap) → memperhitungkan gap 4px di flex parent
+- centerX = offL + clipW(i) + 2 → titik tengah celah antara clip-i dan clip-(i+1)
+- Chip OTOMATIS bergerak saat handle pangkas / drag clip (re-render dari parent reaktif)
+- CSS: .v6e-track tambah position:relative → anchor posisi absolute child
+
+TIDAK disentuh: handle pangkas (.hdl), gesture, sheet Transisi, semua 6 suite. Bukti: tsc 0, build 0, 6/6 suite hijau. Tag calon: v15.2C-transisi-sticky.
