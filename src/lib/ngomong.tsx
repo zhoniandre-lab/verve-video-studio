@@ -22,7 +22,7 @@ function pilihMime(): string {
   return "";
 }
 
-export default function Ngomong(p: { onText: (t: string) => void; hint?: string; title?: string }) {
+export default function Ngomong(p: { onText: (t: string) => void; hint?: string; title?: string; lang?: string }) {
   const [stt, setStt] = useState<Stt>("");
   const [msg, setMsg] = useState("");
   const [sec, setSec] = useState(0);
@@ -89,8 +89,9 @@ export default function Ngomong(p: { onText: (t: string) => void; hint?: string;
     try {
       const fd = new FormData();
       fd.append("file", new File([blob], "suara.webm", { type: blob.type })); // nama .webm → rute mengurai dengan benar
-      fd.append("lang", "id");
-      if (p.hint) fd.append("hint", p.hint); // (2) kamus konteks → AI makin paham maksudmu
+      const lg = (p.lang || "id").toLowerCase(); // 🌍 v14.6: bahasa dari saklar (default Indonesia)
+      fd.append("lang", lg);
+      if (p.hint && lg === "id") fd.append("hint", p.hint); // (2) kamus Indonesia HANYA utk Indonesia — bahasa lain dibiarkan bersih biar AI tak bias
       const ac = new AbortController(); abortRef.current = ac;
       const to = setTimeout(() => ac.abort(), 25000); // anti-gantung di 4G desa
       const r = await fetch("/api/hcnsec/transcribe", { method: "POST", body: fd, signal: ac.signal });

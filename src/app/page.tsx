@@ -764,6 +764,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [dirOpen, setDirOpen] = useState(false);
   const [dirLog, setDirLog] = useState<{ me: "me" | "ai" | "sys"; text: string }[]>([]);
   const [dirInp, setDirInp] = useState("");
+  const [micLang, setMicLang] = useState(() => { try { return localStorage.getItem("verve_miclang_v1") || "id"; } catch { return "id"; } }); // 🌍 v14.6 INTERNASIONAL
   const [dirBusy, setDirBusy] = useState(false);
   const [dirPending, setDirPending] = useState<{ op: string; slide?: any; instruction?: string }[]>([]);
   const [animBusy, setAnimBusy] = useState(false); // 🎬 v11.8: batch animasi AI sedang jalan
@@ -2391,7 +2392,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         let gagalW = ""; let engineName2 = ""; let janganDengar = false; // 🔁 v13.23: unggahan potongan gagal → JANGAN lempar ke pendengar 4½ menit
         setStageText("🤖 AI menulis keterangan dari audio — hitungan detik, bukan dengar lagu sampai habis...");
         try {
-          const j: any = await transcribeAudio(srcUrl, "", /^id/i.test(ccLang || "") ? "id" : "", (m) => setStageText(m)); // 📦 v13.21: blob HP pun ikut AI · ✂️ v13.22: lagu BESAR dipotong per bagian
+          const j: any = await transcribeAudio(srcUrl, "", (ccLang || "id-ID").slice(0, 2).toLowerCase(), (m) => setStageText(m)); // 🌍 v14.6: saklar bahasa akhirnya dihormati SERVER (dulu non-id dikirim "" → server maksa "id") // 📦 v13.21: blob HP pun ikut AI · ✂️ v13.22: lagu BESAR dipotong per bagian
           janganDengar = !!(j && j.janganDengar); // 🔁 v13.23
           if (j?.ok && Array.isArray(j.words) && j.words.length) {
               const segs: any[] = Array.isArray(j.segments) ? j.segments : [];
@@ -3411,7 +3412,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <div style={{ position: "fixed", right: 10, bottom: 152, zIndex: 75, width: "min(340px, 92vw)", background: "#10141b", border: "1px solid #ffffff1f", borderRadius: 14, padding: 10, boxShadow: "0 10px 30px #000c", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
             <b style={{ fontSize: 14 }}>🎬 Sutradara</b>
-            <span style={{ fontSize: 10.5, color: "#8b93a3" }}>perintah → langsung dieksekusi · ↩ Undo toolbar</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => { const ORD = ["id", "en", "jv", "su", "ms"]; const nx = ORD[(ORD.indexOf(micLang) + 1) % ORD.length]; setMicLang(nx); try { localStorage.setItem("verve_miclang_v1", nx); } catch {} }} title="🌐 Bahasa suara mic — ketuk ganti (buat 🎤 di bawah)" style={{ background: "#12151c", border: "1px solid #ffffff22", color: "#e8edf5", borderRadius: 7, padding: "3px 8px", fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>🌐 {({ id: "🇮🇩ID", en: "🇬🇧EN", jv: "JV", su: "SU", ms: "🇲🇾MS" } as any)[micLang] || "🇮🇩ID"}</button> {/* v14.6 */}
+              <span style={{ fontSize: 10.5, color: "#8b93a3" }}>perintah → langsung dieksekusi · ↩ Undo toolbar</span>
+            </span>
           </div>
           <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "#0b0e13", borderRadius: 10, border: "1px solid #ffffff12" }}>
             {!dirLog.length && (
@@ -3447,7 +3451,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               placeholder="perintah… (Enter)"
               style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
             />
-            <Ngomong onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia gaya santai (boleh salah ketik): keterangan otomatis, transisi, zoom pelan, animasikan adegan, kecilkan musik, render, karaoke, lirik, narasi" title="🎤 Bicara perintah ke Sutradara — ketuk, ngomong, ketuk ⏹ (<60d)" /> {/* v14.5 */}
+            <Ngomong lang={micLang} onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia gaya santai (boleh salah ketik): keterangan otomatis, transisi, zoom pelan, animasikan adegan, kecilkan musik, render, karaoke, lirik, narasi" title="🎤 Bicara perintah ke Sutradara — ketuk, ngomong, ketuk ⏹ (<60d)" /> {/* v14.5 */}
             <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
           </div>
           {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}
