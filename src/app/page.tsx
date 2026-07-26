@@ -4336,7 +4336,7 @@ function TimelineV6(p: any) {
                             <div key={r}
                               ref={(el) => { if (el) elmRowEls.current.set(r, el); else elmRowEls.current.delete(r); }}
                               className={`v6e-lanerow ${rowDrop && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
-                              style={{ position: "relative", height: 54, marginBottom: 6 }}>
+                              style={{ position: "relative", height: 54, marginBottom: 14 /* 🎯 v15.14B renggang 14px antar baris — mata leluasa, gak sesak */, paddingTop: 2, paddingBottom: 2 }}>
                               {/* v12.4 KEPALA REL — label isi baris: ikon tiap jenis objek (×n bila lebih dari satu) */}
                               {(() => {
                                 const cnt: Record<string, number> = {};
@@ -4452,6 +4452,7 @@ function TimelineV6(p: any) {
             </div>
           )}
           {dispTotal > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
+          {dispTotal > 0 && <div className="v6e-playhead-fixed-label" style={{ left: "50%" }}>{formatDur(curT || 0)}</div>}
           {/* tombol zoom: ketuk → semua proyek muat 1 layar; cubit di track = perbesar/persempit */}
           {dispTotal > 0 && (
             <button className="v6e-tlfit" title="Tampilkan seluruh proyek dalam 1 layar (cubit track untuk zoom manual)"
