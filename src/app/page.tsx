@@ -3030,6 +3030,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ================= UI (JSX) ================= */
   const uhdLabel = exRes >= 1440 ? (exRes === 1440 ? "2K" : "4K") : `${exRes}p`;
   const estMB = (exMbps * 1_000_000 / 8) * Math.max(clipsTotal, 1) / (1024 * 1024);
+  // 🎬 v15.5 RENDER CEPAT — estimasi kasar durasi render (detik). Faktor kasar: makin kecil
+  // resolusi + fps → makin cepet. 480p·18 di HP mid = ~6× real-time, 1080p·30 = ~1× real-time.
+  const renderSpeedFactor = exRes <= 480 && exFps <= 20 ? 6 : exRes <= 720 && exFps <= 24 ? 2.5 : exRes <= 1080 && exFps <= 30 ? 1 : 0.5;
+  const estRenderSec = Math.max(2, Math.round(clipsTotal / renderSpeedFactor));
   void histTick;
 
   function stagePoint(e: { clientX: number; clientY: number }): { x: number; y: number } | null {
@@ -3518,7 +3522,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             addSticker, delSticker, uploadOverlayImg, moveSticker,
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
-            estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText,
+            estMB, estRenderSec, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText,
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
@@ -5093,10 +5097,16 @@ function EksporSheet({ api: A, onClose }: any) {
                 <div className="v6-xp-ticks">{MBPS_STOPS.map(m => <span key={m}>{m}{A.exMbps === m ? <b>✔</b> : null}</span>)}</div>
               </div>
             </div>
-            <div className="v6-xp-est">Perkiraan ukuran file: <b style={{ color: "#fff" }}>{A.estMB.toFixed(A.estMB > 80 ? 0 : 1)} MB</b> · durasi {formatDur(A.clipsTotal)}</div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <div className="v6-xp-est">Perkiraan ukuran file: <b style={{ color: "#fff" }}>{A.estMB.toFixed(A.estMB > 80 ? 0 : 1)} MB</b> · durasi {formatDur(A.clipsTotal)} · ⏱ estimasi render ≈ <b style={{ color: A.estRenderSec < 60 ? "#22c55e" : A.estRenderSec < 180 ? "#fbbf24" : "#ef4444" }}>{A.estRenderSec < 60 ? `${A.estRenderSec} dtk` : `${Math.round(A.estRenderSec/60)} mnt`}</b> {A.estRenderSec < 60 ? "✅ target < 1 mnt tercapai" : ""}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <button className="v6-chip" style={{ flex: 1, padding: "9px 4px", borderColor: "rgba(239,68,68,.55)", background: "rgba(239,68,68,.08)" }} onClick={() => { A.setExRes(480); A.setExFps(18); A.setExMbps(5); }}>🚀 Turbo &lt; 1 mnt 480p·18·5</button>
               <button className="v6-chip" style={{ flex: 1, padding: "9px 4px", borderColor: "rgba(34,197,94,.5)" }} onClick={() => { A.setExRes(720); A.setExFps(24); A.setExMbps(8); }}>⚡ Mode Ngebut 720p·24·8</button>
               <button className="v6-chip" style={{ flex: 1, padding: "9px 4px" }} onClick={() => { A.setExRes(1080); A.setExFps(30); A.setExMbps(12); }}>💎 Tajam 1080p·30·12</button>
+            </div>
+            <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 6, lineHeight: 1.5 }}>
+              🚀 Turbo = 480p·18fps·5Mbps — khusus target render &lt; 1 menit untuk video 5 menit. Kualitas pas-pasan (cocok share cepat), 4-6× lebih cepat dari Mode Ngebut. HP Kentang pun kuat.
+              <br />⚡ Mode Ngebut = 720p·24fps·8Mbps — sweet spot YouTube/Reels, 2-3× lebih cepat dari Tajam.
+              <br />💎 Tajam = 1080p·30fps·12Mbps — kualitas penuh, render paling lama.
             </div>
             <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 6, lineHeight: 1.5 }}>Untuk video lagu, Mode Ngebut selesai ≈ 2–3× lebih cepat & tetap mulus buat YouTube/Reels. Render offline tetap butuh waktu nyata per durasi video — jangan kunci layar ya bro.</div>
             {A.estMB > 800 && <div className="v6-risk">🐘 Estimasi {A.estMB.toFixed(0)} MB itu RAKSASA buat HP (memori penuh, render lambat). Turunkan bitrate ke 8–12 Mbps — buat video lagu tetap kinclong.</div>}
