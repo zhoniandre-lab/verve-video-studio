@@ -3293,7 +3293,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
         )}
         <button className="v6e-tbtn" title="Tutup" onClick={() => { persistSnapshot(true); stopPreview(); onExit(); }}>✕</button>
-        <button className="v6e-tbtn" title="Cari alat" onClick={() => flash("🔍 Ketuk alat di toolbar bawah ya bro")}>🔍</button>
+        {/* 🎯 v15.15B — hapus tombol 'Cari alat' yang cuma flash, ngeganggu toolbar */}
         <button className="v6e-tbtn" title="Judul proyek" onClick={() => {
           const t = prompt("Judul proyek:", projTitle);
           if (t !== null) { setProjTitle(t.slice(0, 80) || "Proyek Tanpa Judul"); persistSnapshot(true); }
