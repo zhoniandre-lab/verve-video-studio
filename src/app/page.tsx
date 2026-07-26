@@ -3964,14 +3964,14 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
       const dx = e.clientX - d.startX, dy = e.clientY - (d.startY || 0);
-      // 🎯 v15.20A REORDER LANGSUNG — drag > 8px (horizontal/vertikal) = REORDER klip, tanpa nunggu 220ms.
-      // Drag vertikal > 4px (mayoritas) = angkat klip (reorder). Drag horizontal > 8px = ganti posisi.
-      // scroll native cuma kalau user GAK drag vertikal.
+      // 🎯 v15.20A REORDER LANGSUNG — drag > 6px (horizontal/vertikal) = REORDER klip, tanpa nunggu 220ms.
+      // Turunkan threshold biar lebih sensitif di HP.
       const absDx = Math.abs(dx), absDy = Math.abs(dy);
-      if (absDx > 8 || absDy > 8) {
+      if (absDx > 6 || absDy > 6) {
         // 🎯 v15.20B LANGSUNG ARMED — drag langsung set armed=true. Bypass 220ms delay.
         d.armed = true; clearTimeout(armTRef.current);
         try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
+        dragUpdate(e, d); // 🎯 v15.21 — LANGSUNG panggil dragUpdate biar applyReorder jalan SEKARANG
         return;
       }
       return;
@@ -4247,6 +4247,14 @@ function TimelineV6(p: any) {
 
             {/* JALUR VIDEO — ikut susunan bebas, bisa diangkat & dipindah juga */}
             <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0, position: "relative" }}>
+              {/* 🎯 v15.21 DROP INDICATOR — garis vertikal tosca di posisi drop saat reorder */}
+              {(() => {
+                const d = dragRef.current as any;
+                if (!d || d.kind !== "reorder" || !d.armed) return null;
+                const w = clipW(d.i) + 4;
+                const targetX = (d.to ?? d.i) * w - 2;
+                return <div style={{ position: "absolute", left: targetX, top: 0, bottom: 0, width: 3, background: "var(--v6-teal)", boxShadow: "0 0 12px rgba(45,212,191,.95)", zIndex: 11, pointerEvents: "none", borderRadius: 2 }} />;
+              })()}
               {/* v12.4 KEPALA REL — label jalur ala OpenCut: sticky kiri, 0 lebar → waktu klip tidak bergeser, pointer-events none → gesture tak tersentuh */}
               <div className="v6e-lanehead" aria-hidden="true"><span><b className="dot" />Visual · {slides.length}</span></div>
               {slides.map((s: Slide, i: number) => {
