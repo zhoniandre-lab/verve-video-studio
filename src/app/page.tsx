@@ -3322,7 +3322,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTextStart={moveTextStart} onTextDur={moveTextDur}
         onTextMoved={(sid: string, tid: string = "") => { pilihObjek("teks"); setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
         onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
-        onSel={(id: string) => { pilihObjek("clip"); setSelId(id); setClipBar(true); }}
+        onSel={(id: string) => { if (!id) { setSelId(""); setClipBar(false); return; } pilihObjek("clip"); setSelId(id); setClipBar(true); }} // v14.2: id kosong = LEPAS blok
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
@@ -3859,7 +3859,7 @@ function TimelineV6(p: any) {
   function onClipDown(e: React.PointerEvent, i: number) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     const sid = slides[i].id;
-    p.onSel(sid);
+    p.onSel(sid === selId ? "" : sid); // v14.2: ketuk 1x = BLOK; ketuk objek yang sama lagi = LEPAS, normal biasa
     const target = e.target as HTMLElement;
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
