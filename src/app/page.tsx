@@ -4187,7 +4187,7 @@ function TimelineV6(p: any) {
 
   return (
     <div className="v6e-tl">
-      <div className="v6e-tl-inner">
+      <div className="v6e-tl-inner" onPointerDown={onWrapDown /* 🎯 v15.17A — biar area kosong di luar track row juga bisa scroll + deselect */}>
         {/* rail kiri */}
         <div className="v6e-tl-rail" style={{ paddingTop: 0 }}>
           <button className={`v6e-rail-tile ${p.audMuted ? "" : ""}`} onClick={p.onMute} title="Bisukan audio">
