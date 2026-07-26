@@ -3274,8 +3274,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       </header>
 
       {/* ============ STAGE ============ */}
+      {/* 🎬 v15.3B PLAY STOP SAAT SENTUH PANGGUNG — handler stop dipasang di STAGE-WRAP (seluruh panggung),
+          bukan hanya canvas, supaya sentuh di zona hitam / area kosong sekitar video juga kena. */}
       <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
            style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
+           onPointerDown={(e) => { if (playingRef.current) { stopPreview(); } }}
            onClick={fullStage ? () => setFullStage(false) : undefined}>
         <div className="v6e-stage">
           <canvas ref={canvasRef}
