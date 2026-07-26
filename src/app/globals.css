@@ -1208,7 +1208,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 .v6e-track { display:flex; align-items:center; height:64px; gap:4px; margin-bottom:6px; position:relative; }
 .v6e-trackwrap { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; padding-right:8px; }
 .v6e-clip { position:relative; flex:0 0 auto; height:64px; border-radius:10px; overflow:hidden; border:2px solid rgba(255,255,255,.10); cursor:pointer;
-  background:#1a1a22; touch-action:none; }
+  background:#1a1a22; touch-action:none; } /* 🎯 v15.8B — JS handle 100%, scroll manual via scrollRef di onClipMove */
 .v6e-clipface { position:absolute; inset:0; background-repeat:repeat-x; background-size:auto 100%; background-position:left center; pointer-events:none; font-style:normal; }
 .v6e-clip.sel { border-color:var(--v6-teal); box-shadow:0 0 0 2px rgba(45,212,191,.30), 0 6px 18px rgba(0,0,0,.35); }
 /* v15.1B HANDLE PANGKAS LEBIH SENSITIF + ANTI-BINGUNG ARAH */

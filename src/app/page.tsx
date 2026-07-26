@@ -3925,7 +3925,9 @@ function TimelineV6(p: any) {
   function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
     clearTimeout(armTRef.current);
     armTRef.current = setTimeout(() => {
-      if (dragRef.current === d) { d.armed = true; if (el) { try { el.setPointerCapture?.(pid); } catch {} } try { (navigator as any).vibrate?.(10); } catch {} force(v => v + 1); } // v9.0: GETAR = kegenggam, silakan bawa
+      // 🎯 v15.8C — JANGAN setPointerCapture di sini, supaya scroll native (di listener parent) tetap jalan.
+      // Pointer capture ngunci SEMUA pointermove ke element ini, memblokir scroll track.
+      if (dragRef.current === d) { d.armed = true; try { (navigator as any).vibrate?.(10); } catch {} force(v => v + 1); } // v9.0: GETAR = kegenggam
     }, ms);
   }
 
@@ -3946,11 +3948,12 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
       const dx = e.clientX - d.startX, dy = e.clientY - (d.startY || 0);
-      // 🎯 v15.7B SCROLL TIMELINE — kalau GESER HORIZONTAL dominan (>12px & > vertikal), JANGAN cancel.
-      // Release gst + dragRef supaya browser bisa scroll native. Drag object butuh vertikal atau tahan lama (220ms).
-      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-        if (gstRef.current) gstRef.current = null;
-        dragRef.current = null; clearTimeout(armTRef.current);
+      // 🎯 v15.8B SCROLL TIMELINE MANUAL — kalau GESER HORIZONTAL dominan, scroll track manual.
+      // Tidak pakai native scroll karena touch-action:none di clip; jadi kita gerakkan scrollLeft sendiri.
+      if (Math.abs(dx) > 4 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        const el = scrollRef.current;
+        if (el) { el.scrollLeft = el.scrollLeft - (e.clientX - d.lastX); }
+        d.startX = e.clientX; d.startY = e.clientY; d.lastX = e.clientX; (d as any).lastY = e.clientY;
         return;
       }
       if (Math.abs(dx) > 12 || Math.abs(dy) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline / angkat
@@ -3964,6 +3967,8 @@ function TimelineV6(p: any) {
     dragRef.current = null;
     stopEdge();
     if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
+    // 🎯 v15.8A TAP BLOK — kalau user cuma tap (tanpa drag), PASTIKAN toolbar setting di bawah muncul.
+    if (d && d.kind === "reorder" && !d.moved) { p.onSel(slides[d.i].id); }
     if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
@@ -3973,7 +3978,7 @@ function TimelineV6(p: any) {
     const sid = slides[i].id;
     p.onSel(sid);
     dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1, side, armed: true, lastX: e.clientX } as any;
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    // 🎯 v15.8C — JANGAN setPointerCapture supaya scroll parent tetap bisa di-bubble. gstBind di window sudah cukup untuk handle lift.
     gstBind(e, onHdlMove, onHdlUp); // v9.1: SATU PINTU
   }
   function onHdlMove(e: React.PointerEvent) {
@@ -4009,7 +4014,6 @@ function TimelineV6(p: any) {
       if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
-        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
     }
@@ -4053,7 +4057,6 @@ function TimelineV6(p: any) {
       if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
-        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
     }
@@ -4097,7 +4100,6 @@ function TimelineV6(p: any) {
       if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
-        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
     }
