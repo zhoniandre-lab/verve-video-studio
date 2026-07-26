@@ -3964,10 +3964,16 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
       const dx = e.clientX - d.startX, dy = e.clientY - (d.startY || 0);
-      // 🎯 v15.9B SCROLL TIMELINE — touch-action:pan-x pan-y di clip & wrapper, jadi
-      // browser handle scroll native. JS handler di sini cuma untuk armed drag (vertikal/tahan lama).
-      // Kalau drag dibatalin (geser > 12px sebelum arm), reset state supaya tap berikutnya bersih.
-      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
+      // 🎯 v15.20A REORDER LANGSUNG — drag > 8px (horizontal/vertikal) = REORDER klip, tanpa nunggu 220ms.
+      // Drag vertikal > 4px (mayoritas) = angkat klip (reorder). Drag horizontal > 8px = ganti posisi.
+      // scroll native cuma kalau user GAK drag vertikal.
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      if (absDx > 8 || absDy > 8) {
+        // 🎯 v15.20B LANGSUNG ARMED — drag langsung set armed=true. Bypass 220ms delay.
+        d.armed = true; clearTimeout(armTRef.current);
+        try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
+        return;
+      }
       return;
     }
     dragUpdate(e, d);
