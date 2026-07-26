@@ -3933,9 +3933,9 @@ function TimelineV6(p: any) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh/geser klip di track = stop preview
     const sid = slides[i].id;
-    p.onSel(sid);
+    p.onSel(sid); // 🎯 v15.7A TAP 1X BLOK — panggil duluan (sebelum cek handle), biar tap handle juga LANGSUNG nge-blok
     const target = e.target as HTMLElement;
-    if (target.classList.contains("hdl")) return; // handle di-handle sendiri
+    if (target.classList.contains("hdl")) return; // handle di-handle sendiri (geser = pangkas)
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
     armDrag(d, target, e.pointerId, 220); // v8.9: tekan-tahan 0,22d → klip "terangkat" & bisa diseret
@@ -3945,7 +3945,15 @@ function TimelineV6(p: any) {
     const d = dragRef.current as any;
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline
+      const dx = e.clientX - d.startX, dy = e.clientY - (d.startY || 0);
+      // 🎯 v15.7B SCROLL TIMELINE — kalau GESER HORIZONTAL dominan (>12px & > vertikal), JANGAN cancel.
+      // Release gst + dragRef supaya browser bisa scroll native. Drag object butuh vertikal atau tahan lama (220ms).
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        if (gstRef.current) gstRef.current = null;
+        dragRef.current = null; clearTimeout(armTRef.current);
+        return;
+      }
+      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline / angkat
       return;
     }
     dragUpdate(e, d);
@@ -3992,8 +4000,13 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "aud") return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
-      else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
+      // 🎯 v15.7B — geser horizontal dominan = scroll timeline (lepas gst, biarin native)
+      if (Math.abs(dx0) > 12 && Math.abs(dx0) > Math.abs(dy0) * 1.2) {
+        if (gstRef.current) gstRef.current = null;
+        dragRef.current = null; clearTimeout(armTRef.current);
+        return;
+      }
+      if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
@@ -4031,8 +4044,13 @@ function TimelineV6(p: any) {
     if (!d || (d.kind !== "txt" && d.kind !== "txtd")) return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
-      else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
+      // 🎯 v15.7B — geser horizontal dominan = scroll timeline
+      if (Math.abs(dx0) > 12 && Math.abs(dx0) > Math.abs(dy0) * 1.2) {
+        if (gstRef.current) gstRef.current = null;
+        dragRef.current = null; clearTimeout(armTRef.current);
+        return;
+      }
+      if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
@@ -4070,8 +4088,13 @@ function TimelineV6(p: any) {
     if (!d || (d.kind !== "stk" && d.kind !== "stkd")) return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
-      else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
+      // 🎯 v15.7B — geser horizontal dominan = scroll timeline
+      if (Math.abs(dx0) > 12 && Math.abs(dx0) > Math.abs(dy0) * 1.2) {
+        if (gstRef.current) gstRef.current = null;
+        dragRef.current = null; clearTimeout(armTRef.current);
+        return;
+      }
+      if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
