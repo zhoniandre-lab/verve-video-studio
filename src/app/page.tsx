@@ -4474,19 +4474,7 @@ function TimelineV6(p: any) {
               p.onZoom(PXS);
             }}>{PXS0 > PXS ? "🔍+" : "🔍−"}</button>
           )}
-          {/* 🔎 v13.18: zoom ketuk BERLABEL (cubit tetap jalan — ini buat yang tak menemukannya) */}
-          {dispTotal > 0 && (
-            <button className="v6e-tlzm v6e-tlzm-out" title="Persempit timeline (zoom out)"
-              onClick={() => { const el = scrollRef.current; if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 }; p.onZoom(clampN(PXS0 * 0.72, TL_MIN_PXS, TL_MAX_PXS)); }}>−</button>
-          )}
-          {dispTotal > 0 && (
-            <button className="v6e-tlzm v6e-tlzm-in" title="Perbesar timeline (zoom in)"
-              onClick={() => { const el = scrollRef.current; if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 }; p.onZoom(clampN(PXS0 / 0.72, TL_MIN_PXS, TL_MAX_PXS)); }}>+</button>
-          )}
-          {!hintOn && (
-            <button className="v6e-tlhelp" title="Tampilkan panduan gestur track"
-              onClick={() => { setHintOn(true); try { localStorage.removeItem("verve_tlhint_v1"); } catch {} }}>?</button>
-          )}
+          {/* 🎯 v15.16A HAPUS tombol + / − / ? — terlalu banyak tombol ngeganggu track. Cubit di track (zoom manual) masih jalan. */}
         </div>
       </div>
     </div>
