@@ -4432,13 +4432,9 @@ function TimelineV6(p: any) {
                         </div>
                       );
                     })()}
-                    {/* jalur tambah elemen: bebas pilih jenis apa pun */}
-                    <div style={{ position: "relative", height: 48, order: 9999 }}>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 50, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru, mulai di posisi penanda)">🔤</button>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 100, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru, mulai di posisi penanda)">😀</button>
-                      {hasAudio && <button className="v6e-track-addbtn" style={{ position: "absolute", left: 150, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onDelAudio} title="Hapus semua audio">🗑</button>}
-                    </div>
+                    {/* 🎯 v15.13A TRACK BEBAS — hapus tombol +Audio/+Teks/+Stiker yang selalu nongol di bawah track.
+                        Cara tambah: lewat toolbar bawah utama (Audio/Teks/Stiker) yang sudah ada.
+                        Track jadi 100% bebas — user bisa taruh objek di baris mana aja tanpa gangguan. */}
                   </>
                 );
               })()}
