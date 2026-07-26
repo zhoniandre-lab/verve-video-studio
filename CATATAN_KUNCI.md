@@ -9,12 +9,15 @@
 - User: HP only (Samsung + Chrome Android), Lampung/Curup, tes malam hari, kirim screenshot buat diagnosis. Bahasa: Indonesia santai "bro", JUJUR — akui kesalahan sendiri dengan bukti, jangan nebak ("kubuktikan dulu").
 
 ## Versi Terkunci Saat Ini
-- **main = v15.3D PLAY STOP LOCK = commit `7f6047f`** (HEAD saat ini)
+- **main = v15.6 SUTRADARA PINTAR CALON = commit `da80782`** (HEAD saat ini, semua CALON)
 - Tag lock + backup branch (semua verified di remote):
   - `v15.0-kunci-v14-lock` — paket v15.0 final
   - `v15.1B-handle-pangkas-sensitif-lock` — handle pangkas 28px + ikon ‹/›
   - `v15.2D-transisi-capcut-fix-lock` (@9250fb4) — transisi tengah sticky ala CapCut
-  - `v15.3D-play-stop-lock` (@7f6047f) — stop di 8 titik track (onWrapDown + dragUpdate + 6 handler khusus). JUJUR: 3 iterasi sebelumnya (v15.3 / v15.3B / v15.3C) BELUM berhasil menangkap maksud user. v15.3D mungkin juga masih kurang pas — user sudah lelah dan minta lanjut. Pelajaran: kalau gagal 3x, MINTA DEMONSTRASI LANGSUNG (voice note / video pendek) daripada nebak dari teks.
+  - `v15.3D-play-stop-lock` (@7f6047f) — stop di 8 titik track (onWrapDown + dragUpdate + 6 handler khusus). v15.3E menambah 1 titik (onWrapMove, total 9). JUJUR: 5 iterasi (v15.3 s/d v15.3E) — user masih mungkin belum puas, tapi v15.3D dikunci. Pelajaran: gagal 3x = minta demonstrasi langsung, jangan nebak.
+  - `v15.4-lirik-per-detik-calon` (@79998f7) — input waktu mulai per baris lirik (format M:SS atau detik desimal) di panel Keterangan
+  - `v15.5-render-turbo-calon` (@3ffc0ab) — preset 🚀 Turbo 480p·18·5 + estimasi durasi render (warna hijau < 60dtk)
+  - `v15.6-sutradara-pintar-calon` (@da80782) — 4 quick-action pintas di panel Sutradara (Keterangan / Zoom pelan / Musik 60% / Render) — offline, hemat data 4G
 
 ## Yang SUDAH JALAN (jangan dirusak)
 - Spektrum: FFT512 (bukan band-RMS), bars 0..1, beats, bassLevels; @bars glass-plate + peak-caps; curve respons shared preview=render.
