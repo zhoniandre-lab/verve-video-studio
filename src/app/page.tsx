@@ -4157,12 +4157,14 @@ function TimelineV6(p: any) {
                         Saat user mau pangkas klip-i atau klip-(i+1), chip TIDAK ganggu. */}
                     {i < slides.length - 1 && (() => {
                       const tr = canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve");
-                      // kumulatif offset (kiri klip = awal klip-i = sum dur 0..i-1)
+                      // v15.2C: posisi STICKY ke ujung kanan clip-i (bergerak saat handle pangkas / drag clip).
+                      // parent .v6e-track: display:flex, gap:4px → tiap clip dipisah 4px.
+                      // offL = posisi kiri clip-i = sum(clipW 0..i-1) + (i * 4px gap)
                       let offL = 0;
-                      for (let k = 0; k < i; k++) offL += clipW(k);
+                      for (let k = 0; k < i; k++) offL += clipW(k) + 4;
                       const wL = clipW(i);
-                      // celah = 4px (margin antar clip di .v6e-clip parent)
-                      const centerX = offL + wL + 2; // titik tengah celah
+                      // celah antara clip-i dan clip-(i+1) = 4px → centerX = ujung kanan clip-i + 2px (tengah celah)
+                      const centerX = offL + wL + 2;
                       return (
                         <button key={"tmid-" + s.id} className={`v6e-trans-mid ${tr === "none" ? "off" : ""}`}
                           style={{ left: centerX }}
