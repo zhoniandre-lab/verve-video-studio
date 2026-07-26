@@ -3678,6 +3678,8 @@ function TimelineV6(p: any) {
     }
   }
   function onWrapMove(e: React.PointerEvent) {
+    // 🎬 v15.3E — JAMINAN: pointer move di MANA PUN di track (area kosong atau objek, di luar canvas) = stop.
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     if (!tlPtrs.current.has(e.pointerId)) return;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const pz = pinchZRef.current;
