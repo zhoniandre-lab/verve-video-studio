@@ -1196,7 +1196,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 
 /* ---------- TIMELINE ---------- */
 .v6e-tl { flex:0 0 auto; background:#000; padding:2px 0 4px; }
-.v6e-tl-scrollwrap { overflow-x:auto; overflow-y:auto; scrollbar-width:none; max-height:min(46dvh,400px); overscroll-behavior:contain; }
+.v6e-tl-scrollwrap { overflow-x:auto; overflow-y:auto; scrollbar-width:none; max-height:min(46dvh,400px); overscroll-behavior:contain; touch-action:pan-x pan-y; } /* 🎯 v15.9B — native scroll aktif di seluruh wrapper */
 .v6e-tl-scrollwrap::-webkit-scrollbar { display:none; }
 .v6e-tl-inner { display:flex; align-items:stretch; }
 .v6e-tl-rail { flex:0 0 auto; width:56px; display:flex; flex-direction:column; gap:6px; padding:0 6px; }
@@ -1208,7 +1208,7 @@ body:has(.cc2-root) { background: var(--v-bg); }
 .v6e-track { display:flex; align-items:center; height:64px; gap:4px; margin-bottom:6px; position:relative; }
 .v6e-trackwrap { flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; padding-right:8px; }
 .v6e-clip { position:relative; flex:0 0 auto; height:64px; border-radius:10px; overflow:hidden; border:2px solid rgba(255,255,255,.10); cursor:pointer;
-  background:#1a1a22; touch-action:none; } /* 🎯 v15.8B — JS handle 100%, scroll manual via scrollRef di onClipMove */
+  background:#1a1a22; touch-action:pan-x pan-y; } /* 🎯 v15.9B — native scroll JUGA jalan di clip; JS cuma handle tap/hold/drag vertikal */
 .v6e-clipface { position:absolute; inset:0; background-repeat:repeat-x; background-size:auto 100%; background-position:left center; pointer-events:none; font-style:normal; }
 .v6e-clip.sel { border-color:var(--v6-teal); box-shadow:0 0 0 2px rgba(45,212,191,.30), 0 6px 18px rgba(0,0,0,.35); }
 /* v15.1B HANDLE PANGKAS LEBIH SENSITIF + ANTI-BINGUNG ARAH */

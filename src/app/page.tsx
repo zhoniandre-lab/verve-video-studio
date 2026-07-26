@@ -3376,6 +3376,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTextMoved={(sid: string, tid: string = "") => { pilihObjek("teks"); setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
         onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
         onSel={(id: string) => { pilihObjek("clip"); setSelId(id); setClipBar(true); }}
+        onDeselect={() => { setSelId(""); setClipBar(false); }} // 🎯 v15.9A — toggle off blok klip
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
@@ -3702,9 +3703,10 @@ function TimelineV6(p: any) {
   // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
     // 🎬 v15.3D PLAY STOP — sentuh/geser di MANA PUN di track (seluruh scrollwrap) = stop preview.
-    // PENTING: dipasang di level wrapper, bukan di handler khusus, supaya tetap kena walau
-    // drag dibatalin (mis: onClipMove batal kalau gerak > 12px sebelum 220ms).
     if (p.playing && p.onPlayStop) { p.onPlayStop(); }
+    // 🎯 v15.9C — tap di area KOSONG (bukan bubble dari child) = deselect klip yg lagi diblok.
+    // Cek: kalau target === currentTarget, berarti tap LANGSUNG di wrapper (area kosong, bukan clip).
+    if (e.target === e.currentTarget && p.onDeselect) { p.onDeselect(); }
     scrubHoldRef.current = true;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
@@ -3934,11 +3936,9 @@ function TimelineV6(p: any) {
   function onClipDown(e: React.PointerEvent, i: number) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh/geser klip di track = stop preview
-    const sid = slides[i].id;
-    p.onSel(sid); // 🎯 v15.7A TAP 1X BLOK — panggil duluan (sebelum cek handle), biar tap handle juga LANGSUNG nge-blok
     const target = e.target as HTMLElement;
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri (geser = pangkas)
-    const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
+    const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX, sid: slides[i].id };
     dragRef.current = d;
     armDrag(d, target, e.pointerId, 220); // v8.9: tekan-tahan 0,22d → klip "terangkat" & bisa diseret
     gstBind(e, onClipMove, onClipUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
@@ -3948,15 +3948,10 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
       const dx = e.clientX - d.startX, dy = e.clientY - (d.startY || 0);
-      // 🎯 v15.8B SCROLL TIMELINE MANUAL — kalau GESER HORIZONTAL dominan, scroll track manual.
-      // Tidak pakai native scroll karena touch-action:none di clip; jadi kita gerakkan scrollLeft sendiri.
-      if (Math.abs(dx) > 4 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-        const el = scrollRef.current;
-        if (el) { el.scrollLeft = el.scrollLeft - (e.clientX - d.lastX); }
-        d.startX = e.clientX; d.startY = e.clientY; d.lastX = e.clientX; (d as any).lastY = e.clientY;
-        return;
-      }
-      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline / angkat
+      // 🎯 v15.9B SCROLL TIMELINE — touch-action:pan-x pan-y di clip & wrapper, jadi
+      // browser handle scroll native. JS handler di sini cuma untuk armed drag (vertikal/tahan lama).
+      // Kalau drag dibatalin (geser > 12px sebelum arm), reset state supaya tap berikutnya bersih.
+      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) { dragRef.current = null; clearTimeout(armTRef.current); }
       return;
     }
     dragUpdate(e, d);
@@ -3967,8 +3962,11 @@ function TimelineV6(p: any) {
     dragRef.current = null;
     stopEdge();
     if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
-    // 🎯 v15.8A TAP BLOK — kalau user cuma tap (tanpa drag), PASTIKAN toolbar setting di bawah muncul.
-    if (d && d.kind === "reorder" && !d.moved) { p.onSel(slides[d.i].id); }
+    // 🎯 v15.9A TOGGLE BLOK — kalau user cuma tap (tanpa drag), toggle blok klip tsb.
+    if (d && d.kind === "reorder" && !d.moved) {
+      const cur = p.selId; // ID klip yang sedang diblok
+      if (cur === d.sid) { p.onDeselect?.(); } else { p.onSel(d.sid); }
+    }
     if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
