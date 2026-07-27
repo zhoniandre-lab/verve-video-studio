@@ -27,7 +27,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
 
 interface Slide { id: string; imageUrl: string; videoUrl?: string; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
-type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan";
+type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan" | "vskills";
 
 const DRAFTS_KEY = "verve_drafts_v1";
 const SESSION_KEY = "verve_session_v6";
@@ -249,7 +249,7 @@ export default function Page() {
     setScreen("editor");
   }
 
-  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan";
+  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan" || screen === "vskills";
   return (
     <div className="v6-root">
       <div className="v6-app">
@@ -263,6 +263,7 @@ export default function Page() {
         {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
         {screen === "transkrip" && <TranskripPage onExit={() => setScreen("home")} />}
+        {screen === "vskills" && <VerveSkillsScreen onExit={() => setScreen("home")} gotoEditor={gotoEditor} drafts={drafts} />}
         {!inSub && (
           <nav className="v6-nav">
             {([
@@ -344,18 +345,18 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
           </div>
         </button>
         <div className="v6-hub-col">
-          <button className="v6-btn-sub is-violet" onClick={() => go("lahan")}>
+          <button className="v6-btn-sub is-violet" onClick={() => go("vskills")}>
+            <span className="ic">🎬</span>
+            <div className="text-group">
+              <span className="title">Verve Skill</span>
+              <span className="desc">Editor Khusus Film</span>
+            </div>
+          </button>
+          <button className="v6-btn-sub" onClick={() => go("lahan")}>
             <span className="ic">🌱</span>
             <div className="text-group">
               <span className="title">Lahan Awalan</span>
               <span className="desc">Ide jadi lagu</span>
-            </div>
-          </button>
-          <button className="v6-btn-sub" onClick={() => go("editfoto")}>
-            <span className="ic">🖼️</span>
-            <div className="text-group">
-              <span className="title">Edit Foto</span>
-              <span className="desc">Retouch instan</span>
             </div>
           </button>
         </div>
@@ -5883,5 +5884,169 @@ function HakCiptaModal({ musicUrl, musicName, ttsUrl, voiceUrl, onClose }: any) 
       ))}
       <div className="v6-note">Catatan jujur bro: VERVE tidak memiliki database fingerprint seperti YouTube Content ID. Panel ini <b>panduan status berdasar SUMBER audio</b> yang kamu pakai — keputusan akhir tetap di sistem platform tujuan.</div>
     </MiniModal>
+  );
+}
+
+/* ==================================================================
+   EDITOR KHUSUS VERVE — VERVE SKILL VIDEO (Fase 1: Skill Video Film)
+   ================================================================== */
+interface VerveSkillsProps {
+  onExit: () => void;
+  gotoEditor: (draftId: string, cmd?: any) => void;
+  drafts: Draft0[];
+}
+function VerveSkillsScreen({ onExit, gotoEditor, drafts }: VerveSkillsProps) {
+  const [selectedProj, setSelectedProj] = useState<string>("");
+  const currentProj = drafts.find(d => d.id === selectedProj);
+
+  function applyFilmSkillToProject() {
+    if (!selectedProj) return;
+    try {
+      const allDrafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+      const idx = allDrafts.findIndex((d: any) => d.id === selectedProj);
+      if (idx < 0) return alert("Proyek tidak ditemukan.");
+
+      const proj = allDrafts[idx];
+      const slidesList = proj.slides || [];
+      if (!slidesList.length) return alert("Proyek kosong, tambahkan media terlebih dahulu di editor.");
+
+      // 🧠 SUTRADARA CINEMATOGRAPHY RULES (Rangkaian Aturan Sutradara Film Nyata):
+      // 1. Rasio aspek sinematik lebar (16:9) + Aktifkan Letterbox Bioskop (cinebars)
+      proj.ratio = "16:9";
+      proj.cinebars = true;
+      // 2. Transisi dissolve lambat yang elegan di setiap sambungan adegan
+      proj.transition = "dissolve";
+      proj.transitionDur = 0.85;
+      // 3. Filter warna grading sinematik
+      proj.filterPreset = "sinematik";
+      // 4. Koreksi warna film mewah: kontras naik, saturasi redup sinematik, Vignette gelap, Film Grain retro
+      proj.adj = { b: -4, c: 15, s: -12, e: -2, tem: 3, hue: 0, fade: 12, vig: 55, grain: 24 };
+      proj.qualitySharp = true;
+      proj.bgMode = "color";
+      proj.bgColor = "#000000";
+
+      // 5. ATURAN HULU SUTRADARA: Gerak Kamera Aliran Sinematik bergilir (pan/zoom)
+      // Mencegah pergerakan monoton satu arah — adegan bergilir secara kontras
+      const directions = ["in", "l", "out", "r", "u", "d"];
+      const opts = proj.slideOptsById || {};
+      slidesList.forEach((s: any, k: number) => {
+        const sid = s.id;
+        opts[sid] = {
+          ...(opts[sid] || {}),
+          kb: { dir: directions[k % directions.length], s: k % 2 ? 0.15 : 0.22 },
+          loop: "none"
+        };
+      });
+      proj.slideOptsById = opts;
+      proj.updatedAt = Date.now();
+
+      // Simpan kembali
+      allDrafts[idx] = proj;
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(allDrafts));
+
+      // Beritahu pengguna & buka editor!
+      alert(`🎬 RAKITAN SELESAI!\n\n5 Skill Pembuatan Film telah diterapkan otomatis:\n1. Rasio Lebar 16:9\n2. Letterbox Bioskop 🎬\n3. Transisi Lembut (0.85d)\n4. Warna Film Vintage & Grain\n5. Gerak Kamera Aliran Dinamis (Pan/Zoom)\n\nEditor Studio siap dibuka!`);
+      gotoEditor(selectedProj);
+    } catch {
+      alert("Terjadi kesalahan saat merakit film.");
+    }
+  }
+
+  return (
+    <div className="v6-root" style={{ display: "flex", flexDirection: "column", height: "100dvh" }}>
+      <header className="v6e-top">
+        <button className="v6e-tbtn" onClick={onExit}>✕</button>
+        <div className="spacer" />
+        <b style={{ fontSize: 13, letterSpacing: "1px" }}>EDITOR KHUSUS VERVE</b>
+        <div className="spacer" />
+        <div style={{ width: 38 }} />
+      </header>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px calc(14px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Banner Skill Utama */}
+        <div className="v6-promo" style={{ background: "linear-gradient(135deg, rgba(139, 92, 246, 0.4) 0%, rgba(20, 20, 35, 0.9) 100%)", borderColor: "rgba(139, 92, 246, 0.4)" }}>
+          <span className="v6-promo-badge" style={{ background: "rgba(139, 92, 246, 0.2)" }}>🔥 AKTIF · Sub-Skill 1</span>
+          <div className="v6-promo-title" style={{ fontFamily: "inherit", fontWeight: 800, fontSize: 18, marginTop: 8 }}>Skill Video Film (Film Cinematics)</div>
+          <div className="v6-promo-sub" style={{ opacity: 0.8, fontSize: 11, maxWidth: "100%", marginTop: 4 }}>
+            Memformulasikan aturan perakitan film bioskop nyata: memangkas frame secara simetris, mengunci warna film berkarakter, dan mengalirkan gerak kamera multi-arah secara otomatis.
+          </div>
+        </div>
+
+        {/* 📚 PENDALAMAN SKILL FILM (EDUKASI PRO) */}
+        <div style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 16, padding: 12 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 800, color: "var(--v6-teal)", marginBottom: 8 }}>📚 Pendalaman Ilmu Pembuatan Film (Cinematics)</h4>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 11.5, lineHeight: 1.5, color: "#cbd5e1" }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>🎬</span>
+              <div>
+                <b>1. Aspek Rasio & Framing (Widescreen 16:9 + Letterbox):</b>
+                <p style={{ margin: "2px 0 0", color: "#94a3b8" }}>Membuat frame lebar dengan baris hitam simetris atas-bawah (2.39:1 CinemaScope) untuk memusatkan emosi penonton pada subjek.</p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>🌀</span>
+              <div>
+                <b>2. Aliran Gerak Kamera (Pan, Tilt, Zoom):</b>
+                <p style={{ margin: "2px 0 0", color: "#94a3b8" }}>Mencegah visual kaku. Adegan mengalir dinamis: bergantian masuk, geser kiri, menjauh, geser kanan, naik, lalu turun.</p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>🎨</span>
+              <div>
+                <b>3. Warna Grading Film & Grain:</b>
+                <p style={{ margin: "2px 0 0", color: "#94a3b8" }}>Warna sinematik kontras hangat, pudar mewah, dilengkapi bintik butiran film (*film grain 24%*) untuk tekstur kental seperti seluloid.</p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>🎞️</span>
+              <div>
+                <b>4. Transisi Alur (Montage Rhythm):</b>
+                <p style={{ margin: "2px 0 0", color: "#94a3b8" }}>Memakai transisi dissolve lambat (0.85d) untuk menciptakan transisi waktu yang puitis dan emosional.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 🚀 INTERAKTIF SELECTOR */}
+        <div style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>🚀 Pilih Proyek Untuk Dirakit Jadi Film</h4>
+          
+          <select
+            className="v6-inp"
+            style={{ width: "100%", padding: "10px", borderRadius: 10 }}
+            value={selectedProj}
+            onChange={e => setSelectedProj(e.target.value)}
+          >
+            <option value="">-- Pilih Proyek Anda --</option>
+            {drafts.map(d => (
+              <option key={d.id} value={d.id}>{d.title} ({d.slides} adegan)</option>
+            ))}
+          </select>
+
+          {currentProj && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.02)", borderRadius: 10, padding: 10, border: "1px solid var(--v6-line)" }}>
+              {currentProj.thumb ? (
+                <img src={currentProj.thumb} alt="" style={{ width: 44, height: 44, borderRadius: 6, objectFit: "cover" }} />
+              ) : (
+                <div style={{ width: 44, height: 44, borderRadius: 6, background: "#111116", display: "flex", alignItems: "center", justifyItems: "center" }}>🎬</div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentProj.title}</div>
+                <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 2 }}>{currentProj.slides} adegan gambar/video terdeteksi</div>
+              </div>
+            </div>
+          )}
+
+          <button
+            className="v6-bigcta"
+            style={{ margin: 0, width: "100%", background: "linear-gradient(135deg, var(--v6-teal), var(--v6-teal2))", color: "#fff", fontWeight: 800 }}
+            disabled={!selectedProj}
+            onClick={applyFilmSkillToProject}
+          >
+            🚀 Rakit Film Otomatis (Gunakan Skill Film)
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
