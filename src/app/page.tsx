@@ -2121,20 +2121,49 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!files || !files.length) return;
     pushHist();
     Promise.all(Array.from(files).slice(0, 14).map(f => new Promise<Slide>((res) => {
-      const r = new FileReader();
-      r.onload = () => {
-        const img = new Image();
-        const mime = (f.type === "image/png" || f.type === "image/webp") ? f.type : "image/jpeg";
-        img.onload = () => res({ id: uid("up"), imageUrl: fitMax(img, 2048, mime) });
-        img.onerror = () => res({ id: uid("bad"), imageUrl: "" });
-        img.src = r.result as string;
-      };
-      r.readAsDataURL(f);
+      if (f.type.startsWith("video/")) {
+        // ⚡ OPTIMIZE: Tambah penanganan upload file video lokal!
+        // Membuat URL Blob untuk file video, lalu memuat metadata video tersebut dan mengambil frame pertamanya
+        // untuk dirender di kanvas sebagai gambar sampul/poster (imageUrl) agar terintegrasi sempurna di editor.
+        const video = document.createElement("video");
+        video.preload = "auto";
+        video.muted = true;
+        video.playsInline = true;
+        const videoUrl = URL.createObjectURL(f);
+        video.src = videoUrl;
+        video.onloadeddata = () => {
+          const c = document.createElement("canvas");
+          const W = video.videoWidth || 640;
+          const H = video.videoHeight || 360;
+          c.width = W; c.height = H;
+          const cx = c.getContext("2d")!;
+          cx.drawImage(video, 0, 0, W, H);
+          const imageUrl = c.toDataURL("image/jpeg", 0.85);
+          res({
+            id: uid("upvid"),
+            imageUrl,
+            videoUrl
+          });
+        };
+        video.onerror = () => {
+          res({ id: uid("badvid"), imageUrl: "" });
+        };
+      } else {
+        const r = new FileReader();
+        r.onload = () => {
+          const img = new Image();
+          const mime = (f.type === "image/png" || f.type === "image/webp") ? f.type : "image/jpeg";
+          img.onload = () => res({ id: uid("up"), imageUrl: fitMax(img, 2048, mime) });
+          img.onerror = () => res({ id: uid("bad"), imageUrl: "" });
+          img.src = r.result as string;
+        };
+        r.readAsDataURL(f);
+      }
     }))).then(ss => {
       ss = ss.filter(s => s.imageUrl);
       if (!ss.length) return;
       if (replaceId) {
-        setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: ss[0].imageUrl } : s));
+        setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: ss[0].imageUrl, videoUrl: ss[0].videoUrl } : s));
         flash("⇄ Media diganti");
       } else {
         setSlides(c => [...c, ...ss]);
@@ -4817,8 +4846,8 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
       <div className="v6-sheet-body">
         <label className="v6-cardrow">
           <span style={{ fontSize: 20 }}>🖼️</span>
-          <div className="tt">Upload foto dari galeri</div><span className="arr">›</span>
-          <input type="file" accept="image/*" multiple hidden onChange={e => { A.addImageFiles(e.target.files, undefined); close(); }} />
+          <div className="tt">Upload foto atau video dari galeri</div><span className="arr">›</span>
+          <input type="file" accept="image/*,video/*" multiple hidden onChange={e => { A.addImageFiles(e.target.files, undefined); close(); }} />
         </label>
         <div className="v6-cardrow" onClick={() => { A.openModal("kamera"); }}>
           <span style={{ fontSize: 20 }}>📷</span><div className="tt">Ambil gambar (kamera)</div><span className="arr">›</span>
