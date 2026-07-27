@@ -603,11 +603,23 @@ function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => 
         const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
         arr.unshift(newDraft);
         localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
-        
-        // Open the template project in Editor!
         gotoEditor(newProjId);
-      } catch {
-        alert("Gagal memuat template ke draf.");
+      } catch (e: any) {
+        // 🩹 v17.4-quota-fix: Jika memori localStorage browser HP penuh (>5MB Quota Limit),
+        // sistem akan otomatis memangkas (menghapus) draf-draf proyek yang paling lama/tua
+        // untuk mengosongkan ruang memori secara cerdas agar template baru bisa termuat lancar!
+        try {
+          let arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+          if (arr.length > 2) {
+            arr = arr.slice(0, 2); // Hanya sisakan 2 draf proyek terbaru
+            arr.unshift(newDraft);
+            localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+            gotoEditor(newProjId);
+            return;
+          }
+        } catch { /* abaikan */ }
+
+        alert("Gagal memuat template ke draf.\n\nMemori penyimpanan lokal browser Chrome di HP Anda sudah benar-benar penuh (Limit browser 5MB). Silakan masuk ke tab 'Saya' di dasbor utama, lalu ketuk 'Bersihkan semua data lokal' untuk mengosongkan ruang, lalu coba gunakan template ini lagi ya bro!");
       }
     });
   }
