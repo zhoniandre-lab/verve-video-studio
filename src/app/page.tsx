@@ -4149,14 +4149,21 @@ function TimelineV6(p: any) {
               {slides.map((s: Slide, i: number) => {
                 const sel = s.id === selId;
                 const isOutro = s.id.startsWith("outro");
-                const d = dragRef.current;
+                const d = dragRef.current as any;
                 const ghost = d?.kind === "reorder" && d.moved && d.to === i && d.i !== i;
-                const lifting = d?.kind === "reorder" && (d as any).armed && d.i === i;
+                const lifting = d?.kind === "reorder" && d.armed && d.i === i;
+                const dxTrans = lifting && d && typeof d.lastX === "number" && typeof d.startX === "number" ? (d.lastX - d.startX) : 0;
                 return (
                   <div
                     key={s.id}
                     className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                    style={{ width: clipW(i), opacity: ghost ? 0.35 : 1, flex: "0 0 auto" }}
+                    style={{
+                      width: clipW(i),
+                      opacity: ghost ? 0.35 : 1,
+                      flex: "0 0 auto",
+                      transform: lifting ? `translateX(${dxTrans}px) scale(1.07)` : undefined,
+                      zIndex: lifting ? 100 : undefined
+                    }}
                     onPointerDown={(e) => onClipDown(e, i)}
                   >
                     {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
