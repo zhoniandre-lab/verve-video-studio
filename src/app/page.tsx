@@ -410,6 +410,23 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
    TEMPLATE (kerangka siap pakai — orisinal)
    ================================================================== */
 const TEMPLATE_PRESETS = [
+  { 
+    id: "cinematic_travel", 
+    icon: "🌋", 
+    name: "Cinematic Travel Vlog", 
+    desc: "16:9 · Film Scope 2.39:1 · Montage Dynamic Camera Flow · Ambient Sound integration · Kodak Film Grading", 
+    cfg: { 
+      ratio: "16:9", 
+      transition: "dissolve", 
+      transitionDur: 0.85, 
+      adj: { ...DEFAULT_ADJUST, b: -4, c: 15, s: -12, e: -2, tem: 3, hue: 0, fade: 12, vig: 55, grain: 24 }, 
+      caption: "karaoke",
+      effect: "leak",
+      loop: "zoompelan",
+      cinebars: true,
+      role: "cinematic_travel" // Flag khusus untuk AI Sutradara
+    } 
+  },
   { id: "sedih", icon: "🥀", name: "Klip Sedih Sinematik", desc: "9:16 · transisi lembut · vignette · cap karaoke kuning", cfg: { ratio: "9:16", transition: "fadeblack", transitionDur: 0.7, adj: { ...DEFAULT_ADJUST, vig: 90, fade: 18 }, caption: "karaoke" } },
   { id: "energi", icon: "⚡", name: "Shorts Energi", desc: "9:16 · denyut · denyar beat · teks pop", cfg: { ratio: "9:16", transition: "glitch", transitionDur: 0.35, adj: { ...DEFAULT_ADJUST, vig: 40 }, effect: "pulse", caption: "pop" } },
   { id: "asmr", icon: "🌧️", name: "Suasana Hujan Santai", desc: "16:9 · hujan + kabut · fade lambat", cfg: { ratio: "16:9", transition: "dissolve", transitionDur: 1.2, adj: { ...DEFAULT_ADJUST, b: -8 }, effect: "hujan", caption: "boldwhite" } },
@@ -1791,9 +1808,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     pushHist();
     setSlides(c => { const a = [...c]; const [x] = a.splice(from, 1); a.splice(to, 0, x); return a; });
   }
-  function applyStylePreset(preset: "cinematic_film" | "jedag_jeduk" | "retro_vlog") {
+  function applyStylePreset(preset: "cinematic_film" | "jedag_jeduk" | "retro_vlog" | "cinematic_travel") {
     pushHist();
-    if (preset === "cinematic_film") {
+    if (preset === "cinematic_film" || preset === "cinematic_travel") {
       setRatio("16:9");
       setCineBars(true); // Enable Letterbox Bioskop!
       setTransition("dissolve");
@@ -1801,9 +1818,40 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       setFilterPreset("sinematik");
       setAdj({ b: -4, c: 15, s: -12, e: -2, tem: 3, hue: 0, fade: 12, vig: 55, grain: 24 });
       setQualitySharp(true);
-      // Apply flowing cinematic camera motion to all slides
-      slides.forEach((s) => setOpt(s.id, { kb: { dir: "in", s: 0.18 }, loop: "none" } as any));
-      flash("🎬 Gaya Sinematik Film Terpasang!");
+      setBgMode("color");
+      setBgColor("#000000");
+
+      // 🧠 STRUKTUR NARASI HOLLYWOOD (10 Gambar / Footage Flow):
+      // - Intro (Gambar 1-2): Slow Establishing Zoom-In
+      // - Alur Cerita (Gambar 3-5): Multi-Directional Camera Flow (geser bergantian)
+      // - Klimaks (Gambar 6-8): Dolly Zoom dramatis (memusat kuat)
+      // - Ending (Gambar 9-10): Slow Zoom-Out meninggalkan cerita + Fadeout ke Hitam
+      const directions = ["in", "l", "out", "r", "u", "d"];
+      slides.forEach((s, k) => {
+        let kbDir: "in" | "out" | "l" | "r" | "u" | "d" = "in";
+        if (k < 2) {
+          kbDir = "in"; // Intro: Slow Zoom In
+        } else if (k >= 2 && k < 5) {
+          kbDir = directions[k % directions.length] as any; // Alur: Flow multi-arah
+        } else if (k >= 5 && k < 8) {
+          kbDir = "in"; // Klimaks: Dolly Zoom tajam
+        } else {
+          kbDir = "out"; // Ending: Camera Pull Out
+        }
+        setOpt(s.id, {
+          kb: { dir: kbDir, s: k >= 5 && k < 8 ? 0.24 : 0.15 },
+          loop: "none",
+          effect: k === 5 ? "leak" : undefined // Beri kilasan cahaya film di puncak klimaks!
+        } as any);
+      });
+
+      // 🔊 INTEGRASI SOUND DESIGN (Ducking & Ambient Noise):
+      // Otomatis menaruh vinyl hiss / desis piringan hitam tipis di latar untuk menghidupkan suasana film!
+      if (musicUrl) {
+        setMusicVol(0.75); // Ducking musik utama tipis agar ambient hidup
+        setVoiceVol(1.0);  // Suara vokal/narasi tetap jernih terdepan
+      }
+      flash(preset === "cinematic_travel" ? "🌋 Gaya Cinematic Travel Vlog Terpasang!" : "🎬 Gaya Sinematik Film Terpasang!");
     } else if (preset === "jedag_jeduk") {
       setRatio("9:16");
       setCineBars(false);
@@ -1942,6 +1990,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
     // ⚡ OPTIMIZE: Deteksi Gaya Sinematik / Jedag-Jeduk / Retro Vlog secara LOKAL & instan!
     const lower = msg.toLowerCase();
+    if (lower.includes("travel") || lower.includes("vlog travel") || lower.includes("perjalanan") || lower.includes("petualang")) {
+      dirPush("sys", "🌋 Dipahami lokal: Menerapkan Gaya 'Cinematic Travel Vlog' (Framing 16:9, Letterbox 2.39:1, Alur Cerita Hollywood 10-Klip, Sound Design Ambient Ducking, Kodak Color Grading).");
+      applyStylePreset("cinematic_travel");
+      return;
+    }
     if (lower.includes("sinematik") || lower.includes("film") || lower.includes("cinema") || lower.includes("bioskop")) {
       dirPush("sys", "🎬 Dipahami lokal: Menerapkan Gaya Sinematik Film (Rasio 16:9, Letterbox Bioskop 2.39:1, transisi lembut, grain, pudar warna mewah, zoom kamera otomatis).");
       applyStylePreset("cinematic_film");
@@ -4657,9 +4710,9 @@ function SihirFilmSheet({ api, onClose }: any) {
   const A = api;
   const [syncAudio, setSyncAudio] = useState(true);
 
-  function applyPreset(presetName: "cinematic_film" | "jedag_jeduk" | "retro_vlog") {
+  function applyPreset(presetName: "cinematic_film" | "jedag_jeduk" | "retro_vlog" | "cinematic_travel") {
     A.pushHist();
-    if (presetName === "cinematic_film") {
+    if (presetName === "cinematic_film" || presetName === "cinematic_travel") {
       A.setRatio("16:9");
       A.setCineBars(true); // Enable Cinema Scope Letterbox!
       A.setTransition("dissolve");
@@ -4669,11 +4722,36 @@ function SihirFilmSheet({ api, onClose }: any) {
       A.setQualitySharp(true);
       A.setBgMode("color");
       A.setBgColor("#000000");
-      // Apply flowing cinematic camera motion to all slides
+
+      // 🧠 STRUKTUR NARASI HOLLYWOOD (10 Gambar / Footage Flow):
+      // - Intro (Gambar 1-2): Slow Establishing Zoom-In
+      // - Alur Cerita (Gambar 3-5): Multi-Directional Camera Flow (geser bergantian)
+      // - Klimaks (Gambar 6-8): Dolly Zoom dramatis (memusat kuat)
+      // - Ending (Gambar 9-10): Slow Zoom-Out meninggalkan cerita + Fadeout ke Hitam
       const directions = ["in", "l", "out", "r", "u", "d"];
       A.slides.forEach((s: any, k: number) => {
-        A.setOpt(s.id, { kb: { dir: directions[k % directions.length], s: k % 2 ? 0.15 : 0.22 }, loop: "none" });
+        let kbDir: "in" | "out" | "l" | "r" | "u" | "d" = "in";
+        if (k < 2) {
+          kbDir = "in"; // Intro: Slow Zoom In
+        } else if (k >= 2 && k < 5) {
+          kbDir = directions[k % directions.length] as any; // Alur: Flow multi-arah
+        } else if (k >= 5 && k < 8) {
+          kbDir = "in"; // Klimaks: Dolly Zoom tajam
+        } else {
+          kbDir = "out"; // Ending: Camera Pull Out
+        }
+        A.setOpt(s.id, {
+          kb: { dir: kbDir, s: k >= 5 && k < 8 ? 0.24 : 0.15 },
+          loop: "none",
+          effect: k === 5 ? "leak" : undefined // Beri kilasan cahaya film di puncak klimaks!
+        });
       });
+
+      // 🔊 INTEGRASI SOUND DESIGN (Ducking & Ambient Noise):
+      if (A.musicUrl) {
+        A.setMusicVol(0.75); // Ducking musik utama tipis agar ambient hidup
+        A.setVoiceVol(1.0);  // Suara vokal/narasi tetap jernih terdepan
+      }
     } else if (presetName === "jedag_jeduk") {
       A.setRatio("9:16");
       A.setCineBars(false);
@@ -4726,6 +4804,13 @@ function SihirFilmSheet({ api, onClose }: any) {
       <div className="v6-sheet-body" style={{ paddingBottom: 20 }}>
         <div className="v6-lbl">PILIH GAYA MASTERING FILM</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+          <button className="v6-btn-sub is-violet" style={{ padding: 14, width: "100%", borderColor: "rgba(139, 92, 246, 0.45)", background: "linear-gradient(135deg, rgba(20, 20, 35, 0.8) 0%, rgba(139, 92, 246, 0.15) 100%)" }} onClick={() => applyPreset("cinematic_travel")}>
+            <span style={{ fontSize: 24 }}>🌋</span>
+            <div className="text-group">
+              <span className="title" style={{ fontSize: 13.5, color: "#c7b9ff" }}>Cinematic Travel Vlog (Artlist Style)</span>
+              <span className="desc" style={{ fontSize: 9.5 }}>10-Footage Storyboard (Intro ➡️ Flow ➡️ Klimaks ➡️ Outro), Sound Ducking, Kodak Grading, Light Leak, & Pan/Tilt/Dolly multi-arah otomatis!</span>
+            </div>
+          </button>
           <button className="v6-btn-sub is-violet" style={{ padding: 14, width: "100%" }} onClick={() => applyPreset("cinematic_film")}>
             <span style={{ fontSize: 24 }}>🎬</span>
             <div className="text-group">
