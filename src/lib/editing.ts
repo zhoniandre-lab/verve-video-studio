@@ -1256,29 +1256,58 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
         cvG.__barGd = gtmp; cvG.__barGdH = Math.round(hMax);
       }
       const gd: CanvasGradient = cvG.__barGd;
-      ctx.shadowColor = "rgba(45,212,191,.55)"; ctx.shadowBlur = s * 0.05; // ⚡ shadowBlur = blur CPU di HP (mahal) → dilembutkan
-      ctx.fillStyle = gd;
+
       // memori puncak per-kanvas (jatuh pelan → terasa hidup seperti equalizer studio)
       const cvAny = ctx.canvas as any;
       if (!cvAny.__barPk || (cvAny.__barPk as Float32Array).length !== N) { cvAny.__barPk = new Float32Array(N); cvAny.__barPkT = t; }
       const pk: Float32Array = cvAny.__barPk;
       const dtPk = Math.min(0.25, Math.max(0, t - (cvAny.__barPkT ?? t))); cvAny.__barPkT = t;
+
+      const heights = new Float32Array(N);
       for (let i = 0; i < N; i++) {
         const v = has ? specAtOf(spec!, i, N, sdiv)
                       : 0.14 + 0.5 * Math.abs(Math.sin(t * 2.1 + i * 0.9)) * Math.abs(Math.sin(t * 1.3 + i * 0.37));
-        const h = Math.max(s * 0.1, v * hMax);
+        heights[i] = Math.max(s * 0.1, v * hMax);
+        pk[i] = Math.max(heights[i], pk[i] - dtPk * hMax * 0.55);
+      }
+
+      // 1) Draw all main bars (with shadowBlur in a single call!)
+      ctx.shadowColor = "rgba(45,212,191,.55)"; ctx.shadowBlur = s * 0.05;
+      ctx.fillStyle = gd;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
         const x = -wTot / 2 + i * lane + (lane - bw) / 2;
-        roundRectPath(ctx, x, -h, bw, h, bw * 0.5); ctx.fill();
-        ctx.globalAlpha = 0.2; // pantulan lantai
-        roundRectPath(ctx, x, s * 0.06, bw, h * 0.32, bw * 0.5); ctx.fill();
-        ctx.globalAlpha = 1;
-        pk[i] = Math.max(h, pk[i] - dtPk * hMax * 0.55);
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, -heights[i], bw, heights[i], bw * 0.5);
+        else ctx.rect(x, -heights[i], bw, heights[i]);
+      }
+      ctx.fill();
+
+      // Disable shadowBlur for the rest (significant speedup!)
+      ctx.shadowBlur = 0;
+
+      // 2) Draw all reflections (with low alpha and no blur in a single call!)
+      ctx.globalAlpha = 0.2;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const x = -wTot / 2 + i * lane + (lane - bw) / 2;
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, s * 0.06, bw, heights[i] * 0.32, bw * 0.5);
+        else ctx.rect(x, s * 0.06, bw, heights[i] * 0.32);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // 3) Draw peak dots (no blur in a single call!)
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
         if (pk[i] > s * 0.12) {
-          ctx.fillStyle = "rgba(255,255,255,.92)";
-          roundRectPath(ctx, x, -pk[i] - s * 0.05, bw, s * 0.05, s * 0.025); ctx.fill();
-          ctx.fillStyle = gd;
+          const x = -wTot / 2 + i * lane + (lane - bw) / 2;
+          if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, -pk[i] - s * 0.05, bw, s * 0.05, s * 0.025);
+          else ctx.rect(x, -pk[i] - s * 0.05, bw, s * 0.05);
         }
       }
+      ctx.fill();
+
       ctx.restore();
     } },
   { id:"@cta", label:"CTA Suka+Subs+Lonceng", cat:"sosmed", draw(ctx, s, t) {
