@@ -237,8 +237,59 @@ export default function Page() {
 
   const refreshDrafts = useCallback(() => {
     try {
-      const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
-      setDrafts((Array.isArray(arr) ? arr : []).map((d: any) => ({ id: d.id, title: d.title || "Draft", slides: Array.isArray(d.slides) ? d.slides.length : 0, updatedAt: d.updatedAt || 0, thumb: d.thumb || "" })).sort((a: Draft0, b: Draft0) => b.updatedAt - a.updatedAt));
+      let arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+      if (!Array.isArray(arr)) arr = [];
+      const seedId = "d_masterpiece_preset";
+      if (!arr.some((x: any) => x.id === seedId)) {
+        const seedDraft = {
+          v: 6,
+          id: seedId,
+          title: "🎬 PRESET SUTRADARA: Fajar Alam (Play!)",
+          updatedAt: Date.now(),
+          ratio: "16:9",
+          cinebars: true,
+          bgMode: "color",
+          bgColor: "#000000",
+          slideDuration: 6,
+          transition: "dissolve",
+          transitionDur: 0.85,
+          filterPreset: "sinematik",
+          adj: { b: -4, c: 15, s: -12, e: -2, tem: 3, hue: 0, fade: 12, vig: 55, grain: 24 },
+          qualitySharp: true,
+          slides: [
+            { id: "s_seed_1", imageUrl: "https://images.pexels.com/photos/1722697/pexels-photo-1722697.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=627&w=1200", videoUrl: "https://videos.pexels.com/video-files/1722697/1722697-uhd_1440_2560_30fps.mp4" },
+            { id: "s_seed_2", imageUrl: "https://images.pexels.com/photos/3248357/pexels-photo-3248357.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=627&w=1200", videoUrl: "https://videos.pexels.com/video-files/3248357/3248357-hd_1920_1080_25fps.mp4" },
+            { id: "s_seed_3", imageUrl: "https://images.pexels.com/photos/3121436/pexels-photo-3121436.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=627&w=1200", videoUrl: "https://videos.pexels.com/video-files/3121436/3121436-hd_1920_1080_25fps.mp4" },
+            { id: "s_seed_4", imageUrl: "https://images.pexels.com/photos/4038483/pexels-photo-4038483.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=627&w=1200", videoUrl: "https://videos.pexels.com/video-files/4038483/4038483-hd_1920_1080_30fps.mp4" },
+            { id: "s_seed_5", imageUrl: "https://images.pexels.com/photos/3125244/pexels-photo-3125244.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=627&w=1200", videoUrl: "https://videos.pexels.com/video-files/3125244/3125244-hd_1920_1080_25fps.mp4" }
+          ],
+          slideOptsById: {
+            "s_seed_1": { kb: { dir: "in", s: 0.15 }, loop: "none", dur: 6 },
+            "s_seed_2": { kb: { dir: "l", s: 0.22 }, loop: "none", dur: 6 },
+            "s_seed_3": { kb: { dir: "out", s: 0.15 }, loop: "none", dur: 6 },
+            "s_seed_4": { kb: { dir: "r", s: 0.22 }, loop: "none", dur: 6 },
+            "s_seed_5": { kb: { dir: "u", s: 0.15 }, loop: "none", dur: 6 }
+          },
+          musicUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+          musicName: "Sunset Mountains (Cinematic Atmospheric)",
+          musicDur: 372,
+          musicVol: 0.75,
+          voiceVol: 1.0,
+          capWords: [
+            { text: "Melihat", start: 0.5, end: 1.2, line: 0 },
+            { text: "keindahan", start: 1.2, end: 2.2, line: 0 },
+            { text: "semesta", start: 2.2, end: 3.5, line: 0 },
+            { text: "Melangkah", start: 6.2, end: 7.2, line: 1 },
+            { text: "menyusuri", start: 7.2, end: 8.5, line: 1 },
+            { text: "tepian", start: 8.5, end: 9.8, line: 1 },
+            { text: "pantai", start: 9.8, end: 11.2, line: 1 }
+          ],
+          capStyle: "karaoke"
+        };
+        arr.unshift(seedDraft);
+        localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+      }
+      setDrafts(arr.map((d: any) => ({ id: d.id, title: d.title || "Draft", slides: Array.isArray(d.slides) ? d.slides.length : 0, updatedAt: d.updatedAt || 0, thumb: d.thumb || d.coverThumb || "" })).sort((a: Draft0, b: Draft0) => b.updatedAt - a.updatedAt));
     } catch { setDrafts([]); }
   }, []);
   useEffect(() => { refreshDrafts(); }, [refreshDrafts, screen]);
