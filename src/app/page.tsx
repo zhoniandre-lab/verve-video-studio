@@ -3895,14 +3895,14 @@ function TimelineV6(p: any) {
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
-    armDrag(d, target, e.pointerId, 220); // v8.9: tekan-tahan 0,22d → klip "terangkat" & bisa diseret
+    armDrag(d, target, e.pointerId, 130); // ⚡ OPTIMIZE UX: Turunkan dari 220ms ke 130ms agar instan terangkat (lebih sensitif!)
     gstBind(e, onClipMove, onClipUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
   }
   function onClipMove(e: React.PointerEvent) {
     const d = dragRef.current as any;
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat scroll timeline
+      if (Math.abs(e.clientX - d.startX) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas toleransi dari 12px ke 28px agar jari wobble tidak membatalkan drag (anti-batal!)
       return;
     }
     dragUpdate(e, d);
@@ -3941,7 +3941,7 @@ function TimelineV6(p: any) {
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
     suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
-    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
+    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110); // ⚡ OPTIMIZE UX: Turunkan dari 160ms ke 110ms agar instan terangkat
     gstBind(e, onAudMove, onAudUp); // v9.1: SATU PINTU
   }
   function onAudMove(e: React.PointerEvent) {
@@ -3949,7 +3949,7 @@ function TimelineV6(p: any) {
     if (!d || d.kind !== "aud") return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas dari 12px ke 28px agar anti-batal saat jari wobble
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
@@ -3980,7 +3980,7 @@ function TimelineV6(p: any) {
     dragRef.current = d;
     suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
-    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110); // ⚡ OPTIMIZE UX: Turunkan dari 160ms ke 110ms agar instan terangkat
     gstBind(e, onTxtMove, onTxtUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
   }
   function onTxtMove(e: React.PointerEvent) {
@@ -3988,7 +3988,7 @@ function TimelineV6(p: any) {
     if (!d || (d.kind !== "txt" && d.kind !== "txtd")) return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas dari 12px ke 28px agar anti-batal saat jari wobble
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
@@ -4019,7 +4019,7 @@ function TimelineV6(p: any) {
     dragRef.current = d;
     suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
-    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 160); // v8.9: lebih ringan — 0,16d langsung "terangkat"
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110); // ⚡ OPTIMIZE UX: Turunkan dari 160ms ke 110ms agar instan terangkat
     gstBind(e, onStkMove, onStkUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
   }
   function onStkMove(e: React.PointerEvent) {
@@ -4027,7 +4027,7 @@ function TimelineV6(p: any) {
     if (!d || (d.kind !== "stk" && d.kind !== "stkd")) return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 12) { dragRef.current = null; clearTimeout(armTRef.current); } // niat geser waktu/scroll
+      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas dari 12px ke 28px agar anti-batal saat jari wobble
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
         // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
         d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
