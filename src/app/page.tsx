@@ -2131,7 +2131,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         video.playsInline = true;
         const videoUrl = URL.createObjectURL(f);
         video.src = videoUrl;
-        video.onloadeddata = () => {
+
+        // ⚡ OPTIMIZE: Lakukan seek ke detik 0.1 untuk memaksa decoder browser memproses dan menampilkan frame pertama video asli (mencegah poster hitam!)
+        video.onloadedmetadata = () => {
+          video.currentTime = 0.1;
+        };
+
+        video.onseeked = () => {
           const c = document.createElement("canvas");
           const W = video.videoWidth || 640;
           const H = video.videoHeight || 360;
