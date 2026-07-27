@@ -1198,12 +1198,24 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const c = bufs[slot]!;
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const ir = v.videoWidth / v.videoHeight, cr = W / H;
-    let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
-    if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
-    else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
     const cx = c.getContext("2d")!;
     cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high"; // 🎞️ v13.14: dulu "low" → preview buram
-    cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+
+    if (bgMode !== "cover") {
+      // ⚡ OPTIMIZE: Draw video in contain mode! (No cropping, fits completely with black padding)
+      cx.fillStyle = bgMode === "color" ? bgColor : "#000000";
+      cx.fillRect(0, 0, W, H);
+
+      const sc = Math.min(W / v.videoWidth, H / v.videoHeight);
+      const dw = v.videoWidth * sc, dh = v.videoHeight * sc;
+      cx.drawImage(v, 0, 0, v.videoWidth, v.videoHeight, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    } else {
+      // Crop to fill (cover mode)
+      let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+      if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
+      else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
+      cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+    }
     return c;
   }
   type PrevRole = { outD: "a" | "b"; outPos: number; inD: "a" | "b" | null; inPos: number; x: number };

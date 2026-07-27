@@ -16,7 +16,7 @@ import type { VizStyle } from "./types";
 import { avGet, avPut, avDel } from "./avault";
 import {
   buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
-  setDrawBg, preloadStickerImages, paintFloatingTexts, paintFloatingStickers,
+  setDrawBg, getDrawBg, preloadStickerImages, paintFloatingTexts, paintFloatingStickers,
 } from "./editing";
 import type { SlideOpt, Timeline } from "./editing";
 
@@ -411,14 +411,28 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
   if (alpha <= 0.01) return; // 🌀 v13.12: alpha dipakai crossfade deck pasangan
   const W = c.width, H = c.height;
   const ir = v.videoWidth / v.videoHeight, cr = W / H;
-  let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
-  if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
-  else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
   const cx = c.getContext("2d")!;
   cx.imageSmoothingEnabled = true;
   cx.imageSmoothingQuality = "low";
   cx.globalAlpha = Math.max(0, Math.min(1, alpha)); // 🌀 v13.12
-  cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+
+  const dbg = getDrawBg();
+  if (dbg.mode !== "cover") {
+    // ⚡ OPTIMIZE: Render video in contain mode! (No cropping, fits completely with black padding)
+    cx.fillStyle = dbg.mode === "color" ? dbg.color : "#000000";
+    cx.fillRect(0, 0, W, H);
+
+    const sc = Math.min(W / v.videoWidth, H / v.videoHeight);
+    const dw = v.videoWidth * sc, dh = v.videoHeight * sc;
+    cx.drawImage(v, 0, 0, v.videoWidth, v.videoHeight, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  } else {
+    // Crop to fill (cover mode)
+    let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+    if (ir > cr) { sw = v.videoHeight * cr; sx = (v.videoWidth - sw) / 2; }
+    else { sh = v.videoWidth / cr; sy = (v.videoHeight - sh) / 2; }
+    cx.drawImage(v, sx, sy, sw, sh, 0, 0, W, H);
+  }
+
   cx.globalAlpha = 1;
   if (vig && (vigStr || 0) > 0.01) { cx.globalAlpha = vigStr!; cx.drawImage(vig, 0, 0, W, H); cx.globalAlpha = 1; }
 }

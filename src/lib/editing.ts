@@ -313,6 +313,7 @@ const baseP = (filter: string): DrawParams => ({ zoom: 1, alpha: 1, dx: 0, dy: 0
    color = letterbox dengan warna solid). */
 const DRAW_BG: { mode: "cover" | "blur" | "color"; color: string } = { mode: "color", color: "#000000" };
 export function setDrawBg(mode: "cover" | "blur" | "color", color = "#000000") { DRAW_BG.mode = mode; DRAW_BG.color = color; }
+export function getDrawBg() { return DRAW_BG; }
 
 export function drawBase(ctx: CanvasRenderingContext2D, img: CanvasImageSource | null, W: number, H: number, p: DrawParams) {
   if (!img) { ctx.fillStyle = "#141419"; ctx.fillRect(0, 0, W, H); return; }
