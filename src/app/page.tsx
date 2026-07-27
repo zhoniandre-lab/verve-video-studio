@@ -1821,7 +1821,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const ar = ratio === "9:16" ? 9 / 16 : ratio === "1:1" ? 1 : 16 / 9;
       let w = r.width, h = w / ar;
       if (h > r.height) { h = r.height; w = h * ar; }
-      const sc = Math.min(1, 640 / w);
+      // ⚡ OPTIMIZE: Gunakan Device Pixel Ratio (DPR) layar HP untuk resolusi kanvas!
+      // Sebelumnya dipatok 640px maksimal sehingga gambar terlihat pecah/burik di layar AMOLED Samsung.
+      // Dengan DPR (1.5x - 2.5x), kanvas tergambar setajam piksel fisik layar asli HP Anda (100% jernih, jernih asli, no blur!)
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 2 : 2;
+      const sc = Math.max(1.5, Math.min(2.5, dpr));
       cv.style.width = `${w}px`; cv.style.height = `${h}px`;
       cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
       drawFrame(curT);
