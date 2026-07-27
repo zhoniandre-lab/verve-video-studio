@@ -3893,6 +3893,11 @@ function TimelineV6(p: any) {
     p.onSel(sid);
     const target = e.target as HTMLElement;
     if (target.classList.contains("hdl")) return; // handle di-handle sendiri
+
+    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
+    // Ini mengunci touch-stream di Chrome Android sehingga browser tidak akan pernah membatalkan gesture (pointercancel) demi scroll timeline.
+    try { target.setPointerCapture(e.pointerId); } catch {}
+
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
     armDrag(d, target, e.pointerId, 130); // ⚡ OPTIMIZE UX: Turunkan dari 220ms ke 130ms agar instan terangkat (lebih sensitif!)
@@ -3937,6 +3942,10 @@ function TimelineV6(p: any) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh balok audio = stop preview
     e.stopPropagation(); // v9.1: dulu BOCOR ke pembungkus jalur — sumber 'kadang kaku/ngaco'
+
+    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
+    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
@@ -3973,6 +3982,10 @@ function TimelineV6(p: any) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip teks = stop preview
     e.stopPropagation();
+
+    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
+    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = t.dur ?? (timeline?.durs?.[i] || 3);
@@ -4012,6 +4025,10 @@ function TimelineV6(p: any) {
     if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
     if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip stiker = stop preview
     e.stopPropagation();
+
+    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
+    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+
     const i = slides.findIndex((x: Slide) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = st.dur ?? (timeline?.durs?.[i] || 3);
