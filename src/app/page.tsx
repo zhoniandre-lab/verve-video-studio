@@ -25,7 +25,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
    resolusi kustom) + Spectrum Studio (modul terpisah).
    ===================================================================== */
 
-interface Slide { id: string; imageUrl: string; videoUrl?: string; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
+interface Slide { id: string; imageUrl: string; videoUrl?: string; dur?: number; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
 type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan";
 
@@ -2160,7 +2160,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           res({
             id: uid("upvid"),
             imageUrl,
-            videoUrl
+            videoUrl,
+            dur: video.duration || 3 // ⚡ OPTIMIZE: Ambil durasi asli file video dari HP!
           });
         };
         video.onerror = () => {
@@ -2180,6 +2181,21 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }))).then(ss => {
       ss = ss.filter(s => s.imageUrl);
       if (!ss.length) return;
+
+      // ⚡ OPTIMIZE: Daftarkan durasi asli video langsung ke dalam pengaturan klip slide!
+      setSlideOptsById(cur => {
+        const next = { ...cur };
+        ss.forEach(s => {
+          if (s.videoUrl && typeof s.dur === "number") {
+            next[s.id] = {
+              ...(next[s.id] || {}),
+              dur: Math.round(s.dur * 100) / 100 // Gunakan durasi asli video
+            };
+          }
+        });
+        return next;
+      });
+
       if (replaceId) {
         setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: ss[0].imageUrl, videoUrl: ss[0].videoUrl } : s));
         flash("⇄ Media diganti");
