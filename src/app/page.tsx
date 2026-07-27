@@ -489,18 +489,207 @@ const TEMPLATE_PRESETS = [
 ];
 function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => void }) {
   const [cat, setCat] = useState("semua");
+  const [activeTpl, setActiveTpl] = useState<any | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const CHIPS = [
     { id: "semua", label: "Untuk kamu" }, { id: "9:16", label: "Reel/Shorts" },
     { id: "16:9", label: "Cerita/Vlog" }, { id: "1:1", label: "Feed" },
   ];
   const list = TEMPLATE_PRESETS.filter(t => cat === "semua" || t.cfg.ratio === cat);
+
+  // Map high-quality stable video URLs as previews for templates
+  const previewUrls: Record<string, string> = {
+    cinematic_travel: "https://videos.pexels.com/video-files/1722697/1722697-uhd_1440_2560_30fps.mp4",
+    sedih: "https://videos.pexels.com/video-files/3248357/3248357-hd_1920_1080_25fps.mp4",
+    energi: "https://videos.pexels.com/video-files/4038483/4038483-hd_1920_1080_30fps.mp4",
+    asmr: "https://videos.pexels.com/video-files/3125244/3125244-hd_1920_1080_25fps.mp4",
+    cerita: "https://videos.pexels.com/video-files/3121436/3121436-hd_1920_1080_25fps.mp4",
+  };
+
+  function handleUseTemplate(files: FileList | null) {
+    if (!files || !files.length || !activeTpl) return;
+    
+    // Create a seed project using the active template's presets + the user's uploaded local images/videos!
+    Promise.all(Array.from(files).slice(0, 14).map(f => new Promise<any>((res) => {
+      if (f.type.startsWith("video/")) {
+        const video = document.createElement("video");
+        video.preload = "auto";
+        video.muted = true;
+        video.playsInline = true;
+        const videoUrl = URL.createObjectURL(f);
+        video.src = videoUrl;
+        video.onloadedmetadata = () => { video.currentTime = 0.1; };
+        video.onseeked = () => {
+          const c = document.createElement("canvas");
+          const W = video.videoWidth || 640;
+          const H = video.videoHeight || 360;
+          c.width = W; c.height = H;
+          const cx = c.getContext("2d")!;
+          cx.drawImage(video, 0, 0, W, H);
+          const imageUrl = c.toDataURL("image/jpeg", 0.85);
+          res({ id: `upvid_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, imageUrl, videoUrl, dur: video.duration || 3 });
+        };
+        video.onerror = () => { res({ id: `bad_${Date.now()}`, imageUrl: "" }); };
+      } else {
+        const r = new FileReader();
+        r.onload = () => {
+          const img = new Image();
+          const mime = (f.type === "image/png" || f.type === "image/webp") ? f.type : "image/jpeg";
+          img.onload = () => {
+            // fitMax inline simulation
+            const w = img.naturalWidth, h = img.naturalHeight;
+            const sc = Math.min(1, 2048 / Math.max(w, h));
+            const outW = Math.max(1, Math.round(w * sc)), outH = Math.max(1, Math.round(h * sc));
+            const c = document.createElement("canvas"); c.width = outW; c.height = outH;
+            const cx = c.getContext("2d")!;
+            if (mime === "image/jpeg") { cx.fillStyle = "#000"; cx.fillRect(0, 0, outW, outH); }
+            cx.drawImage(img, 0, 0, outW, outH);
+            res({ id: `up_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, imageUrl: c.toDataURL(mime, 0.92) });
+          };
+          img.onerror = () => res({ id: `bad_${Date.now()}`, imageUrl: "" });
+          img.src = r.result as string;
+        };
+        r.readAsDataURL(f);
+      }
+    }))).then(ss => {
+      const validSlides = ss.filter(s => s.imageUrl);
+      if (!validSlides.length) return;
+
+      const tpl = activeTpl;
+      const newProjId = `d_tpl_${Date.now()}`;
+      
+      const slideOptsById: Record<string, any> = {};
+      const directions = ["in", "l", "out", "r", "u", "d"];
+      
+      // Auto-apply template presets to all slides!
+      validSlides.forEach((s: any, k: number) => {
+        let kbDir: any = "in";
+        if (tpl.id === "cinematic_travel" || tpl.id === "sedih" || tpl.id === "vlog") {
+          kbDir = directions[k % directions.length];
+        }
+        slideOptsById[s.id] = {
+          dur: s.videoUrl ? (s.dur || 3) : (tpl.id === "energi" || tpl.id === "game" ? 1.5 : 3),
+          trans: tpl.cfg.transition || "dissolve",
+          transDur: tpl.cfg.transitionDur ?? 0.6,
+          filter: tpl.cfg.filterPreset || tpl.cfg.videoFilter || undefined,
+          kb: kbDir ? { dir: kbDir, s: 0.18 } : undefined,
+          loop: tpl.cfg.loop || "none",
+          effect: tpl.cfg.effect || undefined
+        };
+      });
+
+      const newDraft = {
+        v: 6,
+        id: newProjId,
+        title: `🪄 Template: ${tpl.name}`,
+        updatedAt: Date.now(),
+        ratio: tpl.cfg.ratio || "9:16",
+        cinebars: !!tpl.cfg.cinebars,
+        bgMode: "color",
+        bgColor: "#000000",
+        slideDuration: tpl.id === "energi" || tpl.id === "game" ? 1.5 : 3,
+        transition: tpl.cfg.transition || "dissolve",
+        transitionDur: tpl.cfg.transitionDur ?? 0.6,
+        filterPreset: tpl.cfg.filterPreset || "none",
+        adj: tpl.cfg.adj || { b:0, c:0, s:0, e:0, tem:0, hue:0, fade:0, vig:75, grain:0 },
+        qualitySharp: true,
+        slides: validSlides.map(s => ({ id: s.id, imageUrl: s.imageUrl, videoUrl: s.videoUrl })),
+        slideOptsById,
+        capStyle: tpl.cfg.caption || "capcut"
+      };
+
+      try {
+        const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+        arr.unshift(newDraft);
+        localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+        
+        // Open the template project in Editor!
+        gotoEditor(newProjId);
+      } catch {
+        alert("Gagal memuat template ke draf.");
+      }
+    });
+  }
+
+  // RENDER DETAILED CAPCUT-STYLE PREVIEW MODAL
+  if (activeTpl) {
+    const videoUrl = previewUrls[activeTpl.id] || "https://videos.pexels.com/video-files/1722697/1722697-uhd_1440_2560_30fps.mp4";
+    return (
+      <div className="v6-root" style={{ display: "flex", flexDirection: "column", height: "100dvh", background: "#000" }}>
+        {/* Header dengan tombol back */}
+        <header className="v6e-top" style={{ background: "transparent", position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
+          <button className="v6e-tbtn" style={{ background: "rgba(0,0,0,0.4)", borderRadius: "50%" }} onClick={() => setActiveTpl(null)}>✕</button>
+          <div className="spacer" />
+          <span style={{ fontSize: 13, fontWeight: 800, textShadow: "0 2px 4px rgba(0,0,0,0.8)", letterSpacing: "1px" }}>DETAIL TEMPLATE</span>
+          <div className="spacer" />
+          <div style={{ width: 38 }} />
+        </header>
+
+        {/* Pemutar Video Looping Vertikal Full Screen */}
+        <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <video
+            src={videoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+
+          {/* overlay gelap bawah */}
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.75) 100%)", pointerEvents: "none" }} />
+
+          {/* Detail Kreator & Overlay Statistik di atas Video */}
+          <div style={{ position: "absolute", left: 16, right: 16, bottom: 94, display: "flex", flexDirection: "column", gap: 8, textShadow: "0 2px 4px rgba(0,0,0,0.9)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, var(--v6-teal), var(--v6-teal2))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900, color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>V</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>@VerveStudio</div>
+                <div style={{ fontSize: 10, color: "#cbd5e1", marginTop: 1 }}>Irama musik & transisi otomatis</div>
+              </div>
+            </div>
+
+            <h3 style={{ fontSize: 16, fontWeight: 900, color: "#fff" }}>{activeTpl.name}</h3>
+            <p style={{ fontSize: 11, color: "#e2e8f0", maxWidth: "90%", lineHeight: 1.4 }}>{activeTpl.desc}</p>
+
+            <div style={{ display: "flex", gap: 12, fontSize: 10, color: "#cbd5e1", marginTop: 2, alignItems: "center" }}>
+              <span>❤️ 3.1K</span>
+              <span>💬 8</span>
+              <span>🔖 724</span>
+              <span style={{ background: "rgba(255,255,255,0.12)", padding: "3px 8px", borderRadius: 4, fontSize: 8.5, border: "1px solid rgba(255,255,255,0.1)" }}>✨ Efek & Filter</span>
+            </div>
+          </div>
+
+          {/* 🔘 TOMBOL GUNAKAN TEMPLATE MEWAH CYAN (CAPCUT STYLE) */}
+          <div style={{ position: "absolute", left: 16, right: 16, bottom: 20, zIndex: 10 }}>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{ width: "100%", height: 50, background: "var(--v6-teal)", color: "#04211f", border: "none", borderRadius: 14, fontSize: 14.5, fontWeight: 900, cursor: "pointer", boxShadow: "0 8px 24px rgba(25,194,184,0.4)" }}
+            >
+              Gunakan template
+            </button>
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/*"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={e => handleUseTemplate(e.target.files)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="v6-body">
       <div className="v6-pagehead"><h2>Template</h2><span style={{ fontSize: 11, opacity: .5 }}>resep siap pakai</span></div>
       <div className="v6-chips">{CHIPS.map(c => <button key={c.id} className={`v6-chip ${cat === c.id ? "on" : ""}`} onClick={() => setCat(c.id)}>{c.label}</button>)}</div>
       <div className="v6-proj-grid">
         {list.map(t => (
-          <div className="v6-proj" key={t.id} onClick={() => gotoEditor(undefined, { newProject: Date.now(), preset: { ...t.cfg, name: t.name } } as any)}>
+          <div className="v6-proj" key={t.id} onClick={() => setActiveTpl(t)}>
             <div className="th" style={{ background: "linear-gradient(145deg,#1c1c26,#101016)", fontSize: 42 }}>{t.icon}</div>
             <div className="inf">
               <div className="nm">{t.name}</div>
@@ -511,7 +700,7 @@ function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => 
       </div>
       <div className="v6-empty">
         <div className="big">🚧</div>
-        Galeri template komunitas <b>segera hadir</b> — kerangkanya sudah disiapkan.<br />Delapan resep di atas langsung bisa dipakai: tap → proyek baru auto-terkonfigurasi.
+        Galeri template komunitas <b>segera hadir</b> — kerangkanya sudah disiapkan.<br />Gaya di atas langsung bisa dipakai: ketuk → play contoh → klik gunakan template otomatis.
       </div>
     </div>
   );
