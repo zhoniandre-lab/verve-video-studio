@@ -1988,7 +1988,7 @@ async function renderWebCodecs(b:any){
   videoEncoder.configure({
     ...vCfg,
     bitrateMode:"variable",
-    latencyMode:"realtime",
+    latencyMode:"quality", // ⚡ OPTIMIZE: Ganti dari "realtime" ke "quality" untuk mengaktifkan akselerasi hardware paralel & efisiensi maksimal pada encoder (jauh lebih cepat & kualitas tinggi!)
     hardwareAcceleration:"prefer-hardware",
     avc:{format:"avc"},
   });
