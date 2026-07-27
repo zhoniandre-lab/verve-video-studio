@@ -290,11 +290,11 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
     { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
     { ic: "🖼️", lb: "Alat foto", act: () => go("editfoto") },
-    { ic: "📷", lb: "Ambil gambar & rekam", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
-    { ic: "✨", lb: "Sempurnakan otomatis", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
+    { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
+    { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
     { ic: "💬", lb: "Keterangan", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
-    { ic: "🫥", lb: "Hapus latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
-    { ic: "📝", lb: "Transkripsikan", act: () => go("transkrip") },
+    { ic: "🫥", lb: "Hapus Latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
+    { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
   ];
 
   // We alternate between Lahan Awalan & Spectrum Studio in a single compact hero banner

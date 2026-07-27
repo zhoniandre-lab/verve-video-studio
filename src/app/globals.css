@@ -1438,7 +1438,14 @@ body:has(.cc2-root) { background: var(--v-bg); }
   font-weight: 700;
   color: #cbd5e1;
   text-align: center;
-  white-space: nowrap;
+  /* ⚡ OPTIMIZE: Ganti dari white-space: nowrap menjadi line-wrap multiline s/d 2 baris agar tulisan tidak tabrakan/keluar jalur! */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  word-break: break-word;
 }
 
 .v6-banner-spec { margin-top:16px; position:relative; border-radius:18px; overflow:hidden; padding:16px;
