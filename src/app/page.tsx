@@ -1778,6 +1778,44 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     pushHist();
     setSlides(c => { const a = [...c]; const [x] = a.splice(from, 1); a.splice(to, 0, x); return a; });
   }
+  function applyStylePreset(preset: "cinematic_film" | "jedag_jeduk" | "retro_vlog") {
+    pushHist();
+    if (preset === "cinematic_film") {
+      setRatio("16:9");
+      setCineBars(true); // Enable Letterbox Bioskop!
+      setTransition("dissolve");
+      setTransitionDur(0.85);
+      setFilterPreset("sinematik");
+      setAdj({ b: -4, c: 15, s: -12, e: -2, tem: 3, hue: 0, fade: 12, vig: 55, grain: 24 });
+      setQualitySharp(true);
+      // Apply flowing cinematic camera motion to all slides
+      slides.forEach((s) => setOpt(s.id, { kb: { dir: "in", s: 0.18 }, loop: "none" } as any));
+      flash("🎬 Gaya Sinematik Film Terpasang!");
+    } else if (preset === "jedag_jeduk") {
+      setRatio("9:16");
+      setCineBars(false);
+      setTransition("glitch");
+      setTransitionDur(0.32);
+      setFilterPreset("cyber");
+      setAdj({ b: 8, c: 22, s: 25, e: 4, tem: 0, hue: 3, fade: 0, vig: 42, grain: 0 });
+      setQualitySharp(true);
+      setSlideDuration(1.5); // Snappy beat-sync slide duration
+      // Apply pulsing beat loop to all slides
+      slides.forEach((s) => setOpt(s.id, { loop: "denyut", kb: undefined } as any));
+      flash("⚡ Gaya Jedag-Jeduk Hype Terpasang!");
+    } else if (preset === "retro_vlog") {
+      setRatio("9:16");
+      setCineBars(false);
+      setTransition("blur");
+      setTransitionDur(0.55);
+      setFilterPreset("vintage");
+      setAdj({ b: 4, c: -5, s: -8, e: 2, tem: 14, hue: -2, fade: 18, vig: 28, grain: 38 });
+      setQualitySharp(false);
+      // Apply warm vintage overlay effects
+      slides.forEach((s) => setOpt(s.id, { effect: "leak", loop: "zoompelan" } as any));
+      flash("📼 Gaya Retro Vlog VHS Terpasang!");
+    }
+  }
   // =============== 🎬 v11.1 SUTRADARA STUDIO ===============
   type StudioOp = { op: string } & Record<string, any>;
   const dirPush = (me: "me" | "ai" | "sys", text: string) => setDirLog((l) => [...l.slice(-40), { me, text }]);
@@ -1888,6 +1926,25 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const msg = text.trim();
     if (!msg || dirBusy) return;
     dirPush("me", msg);
+
+    // ⚡ OPTIMIZE: Deteksi Gaya Sinematik / Jedag-Jeduk / Retro Vlog secara LOKAL & instan!
+    const lower = msg.toLowerCase();
+    if (lower.includes("sinematik") || lower.includes("film") || lower.includes("cinema") || lower.includes("bioskop")) {
+      dirPush("sys", "🎬 Dipahami lokal: Menerapkan Gaya Sinematik Film (Rasio 16:9, Letterbox Bioskop 2.39:1, transisi lembut, grain, pudar warna mewah, zoom kamera otomatis).");
+      applyStylePreset("cinematic_film");
+      return;
+    }
+    if (lower.includes("jedag") || lower.includes("jedug") || lower.includes("strobe") || lower.includes("dj") || lower.includes("beat")) {
+      dirPush("sys", "⚡ Dipahami lokal: Menerapkan Gaya Jedag-Jeduk Hype (Rasio 9:16, transisi cepat, beat-sync pulse, warna cyber kontras, slide 1.5 detik otomatis).");
+      applyStylePreset("jedag_jeduk");
+      return;
+    }
+    if (lower.includes("retro") || lower.includes("vlog") || lower.includes("vintage") || lower.includes("vhs") || lower.includes("jadul")) {
+      dirPush("sys", "📼 Dipahami lokal: Menerapkan Gaya Retro Vlog VHS (Rasio 9:16, warna hangat vintage, TV scanlines, pudar warna, transisi leak hangat otomatis).");
+      applyStylePreset("retro_vlog");
+      return;
+    }
+
     // 🎧 v13.28: paham LOKAL (tanpa tunggu AI jauh, toleran typo) — keterangan otomatis langsung gas
     if (mintaKeteranganOtomatis(msg)) {
       dirPush("sys", "📝 Dipahami lokal: minta keterangan otomatis — langsung gas, tanpa antre AI jauh. Sumber dipilih otomatis (lirik/musik/suara), lirik lama otomatis diganti anti-dobel.");
@@ -3495,6 +3552,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               </span>
             </div>
           ))}
+
+          {/* ⚡ OPTIMIZE UX: Tombol pintas gaya kreasi instan di Sutradara */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "2px 0" }}>
+            <button onClick={() => void sendDirectorStudio("sinematik")} style={{ background: "rgba(139, 92, 246, 0.22)", color: "#c7b9ff", border: "1px solid rgba(139, 92, 246, 0.35)", borderRadius: 8, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🎬 Gaya Sinematik</button>
+            <button onClick={() => void sendDirectorStudio("jedag jeduk")} style={{ background: "rgba(25, 194, 184, 0.22)", color: "#8ff0e4", border: "1px solid rgba(25, 194, 184, 0.35)", borderRadius: 8, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>⚡ Gaya Jedag-Jeduk</button>
+            <button onClick={() => void sendDirectorStudio("retro vlog")} style={{ background: "rgba(245, 158, 11, 0.22)", color: "#fde047", border: "1px solid rgba(245, 158, 11, 0.35)", borderRadius: 8, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📼 Gaya Retro Vlog</button>
+          </div>
+
           <div style={{ display: "flex", gap: 6 }}>
             <input
               value={dirInp}
