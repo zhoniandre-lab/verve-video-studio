@@ -823,7 +823,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [slideDuration, setSlideDuration] = useState(3);
   const [transition, setTransition] = useState("dissolve");
   const [transitionDur, setTransitionDur] = useState(0.6);
-  const [bgMode, setBgMode] = useState<"cover" | "blur" | "color">("cover");
+  const [bgMode, setBgMode] = useState<"cover" | "blur" | "color">("color");
   const [bgColor, setBgColor] = useState("#000000");
   /* ---------- audio ---------- */
   const [musicUrl, setMusicUrl] = useState("");
@@ -1572,7 +1572,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setSlides(d.slides || []); setSlideOptsById(d.slideOptsById || {});
     setRatio(d.ratio || "9:16"); setSlideDuration(d.slideDuration || 3);
     setTransition(d.transition || "dissolve"); setTransitionDur(d.transitionDur ?? 0.6);
-    setBgMode(d.bgMode || "cover"); setBgColor(d.bgColor || "#000000");
+    setBgMode(d.bgMode || "color"); setBgColor(d.bgColor || "#000000");
     setMusicUrl(d.musicUrl || ""); setMusicName(d.musicName || "");
     setMusicDur(d.musicDur || 0); setTtsDur(d.ttsDur || 0); setVoiceDur(d.voiceDur || 0);
     setMusicOff(d.musicOff || 0); setTtsOff(d.ttsOff || 0); setVoiceOff(d.voiceOff || 0);

@@ -311,7 +311,7 @@ const baseP = (filter: string): DrawParams => ({ zoom: 1, alpha: 1, dx: 0, dy: 0
 /* Mode latar belakang global (fitur "Latar belakang": cover = isi penuh,
    blur = letterbox dengan latar blur dari gambar itu sendiri,
    color = letterbox dengan warna solid). */
-const DRAW_BG: { mode: "cover" | "blur" | "color"; color: string } = { mode: "cover", color: "#000000" };
+const DRAW_BG: { mode: "cover" | "blur" | "color"; color: string } = { mode: "color", color: "#000000" };
 export function setDrawBg(mode: "cover" | "blur" | "color", color = "#000000") { DRAW_BG.mode = mode; DRAW_BG.color = color; }
 
 export function drawBase(ctx: CanvasRenderingContext2D, img: CanvasImageSource | null, W: number, H: number, p: DrawParams) {

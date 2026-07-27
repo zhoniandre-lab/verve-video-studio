@@ -1771,7 +1771,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     : baseProf;
   const { w:rW, h:rH } = applyRatio(prof, ratio||aspectRatio||"16:9");
   // v6: mode latar belakang (cover/blur/warna) dipakai drawBase di semua painter
-  setDrawBg(opts.bgMode || "cover", opts.bgColor || "#000000");
+  setDrawBg(opts.bgMode || "color", opts.bgColor || "#000000");
   // v8.1: ketajaman sekarang DI-BAKE ke tiap gambar SEKALI di prepareImages (sharpenCanvas).
   // Filter SVG url(#vsharp) lama DIHAPUS — per-frame convolve itu SANGAT BERAT (ramea mengeluh
   // render siput) dan di beberapa browser HP filter url() menggagalkan drawImage → VIDEO HITAM.
