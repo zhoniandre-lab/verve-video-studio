@@ -296,76 +296,112 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "🫥", lb: "Hapus latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
     { ic: "📝", lb: "Transkripsikan", act: () => go("transkrip") },
   ];
+
+  // We alternate between Lahan Awalan & Spectrum Studio in a single compact hero banner
+  const [heroIndex, setHeroIndex] = useState(0);
+  useEffect(() => {
+    const itv = setInterval(() => setHeroIndex(i => (i + 1) % 2), 7000);
+    return () => clearInterval(itv);
+  }, []);
+
   return (
     <div className="v6-body">
-      <div className="v6-promo">
-        <button className="v6-search-fab" onClick={() => go("lab")}>🔍</button>
-        <span className="v6-promo-badge">💎 BARU · Spectrum Studio</span>
-        <div className="v6-promo-title">Bikin Video Musik<br />Spectrum + Auto Lirik</div>
-        <div className="v6-promo-sub">Ala tools PC, tapi cukup dari HP. Overlay hujan, salju, karaoke lirik, mastering ringan.</div>
-        <button className="v6-promo-go" onClick={() => go("spectrum")}>Coba sekarang ›</button>
+      {/* 🔮 SLICK PROFESSIONAL HEADER */}
+      <div className="v6-header">
+        <span className="logo">V E R V E<b className="tag">STUDIO AI</b></span>
+        <button className="v6-search-btn" onClick={() => go("lab")} title="Cari di Lab AI">🔍</button>
       </div>
 
-      <div className="v6-promo lh-banner" style={{ marginTop: 10 }}>
-        <span className="v6-promo-badge">🌱 BARU · Lahan Awalan</span>
-        <div className="v6-promo-title">Cerita Jadi Lagu<br />Niat → Riset → Judul Juara → Visual WAW</div>
-        <div className="v6-promo-sub">Otak riset YouTube nyata (bukan ngarang): sudut dari autocomplete, kompetitor dihitung, judul diskor & bisa diaudit. Prompt karakter khusus bikin visual konsisten & cerdas.</div>
-        <button className="v6-promo-go" onClick={() => go("lahan")}>Tanam ide sekarang ›</button>
-      </div>
-
-      <div className="v6-cards2">
-        <button className="v6-bigcard" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
-          <span className="ic" style={{ background: "var(--v6-teal)", color: "#04211f" }}>＋</span>
-          <span className="lb">Video baru</span>
-        </button>
-        <button className="v6-bigcard" onClick={() => go("editfoto")}>
-          <span className="tag">BARU</span>
-          <span className="ic">🖼️</span>
-          <span className="lb">Edit foto</span>
-        </button>
-      </div>
-
-      <div className="v6-sec-title">
-        <h3>Proyek terakhir</h3>
-        {!!drafts.length && <button className="v6-sec-more" onClick={() => go("proyek")}>Semua ›</button>}
-      </div>
-      <div className="v6-recents">
-        {drafts.slice(0, 8).map(d => (
-          <div className="v6-recent" key={d.id} onClick={() => gotoEditor(d.id)}>
-            <div className="th">
-              {d.thumb ? <img src={d.thumb} alt="" /> : <span className="ph">🎬</span>}
-              <span className="go">▶</span>
-            </div>
-            <div className="nm">{d.title}</div>
-            <div className="dt">🗂 {dateLabel(d.updatedAt)}</div>
+      {/* 💎 COMPACT UNIFIED HERO BANNER (ROTATING GLASSMORPHIC) */}
+      <div className="v6-hero-slider">
+        {heroIndex === 0 ? (
+          <div className="v6-hero-card is-ai">
+            <div className="glow-orb" />
+            <span className="badge">💎 SPECTRUM STUDIO</span>
+            <h2 className="title">Video Musik Spectrum + Auto Lirik</h2>
+            <p className="sub">Overlay suasana, lirik karaoke menyala, audio mastering ringan di HP.</p>
+            <button className="action" onClick={() => go("spectrum")}>Coba ›</button>
           </div>
-        ))}
-        {!drafts.length && (
-          <div className="v6-recent" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
-            <div className="th"><span className="ph">＋</span></div>
-            <div className="nm">Buat proyek pertamamu</div>
+        ) : (
+          <div className="v6-hero-card is-lahan">
+            <div className="glow-orb" style={{ background: "radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)" }} />
+            <span className="badge" style={{ background: "rgba(25, 194, 184, 0.16)", borderColor: "rgba(25, 194, 184, 0.3)", color: "#8ff0e4" }}>🌱 LAHAN AWALAN</span>
+            <h2 className="title">Cerita Jadi Lagu: Riset & Judul AI</h2>
+            <p className="sub">Riset YouTube nyata, skor judul juara, visual karakter AI konsisten.</p>
+            <button className="action" style={{ background: "var(--v6-teal)" }} onClick={() => go("lahan")}>Mulai ›</button>
           </div>
         )}
-        {!!drafts.length && <button className="chev" onClick={() => go("proyek")}>›</button>}
       </div>
 
-      <div className="v6-sec-title"><h3>Semua alat</h3></div>
-      <div className="v6-tools">
-        {tools.map(t => (
-          <button className="v6-tool" key={t.lb} onClick={t.act}>
-            <span className="ic">{t.ic}</span>
-            <span className="lb">{t.lb}</span>
-            {t.bb && <span className="bb">{t.bb}</span>}
+      {/* 🚀 STUDIO HUB ACTION TILES */}
+      <div className="v6-studio-hub">
+        <button className="v6-btn-main" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
+          <span className="glow-back" />
+          <span className="ic">＋</span>
+          <div className="text-group">
+            <span className="title">Video Baru</span>
+            <span className="desc">Editor studio profesional</span>
+          </div>
+        </button>
+        <div className="v6-hub-col">
+          <button className="v6-btn-sub is-violet" onClick={() => go("lahan")}>
+            <span className="ic">🌱</span>
+            <div className="text-group">
+              <span className="title">Lahan Awalan</span>
+              <span className="desc">Ide jadi lagu</span>
+            </div>
           </button>
-        ))}
+          <button className="v6-btn-sub" onClick={() => go("editfoto")}>
+            <span className="ic">🖼️</span>
+            <div className="text-group">
+              <span className="title">Edit Foto</span>
+              <span className="desc">Retouch instan</span>
+            </div>
+          </button>
+        </div>
       </div>
 
-      <button className="v6-banner-spec" onClick={() => go("spectrum")}>
-        <div className="ttl">SPECTRUM STUDIO</div>
-        <div className="sub">Musik → video spectrum keren: auto lirik karaoke, overlay suasana, mastering ringan, loop mulus.</div>
-        <div className="cta">🎧 Buka Studio ›</div>
-        <div className="bars">{[0,1,2,3,4,5,6].map(i => <i key={i} style={{ animationDelay: `${i * 0.13}s` }} />)}</div>
-      </button>
+      {/* 📁 COMPACT RECENT PROJECTS SLIDER */}
+      <div className="v6-recent-section">
+        <div className="v6-sec-title">
+          <h3>Proyek Terakhir</h3>
+          {!!drafts.length && <button className="v6-sec-more" onClick={() => go("proyek")}>Semua ›</button>}
+        </div>
+        <div className="v6-recents-compact">
+          {drafts.slice(0, 4).map(d => (
+            <div className="v6-recent-card" key={d.id} onClick={() => gotoEditor(d.id)}>
+              <div className="th">
+                {d.thumb ? <img src={d.thumb} alt="" /> : <span className="ph">🎬</span>}
+                <span className="go">▶</span>
+              </div>
+              <div className="info">
+                <span className="nm">{d.title}</span>
+                <span className="dt">🗂 {dateLabel(d.updatedAt)}</span>
+              </div>
+            </div>
+          ))}
+          {!drafts.length && (
+            <div className="v6-recent-empty" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
+              <span>＋ Buat proyek pertamamu</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ⚡ HORIZONTAL SCROLLING QUICK AI TOOLS */}
+      <div className="v6-tools-section">
+        <div className="v6-sec-title">
+          <h3>Asisten AI Cepat</h3>
+        </div>
+        <div className="v6-tools-row">
+          {tools.map(t => (
+            <button className="v6-tool-mini" key={t.lb} onClick={t.act}>
+              <span className="ic">{t.ic}</span>
+              <span className="lb">{t.lb}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
