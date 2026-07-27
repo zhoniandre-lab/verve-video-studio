@@ -3788,10 +3788,13 @@ function TimelineV6(p: any) {
 
   function applyReorder(d: any, clientX: number) {
     const dx = clientX - d.startX;
-    if (Math.abs(dx) > 8) d.moved = true;
+    if (Math.abs(dx) > 6) d.moved = true; // 🎯 v15.22 — turunin threshold jadi 6px (dari 8px)
     if (!d.moved) return;
     const w = clipW(d.i) + 4;
-    const to = clampN(d.i + Math.round(dx / w), 0, slides.length - 1);
+    // 🎯 v15.22 — kalau drag kecil tapi armed, paksa minimal pindah 1 slot biar user gak bingung.
+    let target = d.i + Math.round(dx / w);
+    if (target === d.i && Math.abs(dx) > 6) target = d.i + (dx > 0 ? 1 : -1);
+    const to = clampN(target, 0, slides.length - 1);
     if (to !== d.to) { d.to = to; force(v => v + 1); }
   }
   function applyTrim(d: any, clientX: number) {
@@ -3984,8 +3987,11 @@ function TimelineV6(p: any) {
     dragRef.current = null;
     stopEdge();
     if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
-    // 🎯 v15.10C TOGGLE BLOK MURNI — kalau user cuma tap (tanpa drag), toggle blok TANPA buka toolbar.
-    if (d && d.kind === "reorder" && !d.moved) {
+    // 🎯 v15.22 TOGGLE BLOK MURNI — pakai d.armed (bukan d.moved) untuk detect "user beneran drag".
+    // d.moved baru true kalau dx > 8 (di applyReorder). Drag 6-8px (di atas threshold armed tapi
+    // di bawah threshold applyReorder) → tetap dianggap "tap" kalau pakai d.moved. BUG v15.21.
+    // Fix: armed = true begitu drag > 6px → pakai armed untuk tap-vs-drag detection.
+    if (d && d.kind === "reorder" && !d.armed) {
       const cur = p.selId;
       const now = Date.now();
       // double-tap detector: tap kedua dalam 320ms di klip yang sama = buka toolbar setting
@@ -4001,7 +4007,7 @@ function TimelineV6(p: any) {
         (d as any).lastTapT = now; (d as any).lastTapSid = d.sid;
       }
     }
-    if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
+    if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number" && d.to !== d.i) p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
     if (gstRef.current) return; // v9.1: SATU gesture
