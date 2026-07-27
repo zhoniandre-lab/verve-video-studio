@@ -2212,6 +2212,18 @@ async function renderWebCodecs(b:any){
   }
   if (audioEncoder && audioEncDone){ await audioEncDone; audioEncoder.close(); }
   muxer.finalize();
+
+  // 📦 v15.4B MEMORY CLEANUP: Pause video decks and revoke Blob URLs immediately to prevent OOM crash in Chrome on mobile
+  try {
+    vidMap?.forEach((o) => {
+      o.a.pause();
+      o.b.pause();
+      if (o.objUrl) {
+        try { URL.revokeObjectURL(o.objUrl); } catch { /* abaikan */ }
+      }
+    });
+  } catch { /* abaikan */ }
+
   onProgress?.(1); onStage?.("✅ Selesai!");
   const __fd = (ms:number)=> (ms/1000).toFixed(1)+"d";
   onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup} · mesin WEBCODECS(prefer-hw)`); // ⚡ v13.10: label mesin permanen utk diagnosa

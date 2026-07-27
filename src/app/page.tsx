@@ -469,7 +469,10 @@ async function vaultList(): Promise<VaultItem[]> {
   } catch { return []; }
 }
 async function vaultSave(blob: Blob, name: string): Promise<void> {
-  if (!blob || blob.size < 100_000 || blob.size > 900 * 1048576) return; // batas jujur: di luar ini jangan disimpan
+  // 🩹 v15.4B SAFE CEILING: Batasi penyimpanan brankas maksimal 100MB (dari sebelumnya 900MB).
+  // Menulis file raksasa (>100MB) ke IndexedDB di Chrome Mobile memicu duplikasi memori saat serialisasi,
+  // yang instan menyebabkan tab crash "Aw, Snap" (OOM) tepat di akhir render (99% - 100%).
+  if (!blob || blob.size < 100_000 || blob.size > 100 * 1048576) return;
   try {
     const db = await vaultOpen();
     const item: VaultItem = { id: "r" + Date.now(), at: Date.now(), name, size: blob.size, blob };
