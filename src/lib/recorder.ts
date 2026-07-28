@@ -948,6 +948,20 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
     ctx.fillStyle=grad; ctx.shadowBlur=18; ctx.shadowColor="rgba(168,85,247,0.7)";
     ctx.fillText(cur.text, W/2, baseY, W*0.9);
   }
+  // Film Indie (Serif documentation subtitles)
+  else if (style==="indie") {
+    const fontSize = Math.max(18, Math.floor(H*0.04));
+    ctx.font = `600 ${fontSize}px Georgia, 'Times New Roman', serif`;
+    const cur = s.captions[activeIdx];
+    // Placed slightly lower (closer to letterbox)
+    const y = baseY + H * 0.05;
+    ctx.lineWidth = Math.max(3, fontSize/12);
+    ctx.strokeStyle = "rgba(0,0,0,0.95)";
+    ctx.lineJoin = "round";
+    ctx.strokeText(cur.text, W/2, y, W*0.9);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(cur.text, W/2, y, W*0.9);
+  }
   ctx.restore();
 }
 

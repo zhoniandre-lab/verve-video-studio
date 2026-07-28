@@ -1186,6 +1186,7 @@ export const CC_TEMPLATES: CCTemplate[] = [
   { id: "neon",     label: "Neon",           desc: "Glow pink lembut",              capStyle: "neon",      sample: "Cahaya malam",          color: "#ec4899" },
   { id: "pop",      label: "Pop",            desc: "Kuning ceria kotak",            capStyle: "pop",       sample: "Asik & ramai",           color: "#fde047" },
   { id: "gradien",  label: "Gradien",        desc: "Warna gradasi halus",           capStyle: "gradient",  sample: "Warna-warni",            color: "#22d3ee" },
+  { id: "indie",    label: "Film Indie",     desc: "Ramping, font Serif, di atas letterbox", capStyle: "indie", sample: "Subtitel Dokumenter", color: "#ffffff" },
 ];
 
 /* ---------- STIKER GAMBAR (overlay foto) ---------- */
@@ -1638,11 +1639,19 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
   const lineNo = active[0].line;
   const lineWords = words.filter(w => w.line === lineNo);
   const exact = words.find(w => t >= w.start && t < w.end && w.line === lineNo);
-  const y = (opts?.yRatio ?? 0.78) * H;
-  const fs = Math.max(12, (opts?.sizeRatio ?? 0.055) * H);
+
+  // 🎭 v17.6 INDIE FILM STYLE: Turunkan lirik sedikit lebih dekat ke letterbox jika menggunakan gaya Indie
+  const isIndie = capStyle === "indie";
+  const y = isIndie ? ((opts?.yRatio ?? 0.78) * H + H * 0.04) : (opts?.yRatio ?? 0.78) * H;
+  const fs = isIndie ? Math.max(10, (opts?.sizeRatio ?? 0.055) * H * 0.75) : Math.max(12, (opts?.sizeRatio ?? 0.055) * H);
   const gap = fs * 0.25;
+
   ctx.save();
-  ctx.font = `900 ${fs}px 'Poppins',system-ui,sans-serif`;
+  // Gunakan font Serif elegan untuk gaya Film Indie dokumenter
+  ctx.font = isIndie 
+    ? `600 ${fs}px 'Playfair Display','Lora',Georgia,serif`
+    : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
+
   ctx.textBaseline = "middle"; ctx.lineJoin = "round";
   const widths = lineWords.map(w => ctx.measureText(w.text).width);
   const totalW = widths.reduce((a, b) => a + b, 0) + gap * (lineWords.length - 1);
@@ -1654,14 +1663,14 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
     else if (capStyle === "neon") { fill = isActive ? "#ffffff" : "#f9a8d4"; glow = "#ec4899"; }
     else if (capStyle === "pop") { fill = isActive ? "#000000" : "#ffffff"; }
     else if (capStyle === "gradient") fill = isActive ? "#22d3ee" : "#e2e8f0";
-    else if (capStyle === "boldwhite") fill = "#ffffff";
+    else if (capStyle === "boldwhite" || capStyle === "indie") fill = "#ffffff";
     if (capStyle === "pop" && isActive) {
       ctx.fillStyle = "#fde047";
       roundRectPath(ctx, x - fs * 0.12, y - fs * 0.75, widths[i] + fs * 0.24, fs * 1.3, fs * 0.18); ctx.fill();
       ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = fs * 0.06;
       ctx.strokeText(w.text, x, y);
     } else {
-      ctx.strokeStyle = strokeC; ctx.lineWidth = fs * 0.14; ctx.strokeText(w.text, x, y);
+      ctx.strokeStyle = strokeC; ctx.lineWidth = isIndie ? fs * 0.08 : fs * 0.14; ctx.strokeText(w.text, x, y);
     }
     if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.6 : 0.3); }
     ctx.fillStyle = fill; ctx.fillText(w.text, x, y);
