@@ -5015,6 +5015,30 @@ function SihirFilmSheet({ api, onClose }: any) {
   const A = api;
   const [syncAudio, setSyncAudio] = useState(true);
 
+  function autoBeatSlice() {
+    if (!A.musicBeats || !A.musicBeats.length) {
+      alert("Tambahkan musik latar terlebih dahulu agar ketukan beat terdeteksi otomatis!");
+      return;
+    }
+    A.pushHist();
+    const beats = A.musicBeats;
+    const n = A.slides.length;
+    if (n === 0) return alert("Tambahkan media terlebih dahulu!");
+
+    // Selaraskan durasi masing-masing slide dengan ketukan beat drum lagu
+    const beatsPerSlide = Math.max(1, Math.floor(beats.length / n));
+    A.slides.forEach((s: any, i: number) => {
+      const startBeatIdx = i * beatsPerSlide;
+      const endBeatIdx = Math.min(beats.length - 1, (i + 1) * beatsPerSlide);
+      const startT = beats[startBeatIdx];
+      const endT = beats[endBeatIdx];
+      const dur = Math.max(0.5, endT - startT);
+      A.setOpt(s.id, { dur: Math.round(dur * 100) / 100 });
+    });
+    alert(`⚡ BEAT-SLICER SUKSES!\n\nSeluruh ${n} adegan berhasil dipangkas & diselaraskan secara presisi mengikuti ketukan beat drum lagu!`);
+    onClose();
+  }
+
   function applyPreset(presetName: "cinematic_film" | "jedag_jeduk" | "retro_vlog" | "cinematic_travel") {
     A.pushHist();
     if (presetName === "cinematic_film" || presetName === "cinematic_travel") {
@@ -5148,6 +5172,16 @@ function SihirFilmSheet({ api, onClose }: any) {
           </div>
           <button className={`v6-toggle ${syncAudio ? "on" : ""}`} />
         </div>
+
+        {/* ⚡ PREMIUM BEAT-SLICER BUTTON */}
+        <button
+          className="v6-bigcta"
+          style={{ marginTop: 12, width: "100%", background: "linear-gradient(135deg, var(--v6-teal), var(--v6-teal2))", color: "#fff", fontWeight: 800 }}
+          onClick={autoBeatSlice}
+        >
+          ⚡ Auto Beat-Slicer (Potong Adegan Ikut Beat Lagu)
+        </button>
+
         <div className="v6-note">💡 Setelah memilih gaya, Anda tetap bebas mengedit, memangkas, atau menambahkan elemen lain di timeline studio!</div>
       </div>
     </SheetShell>
