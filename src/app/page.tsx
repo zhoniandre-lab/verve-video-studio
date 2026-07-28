@@ -100,7 +100,7 @@ function alignWordsToLines(lines: LyricLine[], aiWords: { w: string; start: numb
   for (let i = 0; i < N; i++) {
     const n = lines[i].words.length || 1;
     let best = -1, bestScore = 0;
-    const maxShift = Math.min(wi + 10, Math.max(wi, nw.length - n));
+    const maxShift = Math.min(wi + 45, Math.max(wi, nw.length - n)); // ⚡ OPTIMIZE: Tingkatkan window dari 10 ke 45 kata agar pencocokan lirik tebal/intro instrumental tidak gagal (anti-fallback ke perkiraan cerdas!)
     for (let s = wi; s <= maxShift; s++) {
       let m = 0;
       for (let k = 0; k < n; k++) if (nw[s + k] === ln[i][k]) m++;
