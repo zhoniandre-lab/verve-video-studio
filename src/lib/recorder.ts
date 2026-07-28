@@ -443,13 +443,16 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
     gerak TIDAK PERNAH berhenti & TIDAK ADA lompatan kasar. */
 export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
-  const RMIN = 0.5, RMAX = 1.4;
+  // 🩹 v15.6 SLOW HALUS (Cinematic Slow-Mo): Turunkan batas kecepatan minimal (RMIN) dari 0.5 menjadi 0.20.
+  // Ini memungkinkan klip video diperlambat secara halus hingga 20% kecepatan asli untuk mengisi durasi slide yang panjang,
+  // meminimalkan pengulangan video (looping) yang berlebihan dan memberikan efek Cinematic Travel Vlog yang sangat estetik.
+  const RMIN = 0.20, RMAX = 1.4;
   let rate = vd / (slot > 0.2 ? slot : vd);
   if (rate < RMIN) rate = RMIN; else if (rate > RMAX) rate = RMAX;
-  // ⏱ v13.13: kendali MANUAL dari bro — setelah jepit auto, dikali pilihannya sendiri (0.25×..2×)
-  const sMul = spd >= 0.25 && spd <= 2 ? spd : 1;
+  // ⏱ v13.13: kendali MANUAL dari bro — setelah jepit auto, dikali pilihannya sendiri (0.20×..2×)
+  const sMul = spd >= 0.20 && spd <= 2 ? spd : 1;
   rate *= sMul;
-  if (rate < 0.25) rate = 0.25; else if (rate > 2) rate = 2;
+  if (rate < 0.20) rate = 0.20; else if (rate > 2) rate = 2;
   const st = Math.max(0, raw) * rate;
   const cyc = Math.floor(st / vd);
   const pos = st - cyc * vd;
@@ -1833,7 +1836,8 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   prepT.audio = __tp() - __m;
 
   const slideDur = Math.max(1, slideDuration);
-  const transDur = clamp(opts.transitionDuration??(mobileOptimized?0.5:0.8),0,slideDur*0.6);
+  // 🩹 v15.6 TRANSISI LEBIH HALUS: Tingkatkan durasi transisi bawaan di HP dari 0.5s menjadi 0.7s agar efek larut (dissolve/fade) terasa jauh lebih anggun dan sinematik.
+  const transDur = clamp(opts.transitionDuration??(mobileOptimized?0.7:0.8),0,slideDur*0.6);
   const perSlide = slideDur+transDur;
 
   // ===== v5: timeline per-klip (durasi & transisi beda tiap slide) =====
@@ -1852,7 +1856,10 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     slideOpts.forEach((o, i) => { if (o) o.trans = tids[i]; });
   }
   const clipsTotal = timeline ? timeline.total : imgs.length*slideDur+transDur;
-  const totalDur = Math.max(audio?.duration||0, clipsTotal);
+  // 🩹 v15.6: Batasi total durasi video murni mengikuti panjang slide/klip (clipsTotal),
+  // jangan dipaksa sepanjang durasi lagu penuh (audio.duration) agar render 10x lebih cepat
+  // dan lagu otomatis di-cut & fade-out halus di akhir slide, persis seperti CapCut!
+  const totalDur = clipsTotal;
 
   // Warning: jika musik lebih pendek dari total slide (tanpa TTS)
   if (audio && audio.duration < totalDur - 0.5) {
@@ -1934,6 +1941,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
       vignetteStrength: typeof opts.vignetteStrength==="number"?opts.vignetteStrength:0.75,
       spectrumSticker: opts.spectrumSticker,
       textLayers: opts.textLayers,
+      mobileOptimized, // 🩹 Pass mobileOptimized to WebCodecs renderer
       ...sharedV5,
     } as any);
   }
@@ -1971,7 +1979,7 @@ interface RenderBase {
 }
 
 async function renderWebCodecs(b:any){
-  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,MuxTarget,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt} = b;
+  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,MuxTarget,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt,mobileOptimized} = b;
 
   // v8.1: PROBE dukungan encoder HP dulu (isConfigSupported) — sebelumnya codec dipatok
   // avc1.42001f (level 3.1) yang secara spesifikasi tidak sah untuk 1080p+, sehingga sebagian
@@ -2036,13 +2044,23 @@ async function renderWebCodecs(b:any){
     let offset=0;
     const sL = audio.stereoL || audio.data;
     const sR = audio.stereoR || audio.data;
-    while(offset<audio.data.length){
+    // 🩹 v15.6 AUDIO FADE OUT: Potong audio di batas totalDur dan aplikasikan fade-out halus 1.5 detik
+    const maxAudioOffset = Math.floor(totalDur * audio.sampleRate);
+    const fadeDur = 1.5;
+    const fadeStart = Math.max(0, totalDur - fadeDur);
+    while(offset < Math.min(audio.data.length, maxAudioOffset)){
       const len=Math.min(frameSize,audio.data.length-offset);
       // f32-planar: [L0,L1,..Ln-1,R0,R1,..Rn-1]
       const buf=new Float32Array(frameSize*nCh);
       for (let i=0;i<len;i++){
-        buf[i] = sL[offset+i]||0;
-        if (nCh>1) buf[frameSize+i] = sR[offset+i]||0;
+        const sampleIdx = offset + i;
+        const tSec = sampleIdx / audio.sampleRate;
+        let fadeFactor = 1.0;
+        if (tSec > fadeStart) {
+          fadeFactor = Math.max(0, 1 - (tSec - fadeStart) / fadeDur);
+        }
+        buf[i] = (sL[sampleIdx]||0) * fadeFactor;
+        if (nCh>1) buf[frameSize+i] = (sR[sampleIdx]||0) * fadeFactor;
       }
       const ad=new (window as any).AudioData({format:"f32-planar",sampleRate:audio.sampleRate,numberOfFrames:frameSize,numberOfChannels:nCh,timestamp:(offset/audio.sampleRate)*1e6,data:buf});
       audioEncoder.encode(ad); ad.close(); offset+=frameSize;
@@ -2100,7 +2118,8 @@ async function renderWebCodecs(b:any){
   let fastFrames = 0, paintFrames = 0;
   let lastYield = performance.now();
 
-  for (let f=0; f<totalFrames; f++){
+  try {
+    for (let f=0; f<totalFrames; f++){
     const t = f/fps;
     let slideIdx:number,localT:number,inTrans:boolean,transT:number,nextIdx:number,frameDur:number,transId:string,clipT:number;
     if (timeline) {
@@ -2216,46 +2235,76 @@ async function renderWebCodecs(b:any){
     // backpressure (diukur): antrean dilonggarkan 8→24 agar encoder sibuk terus selagi kita melukis
     const __w0 = performance.now();
     while ((videoEncoder as any).encodeQueueSize > 24) {
-      await new Promise(r=>setTimeout(r,1));
+      const waitDelay = mobileOptimized ? 10 : 1;
+      await new Promise(r=>setTimeout(r, waitDelay));
     }
     msWait += performance.now() - __w0;
 
-    // Time-sliced yielding: yield only if we have spent > 50ms on CPU.
+    // Time-sliced yielding: yield only if we have spent > 50ms on CPU (30ms on mobile).
     // This avoids the 4ms throttling penalty of setTimeout(r,0) on fast frames,
     // dramatically increasing rendering speeds (up to 3-5x faster on fast devices)
     // while keeping the main UI thread completely responsive.
     const nowYield = performance.now();
-    if (nowYield - lastYield > 50 || f === totalFrames - 1) {
+    const yieldInterval = mobileOptimized ? 30 : 50;
+    if (nowYield - lastYield > yieldInterval || f === totalFrames - 1) {
       onProgress?.(f/totalFrames);
-      await new Promise(r=>setTimeout(r,0));
+      const delay = mobileOptimized ? 10 : 0;
+      await new Promise(r=>setTimeout(r, delay));
       lastYield = performance.now();
     }
   }
-  if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
-  try { console.log(`[v8.8 telemetri] lukis ${(msPaint/1000).toFixed(1)}d · capture ${(msCap/1000).toFixed(1)}d · antre-encoder ${(msWait/1000).toFixed(1)}d · unik ${encFrames}/${totalFrames} · dup-skip ${skippedDup}`); } catch {}
-  await videoEncoder.flush(); videoEncoder.close();
-  // v8.1 WATCHDOG: kalau encoder menolak SEMUA frame, JANGAN kirim file busuk ke user
-  if (!vidChunks) {
-    throw new Error("Encoder HP tidak menghasilkan frame video — coba turunkan resolusi/fps (mis. 1080p30) lalu render ulang ya bro.");
-  }
-  if (audioEncoder && audioEncDone){ await audioEncDone; audioEncoder.close(); }
-  muxer.finalize();
+    if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
+    try { console.log(`[v8.8 telemetri] lukis ${(msPaint/1000).toFixed(1)}d · capture ${(msCap/1000).toFixed(1)}d · antre-encoder ${(msWait/1000).toFixed(1)}d · unik ${encFrames}/${totalFrames} · dup-skip ${skippedDup}`); } catch {}
+    await videoEncoder.flush(); videoEncoder.close();
+    // v8.1 WATCHDOG: kalau encoder menolak SEMUA frame, JANGAN kirim file busuk ke user
+    if (!vidChunks) {
+      throw new Error("Encoder HP tidak menghasilkan frame video — coba turunkan resolusi/fps (mis. 1080p30) lalu render ulang ya bro.");
+    }
+    if (audioEncoder && audioEncDone){ await audioEncDone; audioEncoder.close(); }
+    muxer.finalize();
 
-  // 📦 v15.4B MEMORY CLEANUP: Pause video decks and revoke Blob URLs immediately to prevent OOM crash in Chrome on mobile
-  try {
-    vidMap?.forEach((o) => {
-      o.a.pause();
-      o.b.pause();
-      if (o.objUrl) {
-        try { URL.revokeObjectURL(o.objUrl); } catch { /* abaikan */ }
+    onProgress?.(1); onStage?.("✅ Selesai!");
+    const __fd = (ms:number)=> (ms/1000).toFixed(1)+"d";
+    onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup} · mesin WEBCODECS(prefer-hw)`); // ⚡ v13.10: label mesin permanen utk diagnosa
+    return new Blob([muxer.target.buffer],{type:"video/mp4"});
+  } finally {
+    // 📦 v15.4B MEMORY CLEANUP: Pause video decks and revoke Blob URLs immediately to prevent OOM crash in Chrome on mobile
+    try {
+      vidMap?.forEach((o) => {
+        o.a.pause();
+        o.b.pause();
+        if (o.objUrl) {
+          try { URL.revokeObjectURL(o.objUrl); } catch { /* abaikan */ }
+        }
+      });
+    } catch { /* abaikan */ }
+
+    // 🧹 INTENSIVE CANVAS & VIDEO MEMORY PURGE: Release large canvas backing stores and video decoders to avoid OOM
+    try {
+      if (imgs && Array.isArray(imgs)) {
+        imgs.forEach((img: any) => {
+          if (img) { img.width = 0; img.height = 0; }
+        });
       }
-    });
-  } catch { /* abaikan */ }
-
-  onProgress?.(1); onStage?.("✅ Selesai!");
-  const __fd = (ms:number)=> (ms/1000).toFixed(1)+"d";
-  onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup} · mesin WEBCODECS(prefer-hw)`); // ⚡ v13.10: label mesin permanen utk diagnosa
-  return new Blob([muxer.target.buffer],{type:"video/mp4"});
+    } catch {}
+    try {
+      vidMap?.forEach((o) => {
+        if (o.c) { o.c.width = 0; o.c.height = 0; }
+        o.a.src = "";
+        o.b.src = "";
+        o.a.load();
+        o.b.load();
+      });
+    } catch {}
+    try {
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {}
+    try {
+      cvA.width = 0; cvA.height = 0;
+      cvB.width = 0; cvB.height = 0;
+    } catch {}
+  }
 }
 
 async function renderMediaRecorder(b:any){
@@ -2353,6 +2402,29 @@ async function renderMediaRecorder(b:any){
   requestAnimationFrame(tick);
   const blob=await done;
   try { vidMap?.forEach((o) => { o.a.pause(); o.b.pause(); if (o.objUrl) { try { URL.revokeObjectURL(o.objUrl); } catch { /* abaikan */ } } }); } catch {} // 📦 v13.13: tidurkan deck + bebaskan blob
+
+  // 🧹 INTENSIVE CANVAS & VIDEO MEMORY PURGE: Release large canvas backing stores and video decoders to avoid OOM
+  try {
+    if (imgs && Array.isArray(imgs)) {
+      imgs.forEach((img: any) => {
+        if (img) { img.width = 0; img.height = 0; }
+      });
+    }
+  } catch {}
+  try {
+    vidMap?.forEach((o) => {
+      if (o.c) { o.c.width = 0; o.c.height = 0; }
+      o.a.src = "";
+      o.b.src = "";
+      o.a.load();
+      o.b.load();
+    });
+  } catch {}
+  try {
+    canvas.width = 0;
+    canvas.height = 0;
+  } catch {}
+
   onStage?.("✅ Selesai!"); onProgress?.(1);
   onStage?.(`⏱ Telemetri: total ${((performance.now()-__t0)/1000).toFixed(1)}d · mesin MEDIARECORDER(realtime)`); // ⚡ v13.10
   return blob;

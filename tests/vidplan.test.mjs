@@ -36,7 +36,7 @@ function simulasi(vd, slot, label, spd = 1) {
   const eff = vd / rate;
   const siklus = slot / eff;
   console.log(`\n🎬 ${label}: klip ${vd}s · slot ${slot}s · spd ${spd} → rate ${rate.toFixed(3)} · siklus ${eff.toFixed(1)}s · ${siklus.toFixed(2)} putaran · gerak ${(30 * rate).toFixed(1)}fps · crossfade ${(xfHit / fps).toFixed(1)}s`);
-  T(`[${label}] rate sah (auto ≤1.4 · manual ≤2, ≥0.25)`, rate >= 0.25 - 1e-9 && rate <= 2 + 1e-9);
+  T(`[${label}] rate sah (auto ≤1.4 · manual ≤2, ≥0.20)`, rate >= 0.20 - 1e-9 && rate <= 2 + 1e-9);
   T(`[${label}] pos selalu sah [0..vd]`, pelanggaran === 0, `${pelanggaran} pelanggaran`);
   T(`[${label}] deck hanya berganti di sambungan`, salahGanti === 0, `${salahGanti} salah ganti`);
   if (siklus > 1.2) T(`[${label}] ada crossfade di sambungan`, xfHit > 0);

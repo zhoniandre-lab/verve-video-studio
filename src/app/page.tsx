@@ -777,7 +777,18 @@ async function vaultSave(blob: Blob, name: string): Promise<void> {
   // 🩹 v15.4B SAFE CEILING: Batasi penyimpanan brankas maksimal 100MB (dari sebelumnya 900MB).
   // Menulis file raksasa (>100MB) ke IndexedDB di Chrome Mobile memicu duplikasi memori saat serialisasi,
   // yang instan menyebabkan tab crash "Aw, Snap" (OOM) tepat di akhir render (99% - 100%).
-  if (!blob || blob.size < 100_000 || blob.size > 100 * 1048576) return;
+  if (!blob || blob.size < 100_000) return;
+  
+  // 🛡️ v15.5 SAFE MOBILE CEILING: Deteksi HP secara dinamis.
+  // Untuk Chrome HP (Android/iOS), batasi penyimpanan otomatis maksimal 15MB saja agar dijamin bebas OOM.
+  const isMobileDevice = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const maxSafeSize = isMobileDevice ? 15 * 1048576 : 100 * 1048576;
+
+  if (blob.size > maxSafeSize) {
+    console.log(`[vaultSave] Lewati penyimpanan brankas otomatis karena ukuran file (${(blob.size / 1048576).toFixed(1)} MB) melebihi batas aman HP/Desktop (${(maxSafeSize / 1048576).toFixed(0)} MB).`);
+    return;
+  }
+
   try {
     const db = await vaultOpen();
     const item: VaultItem = { id: "r" + Date.now(), at: Date.now(), name, size: blob.size, blob };
@@ -1166,6 +1177,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [progress, setProgress] = useState(0);
   const [videoUrl, setVideoUrl] = useState("");
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
+  useEffect(() => {
+    return () => {
+      if (videoUrl) { try { URL.revokeObjectURL(videoUrl); } catch {} }
+    };
+  }, [videoUrl]);
   /* ---------- ekspor v6 ---------- */
   const [tlPxs, setTlPxs] = useState(() => { try { return Number(localStorage.getItem("verve_tl_scale")) || 72; } catch { return 72; } }); // v15.2B CapCut-style
   useEffect(() => { try { localStorage.setItem("verve_tl_scale", String(tlPxs)); } catch {} }, [tlPxs]);
@@ -4026,7 +4042,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
-            cineBars, setCineBars, musicDur, applyStylePreset, seekPreview,
+            cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
@@ -5046,6 +5062,64 @@ function SihirFilmSheet({ api, onClose }: any) {
     onClose();
   }
 
+  function autoLyricSlice() {
+    if (!A.capWords || !A.capWords.length) {
+      alert("Jalankan 'Keterangan Otomatis' (Auto-Caption) terlebih dahulu agar lirik lagu terdeteksi dengan timestamp presisi!");
+      return;
+    }
+    A.pushHist();
+    const words = A.capWords;
+    const n = A.slides.length;
+    if (n === 0) return alert("Tambahkan media terlebih dahulu!");
+
+    // Kelompokkan kata berdasarkan nomor baris ('line')
+    const linesMap = new Map<number, { start: number; end: number; words: string[] }>();
+    words.forEach((w: any) => {
+      const lineNum = w.line ?? 0;
+      if (!linesMap.has(lineNum)) {
+        linesMap.set(lineNum, { start: w.start, end: w.end, words: [w.text] });
+      } else {
+        const item = linesMap.get(lineNum)!;
+        item.start = Math.min(item.start, w.start);
+        item.end = Math.max(item.end, w.end);
+        item.words.push(w.text);
+      }
+    });
+
+    const lines = Array.from(linesMap.values()).sort((a, b) => a.start - b.start);
+    if (!lines.length) {
+      alert("Baris lirik tidak terdeteksi!");
+      return;
+    }
+
+    // Selaraskan slide ke baris-baris lirik secara presisi
+    const linesPerSlide = Math.max(1, Math.floor(lines.length / n));
+    A.slides.forEach((s: any, i: number) => {
+      const startLineIdx = i * linesPerSlide;
+      const endLineIdx = Math.min(lines.length - 1, (i + 1) * linesPerSlide - 1);
+      const startT = lines[startLineIdx].start;
+      const endT = lines[endLineIdx].end;
+      const dur = Math.max(0.5, endT - startT);
+      
+      // Deteksi kata kunci emosional / aksi di baris lirik ini untuk mengatur speed/slow-mo secara pintar!
+      const phrase = lines.slice(startLineIdx, endLineIdx + 1).flatMap(l => l.words).join(" ").toLowerCase();
+      let speed = 1.0;
+      if (phrase.includes("peluk") || phrase.includes("pelukan") || phrase.includes("nangis") || phrase.includes("sedih") || phrase.includes("rindu") || phrase.includes("sepi") || phrase.includes("kesepian") || phrase.includes("sendiri") || phrase.includes("pelan") || phrase.includes("lambat")) {
+        speed = 0.5; // Auto Slow-Mo untuk adegan emosional agar dramatis!
+      } else if (phrase.includes("lari") || phrase.includes("cepat") || phrase.includes("kejar") || phrase.includes("marah") || phrase.includes("lompat") || phrase.includes("terbang")) {
+        speed = 1.3; // Auto Fast-Mo untuk adegan aksi/cepat!
+      }
+
+      A.setOpt(s.id, { 
+        dur: Math.round(dur * 100) / 100,
+        speed: speed
+      });
+    });
+
+    alert(`⚡ SINKRONISASI LIRIK SUKSES!\n\nSeluruh ${n} adegan berhasil diselaraskan secara presisi mengikuti pergantian kalimat lirik lagu!\n\nAdegan emosional otomatis disetel ke Cinematic Slow-Mo (0.5x) untuk hasil yang sangat estetik!`);
+    onClose();
+  }
+
   function applyPreset(presetName: "cinematic_film" | "jedag_jeduk" | "retro_vlog" | "cinematic_travel") {
     A.pushHist();
     if (presetName === "cinematic_film" || presetName === "cinematic_travel") {
@@ -5187,6 +5261,15 @@ function SihirFilmSheet({ api, onClose }: any) {
           onClick={autoBeatSlice}
         >
           ⚡ Auto Beat-Slicer (Potong Adegan Ikut Beat Lagu)
+        </button>
+
+        {/* 🧠 SMART LYRIC-SLICER BUTTON */}
+        <button
+          className="v6-bigcta"
+          style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg, #a78bfa, #8b5cf6)", color: "#fff", fontWeight: 800 }}
+          onClick={autoLyricSlice}
+        >
+          🧠 Auto Lyric-Slicer (Potong Adegan Ikut Lirik & Kata Kunci)
         </button>
 
         <div className="v6-note">💡 Setelah memilih gaya, Anda tetap bebas mengedit, memangkas, atau menambahkan elemen lain di timeline studio!</div>
