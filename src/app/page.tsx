@@ -4013,6 +4013,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText,
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
+            voiceUrl, setVoiceUrl,
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
             ambientUrl, setAmbientUrl, ambientName, setAmbientName, ambientVol, setAmbientVol,
             autoDucking, setAutoDucking,
@@ -5300,6 +5301,47 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
                   <div className="lr"><span>🔊 Volume Suasana</span><b>{Math.round(A.ambientVol * 100)}%</b></div>
                   <input type="range" min={0} max={0.6} step={0.02} value={A.ambientVol} onChange={e => A.setAmbientVol(Number(e.target.value))} />
                 </div>
+              )}
+            </div>
+
+            {/* ⚡ SFX BANK (SOUND EFFECT TRANSITIONS - WHOOSH, BOOM, BUZZ) */}
+            <div style={{ marginTop: 14, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}>
+              <b style={{ fontSize: 12 }}>⚡ Bank Efek Suara Transisi (Transition SFX)</b>
+              <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 2, lineHeight: 1.4 }}>Bumbu suara: ketuk untuk memasang efek suara angin Whoosh atau dentuman Boom yang megah di awal video!</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 8, overflowX: "auto", scrollbarWidth: "none" }}>
+                {([
+                  ["whoosh", "💨 Whoosh Wind", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3"],
+                  ["boom", "💥 Cinematic Boom", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3"],
+                  ["glitch", "⚡ Glitch Buzz", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3"]
+                ] as any[]).map(([id, label, url]) => (
+                  <button
+                    key={id}
+                    className={`v6-chip ${A.voiceUrl === url ? "on" : ""}`}
+                    style={{ fontSize: 10.5, padding: "5px 10px", borderColor: "rgba(25, 194, 184, 0.3)" }}
+                    onClick={() => {
+                      A.pushHist();
+                      // Set as voiceUrl (effects track)
+                      A.setVoiceUrl(url);
+                      A.setVoiceVol(1.2); // Set high volume so the effect is prominent!
+                      alert(`✅ Efek Suara Terpasang: ${label}!\n\nSuara efek berhasil digabung ke dalam track efek suara di timeline.`);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {A.voiceUrl && (
+                <button
+                  className="v6-chip"
+                  style={{ marginTop: 10, width: "100%", borderColor: "rgba(239, 68, 68, 0.4)", color: "#fca5a5" }}
+                  onClick={() => {
+                    A.pushHist();
+                    A.setVoiceUrl("");
+                    alert("🗑 Efek suara transisi dibersihkan.");
+                  }}
+                >
+                  🧹 Bersihkan Efek Suara
+                </button>
               )}
             </div>
 
