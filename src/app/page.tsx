@@ -1136,6 +1136,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [coverThumb, setCoverThumb] = useState("");
   /* ---------- preview ---------- */
   const [playing, setPlaying] = useState(false);
+  const [comparing, setComparing] = useState(false); // 👁️ v17.5 BEFORE/AFTER COMPARING STATE
   const [curT, setCurT] = useState(0);
   const [durT, setDurT] = useState(0);
   const [pipOn, setPipOn] = useState(true);
@@ -1593,7 +1594,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       }
       if (prN && RN) { const outN = liveV(RN.role.outD === "a" ? prN.a : prN.b); if (outN) { const b1 = blitPrevVid(outN, W, H, 1); if (b1) nxtDraw = b1; } }
     }
-    const gf = buildClipFilter(filterRef.current, adjRef.current);
+    const gf = comparing ? "none" : buildClipFilter(filterRef.current, adjRef.current);
     // 🎬 v11.4: Ken Burns KERAS per-klip (medan kb) — tanpa itu, perilaku lama (6% halus) utuh
     const kbC = (optCur as any)?.kb as { dir?: string; s?: number } | undefined;
     const progC = L.clipDur > 0 ? Math.min(1, Math.max(0, L.clipT / L.clipDur)) : 0;
@@ -1610,7 +1611,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       transId: L.inTrans ? canonicalTrans(optCur?.trans ?? "dissolve") : "none",
       optCur: optCur as any, optNxt: optNxt as any,
       globalFilter: gf, absT: tt, isMobile: true, beat: false,
-      grain: adjRef.current.grain, kbZoom: kb, kbDx: kbDxC, kbDy: kbDyC,
+      grain: comparing ? 0 : adjRef.current.grain,
+      kbZoom: comparing ? 1 : kb,
+      kbDx: comparing ? 0 : kbDxC,
+      kbDy: comparing ? 0 : kbDyC,
     } as any);
     // captions
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
@@ -3781,6 +3785,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </button>
           <button className="cbtn" onClick={undo} disabled={!canUndo} title="Urungkan">↶</button>
           <button className="cbtn" onClick={redo} disabled={!canRedo} title="Ulangi">↷</button>
+          <button
+            onPointerDown={() => setComparing(true)}
+            onPointerUp={() => setComparing(false)}
+            onPointerLeave={() => setComparing(false)}
+            onTouchStart={(e) => { e.preventDefault(); setComparing(true); }}
+            onTouchEnd={() => setComparing(false)}
+            className={`cbtn ${comparing ? "on" : ""}`}
+            style={{ color: comparing ? "var(--v6-teal)" : "#fff", position: "relative" }}
+            title="Tekan dan Tahan untuk membandingkan Sebelum & Sesudah diberi Sihir Film"
+          >
+            👁️<span className="mini" style={{ bottom: -2, fontSize: "7px" }}>{comparing ? "Asli" : "Compare"}</span>
+          </button>
         </div>
       </div>
 
@@ -3970,7 +3986,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
-            cineBars, setCineBars, musicDur, applyStylePreset,
+            cineBars, setCineBars, musicDur, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
@@ -5257,33 +5273,63 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
   );
 
   /* ---------------- LATAR BELAKANG ---------------- */
-  if (tool === "latar") return (
-    <SheetShell title="Latar belakang" onClose={close} onOk={close}>
-      <div className="v6-sheet-body">
-        <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
-          {([["cover", "⛶", "Isi penuh"], ["blur", "🌫️", "Blur"], ["color", "🎨", "Warna"]] as any[]).map(([m, ic, lb]) => (
-            <button key={m} className={`v6-gcell ${A.bgMode === m ? "on" : ""}`} style={{ aspectRatio: "1" }} onClick={() => A.setBgMode(m)}>
-              <span style={{ fontSize: 26 }}>{ic}</span><span className="l">{lb}</span>
-            </button>
-          ))}
+  if (tool === "latar") {
+    const extractDominantColor = () => {
+      if (!A.slides.length) return;
+      const sid = A.selId || A.slides[0].id;
+      const imgUrl = A.slides.find((s: any) => s.id === sid)?.imageUrl;
+      if (!imgUrl) return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const c = document.createElement("canvas");
+        c.width = 10; c.height = 10;
+        const cx = c.getContext("2d")!;
+        cx.drawImage(img, 0, 0, 10, 10);
+        const data = cx.getImageData(0, 0, 10, 10).data;
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i]; g += data[i+1]; b += data[i+2];
+        }
+        const count = data.length / 4;
+        const hex = "#" + [r / count, g / count, b / count].map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
+        A.setBgColor(hex);
+        alert(`🎨 Warna latar otomatis diserasikan (Canva-style) dengan warna dominan foto Anda: ${hex}`);
+      };
+      img.src = imgUrl;
+    };
+
+    return (
+      <SheetShell title="Latar belakang" onClose={close} onOk={close}>
+        <div className="v6-sheet-body">
+          <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
+            {([["cover", "⛶", "Isi penuh"], ["blur", "🌫️", "Blur"], ["color", "🎨", "Warna"]] as any[]).map(([m, ic, lb]) => (
+              <button key={m} className={`v6-gcell ${A.bgMode === m ? "on" : ""}`} style={{ aspectRatio: "1" }} onClick={() => A.setBgMode(m)}>
+                <span style={{ fontSize: 26 }}>{ic}</span><span className="l">{lb}</span>
+              </button>
+            ))}
+          </div>
+          {A.bgMode === "color" && (
+            <>
+              <div className="v6-lbl">WARNA LATAR</div>
+              <div className="v6-rows">
+                {["#000000", "#ffffff", "#16162a", "#0e7490", "#7c3aed", "#be185d", "#065f46", "#92400e"].map(c => (
+                  <button key={c} className={`v6-swatch ${A.bgColor === c ? "on" : ""}`} style={{ background: c }} onClick={() => A.setBgColor(c)} />
+                ))}
+                <span className="v6-swatch on" style={{ background: "conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)" }}>
+                  <input type="color" value={A.bgColor} onChange={e => A.setBgColor(e.target.value)} />
+                </span>
+              </div>
+              <button className="v6-btn ghost" style={{ width: "100%", marginTop: 10, borderColor: "rgba(139, 92, 246, 0.35)", color: "#c7b9ff" }} onClick={extractDominantColor}>
+                🎨 Cocokkan Warna Otomatis (Canva Smart Color Match)
+              </button>
+            </>
+          )}
+          <div className="v6-note">Mode <b>Blur/Warna</b> membuat video jadi letterbox (gambar utuh tidak terpotong) — pas kalau konten beda rasio.</div>
         </div>
-        {A.bgMode === "color" && (
-          <>
-            <div className="v6-lbl">WARNA LATAR</div>
-            <div className="v6-rows">
-              {["#000000", "#ffffff", "#16162a", "#0e7490", "#7c3aed", "#be185d", "#065f46", "#92400e"].map(c => (
-                <button key={c} className={`v6-swatch ${A.bgColor === c ? "on" : ""}`} style={{ background: c }} onClick={() => A.setBgColor(c)} />
-              ))}
-              <span className="v6-swatch on" style={{ background: "conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)" }}>
-                <input type="color" value={A.bgColor} onChange={e => A.setBgColor(e.target.value)} />
-              </span>
-            </div>
-          </>
-        )}
-        <div className="v6-note">Mode <b>Blur/Warna</b> membuat video jadi letterbox (gambar utuh tidak terpotong) — pas kalau konten beda rasio.</div>
-      </div>
-    </SheetShell>
-  );
+      </SheetShell>
+    );
+  }
 
   /* ---------------- PANGKAS ---------------- */
   if (tool === "pangkas" && A.selId) {
@@ -5502,8 +5548,8 @@ function KeteranganSheet({ api: A, onClose }: any) {
             <div style={{ marginTop: 6, maxHeight: 210, overflowY: "auto", display: "grid", gap: 5 }}>
               {A.lyrList.map((L: any, i: number) => (
                 <div key={L.id || i} style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,.04)", borderRadius: 10, padding: "5px 8px" }}>
-                  <span style={{ fontSize: 9.5, color: "#8b8b98", width: 34, flex: "0 0 auto" }}>{formatDur(L.start || 0)}</span>
-                  <span style={{ flex: 1, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{L.txt}</span>
+                  <span style={{ fontSize: 9.5, color: "#22d3ee", width: 34, flex: "0 0 auto", cursor: "pointer", fontWeight: 700 }} onClick={() => A.seekPreview(L.start)} title="Ketuk untuk melompati playhead ke detik lirik ini!">{formatDur(L.start || 0)}</span>
+                  <span style={{ flex: 1, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => A.seekPreview(L.start)} title="Ketuk untuk melompati playhead ke detik lirik ini!">“{L.txt}”</span>
                   <button className="v6-chip" style={{ padding: "2px 9px", flex: "0 0 auto" }} onClick={() => A.nudgeLyrics(-0.3, L.id)}>◀</button>
                   <button className="v6-chip" style={{ padding: "2px 9px", flex: "0 0 auto" }} onClick={() => A.nudgeLyrics(0.3, L.id)}>▶</button>
                 </div>
