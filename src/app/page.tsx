@@ -1186,9 +1186,30 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [tlPxs, setTlPxs] = useState(() => { try { return Number(localStorage.getItem("verve_tl_scale")) || 72; } catch { return 72; } }); // v15.2B CapCut-style
   useEffect(() => { try { localStorage.setItem("verve_tl_scale", String(tlPxs)); } catch {} }, [tlPxs]);
   const [exTab, setExTab] = useState<"video" | "gif">("video");
-  const [exRes, setExRes] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").r || 1080; } catch { return 1080; } });
-  const [exFps, setExFps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").f || 30; } catch { return 30; } });
-  const [exMbps, setExMbps] = useState(() => { try { return JSON.parse(localStorage.getItem("verve_export_v1") || "{}").m || 10; } catch { return 10; } });
+  const [exRes, setExRes] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("verve_export_v1") || "{}").r;
+      if (saved) return saved;
+    } catch {}
+    const isMobileDevice = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    return isMobileDevice ? 720 : 1080;
+  });
+  const [exFps, setExFps] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("verve_export_v1") || "{}").f;
+      if (saved) return saved;
+    } catch {}
+    const isMobileDevice = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    return isMobileDevice ? 24 : 30;
+  });
+  const [exMbps, setExMbps] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("verve_export_v1") || "{}").m;
+      if (saved) return saved;
+    } catch {}
+    const isMobileDevice = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    return isMobileDevice ? 6 : 10;
+  });
   const offRef = useRef({ music: 0, tts: 0, voice: 0 });
   useEffect(() => { offRef.current = { music: musicOff, tts: ttsOff, voice: voiceOff }; }, [musicOff, ttsOff, voiceOff]);
   const durAudRef = useRef({ music: 0, tts: 0, voice: 0 });
