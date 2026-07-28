@@ -1110,6 +1110,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [audMuted, setAudMuted] = useState(false);
   const [musicVol, setMusicVol] = useState(1);        // 0..1.5
   const [voiceVol, setVoiceVol] = useState(1);        // 0..1.5 (tts+rekaman)
+  const [ambientUrl, setAmbientUrl] = useState("");   // 🔊 v17.6 AMBIENT AUDIO BACKGROUND PRESES
+  const [ambientName, setAmbientName] = useState("");
+  const [ambientVol, setAmbientVol] = useState(0.18);
+  const [autoDucking, setAutoDucking] = useState(false); // 🔊 v17.6 AUTO-DUCKING & PENJERNIH VOKAL
   const [musicFadeIn, setMusicFadeIn] = useState(0);  // detik
   const [musicFadeOut, setMusicFadeOut] = useState(0); // detik
   /* ---------- gelombang suara asli (analisis file → bentuk batang di track) ---------- */
@@ -1182,6 +1186,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   useEffect(() => { if (musicUrl) void avWarm(musicUrl); }, [musicUrl]);
   useEffect(() => { if (ttsUrl) void avWarm(ttsUrl); }, [ttsUrl]);
   useEffect(() => { if (voiceUrl) void avWarm(voiceUrl); }, [voiceUrl]);
+
+  // 🔊 v17.6 PREMIUM AUDIO AUTOMATION (Auto-Ducking & Vocal Enhancer)
+  useEffect(() => {
+    if (autoDucking && (ttsUrl || voiceUrl)) {
+      setMusicVol(0.4);
+      setVoiceVol(1.25);
+    }
+  }, [autoDucking, ttsUrl, voiceUrl]);
 
   const audioSyncedRef = useRef(0); // ⏱ v13.7 SELARAS — flag penyembuhan sekali jalan (efeknya di bawah deklarasi mTitle)
   // elemen audio yang dikelola jam manual (mode offset) saat preview
@@ -1771,10 +1783,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         musicEl.current.volume = Math.min(1, musicVolRef.current);
         master = musicEl.current;
       }
-      [ttsUrl, voiceUrl].forEach(u => {
+      [ttsUrl, voiceUrl, ambientUrl].forEach((u, i) => {
         if (!u) return;
         const a = new Audio(proxifyAudioUrl(u)); a.crossOrigin = "anonymous"; a.muted = audMutedRef.current;
-        a.volume = Math.min(1, voiceVolRef.current);
+        a.volume = i === 2 ? Math.min(1, ambientVol) : Math.min(1, voiceVolRef.current);
+        if (i === 2) a.loop = true; // 🔊 v17.6 AMBIENT BACKGROUND LOOPING
         voiceEls.current.push(a);
         if (!master) master = a;
       });
@@ -1792,6 +1805,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (a) tlAudRef.current.push({ a, off: offs2[vi] ?? 0, dur: durs2[vi] || 1e9 });
         vi++;
       });
+      // 🔊 v17.6 AMBIENT AUDIO IN OFFSET MODE
+      if (ambientUrl && voiceEls.current[2]) {
+        tlAudRef.current.push({ a: voiceEls.current[2], off: 0, dur: 1e9 });
+      }
       master = null; // jam manual yang jaga (lihat tick)
     }
     clockRef.current.audio = master;
@@ -3311,6 +3328,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (musicUrl) parts.push({ url: proxifyAudioUrl(musicUrl), gain: musicVol * duck, fadeIn: musicFadeIn, fadeOut: musicFadeOut, off: musicOff });
       if (ttsUrl) parts.push({ url: proxifyAudioUrl(ttsUrl), gain: voiceVol, off: ttsOff });
       if (voiceUrl) parts.push({ url: proxifyAudioUrl(voiceUrl), gain: voiceVol, off: voiceOff });
+      if (ambientUrl) parts.push({ url: proxifyAudioUrl(ambientUrl), gain: ambientVol, off: 0 }); // 🔊 v17.6 AMBIENT AUDIO MIXING IN EXPORT
       let audioUrl: string | null = null;
       const single = parts.length === 1 ? parts[0] : null;
       const singleClean = single && Math.abs(single.gain - 1) < 0.01 && !single.fadeIn && !single.fadeOut && !(single.off && single.off > 0.01);
@@ -3949,6 +3967,19 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             <button onClick={() => void sendDirectorStudio("retro vlog")} style={{ background: "rgba(245, 158, 11, 0.22)", color: "#fde047", border: "1px solid rgba(245, 158, 11, 0.35)", borderRadius: 8, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📼 Gaya Retro Vlog</button>
           </div>
 
+          {/* 🧠 DYNAMIC AI CO-PILOT SUGGESTION CHIPS */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "2px 0 4px" }}>
+            {!musicUrl && (
+              <button onClick={() => { setTool("audio"); setModal("musik"); }} style={{ background: "rgba(168, 85, 247, 0.12)", color: "#e9d5ff", border: "1px dashed rgba(168, 85, 247, 0.45)", borderRadius: 8, padding: "3px 8px", fontSize: 9.5, fontWeight: 700, cursor: "pointer" }}>🎵 Rekomendasi: Buat Lagu AI</button>
+            )}
+            {slides.length > 0 && !capWords.length && (
+              <button onClick={() => void sendDirectorStudio("keterangan otomatis")} style={{ background: "rgba(25, 194, 184, 0.12)", color: "#8ff0e4", border: "1px dashed rgba(25, 194, 184, 0.45)", borderRadius: 8, padding: "3px 8px", fontSize: 9.5, fontWeight: 700, cursor: "pointer" }}>📝 Rekomendasi: Buat Lirik Karaoke</button>
+            )}
+            {slides.length > 0 && ratio !== "16:9" && (
+              <button onClick={() => void sendDirectorStudio("sinematik")} style={{ background: "rgba(139, 92, 246, 0.12)", color: "#c7b9ff", border: "1px dashed rgba(139, 92, 246, 0.45)", borderRadius: 8, padding: "3px 8px", fontSize: 9.5, fontWeight: 700, cursor: "pointer" }}>🎬 Rekomendasi: Rakit Film Widescreen</button>
+            )}
+          </div>
+
           <div style={{ display: "flex", gap: 6 }}>
             <input
               value={dirInp}
@@ -3983,6 +4014,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
+            ambientUrl, setAmbientUrl, ambientName, setAmbientName, ambientVol, setAmbientVol,
+            autoDucking, setAutoDucking,
             delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
@@ -5189,6 +5222,53 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
                 <input type="range" min={0} max={1.5} step={0.05} value={A.voiceVol} onChange={e => A.setVoiceVol(Number(e.target.value))} />
               </div>
             ) : null}
+            {/* 🔊 v17.6 AUTO-DUCKING & PENJERNIH VOKAL TOGGLE */}
+            <div className="v6-cardrow" style={{ cursor: "pointer", marginTop: 14 }} onClick={() => A.setAutoDucking(!A.autoDucking)}>
+              <span style={{ fontSize: 20 }}>🗣️</span>
+              <div className="tt">
+                Auto-Ducking & Penjernih Vokal
+                <div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>Mengecilkan musik latar otomatis saat ada suara narasi vokal</div>
+              </div>
+              <button className={`v6-toggle ${A.autoDucking ? "on" : ""}`} />
+            </div>
+
+            {/* 🔊 v17.6 AMBIENT BACKGROUND SOUNDSCAPE SELECTOR */}
+            <div style={{ marginTop: 14, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}>
+              <b style={{ fontSize: 12 }}>🔊 Tambah Suara Suasana (Ambient Soundscape)</b>
+              <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 2, lineHeight: 1.4 }}>Bumbu film: otomatis menyelimuti seluruh video Anda dengan suara suasana bioskop di bawah musik Anda.</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 8, overflowX: "auto", scrollbarWidth: "none" }}>
+                {([
+                  ["none", "🚫 Tanpa", ""],
+                  ["vinyl", "📼 Vinyl Hiss", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3"],
+                  ["rain", "🌧️ Hujan & Angin", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-15.mp3"],
+                  ["cafe", "☕ Cafe Cozy", "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-14.mp3"]
+                ] as any[]).map(([id, label, url]) => (
+                  <button
+                    key={id}
+                    className={`v6-chip ${A.ambientUrl === url ? "on" : ""}`}
+                    style={{ fontSize: 10.5, padding: "5px 10px" }}
+                    onClick={() => {
+                      A.pushHist();
+                      A.setAmbientUrl(url);
+                      A.setAmbientName(label);
+                      if (url) {
+                        A.setAmbientVol(0.18); // Default low volume for ambient soundscape!
+                        alert(`🔊 Suasana Terpasang: ${label}!\n\nVolume disetel ke 18% agar melodi menyatu lembut di bawah lagu utama.`);
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {A.ambientUrl && (
+                <div className="v6-slider-row" style={{ marginTop: 10, marginBottom: 0 }}>
+                  <div className="lr"><span>🔊 Volume Suasana</span><b>{Math.round(A.ambientVol * 100)}%</b></div>
+                  <input type="range" min={0} max={0.6} step={0.02} value={A.ambientVol} onChange={e => A.setAmbientVol(Number(e.target.value))} />
+                </div>
+              )}
+            </div>
+
             <div className="v6-note">💡 Perubahan volume langsung terdengar di pratinjau ▷ — fade otomatis diterapkan saat ekspor.</div>
           </div>
         )}
