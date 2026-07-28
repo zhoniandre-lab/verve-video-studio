@@ -124,14 +124,14 @@ function buildBody(payload: any, provider: Provider): any {
       // — "prompt will be strictly used as the lyrics". Kalau diisi style desc, AI nyanyi deskripsi & jadinya ngawur/Korea.
       body.prompt = finalLyrics.slice(0, 5000);
       body.lyrics = finalLyrics.slice(0, 5000);
-      body.style = styleStr.slice(0, 480);
+      body.style = styleStr.slice(0, 200); // ⚡ OPTIMIZE: Batasi ke 200 karakter (dari 480) untuk mematuhi limitasi API Kie.ai! Mencegah kegagalan generate di langkah 8 Lahan Awalan.
       // styleWeight rendah = lebih patuh ke lirik; audioWeight normal; weirdness rendah biar gak aneh
       body.styleWeight = 0.65; // v10.2: style manual user dituruti lebih keras (dulu 0.55 → gaya mengambang)
       body.audioWeight = 0.7;
       body.weirdnessConstraint = 0.3;
     } else {
       body.prompt = finalPrompt.slice(0,500);
-      body.style = styleStr.slice(0,480);
+      body.style = styleStr.slice(0, 200); // ⚡ OPTIMIZE: Batasi ke 200 karakter (dari 480) untuk mematuhi limitasi API Kie.ai!
     }
     if (!instrumental) {
       // v10.2: dok resmi hanya 'm'/'f' — 'mf' invalid (diabaikan/ditolak). Auto = biarkan provider memilih.
