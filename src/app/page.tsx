@@ -3408,7 +3408,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         videoFilter: gf === "none" ? undefined : gf,
         vignetteStrength: clampN((adj.vig / 100) * 0.8, 0, 1),
         grainAmt: adj.grain,
-        vizStyle: "minimal" as any, vizColor: "#19c2b8",
+        vizStyle: "none" as any, vizColor: "#19c2b8",
         lyrics: undefined,
         captions: capWords.length ? capWords as any : undefined,
         captionStyle: (capWords.length ? capStyle : "none") as any,
