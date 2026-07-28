@@ -2127,6 +2127,7 @@ async function renderWebCodecs(b:any){
   const cvA = document.createElement("canvas"); cvA.width = canvas.width; cvA.height = canvas.height;
   const cvB = document.createElement("canvas"); cvB.width = canvas.width; cvB.height = canvas.height;
   const bctx = cvB.getContext("2d")!;
+  const cvMotionBlur = document.createElement("canvas"); cvMotionBlur.width = canvas.width; cvMotionBlur.height = canvas.height;
   let keyA = "", keyB = "";
   let fastFrames = 0, paintFrames = 0;
   let lastYield = performance.now();
@@ -2158,7 +2159,12 @@ async function renderWebCodecs(b:any){
       const vN = inTrans ? vidMap.get(nextIdx) : undefined;
       // 🌀 v13.12 LOOP LUMAT A/B: deck aktif dilukis penuh; di jendela crossfade deck pasangan muncul alpha 0→1 (sambungan KASAT MATA hilang)
       if (vC) { const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide; const slot0 = timeline ? (((timeline as any).durs?.[slideIdx]) ?? slideDur) : slideDur;
-        const pl = vidPlan(t - s0, vC.a.duration || vC.b.duration || 1, slot0, ((slideOpts as any)?.[slideIdx]?.spd) || 1); // ⏱ v13.13
+        // 🩹 v15.8 ENDING REPEAT FIX: Jika ini adalah slide terakhir, jepit waktu agar tidak melewati slot0, mencegah repetisi di penghujung!
+        const rawTime = t - s0;
+        const isLastSlide = slideIdx === (timeline ? timeline.durs.length - 1 : imgs.length - 1);
+        const adjustedRaw = isLastSlide ? Math.min(rawTime, slot0 - 0.05) : rawTime;
+
+        const pl = vidPlan(adjustedRaw, vC.a.duration || vC.b.duration || 1, slot0, ((slideOpts as any)?.[slideIdx]?.spd) || 1); // ⏱ v13.13
         const act = pl.act === "a" ? vC.a : vC.b; const nxt = pl.act === "a" ? vC.b : vC.a;
         await seekVid(act, Math.min(pl.pos, (act.duration || 1) - 0.06));
         blitVid(act, vC.c, (b as any).vigVideo, (b as any).vigStrV);
@@ -2237,6 +2243,19 @@ async function renderWebCodecs(b:any){
     const skippable = fastOk && !b.spectrumSticker && pendingVf && frameIdKey === lastFrameKey;
     if (skippable) { skippedDup++; }
     else {
+      // 🩹 v15.8 CINEMATIC MOTION BLUR (Temporal Anti-Aliasing):
+      // Jika di HP, campurkan 18% dari frame sebelumnya (cvMotionBlur) untuk menciptakan efek bayangan motion-blur halus,
+      // melenyapkan getaran kasar/patah-patah pada video dan slow-mo agar tampil sangat lumat & sinematik!
+      if (f > 0 && mobileOptimized) {
+        mctx.save();
+        mctx.globalCompositeOperation = "source-over";
+        mctx.globalAlpha = 0.18; // 18% decay rate
+        mctx.drawImage(cvMotionBlur, 0, 0);
+        mctx.restore();
+      }
+      const mbCtx = cvMotionBlur.getContext("2d")!;
+      mbCtx.drawImage(canvas, 0, 0);
+
       const __c0 = performance.now();
       if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
       const nvf = new (window as any).VideoFrame(canvas, { timestamp: Math.floor(t * 1e6), duration: Math.floor(1e6 / fps) });
@@ -2316,6 +2335,7 @@ async function renderWebCodecs(b:any){
     try {
       cvA.width = 0; cvA.height = 0;
       cvB.width = 0; cvB.height = 0;
+      cvMotionBlur.width = 0; cvMotionBlur.height = 0;
     } catch {}
   }
 }
@@ -2381,7 +2401,11 @@ async function renderMediaRecorder(b:any){
           // di jendela crossfade deck pasangan ikut main dari awal → sambungan tersamar silang, GERAK TAK PERNAH BERHENTI.
           const vdm = o.a.duration || o.b.duration || 1; const slotm = timeline ? (((timeline as any).durs?.[si]) ?? perSlide) : perSlide;
           const raw = Math.max(0, t - (timeline ? (timeline.starts[si] ?? 0) : si * perSlide));
-          const pl = vidPlan(raw, vdm, slotm, ((slideOpts as any)?.[si]?.spd) || 1); // ⏱ v13.13
+          // 🩹 v15.8 ENDING REPEAT FIX: Jika ini adalah slide terakhir, jepit waktu agar tidak melewati slotm, mencegah repetisi di penghujung!
+          const isLastSlide = si === (timeline ? timeline.durs.length - 1 : imgs.length - 1);
+          const adjustedRaw = isLastSlide ? Math.min(raw, slotm - 0.05) : raw;
+
+          const pl = vidPlan(adjustedRaw, vdm, slotm, ((slideOpts as any)?.[si]?.spd) || 1); // ⏱ v13.13
           const act = pl.act === "a" ? o.a : o.b; const nxt = pl.act === "a" ? o.b : o.a;
           try { if (Math.abs(act.playbackRate - pl.rate) > 0.001) act.playbackRate = pl.rate; } catch {}
           const want = Math.min(pl.pos, vdm - 0.06);
