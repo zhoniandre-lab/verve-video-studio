@@ -2807,7 +2807,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (!musicUrl) throw new Error("Belum ada musik di track — keterangan lirik butuh lagunya.");
         const lyrSrc = (mLyrics || "").trim();
         if (!lyrSrc) throw new Error("Proyek ini belum punya lirik. Bikin lagu lewat Lahan dulu, atau proyek lama belum menyimpan liriknya.");
-        const dur = await getAudioDuration(musicUrl);
+        
+        // ⚡ OPTIMIZE: Gunakan durasi lagu yang sudah tersimpan di state (musicDur) terlebih dahulu!
+        // Mencegah lambatnya pengaksesan ulang metadata audio / kegagalan CORS di browser HP ("Durasi lagu tidak terbaca").
+        const dur = musicDur || (await getAudioDuration(musicUrl));
         if (!dur) throw new Error("Durasi lagu tidak terbaca.");
         const lines = parseLyricLines(lyrSrc);
         if (!lines.length) throw new Error("Lirik kosong setelah dibersihkan.");
@@ -2846,7 +2849,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
       const srcUrl = from === "suara" ? (ttsUrl || voiceUrl) : musicUrl;
       if (!srcUrl) throw new Error(from === "suara" ? "Belum ada suara (TTS/rekaman). Buat di menu Audio dulu." : "Belum ada musik di track.");
-      const dur = await getAudioDuration(srcUrl);
+      
+      // ⚡ OPTIMIZE: Gunakan durasi audio yang sudah tersimpan di state terlebih dahulu!
+      const knownDur = from === "suara" ? (srcUrl === ttsUrl ? ttsDur : voiceDur) : musicDur;
+      const dur = knownDur || (await getAudioDuration(srcUrl));
       if (!dur) throw new Error("Durasi audio tidak terbaca.");
 
       if (from === "suara" && ttsText.trim() && (srcUrl === ttsUrl)) {
