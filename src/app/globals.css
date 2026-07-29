@@ -1979,3 +1979,5 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6e-health.error{border-color:#ef444466;color:#fecaca;background:#3a0b0bd9;}
 .v6e-health:active{transform:scale(.98);}
 @media (max-width:420px){.v6e-health{max-width:38vw;font-size:9.8px;padding:3px 7px;}}
+/* 🛡️ v18.1: di HP sempit, prioritaskan chip Guard daripada teks tips panjang */
+@media (max-width:420px){.v6e-timerow-tip{display:none}.v6e-health{max-width:58vw}}

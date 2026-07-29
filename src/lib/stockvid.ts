@@ -4,7 +4,7 @@
 
 import { fetchJsonResult } from "@/lib/guard/net";
 
-export type VidPick = { id: number; src: string; sd: string; thumb: string; dur: number; by: string; link: string; w?: number; h?: number };
+export type VidPick = { id: number; src: string; sd: string; thumb: string; dur: number; by: string; link: string; w?: number; h?: number; provider?: string };
 
 export type CariHasil = { ok: boolean; hasil: VidPick[]; total: number; err: string };
 

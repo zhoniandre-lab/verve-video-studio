@@ -16,6 +16,8 @@ async function loadTs(rel) {
 const net = await loadTs("../src/lib/guard/net.ts");
 const tl = await loadTs("../src/lib/guard/timeline.ts");
 const sc = await loadTs("../src/lib/guard/scene.ts");
+const job = await loadTs("../src/lib/guard/job.ts");
+const prod = await loadTs("../src/lib/guard/production.ts");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -92,6 +94,26 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("scene action dikenali", sc.classifySceneKind("anak berlari panik dikejar hujan") === "action");
   T("scene emosi dikenali", sc.scenePlan("ibu menangis rindu anak").kind === "emotion");
   T("plan punya durasi waras", sc.scenePlan("wide shot desa saat senja").duration > 3);
+}
+
+// 7) job guard ala MoneyPrinter: tahap/progress/recovery log
+{
+  let j = job.createJob("video", "Rakit video");
+  j = job.setJobStage(j, "script", "running");
+  j = job.setJobStage(j, "script", "done", "script siap");
+  T("job progress naik saat stage done", j.progress >= 10 && j.logs.length >= 3, job.summarizeJob(j));
+  j = job.failJob(j, "materials", "gudang sibuk");
+  T("job gagal punya state error", j.state === "error" && j.stages.some(s => s.id === "materials" && s.state === "error"));
+}
+
+// 8) production helpers: 3 varian + upload kit
+{
+  const vs = prod.moneyPrinterVariants();
+  T("3 varian produksi tersedia", vs.length === 3 && vs.some(v => v.id === "shorts"));
+  const checklist = prod.productionChecklist({ hasScript: true, hasRender: false });
+  T("checklist produksi membedakan done/belum", checklist.some(c => c.done) && checklist.some(c => !c.done));
+  const kit = prod.makeUploadKitText({ title: "Doa Ibu", description: "desc", tags: ["ibu", "lagu"], hashtags: "#doaibu", hasVideo: true, checklist });
+  T("upload kit memuat judul/tags/checklist", /Doa Ibu/.test(kit) && /ibu, lagu/.test(kit) && /CHECKLIST/.test(kit));
 }
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI GUARD GAGAL — JANGAN RILIS`); process.exit(1); }

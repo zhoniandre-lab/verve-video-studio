@@ -10,6 +10,7 @@ import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
+import { makeUploadKitText, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -1395,6 +1396,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     setSlideOptsById(cur => ({ ...cur, [id]: { ...(cur[id] || {}), ...patch } }));
   }, [pushHist]);
+  function applyGlobalSpeed(v: number) {
+    const sp = Math.round(clampN(v, 0.3, 3) * 100) / 100;
+    if (!slides.length) return;
+    pushHist();
+    setSlideOptsById(cur => {
+      const nx = { ...cur };
+      slides.forEach(s => { nx[s.id] = { ...(nx[s.id] || {}), speed: sp }; });
+      return nx;
+    });
+    flash(`⚡ Semua klip disetel ${sp}× — ala global speed MoneyPrinter`);
+  }
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
   // bersihkan seleksi teks kalau klipnya hilang / teksnya dihapus / pindah pilih klip lain (multi-lapis aware)
   useEffect(() => {
@@ -3384,6 +3396,33 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const txt = `=== JUDUL (High CTR) ===\n${meta.titleHighCTR || ""}\n\n=== ALTERNATIF ===\n${(meta.titleAlternatives || []).map((t: string, i: number) => `${i + 1}. ${t}`).join("\n")}\n\n=== DESKRIPSI ===\n${meta.description || ""}\n\n=== TAGS ===\n${(meta.tags || []).join(", ")}\n\n=== HASHTAGS ===\n${meta.hashtags || ""}\n\nDibuat dengan VERVE`;
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `meta_${Date.now()}.txt`);
   }
+  function downloadUploadKit() {
+    if (!meta) { flash("📋 Buat metadata dulu, baru paket upload bisa dirakit"); return; }
+    const checklist = productionChecklist({
+      hasScript: slides.length > 0,
+      hasMaterials: slides.some(s => !!s.imageUrl || !!s.videoUrl),
+      hasAudio: !!(musicUrl || ttsUrl || voiceUrl),
+      hasSubtitle: !!(lyrScan.list.length || capWords.length),
+      hasRender: !!videoBlob,
+      hasMetadata: !!meta,
+      hasThumbnail: !!thumbBlobRef.current,
+    });
+    const txt = makeUploadKitText({
+      title: meta.titleHighCTR || projTitle,
+      description: meta.description || "",
+      tags: meta.tags || [],
+      hashtags: meta.hashtags || "",
+      projectTitle: projTitle,
+      ratio,
+      durationSec: clipsTotal,
+      hasVideo: !!videoBlob,
+      hasThumbnail: !!thumbBlobRef.current,
+      health,
+      checklist,
+    });
+    downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `upload_kit_${Date.now()}.txt`);
+    flash("📦 Paket Upload YouTube terdownload — video & thumbnail tetap unduh dari tombolnya masing-masing");
+  }
 
   /* ---------- RENDER VIDEO ---------- */
   async function doRender() {
@@ -4115,8 +4154,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
-            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, projTitle,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadUploadKit, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
+            applyGlobalSpeed,
           }}
         />
       )}
@@ -5685,6 +5725,12 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
           <div className="v6-chips" style={{ padding: 0 }}>
             {[0.5, 0.7, 1, 1.5, 2, 3].map(v => <button key={v} className={`v6-chip ${sp === v ? "on" : ""}`} onClick={() => A.setOpt(A.selId, { speed: v })}>{v}×</button>)}
           </div>
+          <div className="v6-note">💸 Ala MoneyPrinter: atur cepat semua klip sekaligus kalau ingin versi dreamy / normal / Shorts cepat.</div>
+          <div className="v6-chips" style={{ padding: 0 }}>
+            {([[0.75, "Dreamy semua"], [1, "Normal semua"], [1.18, "Shorts cepat"]] as any[]).map(([v, lb]) => (
+              <button key={lb} className="v6-chip" onClick={() => A.applyGlobalSpeed?.(v)}>⚡ {lb}</button>
+            ))}
+          </div>
         </div>
       </SheetShell>
     );
@@ -6094,6 +6140,7 @@ function EksporSheet({ api: A, onClose }: any) {
                       </div>
                     ))}
                     <button className="v6-btn" style={{ width: "100%", marginTop: 8 }} onClick={A.downloadMetaTxt}>📥 Download metadata (.txt)</button>
+                    <button className="v6-btn" style={{ width: "100%", marginTop: 8, borderColor: "rgba(34,197,94,.45)", color: "#bbf7d0" }} onClick={A.downloadUploadKit}>📦 Paket Upload YouTube</button>
                   </div>
                 )}
                 {/* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */}

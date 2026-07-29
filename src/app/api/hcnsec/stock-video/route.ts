@@ -22,24 +22,28 @@ async function translateQueryWithAI(q: string): Promise<string> {
 }
 
 /**
- * 🎞️🧺 LEMARI VIDEO — pencarian stock video dari DUA gudang gratis:
+ * 🎞️🧺 LEMARI VIDEO — pencarian stock video dari TIGA gudang gratis/aman:
  *   1) Pexels  (PEXELS_API_KEY)  — CDN-nya CORS *, file dipakai LANGSUNG.
  *   2) Pixabay (PIXABAY_API_KEY) — CDN-nya TANPA header CORS (terbukti dicek 2026-07-24),
  *      jadi SEMUA URL-nya (video + thumbnail) dilewatkan GERBANG /api/hcnsec/proxy-audio
  *      supaya 100% aman canvas/fetch. Pixabay minta kredit sumber ditampilkan → kolom `by` diberi "· Pixabay".
- * Keduanya bebas komersial, bebas edit, tanpa atribusi wajib — aman monetisasi YouTube.
+ *   3) Coverr  (COVERR_API_KEY)  — gudang tambahan ala MoneyPrinterTurbo; URL mp4 signed dilewatkan GERBANG
+ *      supaya aman canvas/fetch di HP. Kosong? VERVE tetap jalan Pexels/Pixabay.
+ * Semuanya diperlakukan sebagai stock video bebas pakai sesuai lisensi masing-masing provider.
  *
- * Hasil dua gudang DIANYAM selang-seling (Pexels, Pixabay, Pexels, …) supaya bahan film
- * makin kaya & tidak "itu-itu aja". id Pixabay digeser +900.000.000 biar tak tabrakan
+ * Hasil gudang DIANYAM selang-seling (Pexels, Pixabay, Coverr, …) supaya bahan film
+ * makin kaya & tidak "itu-itu aja". id Pixabay/Coverr digeser biar tak tabrakan
  * dengan id Pexels (penting untuk ANTI-KEMBAR lintas gudang).
  *
  * Salah satu kunci boleh kosong → gudang yang tersedia tetap bekerja (jujur lewat `sumber`).
- * Dua-duanya kosong → 503 TANPA_KUNCI.
+ * Semua kunci kosong → 503 TANPA_KUNCI.
  */
 
 const PEXELS = "https://api.pexels.com/videos/search";
 const PIXABAY = "https://pixabay.com/api/videos/";
+const COVERR = "https://api.coverr.co/videos";
 const ID_GESER_PIXABAY = 900_000_000;
+const ID_GESER_COVERR = 1_800_000_000;
 
 // 🛡️ Penjaga kuota sederhana (per instance serverless): maks 60 cari / 10 menit / IP.
 const jejak = new Map<string, number[]>();
@@ -77,13 +81,14 @@ export async function GET(req: Request) {
 
     const kunciP = process.env.PEXELS_API_KEY || "";
     const kunciX = process.env.PIXABAY_API_KEY || "";
-    if (!kunciP && !kunciX)
+    const kunciC = process.env.COVERR_API_KEY || "";
+    if (!kunciP && !kunciX && !kunciC)
       return NextResponse.json(
         {
           ok: false,
           code: "TANPA_KUNCI",
           error:
-            "Kunci gudang video belum dipasang di server (PEXELS_API_KEY / PIXABAY_API_KEY). Gratis kok bro — ikuti panduan 5 menitnya 🔑",
+            "Kunci gudang video belum dipasang di server (PEXELS_API_KEY / PIXABAY_API_KEY / COVERR_API_KEY). Gratis kok bro — ikuti panduan 5 menitnya 🔑",
         },
         { status: 503 },
       );
@@ -112,7 +117,7 @@ export async function GET(req: Request) {
             .map((v) => {
               const f = pilihFile(v.video_files);
               if (!f) return null;
-              return { id: v.id, dur: v.duration, src: f.src, sd: f.sd, w: f.w, h: f.h, thumb: v.image, by: v.user?.name || "Pexels", link: v.url };
+              return { id: v.id, dur: v.duration, src: f.src, sd: f.sd, w: f.w, h: f.h, thumb: v.image, by: v.user?.name || "Pexels", link: v.url, provider: "pexels" };
             })
             .filter(Boolean);
           return { hasil, total: j.total_results ?? hasil.length };
@@ -148,30 +153,69 @@ export async function GET(req: Request) {
                 thumb: thumb ? gerbang(thumb) : "",
                 by: `${h.user || "Pixabay"} · Pixabay`,
                 link: h.pageURL || "",
+                provider: "pixabay",
               };
             })
             .filter(Boolean);
           return { hasil, total: j.total ?? hasil.length };
         })().catch(() => null);
 
-    const [px, xb] = await Promise.all([janjiPexels, janjiPixabay]);
-    if (!px && !xb)
+    // --- Gudang 3: COVERR (opsional — gudang tambahan ala MoneyPrinterTurbo, lewat GERBANG) ---
+    const janjiCoverr: Promise<{ hasil: any[]; total: number } | null> = !kunciC
+      ? Promise.resolve(null)
+      : (async () => {
+          const url = `${COVERR}?query=${encodeURIComponent(q)}&page_size=${per}&page=${page}&urls=true&sort=popular`;
+          const ac = new AbortController();
+          const t = setTimeout(() => ac.abort(), 12_000);
+          const r = await fetch(url, { headers: { Authorization: `Bearer ${kunciC}` }, signal: ac.signal, cache: "no-store" });
+          clearTimeout(t);
+          if (!r.ok) throw new Error(`COVERR_${r.status}`);
+          const j: any = await r.json();
+          const hasil = ((j.hits || []) as any[])
+            .map((v) => {
+              const urls = v?.urls || {};
+              const src = urls.mp4_download || urls.mp4 || urls.download || "";
+              if (!src) return null;
+              const dur = Math.round(Number.parseFloat(String(v.duration || 0)) || 0);
+              const thumb = v.thumbnail || v.poster || v.image || v.cover || "";
+              const creator = v?.creator?.name || v?.author?.name || v?.creator || v?.author || "Coverr";
+              return {
+                id: ID_GESER_COVERR + Math.abs(String(v.id || src).split("").reduce((a, ch) => ((a * 33) + ch.charCodeAt(0)) | 0, 5381)),
+                dur,
+                src: gerbang(src),
+                sd: gerbang(src),
+                w: Number(v.max_width || v.width || 0) || 0,
+                h: Number(v.max_height || v.height || 0) || 0,
+                thumb: thumb ? gerbang(String(thumb)) : "",
+                by: `${typeof creator === "string" ? creator : "Coverr"} · Coverr`,
+                link: v.canonical_url || v.url || "",
+                provider: "coverr",
+              };
+            })
+            .filter(Boolean);
+          return { hasil, total: j.total || j.total_hits || hasil.length };
+        })().catch(() => null);
+
+    const [px, xb, cv] = await Promise.all([janjiPexels, janjiPixabay, janjiCoverr]);
+    if (!px && !xb && !cv)
       return NextResponse.json(
         {
           ok: false,
           code: "GUDANG_SIBUK",
-          error: "Dua gudang video sama-sama gagal dihubungi — kemungkinan kunci salah/tiket salah tempel, kuota habis, atau gangguan sesaat. Coba lagi ya bro.",
+          error: "Semua gudang video gagal dihubungi — kemungkinan kunci salah/tiket salah tempel, kuota habis, atau gangguan sesaat. Coba lagi ya bro.",
         },
         { status: 502 },
       );
 
-    // 🧺 ANYAM selang-seling: Pexels, Pixabay, Pexels, … → bahan film bercampur, variasi maksimal
+    // 🧺 ANYAM selang-seling: Pexels, Pixabay, Coverr, … → bahan film bercampur, variasi maksimal
     const A = px?.hasil || [];
     const B = xb?.hasil || [];
+    const C = cv?.hasil || [];
     const gabung: any[] = [];
-    for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    for (let i = 0; i < Math.max(A.length, B.length, C.length); i++) {
       if (A[i]) gabung.push(A[i]);
       if (B[i]) gabung.push(B[i]);
+      if (C[i]) gabung.push(C[i]);
     }
 
     return NextResponse.json(
@@ -179,9 +223,9 @@ export async function GET(req: Request) {
         ok: true,
         q,
         page,
-        total: (px?.total || 0) + (xb?.total || 0),
+        total: (px?.total || 0) + (xb?.total || 0) + (cv?.total || 0),
         hasil: gabung,
-        sumber: { pexels: px ? A.length : -1, pixabay: xb ? B.length : -1 }, // -1 = gudang tak tersedia/gagal (jujur)
+        sumber: { pexels: px ? A.length : -1, pixabay: xb ? B.length : -1, coverr: cv ? C.length : -1 }, // -1 = gudang tak tersedia/gagal (jujur)
       },
       { headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" } },
     );

@@ -1797,7 +1797,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                     ) : sc.vid ? (
                       <img className="lh-scene-img" style={{ marginTop: 6, opacity: 0.5 }} src={sc.vid.thumb} alt="calon video" />
                     ) : null}
-                    {sc.vid ? <p className="lh-note" style={{ margin: "4px 0" }}>⏱ {sc.vid.dur} detik · 🎬 {sc.vid.by} · lisensi Pexels (bebas, tanpa atribusi)</p> : null}
+                    {sc.vid ? <p className="lh-note" style={{ margin: "4px 0" }}>⏱ {sc.vid.dur} detik · 🎬 {sc.vid.by} · stock bebas pakai sesuai lisensi provider</p> : null}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} onClick={() => bukaVidSheet(i)}>
                         {sc.vid ? "🔄 Ganti / cari lagi" : "🎞️ Cari video buat adegan ini"}
