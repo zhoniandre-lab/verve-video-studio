@@ -1991,3 +1991,7 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6-jobbox{margin-top:8px;border:1px solid #38bdf855;background:#06121ee6;color:#bae6fd;border-radius:12px;padding:9px 10px;font-size:10px;line-height:1.45;display:flex;flex-direction:column;gap:3px}
 .v6-jobbox b{font-size:10.5px;color:#e0f2fe}.v6-jobbox.done{border-color:#22c55e55;background:#052e1ae6;color:#bbf7d0}.v6-jobbox.error{border-color:#ef444466;background:#3a0b0be6;color:#fecaca}
 .v6-jobbox span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
+
+/* ✅ v18.4 Production checklist langsung di Ekspor */
+.v6-prodcheck{margin-top:8px;border:1px solid #ffffff22;background:#10131acc;border-radius:14px;padding:10px 11px;font-size:10px;color:#cbd5e1}
+.v6-prodcheck b{display:block;color:#fff;font-size:11px;margin-bottom:6px}.v6-prodcheck div{display:flex;flex-wrap:wrap;gap:5px}.v6-prodcheck span{border:1px solid #ffffff1f;border-radius:999px;padding:4px 7px;white-space:nowrap}.v6-prodcheck span.ok{color:#bbf7d0;background:#052e1a99;border-color:#22c55e44}.v6-prodcheck span.todo{color:#d1d5db;background:#11182799}

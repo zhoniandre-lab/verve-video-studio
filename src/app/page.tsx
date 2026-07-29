@@ -12,6 +12,7 @@ import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
 import { applyMoneyPrinterVariant, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
+import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -976,6 +977,11 @@ function SayaPage({ refresh }: { refresh: () => void }) {
       else { localStorage.removeItem("verve_suno_key"); localStorage.removeItem("verve_suno_provider"); alert("API key dihapus — mode gratis aktif."); }
     } catch {}
   }
+  function wipeCacheGudang() {
+    if (!confirm("Bersihkan cache pencarian gudang video? Proyek tidak terhapus.")) return;
+    clearMaterialCache();
+    alert("🧺 Cache gudang video dibersihkan — pencarian berikutnya akan ambil bahan segar.");
+  }
   function wipe() {
     if (!confirm("Hapus SEMUA proyek & data lokal?")) return;
     try { [DRAFTS_KEY, SESSION_KEY, SUNO_TASK_KEY].forEach(k => localStorage.removeItem(k)); refresh(); alert("Bersih! ✨"); } catch {}
@@ -1008,6 +1014,9 @@ function SayaPage({ refresh }: { refresh: () => void }) {
       <div className="v6-cardrow" style={{ cursor: "default", marginTop: 14 }}>
         <span style={{ fontSize: 20 }}>🛡️</span>
         <div className="tt" style={{ fontSize: 12 }}>Hak cipta<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Musik dari generator AI (Suno) = orisinal milikmu. Hati-hati saat upload lagu orang lain — risiko klaim hak cipta tetap tanggung jawab pengguna.</div></div>
+      </div>
+      <div className="v6-cardrow" onClick={wipeCacheGudang}>
+        <span style={{ fontSize: 20 }}>🧺</span><div className="tt">Bersihkan cache gudang video<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Tidak menghapus proyek — hanya memaksa Pexels/Pixabay/Coverr ambil hasil segar.</div></div><span className="arr">›</span>
       </div>
       <div className="v6-cardrow" onClick={wipe}>
         <span style={{ fontSize: 20 }}>🗑</span><div className="tt">Bersihkan semua data lokal</div><span className="arr">›</span>
@@ -6112,6 +6121,16 @@ function EksporSheet({ api: A, onClose }: any) {
   const resIdx = RES_STOPS.indexOf(A.exRes);
   const fpsIdx = FPS_STOPS.indexOf(A.exFps);
   const mbIdx = MBPS_STOPS.indexOf(A.exMbps);
+  const prodChecks = productionChecklist({
+    hasScript: (A.slides || []).length > 0,
+    hasMaterials: (A.slides || []).some((s: any) => !!s.imageUrl || !!s.videoUrl),
+    hasAudio: !!(A.musicUrl || A.hasVoice),
+    hasSubtitle: !!((A.lyrList || []).length || (A.capWords || []).length),
+    hasRender: !!A.videoBlob,
+    hasMetadata: !!A.meta,
+    hasThumbnail: !!A.thumbU,
+  });
+  const prodDone = prodChecks.filter(c => c.done).length;
   return (
     <SheetShell title="Ekspor" onClose={onClose}>
       <div style={{ padding: "0 14px" }}>
@@ -6127,6 +6146,12 @@ function EksporSheet({ api: A, onClose }: any) {
               <span style={{ fontSize: 18 }}>💎</span>
               <div className="tt">Peningkat Ketajaman ✨<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Video lebih jernih & halus (filter ketajaman saat render)</div></div>
               <button className={`v6-toggle ${A.qualitySharp ? "on" : ""}`} />
+            </div>
+            <div className="v6-prodcheck">
+              <b>📋 Checklist Produksi · {prodDone}/{prodChecks.length}</b>
+              <div>
+                {prodChecks.map(c => <span key={c.id} className={c.done ? "ok" : "todo"}>{c.done ? "✅" : "⬜"} {c.label}</span>)}
+              </div>
             </div>
             <div className="v6-xp-block">
               <div className="bh"><b>Resolusi</b><span>Definisi tinggi — pengalaman menonton terbaik</span></div>
