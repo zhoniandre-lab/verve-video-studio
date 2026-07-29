@@ -10,7 +10,8 @@ import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
-import { makeUploadKitText, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
+import { applyMoneyPrinterVariant, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
+import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -1185,6 +1186,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [progress, setProgress] = useState(0);
   const [videoUrl, setVideoUrl] = useState("");
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
+  const [guardJob, setGuardJob] = useState<GuardJob | null>(() => { try { return readJob(); } catch { return null; } });
+  const putGuardJob = useCallback((j: GuardJob) => { setGuardJob(j); saveJob(j); }, []);
   useEffect(() => {
     return () => {
       if (videoUrl) { try { URL.revokeObjectURL(videoUrl); } catch {} }
@@ -3423,6 +3426,20 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `upload_kit_${Date.now()}.txt`);
     flash("📦 Paket Upload YouTube terdownload — video & thumbnail tetap unduh dari tombolnya masing-masing");
   }
+  function saveMoneyPrinterVariants() {
+    if (!slides.length) { flash("⚠️ Tambahkan media dulu sebelum bikin 3 versi draft"); return; }
+    try {
+      const base = buildSnapshot();
+      const vars = moneyPrinterVariants().map(v => applyMoneyPrinterVariant(base, v, uid));
+      const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+      const next = [...vars, ...arr.filter((d: any) => d?.id !== base.id)].slice(0, MAX_DRAFTS);
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+      onSaved();
+      flash("🎲 3 versi draft dibuat: Emosional · Sinematik · Shorts cepat — cek tab Proyek");
+    } catch {
+      flash("⚠️ Gagal bikin variasi — memori HP mungkin penuh, hapus draf lama dulu");
+    }
+  }
 
   /* ---------- RENDER VIDEO ---------- */
   async function doRender() {
@@ -3431,6 +3448,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; });
     setVideoBlob(null);
     setStageText("Menyiapkan render...");
+    let job: GuardJob | null = createJob("render", `Render ${projTitle || "VERVE"}`, [
+      { id: "prepare", label: "Menyiapkan media", progress: 10 },
+      { id: "audio", label: "Mengolah audio", progress: 25 },
+      { id: "render", label: "Render frame", progress: 30 },
+      { id: "package", label: "Simpan hasil", progress: 100 },
+    ]);
+    const jobSet = (j: GuardJob) => { job = j; putGuardJob(j); };
+    jobSet(setJobStage(job, "prepare", "running", "Menyiapkan font, wake-lock, dan media"));
     let wakeLock: any = null;
     let lastBeat = 0; let rendering = false; let relock: any = null; let macetItv: any = null; // 🛡 v14.7 RENDER JAGA
     try {
@@ -3447,6 +3472,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const useSlides = slides.filter(s => s.imageUrl && s.imageUrl.length > 8);
       if (!useSlides.length) throw new Error("Semua klip tidak punya gambar (data terpangkas hemat memori) — rakit ulang draf dari Lahan ya bro.");
       if (useSlides.length !== slides.length) flash(`⚠️ ${slides.length - useSlides.length} klip tanpa gambar dilewati`);
+      if (job) jobSet(setJobStage(job, "prepare", "done", `${useSlides.length} klip siap dirender`));
+      if (job) jobSet(setJobStage(job, "audio", "running", "Mengecek/mencampur audio"));
       const duck = (ttsUrl || voiceUrl) ? 0.4 : 1; // musik diturunkan tipis kalau ada suara
       const parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number; off?: number }[] = [];
       if (musicUrl) parts.push({ url: proxifyAudioUrl(musicUrl), gain: musicVol * duck, fadeIn: musicFadeIn, fadeOut: musicFadeOut, off: musicOff });
@@ -3458,6 +3485,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const singleClean = single && Math.abs(single.gain - 1) < 0.01 && !single.fadeIn && !single.fadeOut && !(single.off && single.off > 0.01);
       if (singleClean) audioUrl = single!.url;
       else if (parts.length >= 1) audioUrl = await mixAudioUrls(parts);
+      if (job) jobSet(setJobStage(job, "audio", parts.length ? "done" : "skipped", parts.length ? `${parts.length} jalur audio siap` : "Tanpa audio"));
 
       const orderedOpts: SlideOpt[] = useSlides.map(s => {
         const o = { ...(slideOptsById[s.id] || {}) } as SlideOpt;
@@ -3472,12 +3500,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       // dipencet → setup (decode lagu + analisis FFT + muat gambar ≈ 30–60d) ikut terproyeksi →
       // ETA bohong menjerit "34 menit" di progres 2% (laporan bro). Sekarang: laju frame murni.
       let rEta0 = 0;
+      let lastJobPct = 0;
       const renderEta = (p: number): string => {
         if (!rEta0) return "menghitung…";
         const dt = (performance.now() - rEta0) / 1000;
         const eta = Math.ceil((dt / Math.max(p, 0.01)) * (1 - p));
         return formatDur(Math.max(0, Math.min(eta, 5999)));
       };
+      if (job) jobSet(setJobStage(job, "render", "running", `Render ${exRes}p/${exFps}fps dimulai`));
       const blob = await renderSlideshow({
         images: useSlides.map(s => s.imageUrl),
         videos: useSlides.map(s => s.videoUrl || null), // 🎬 v11.8: klip animasi ikut di-render
@@ -3500,7 +3530,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         bgMode, bgColor,
         sharpen: qualitySharp,
         mobileOptimized: isMobile,
-        onProgress: (p: number) => { lastBeat = performance.now(); /* 🛡 v14.7 denyut */ if (!rEta0 && p > 0) rEta0 = performance.now(); setProgress(p); if (p > 0.005 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); },
+        onProgress: (p: number) => { lastBeat = performance.now(); /* 🛡 v14.7 denyut */ if (!rEta0 && p > 0) rEta0 = performance.now(); setProgress(p); if (p > 0.005 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); const jp = Math.floor(p * 10) * 10; if (job && jp >= lastJobPct + 10) { lastJobPct = jp; job = { ...job, current: "render", progress: Math.max(job.progress, Math.min(95, 30 + Math.round(p * 65))), updatedAt: Date.now() }; putGuardJob(job); } },
         onStage: (s: string) => setStageText(s),
       } as any);
       // v8.1 SANITY: file super-kecil untuk durasi panjang = render busuk (frame kosong)
@@ -3508,14 +3538,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (durGuess > 15 && blob.size < 150_000) {
         throw new Error(`File render cuma ${(blob.size / 1024).toFixed(0)} KB untuk video ${Math.round(durGuess)} detik — ada yang ganjil. Coba Render Ulang ya bro.`);
       }
+      if (job) jobSet(setJobStage(job, "render", "done", `Blob ${(blob.size / 1048576).toFixed(1)}MB jadi`));
+      if (job) jobSet(setJobStage(job, "package", "running", "Menyimpan hasil ke brankas"));
       setVideoBlob(blob);
       setVideoUrl(URL.createObjectURL(blob));
       // 📼🔒 v13.6: SALIN ke brankas — hasil selamat walau Chrome keburu ditutup sebelum download
       vaultSave(blob, `${(projTitle || "verve").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 40)}_${Date.now()}.${(blob.type || "").includes("mp4") ? "mp4" : "webm"}`);
+      if (job) jobSet(finishJob(job, "Video selesai & masuk brankas"));
       setProgress(1); flash("✅ Video selesai!");
       persistSnapshot(true);
       genMetadata().catch(() => {});
-    } catch (e: any) { setErr(e); }
+    } catch (e: any) { if (job) jobSet(failJob(job, job.current || "render", e?.message || String(e || "render gagal"))); setErr(e); }
     finally { rendering = false; if (relock) document.removeEventListener("visibilitychange", relock); if (macetItv) clearInterval(macetItv); try { wakeLock?.release?.(); } catch {} } // 🛡 v14.7: jagaan dicopot rapi
     setLoading(null); setTimeout(() => setStageText(""), 2500);
   }
@@ -3954,6 +3987,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         >
           {health.icon} {health.label}{health.warn || health.error ? ` · ${health.error ? health.error + " error" : health.warn + " catatan"}` : ""}
         </button>
+        {guardJob && (
+          <button type="button" className={`v6e-job ${guardJob.state}`} title={(guardJob.logs || []).slice(-8).join("\n")} onClick={() => flash(summarizeJob(guardJob))}>
+            {summarizeJob(guardJob)}
+          </button>
+        )}
         <span className="v6e-timerow-tip">🕒 penggaris detik di track — cubit utk zoom</span>
       </div>
 
@@ -4154,7 +4192,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
-            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadUploadKit, projTitle,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
           }}
@@ -6119,6 +6157,7 @@ function EksporSheet({ api: A, onClose }: any) {
             <div style={{ fontSize: 10, color: "#8b8b98", marginTop: 6, lineHeight: 1.5 }}>Untuk video lagu, Mode Ngebut selesai ≈ 2–3× lebih cepat & tetap mulus buat YouTube/Reels. Render offline tetap butuh waktu nyata per durasi video — jangan kunci layar ya bro.</div>
             {A.estMB > 800 && <div className="v6-risk">🐘 Estimasi {A.estMB.toFixed(0)} MB itu RAKSASA buat HP (memori penuh, render lambat). Turunkan bitrate ke 8–12 Mbps — buat video lagu tetap kinclong.</div>}
             {A.exRes >= 1440 && <div className="v6-risk">⚠️ Render 2K/4K di HP butuh waktu & RAM besar. Kalau gagal, turunkan ke 1080p ya bro.</div>}
+            <button className="v6-btn" style={{ width: "100%", marginTop: 8, borderColor: "rgba(59,130,246,.45)", color: "#bfdbfe" }} onClick={A.saveMoneyPrinterVariants}>🎲 Simpan 3 versi draft (Emosi · Sinematik · Shorts)</button>
             <button className="v6-bigcta" onClick={A.doRender} disabled={A.loading === "render"}>
               {A.loading === "render" ? `⏳ Rendering… ${Math.round(A.progress * 100)}%` : A.videoUrl ? "🔄 Render Ulang" : "Ekspor"}</button>
             {!!A.videoUrl && (

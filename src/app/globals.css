@@ -1981,3 +1981,8 @@ b.ok, b.warn, b.err { color:inherit; }
 @media (max-width:420px){.v6e-health{max-width:38vw;font-size:9.8px;padding:3px 7px;}}
 /* 🛡️ v18.1: di HP sempit, prioritaskan chip Guard daripada teks tips panjang */
 @media (max-width:420px){.v6e-timerow-tip{display:none}.v6e-health{max-width:58vw}}
+
+/* 💸 v18.2 Job chip — log ringkas proses panjang ala MoneyPrinter */
+.v6e-job{display:inline-flex;align-items:center;gap:4px;max-width:34vw;min-height:24px;padding:4px 8px;border-radius:999px;border:1px solid #38bdf855;background:#06121ecc;color:#bae6fd;font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;flex:0 1 auto;backdrop-filter:blur(8px)}
+.v6e-job.done{border-color:#22c55e55;color:#bbf7d0;background:#052e1acc}.v6e-job.error{border-color:#ef444466;color:#fecaca;background:#3a0b0bd9}.v6e-job:active{transform:scale(.98)}
+@media (max-width:420px){.v6e-job{max-width:42vw;font-size:9.4px;padding:3px 7px}}

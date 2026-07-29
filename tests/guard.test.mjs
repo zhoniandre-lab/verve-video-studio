@@ -114,6 +114,9 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("checklist produksi membedakan done/belum", checklist.some(c => c.done) && checklist.some(c => !c.done));
   const kit = prod.makeUploadKitText({ title: "Doa Ibu", description: "desc", tags: ["ibu", "lagu"], hashtags: "#doaibu", hasVideo: true, checklist });
   T("upload kit memuat judul/tags/checklist", /Doa Ibu/.test(kit) && /ibu, lagu/.test(kit) && /CHECKLIST/.test(kit));
+  const snap = { id: "d0", title: "Dasar", ratio: "16:9", transition: "dissolve", transitionDur: 0.6, capStyle: "capcut", slideOptsById: { s1: { dur: 3 } } };
+  const vv = prod.applyMoneyPrinterVariant(snap, vs[2], (p) => `${p}_baru`);
+  T("apply varian bikin draft baru + speed global", vv.id === "d_baru" && vv.ratio === "9:16" && vv.slideOptsById.s1.speed === vs[2].globalSpeed);
 }
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI GUARD GAGAL — JANGAN RILIS`); process.exit(1); }

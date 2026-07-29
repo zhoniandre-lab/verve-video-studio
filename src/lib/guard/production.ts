@@ -63,6 +63,24 @@ function fmtDur(s?: number): string {
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+export function applyMoneyPrinterVariant<T extends { id?: string; title?: string; updatedAt?: number; ratio?: string; transition?: string; transitionDur?: number; capStyle?: string; slideOptsById?: Record<string, any> }>(snap: T, variant: VideoVariant, makeId: (prefix: string) => string): T {
+  const slideOptsById: Record<string, any> = {};
+  Object.entries(snap.slideOptsById || {}).forEach(([sid, opt]) => {
+    slideOptsById[sid] = { ...(opt || {}), speed: variant.globalSpeed, trans: variant.transition, transDur: variant.transitionDur };
+  });
+  return {
+    ...snap,
+    id: makeId("d"),
+    title: `${String(snap.title || "VERVE").slice(0, 62)} · ${variant.label}`.slice(0, 80),
+    updatedAt: Date.now(),
+    ratio: variant.ratio,
+    transition: variant.transition,
+    transitionDur: variant.transitionDur,
+    capStyle: variant.captionStyle,
+    slideOptsById,
+  };
+}
+
 export function makeUploadKitText(i: UploadKitInput): string {
   const checklist = i.checklist || [];
   return [
