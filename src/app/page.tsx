@@ -3408,19 +3408,38 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const txt = `=== JUDUL (High CTR) ===\n${meta.titleHighCTR || ""}\n\n=== ALTERNATIF ===\n${(meta.titleAlternatives || []).map((t: string, i: number) => `${i + 1}. ${t}`).join("\n")}\n\n=== DESKRIPSI ===\n${meta.description || ""}\n\n=== TAGS ===\n${(meta.tags || []).join(", ")}\n\n=== HASHTAGS ===\n${meta.hashtags || ""}\n\nDibuat dengan VERVE`;
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `meta_${Date.now()}.txt`);
   }
-  function downloadUploadKit() {
-    if (!meta) { flash("📋 Buat metadata dulu, baru paket upload bisa dirakit"); return; }
+  function audioSourcesForUploadKit() {
+    const out: { kind: string; name?: string; status?: "ok" | "warn" | "info"; note?: string; urlKind?: string }[] = [];
+    if (musicUrl) {
+      const isAi = /^https?:/i.test(musicUrl) && /kie\.ai|suno|apiframe|sunor|aimusic|cdn|r2\.dev/i.test(musicUrl);
+      const isBlob = musicUrl.startsWith("blob:");
+      const isData = musicUrl.startsWith("data:");
+      out.push({
+        kind: "Musik",
+        name: musicName || "Lagu",
+        status: isAi ? "ok" : "warn",
+        urlKind: isAi ? "AI/generated" : isBlob ? "blob/ekstrak" : isData ? "upload lokal" : "link online",
+        note: isAi ? "Musik AI/orisinal — risiko klaim rendah" : "Pastikan sumber musik bebas hak cipta atau milik sendiri",
+      });
+    }
+    if (ttsUrl) out.push({ kind: "Narasi TTS", status: "ok", urlKind: ttsUrl.startsWith("blob:") ? "blob" : "generated", note: "Suara sintetis dari teks kamu sendiri" });
+    if (voiceUrl) out.push({ kind: "Rekaman suara", status: "ok", urlKind: voiceUrl.startsWith("blob:") ? "rekaman HP" : "audio", note: "Suara sendiri / rekaman pengguna" });
+    if (ambientUrl) out.push({ kind: "Ambient", name: ambientName || "Ambient audio", status: "warn", urlKind: ambientUrl.startsWith("data:") ? "upload lokal" : "audio", note: "Pastikan ambient bebas lisensi bila bukan bawaan/orisinal" });
+    return out;
+  }
+  function buildUploadKitText(): string | null {
+    if (!meta) { flash("📋 Buat metadata dulu, baru paket upload bisa dirakit"); return null; }
     const checklist = productionChecklist({
       hasScript: slides.length > 0,
       hasMaterials: slides.some(s => !!s.imageUrl || !!s.videoUrl),
-      hasAudio: !!(musicUrl || ttsUrl || voiceUrl),
+      hasAudio: !!(musicUrl || ttsUrl || voiceUrl || ambientUrl),
       hasSubtitle: !!(lyrScan.list.length || capWords.length),
       hasRender: !!videoBlob,
       hasMetadata: !!meta,
       hasThumbnail: !!thumbBlobRef.current,
     });
     const stockSources = slides.map((s, i) => ({ scene: i + 1, ...((slideOptsById[s.id] as any)?.stock || {}) })).filter((x: any) => x.provider || x.by || x.link || x.id);
-    const txt = makeUploadKitText({
+    return makeUploadKitText({
       title: meta.titleHighCTR || projTitle,
       description: meta.description || "",
       tags: meta.tags || [],
@@ -3433,7 +3452,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       health,
       checklist,
       sources: stockSources,
+      audioSources: audioSourcesForUploadKit(),
     });
+  }
+  async function copyUploadKit() {
+    const txt = buildUploadKitText();
+    if (!txt) return;
+    if (await copyTxt(txt)) flash("📋 Paket Upload lengkap tersalin — tinggal tempel ke YouTube/WA/Notes");
+  }
+  function downloadUploadKit() {
+    const txt = buildUploadKitText();
+    if (!txt) return;
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `upload_kit_${Date.now()}.txt`);
     flash("📦 Paket Upload YouTube terdownload — video & thumbnail tetap unduh dari tombolnya masing-masing");
   }
@@ -4203,7 +4232,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
-            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadUploadKit, saveMoneyPrinterVariants, projTitle,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
           }}
@@ -6213,6 +6242,7 @@ function EksporSheet({ api: A, onClose }: any) {
                     ))}
                     <button className="v6-btn" style={{ width: "100%", marginTop: 8 }} onClick={A.downloadMetaTxt}>📥 Download metadata (.txt)</button>
                     <button className="v6-btn" style={{ width: "100%", marginTop: 8, borderColor: "rgba(34,197,94,.45)", color: "#bbf7d0" }} onClick={A.downloadUploadKit}>📦 Paket Upload YouTube</button>
+                    <button className="v6-btn" style={{ width: "100%", marginTop: 8, borderColor: "rgba(59,130,246,.45)", color: "#bfdbfe" }} onClick={A.copyUploadKit}>📋 Salin Paket Upload lengkap</button>
                   </div>
                 )}
                 {/* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */}

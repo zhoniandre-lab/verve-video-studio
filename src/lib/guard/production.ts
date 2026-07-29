@@ -56,6 +56,7 @@ export type UploadKitInput = {
   health?: { label?: string; short?: string; level?: string } | null;
   checklist?: { id: string; label: string; done: boolean }[];
   sources?: { scene?: number; provider?: string; by?: string; link?: string; id?: number | string; dur?: number }[];
+  audioSources?: { kind: string; name?: string; status?: "ok" | "warn" | "info"; note?: string; urlKind?: string }[];
 };
 
 function fmtDur(s?: number): string {
@@ -85,6 +86,7 @@ export function applyMoneyPrinterVariant<T extends { id?: string; title?: string
 export function makeUploadKitText(i: UploadKitInput): string {
   const checklist = i.checklist || [];
   const sources = (i.sources || []).filter((s) => s && (s.provider || s.by || s.link || s.id));
+  const audioSources = (i.audioSources || []).filter((s) => s && (s.kind || s.name || s.note));
   return [
     "=== VERVE UPLOAD KIT ===",
     `Proyek: ${i.projectTitle || i.title || "VERVE"}`,
@@ -111,6 +113,9 @@ export function makeUploadKitText(i: UploadKitInput): string {
     "",
     "=== SUMBER STOCK VIDEO ===",
     ...(sources.length ? sources.map((s) => `${s.scene ? `Adegan ${s.scene}: ` : ""}${s.provider || "stock"}${s.by ? ` · ${s.by}` : ""}${s.id ? ` · id ${s.id}` : ""}${s.dur ? ` · ${s.dur}s` : ""}${s.link ? ` · ${s.link}` : ""}`) : ["Tidak ada stock video tercatat / proyek memakai gambar lokal atau AI."]),
+    "",
+    "=== SUMBER AUDIO / HAK CIPTA ===",
+    ...(audioSources.length ? audioSources.map((s) => `${s.status === "warn" ? "⚠️" : s.status === "ok" ? "✅" : "ℹ️"} ${s.kind}${s.name ? `: ${s.name}` : ""}${s.urlKind ? ` · ${s.urlKind}` : ""}${s.note ? ` — ${s.note}` : ""}`) : ["Tidak ada audio tercatat."]),
     "",
     "=== CATATAN UPLOAD ===",
     "1. Upload video MP4 dari tombol Download video.",
