@@ -7,7 +7,11 @@ export type VidPick = { id: number; src: string; sd: string; thumb: string; dur:
 export type CariHasil = { ok: boolean; hasil: VidPick[]; total: number; err: string };
 
 export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariHasil> {
-  const query = q.trim().replace(/\s+/g, " ").slice(0, 60);
+  // 🩹 v16.3 AUTO-TRANSLATOR FOR MANUAL SEARCH:
+  // Terjemahkan kata kunci pencarian manual dari bahasa Indonesia ke Inggris menggunakan kamus ID_EN kita,
+  // agar pencarian kata manual (seperti "Ibu menangis" atau "sawah") menghasilkan ratusan video stock yang presisi!
+  const translated = terjemahkanKueri(q);
+  const query = translated.trim().replace(/\s+/g, " ").slice(0, 60);
   if (query.length < 2) return { ok: false, hasil: [], total: 0, err: "Kata kunci terlalu pendek bro." };
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), 15000); // jam pengaman per pencarian
@@ -86,6 +90,16 @@ const ID_EN: Record<string, string> = {
   pedagang: "merchant", penjual: "seller", petani: "farmer", nelayan: "fisherman",
   supir: "driver", rakyat: "people", ramai: "crowded", sepi_sekali: "lonely",
 };
+
+export function terjemahkanKueri(q: string): string {
+  const tok = (q || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const hasil: string[] = [];
+  tok.forEach(w => {
+    const en = ID_EN[w] || w;
+    if (!hasil.includes(en)) hasil.push(en);
+  });
+  return hasil.join(" ");
+}
 
 /* 🎬 v13.11.2 PETA EMOJI KARAKTER & EMO — buat kueri sinematik "ibu & anak kenangan, sedih terasa". */
 const PERAN_EN: Record<string, string> = {

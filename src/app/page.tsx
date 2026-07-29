@@ -2871,6 +2871,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           } else whisperErr = "AI tak terjangkau (jaringan)";
         } catch { whisperErr = "AI tak terjangkau (jaringan)"; }
         if (!spans) { setStageText("🧮 Menaksir irama lirik (perkiraan cerdas)..."); spans = estimateLyricLines(lines, dur); }
+        
+        // 🩹 v16.4 SAFE CAPWORDS INTEGRATION FOR LYRICS:
+        // Konversi spans (LineSpan) kembali menjadi flat CapWord array untuk di-set ke capWords
+        const flatWords: CapWord[] = [];
+        spans.forEach((sp, li) => {
+          sp.kws.forEach(k => {
+            flatWords.push({ text: k.w, start: k.start, end: k.end, line: li });
+          });
+        });
+        setCapWords(flatWords);
+
         const style = lyricTextStyle(ccTpl, ccSize, ccY);
         const texts: ClipText[] = spans.map((sp, i) => ({
           id: uid("lyr"),
@@ -2919,6 +2930,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         pushHist();
         bersihkanLirikLama(); // 🧹 v13.27
         if (capWords.length) setCapWords([]); // 📝👁️ v13.24: lapisan melayang dikosongkan — tak dobel & tak ghost
+        
+        // 🩹 v16.4 SAFE CAPWORDS INTEGRATION FOR TTS:
+        setCapWords(words);
+        
         const textsSuara = capWordsToClips(words, ccTpl, ccSize, ccY);
         insertFloatingTexts(textsSuara);
         seekPreview(textsSuara[0]?.start || 0); // jarum lompat → TAMPIL seketika walau belum tekan ▶
@@ -2998,6 +3013,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         pushHist();
         bersihkanLirikLama(); // 🧹 v13.27
         if (capWords.length) setCapWords([]);
+        
+        // 🩹 v16.4 SAFE CAPWORDS INTEGRATION:
+        // Simpan data koordinat kata Whisper asli ke state capWords, agar tombol "Auto Lyric-Slicer" di menu Sihir Film
+        // bisa mendeteksi kata lirik beserta timestamp presisinya untuk memotong slide video secara otomatis!
+        setCapWords(words);
+        
         const textsCap = capWordsToClips(words, ccTpl, ccSize, ccY);
         insertFloatingTexts(textsCap);
         seekPreview(textsCap[0]?.start || 0);
