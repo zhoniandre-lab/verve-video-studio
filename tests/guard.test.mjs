@@ -20,6 +20,7 @@ const job = await loadTs("../src/lib/guard/job.ts");
 const prod = await loadTs("../src/lib/guard/production.ts");
 const mc = await loadTs("../src/lib/guard/material-cache.ts");
 const pb = await loadTs("../src/lib/guard/project-backup.ts");
+const cb = await loadTs("../src/lib/guard/cloud-brankas.ts");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -138,7 +139,16 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("nama backup aman", /^Doa_Ibu_1234\.json$/.test(pb.safeBackupName("Doa Ibu!!!", 1234)), pb.safeBackupName("Doa Ibu!!!", 1234));
 }
 
-// 10) production helpers: 3 varian + upload kit
+// 10) cloud brankas helpers: aman untuk nama/path/ukuran
+{
+  T("cloudConfigured butuh url+service key", cb.cloudConfigured("https://abc.supabase.co", "x".repeat(30)) === true && cb.cloudConfigured("", "x".repeat(30)) === false);
+  T("safeCloudName bersih + json", cb.safeCloudName("Doa Ibu!!!") === "Doa_Ibu.json", cb.safeCloudName("Doa Ibu!!!"));
+  const path = cb.cloudBackupPath("Doa Ibu.json", Date.UTC(2026, 6, 30));
+  T("cloudBackupPath folder tanggal", /^backups\/2026\/07\/30\//.test(path), path);
+  T("byteLen unicode > char len", cb.byteLen("ibu 💛") > "ibu 💛".length);
+}
+
+// 11) production helpers: 3 varian + upload kit
 {
   const vs = prod.moneyPrinterVariants();
   T("3 varian produksi tersedia", vs.length === 3 && vs.some(v => v.id === "shorts"));

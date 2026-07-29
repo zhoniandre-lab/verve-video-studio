@@ -74,14 +74,26 @@ export async function GET(req: Request) {
     const rawQ = (searchParams.get("q") || "").trim().slice(0, 80);
     const page = Math.max(1, Math.min(40, parseInt(searchParams.get("page") || "1", 10) || 1));
     const per = Math.max(3, Math.min(15, parseInt(searchParams.get("per") || "8", 10) || 8));
+
+    const kunciP = process.env.PEXELS_API_KEY || "";
+    const kunciX = process.env.PIXABAY_API_KEY || "";
+    const kunciC = process.env.COVERR_API_KEY || "";
+    if (searchParams.get("status") === "1" || searchParams.get("status") === "true") {
+      const providers = { pexels: !!kunciP, pixabay: !!kunciX, coverr: !!kunciC };
+      const active = Object.values(providers).filter(Boolean).length;
+      return NextResponse.json({
+        ok: true,
+        providers,
+        active,
+        total: 3,
+        note: active ? `${active}/3 gudang video aktif` : "Belum ada kunci gudang video aktif di server",
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
     if (!rawQ)
       return NextResponse.json({ ok: false, error: "q (kata kunci) wajib diisi" }, { status: 400 });
 
     const q = await translateQueryWithAI(rawQ);
 
-    const kunciP = process.env.PEXELS_API_KEY || "";
-    const kunciX = process.env.PIXABAY_API_KEY || "";
-    const kunciC = process.env.COVERR_API_KEY || "";
     if (!kunciP && !kunciX && !kunciC)
       return NextResponse.json(
         {

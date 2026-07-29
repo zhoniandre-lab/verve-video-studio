@@ -3455,6 +3455,24 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     downloadBlob(new Blob([JSON.stringify(env, null, 2)], { type: "application/json;charset=utf-8" }), safeBackupName(snap.title || projTitle));
     flash("💾 Backup proyek JSON terdownload — simpan di Drive/WA biar aman");
   }
+  async function uploadProjectBackupCloud() {
+    const snap = buildSnapshot();
+    if (!snap.slides.length) { flash("⚠️ Belum ada isi proyek untuk di-upload cloud"); return; }
+    setLoading("cloudbackup"); setError("");
+    try {
+      const env = makeProjectBackupEnvelope(snap);
+      const r = await fetch("/api/hcnsec/brankas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: safeBackupName(snap.title || projTitle), project: env }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || `Cloud error ${r.status}`);
+      await copyTxt(String(d.url || ""));
+      flash("☁️ Backup tersimpan di Supabase Storage — link cloud disalin ke clipboard");
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
+  }
   async function importProjectBackupFile(f?: File | null) {
     if (!f) return;
     try {
@@ -4294,7 +4312,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
-            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, importProjectBackupFile,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, importProjectBackupFile,
             downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
@@ -6246,6 +6264,7 @@ function EksporSheet({ api: A, onClose }: any) {
               <p>Selamatkan proyek ke file JSON — bisa dipindah HP atau dipulihkan kalau cache Chrome ngaco.</p>
               <div>
                 <button className="v6-chip" onClick={A.downloadProjectBackup}>📤 Backup JSON</button>
+                <button className="v6-chip" disabled={A.loading === "cloudbackup"} onClick={A.uploadProjectBackupCloud}>{A.loading === "cloudbackup" ? "⏳ Upload…" : "☁️ Upload Cloud"}</button>
                 <label className="v6-chip" style={{ cursor: "pointer" }}>📥 Restore JSON
                   <input type="file" accept="application/json,.json" hidden onChange={(e) => { A.importProjectBackupFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
                 </label>
