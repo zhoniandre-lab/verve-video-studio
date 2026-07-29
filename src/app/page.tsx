@@ -5275,23 +5275,28 @@ function SihirFilmSheet({ api, onClose }: any) {
           <button className={`v6-toggle ${syncAudio ? "on" : ""}`} />
         </div>
 
-        {/* ⚡ PREMIUM BEAT-SLICER BUTTON */}
-        <button
-          className="v6-bigcta"
-          style={{ marginTop: 12, width: "100%", background: "linear-gradient(135deg, var(--v6-teal), var(--v6-teal2))", color: "#fff", fontWeight: 800 }}
-          onClick={autoBeatSlice}
-        >
-          ⚡ Auto Beat-Slicer (Potong Adegan Ikut Beat Lagu)
-        </button>
+        {/* 🤖 ALAT POTONG OTOMATIS AI (SMART CUTTERS) */}
+        <div style={{ marginTop: 14, padding: "10px 8px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#a78bfa", marginBottom: 6, textAlign: "center" }}>🤖 ASISTEN PEMOTONG OTOMATIS AI</div>
+          
+          {/* 🧠 SMART LYRIC-SLICER BUTTON */}
+          <button
+            className="v6-bigcta"
+            style={{ width: "100%", background: "linear-gradient(135deg, #8b5cf6, #7c3aed)", color: "#fff", fontWeight: 800 }}
+            onClick={autoLyricSlice}
+          >
+            🧠 Auto Lyric-Slicer (Potong Adegan Ikut Lirik & Kata Kunci)
+          </button>
 
-        {/* 🧠 SMART LYRIC-SLICER BUTTON */}
-        <button
-          className="v6-bigcta"
-          style={{ marginTop: 10, width: "100%", background: "linear-gradient(135deg, #a78bfa, #8b5cf6)", color: "#fff", fontWeight: 800 }}
-          onClick={autoLyricSlice}
-        >
-          🧠 Auto Lyric-Slicer (Potong Adegan Ikut Lirik & Kata Kunci)
-        </button>
+          {/* ⚡ PREMIUM BEAT-SLICER BUTTON */}
+          <button
+            className="v6-bigcta"
+            style={{ marginTop: 8, width: "100%", background: "linear-gradient(135deg, var(--v6-teal), var(--v6-teal2))", color: "#fff", fontWeight: 800 }}
+            onClick={autoBeatSlice}
+          >
+            ⚡ Auto Beat-Slicer (Potong Adegan Ikut Beat Lagu)
+          </button>
+        </div>
 
         <div className="v6-note">💡 Setelah memilih gaya, Anda tetap bebas mengedit, memangkas, atau menambahkan elemen lain di timeline studio!</div>
       </div>
