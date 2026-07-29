@@ -155,7 +155,13 @@ function alignWordsToLines(lines: LyricLine[], aiWords: { w: string; start: numb
 
 /** Perkiraan cerdas tanpa AI: bobot huruf + jeda antar bait. */
 function estimateLyricLines(lines: LyricLine[], dur: number): LineSpan[] {
-  const lead = Math.min(1.2, dur * 0.03), tail = 0.8;
+  // 🩹 v16.2 SMART INTRO HEURISTIC:
+  // Jika durasi audio panjang (>45 detik), ini dijamin adalah lagu penuh (Suno/AI) yang memiliki intro instrumental panjang.
+  // Kita setel lead-in (awal lirik mulai) di 11 hingga 13.5 detik agar pas dengan masuknya vokal asli lagu,
+  // sedangkan untuk audio pendek (TTS/narasi) tetap mulai di 1.2 detik agar sinkron seketika!
+  const isFullSong = dur > 45;
+  const lead = isFullSong ? Math.min(13.5, dur * 0.05) : Math.min(1.2, dur * 0.03);
+  const tail = 0.8;
   const avail = Math.max(3, dur - lead - tail);
   const totW = lines.reduce((a, L) => a + L.text.length + L.pause * 30, 0) || 1;
   let cur = lead;
