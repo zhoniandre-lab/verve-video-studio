@@ -1,6 +1,25 @@
 import { NextResponse } from "next/server";
+import { chat } from "@/lib/hcnsec";
 
 export const dynamic = "force-dynamic";
+
+// 🩹 v16.5 AI-POWERED QUERY TRANSLATOR (Kecerdasan Otak Sempurna):
+// Kita panggil Chat AI (Llama/GPT) di backend secara serverless untuk menerjemahkan query lo
+// dari bahasa Indonesia (atau bahasa lain) menjadi kata kunci pencarian visual Inggris (Pexels/Pixabay) yang super presisi!
+async function translateQueryWithAI(q: string): Promise<string> {
+  try {
+    const prompt = `Translate this video search keyword into a highly descriptive English stock video query (1 to 4 words max, lowercase, no numbers, no punctuation, focus on visual description): "${q}"`;
+    const res = await chat([{ role: "user", content: prompt }]);
+    const clean = res.replace(/[^a-zA-Z0-9\s]/g, "").trim().toLowerCase();
+    if (clean && clean.length > 1) {
+      console.log(`[AI Translate] "${q}" -> "${clean}"`);
+      return clean;
+    }
+  } catch (e) {
+    console.error("[AI Translate Error]", e);
+  }
+  return q; // Fallback jika AI gagal
+}
 
 /**
  * 🎞️🧺 LEMARI VIDEO — pencarian stock video dari DUA gudang gratis:
@@ -48,11 +67,13 @@ function pilihFile(files: any[]): { src: string; sd: string; w: number; h: numbe
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const q = (searchParams.get("q") || "").trim().slice(0, 80);
+    const rawQ = (searchParams.get("q") || "").trim().slice(0, 80);
     const page = Math.max(1, Math.min(40, parseInt(searchParams.get("page") || "1", 10) || 1));
     const per = Math.max(3, Math.min(15, parseInt(searchParams.get("per") || "8", 10) || 8));
-    if (!q)
+    if (!rawQ)
       return NextResponse.json({ ok: false, error: "q (kata kunci) wajib diisi" }, { status: 400 });
+
+    const q = await translateQueryWithAI(rawQ);
 
     const kunciP = process.env.PEXELS_API_KEY || "";
     const kunciX = process.env.PIXABAY_API_KEY || "";
