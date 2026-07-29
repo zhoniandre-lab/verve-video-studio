@@ -66,6 +66,25 @@ const ID_EN: Record<string, string> = {
   baju: "clothes", pakaian: "clothes", foto: "photo", surat: "letter", lagu: "song", musik: "music", gitar: "guitar", radio: "radio", televisi: "television",
   rindu: "longing", kenangan: "memories", penyesalan: "regret", sendiri: "alone", kesepian: "lonely", merantau: "wanderer",
   miskin: "poor", kaya: "rich", berdagang: "selling", pasar: "market", sekolah: "school", pulang: "homecoming",
+
+  // 🩹 v16.2 GUDANG KATA SINEMATIK: Tambahan kata Indonesia untuk pencarian video stock yang melimpah & presisi!
+  peluk: "hug", memeluk: "hugging", pelukan: "hug", cinta: "love", sayang: "love", kasih: "love",
+  lelah: "tired", letih: "tired", capek: "tired", semangat: "passionate", perjuangan: "effort",
+  senyum: "smile", tersenyum: "smiling", tawa: "laugh", tertawa: "laughing",
+  kampung: "hometown", mudik: "homecoming", stasiun: "station", bandara: "airport",
+  kereta: "train", pesawat: "airplane", bus: "bus", mobil: "car", jalanan: "road",
+  kantor: "office", warung: "shop", toko: "store", kebun: "garden", sawah_luas: "rice field",
+  danau: "lake", sore: "sunset", gelap: "dark", pagi: "morning", siang: "afternoon",
+  menatap: "looking", memandang: "looking", makan: "eating", menyuapi: "feeding",
+  minum: "drinking", menulis: "writing", membaca: "reading", bernyanyi: "singing",
+  menyanyi: "singing", belajar: "studying", bermain: "playing", main: "playing",
+  napas: "breathing", meratap: "weeping", menari: "dancing", melangkah: "walking",
+  pergi: "leaving", berangkat: "leaving", datang: "arriving", tiba: "arriving",
+  tenggelam: "sunset", terbit: "sunrise", basah: "wet",
+  sahabat: "friend", kawan: "friend", teman: "friend", keluarga: "family",
+  saudara: "family", kekasih: "couple", pacar: "couple", guru: "teacher",
+  pedagang: "merchant", penjual: "seller", petani: "farmer", nelayan: "fisherman",
+  supir: "driver", rakyat: "people", ramai: "crowded", sepi_sekali: "lonely",
 };
 
 /* 🎬 v13.11.2 PETA EMOJI KARAKTER & EMO — buat kueri sinematik "ibu & anak kenangan, sedih terasa". */
