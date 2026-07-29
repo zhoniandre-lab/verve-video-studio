@@ -3234,11 +3234,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     if (!sid) { flash("Tambahkan klip dulu"); return; }
     const cur = slideOptsById[sid]?.stickers || [];
-    const startAt = Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100; // lahir di posisi penanda
+    const isMusicSticker = emoji === "@bars" || emoji === "@wavepro" || emoji === "@ring";
+    const startAt = isMusicSticker ? 0 : Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100; // lahir di posisi penanda (atau 0 untuk musik)
+    const stDur = isMusicSticker ? Math.max(300, musicDur || 300) : (emoji === "@cta" ? 6 : 3);
     const st: StickerItem = { id: uid("st"), emoji, x: 0.5,
       y: emoji === "@bars" ? 0.86 : emoji === "@cta" ? 0.14 : emoji === "@wavepro" ? 0.8 : emoji === "@ring" ? 0.46 : emoji.startsWith("@") ? 0.72 : 0.4, // 🎬 v13.4/v13.8: posisi lahir tiap stiker musik-CTA
       size: emoji === "@bars" ? 0.17 : emoji === "@cta" ? 0.13 : emoji === "@wavepro" || emoji === "@ring" ? 0.2 : emoji.startsWith("@") ? 0.07 : 0.12,
-      rot: 0, img, start: startAt, dur: emoji === "@bars" || emoji === "@cta" || emoji === "@wavepro" || emoji === "@ring" ? 6 : 3 };
+      rot: 0, img, start: startAt, dur: stDur };
     setOpt(sid, { stickers: [...cur, st] } as Partial<SlideOpt>);
     setSelStik({ sid, stid: st.id }); // langsung terpilih → bisa digeser/di-cubit saat itu juga
     flash(img ? `🖼️ Overlay foto ditambahkan mulai ${formatDur(startAt)}` : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan mulai ${formatDur(startAt)} — jalur baru dibuat!`);
