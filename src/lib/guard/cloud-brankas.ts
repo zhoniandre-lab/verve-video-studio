@@ -88,6 +88,20 @@ export function safeRemoteMediaUrl(url: string): boolean {
   } catch { return false; }
 }
 
+export function isCloudBackupPath(path: string): boolean {
+  const p = String(path || "").replace(/^\/+/, "");
+  return /^backups\/\d{4}\/\d{2}\/\d{2}\/.+\.json$/i.test(p) && !p.includes("..");
+}
+
+export function cloudBackupLabel(path: string): string {
+  const file = String(path || "").split("/").pop() || "backup.json";
+  return file
+    .replace(/^\d+_[a-z0-9]{4,8}_/i, "")
+    .replace(/\.json$/i, "")
+    .replace(/_/g, " ")
+    .trim() || "Backup VERVE";
+}
+
 export function byteLen(s: string): number {
   if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s).length;
   return unescape(encodeURIComponent(s)).length;

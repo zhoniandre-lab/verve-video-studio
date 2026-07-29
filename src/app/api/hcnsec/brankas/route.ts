@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { byteLen, CLOUD_BACKUP_MAX_BYTES, CLOUD_BRANKAS_BUCKET, CLOUD_MEDIA_MAX_BYTES, cloudBackupPath, cloudConfigured, cloudMediaPath, mediaExtFromMime, mediaKindFromMime, safeCloudName, safeRemoteMediaUrl } from "@/lib/guard/cloud-brankas";
+import { byteLen, CLOUD_BACKUP_MAX_BYTES, CLOUD_BRANKAS_BUCKET, CLOUD_MEDIA_MAX_BYTES, cloudBackupLabel, cloudBackupPath, cloudConfigured, cloudMediaPath, isCloudBackupPath, mediaExtFromMime, mediaKindFromMime, safeCloudName, safeRemoteMediaUrl } from "@/lib/guard/cloud-brankas";
 import { makeProjectBackupEnvelope, normalizeProjectBackupPayload } from "@/lib/guard/project-backup";
 
 export const dynamic = "force-dynamic";
@@ -38,11 +38,48 @@ async function ensureBucket(supabase: Admin): Promise<void> {
   if (made.error && !/already/i.test(made.error.message || "")) throw made.error;
 }
 
-export async function GET() {
+async function listBackups(supabase: Admin, prefix = "backups", depth = 0, out: any[] = []): Promise<any[]> {
+  if (depth > 5 || out.length >= 80) return out;
+  const { data, error } = await supabase.storage.from(CLOUD_BRANKAS_BUCKET).list(prefix, {
+    limit: 100,
+    sortBy: { column: "name", order: "desc" },
+  });
+  if (error) throw error;
+  for (const it of data || []) {
+    const path = `${prefix}/${it.name}`.replace(/^\/+/, "");
+    const looksFile = !!(it as any).id || isCloudBackupPath(path);
+    if (looksFile && isCloudBackupPath(path)) {
+      const pub = supabase.storage.from(CLOUD_BRANKAS_BUCKET).getPublicUrl(path);
+      out.push({
+        path,
+        name: it.name,
+        label: cloudBackupLabel(path),
+        size: Number((it as any)?.metadata?.size || 0),
+        createdAt: (it as any).created_at || (it as any).updated_at || null,
+        updatedAt: (it as any).updated_at || null,
+        url: pub.data.publicUrl,
+      });
+      if (out.length >= 80) break;
+    } else if (!looksFile) {
+      await listBackups(supabase, path, depth + 1, out);
+      if (out.length >= 80) break;
+    }
+  }
+  return out;
+}
+
+export async function GET(req: Request) {
   const a = adminClient();
   if (!a.ok) return NextResponse.json({ ok: false, configured: false, bucket: CLOUD_BRANKAS_BUCKET, backupMaxBytes: CLOUD_BACKUP_MAX_BYTES, mediaMaxBytes: CLOUD_MEDIA_MAX_BYTES, error: a.error }, { status: 503 });
   try {
     await ensureBucket(a.supabase);
+    const { searchParams } = new URL(req.url);
+    if (searchParams.get("list") === "backups") {
+      const items = (await listBackups(a.supabase))
+        .sort((x, y) => String(y.createdAt || y.path).localeCompare(String(x.createdAt || x.path)))
+        .slice(0, 50);
+      return NextResponse.json({ ok: true, configured: true, bucket: CLOUD_BRANKAS_BUCKET, items, total: items.length }, { headers: { "Cache-Control": "no-store" } });
+    }
     return NextResponse.json({ ok: true, configured: true, bucket: CLOUD_BRANKAS_BUCKET, backupMaxBytes: CLOUD_BACKUP_MAX_BYTES, mediaMaxBytes: CLOUD_MEDIA_MAX_BYTES, note: "☁️ Cloud Brankas Supabase aktif" }, { headers: { "Cache-Control": "no-store" } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, configured: true, bucket: CLOUD_BRANKAS_BUCKET, error: e?.message || String(e) }, { status: 500 });

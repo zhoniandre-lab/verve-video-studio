@@ -1218,6 +1218,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [guardJob, setGuardJob] = useState<GuardJob | null>(() => { try { return readJob(); } catch { return null; } });
   const putGuardJob = useCallback((j: GuardJob) => { setGuardJob(j); saveJob(j); }, []);
+  const [cloudBackups, setCloudBackups] = useState<any[]>([]);
+  const [cloudListOpen, setCloudListOpen] = useState(false);
   useEffect(() => {
     return () => {
       if (videoUrl) { try { URL.revokeObjectURL(videoUrl); } catch {} }
@@ -3470,6 +3472,39 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!r.ok || !d.ok) throw new Error(d.error || `Cloud error ${r.status}`);
       await copyTxt(String(d.url || ""));
       flash("☁️ Backup tersimpan di Supabase Storage — link cloud disalin ke clipboard");
+      void listCloudBackups(false);
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
+  }
+  async function listCloudBackups(show = true) {
+    setLoading("cloudlist"); setError("");
+    try {
+      const r = await fetch("/api/hcnsec/brankas?list=backups", { cache: "no-store" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || `Cloud list error ${r.status}`);
+      setCloudBackups(Array.isArray(d.items) ? d.items : []);
+      setCloudListOpen(true);
+      if (show) flash(`☁️ ${Array.isArray(d.items) ? d.items.length : 0} backup cloud ditemukan`);
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
+  }
+  async function restoreCloudBackup(item: any) {
+    const url = String(item?.url || "");
+    if (!/^https?:\/\//i.test(url)) { flash("⚠️ Link cloud backup tidak valid"); return; }
+    setLoading("cloudrestore"); setError("");
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error(`Backup cloud gagal dibaca (HTTP ${r.status})`);
+      const raw = await r.json();
+      const snap0 = normalizeProjectBackupPayload(raw);
+      if (!snap0) throw new Error("File cloud bukan backup proyek VERVE yang sah");
+      const snap = cloneImportedProject(snap0, uid);
+      const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+      const next = [snap, ...arr.filter((d: any) => d?.id !== snap.id)].slice(0, MAX_DRAFTS);
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+      setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null); setThumbU(u => { if (u) URL.revokeObjectURL(u); return ""; }); thumbBlobRef.current = null;
+      applySnapshot(snap); onSaved();
+      flash("☁️ Backup cloud dipulihkan sebagai proyek BARU — cek/lanjut edit, lalu 💾 simpan");
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
@@ -4343,6 +4378,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, cloudSaveMusic, importProjectBackupFile,
+            listCloudBackups, restoreCloudBackup, cloudBackups, cloudListOpen, setCloudListOpen,
             downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
@@ -6295,11 +6331,24 @@ function EksporSheet({ api: A, onClose }: any) {
               <div>
                 <button className="v6-chip" onClick={A.downloadProjectBackup}>📤 Backup JSON</button>
                 <button className="v6-chip" disabled={A.loading === "cloudbackup"} onClick={A.uploadProjectBackupCloud}>{A.loading === "cloudbackup" ? "⏳ Upload…" : "☁️ Upload Cloud"}</button>
+                <button className="v6-chip" disabled={A.loading === "cloudlist"} onClick={() => A.listCloudBackups?.()}>{A.loading === "cloudlist" ? "⏳ Daftar…" : "📚 Daftar Cloud"}</button>
                 {A.musicUrl && <button className="v6-chip" disabled={A.loading === "cloudmedia"} onClick={A.cloudSaveMusic}>{A.loading === "cloudmedia" ? "⏳ Musik…" : "🎵 Musik Cloud"}</button>}
                 <label className="v6-chip" style={{ cursor: "pointer" }}>📥 Restore JSON
                   <input type="file" accept="application/json,.json" hidden onChange={(e) => { A.importProjectBackupFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
                 </label>
               </div>
+              {A.cloudListOpen && (
+                <div className="v6-cloudlist">
+                  {!A.cloudBackups?.length ? <span className="empty">Belum ada backup cloud ditemukan.</span> : A.cloudBackups.slice(0, 8).map((b: any) => (
+                    <div className="item" key={b.path}>
+                      <span className="nm">☁️ {b.label || b.name}</span>
+                      <span className="dt">{b.createdAt ? dateLabel(new Date(b.createdAt).getTime()) : "cloud"} · {b.size ? `${(b.size / 1024).toFixed(0)}KB` : "JSON"}</span>
+                      <button onClick={() => A.restoreCloudBackup?.(b)} disabled={A.loading === "cloudrestore"}>{A.loading === "cloudrestore" ? "⏳" : "Restore"}</button>
+                      <button onClick={() => A.copyFld?.("cloud", b.url || "")}>Link</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="v6-prodcheck">
               <b>📋 Checklist Produksi · {prodDone}/{prodChecks.length}</b>
