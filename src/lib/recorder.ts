@@ -702,6 +702,31 @@ function paintKineticGapFiller(ctx: CanvasRenderingContext2D, W: number, H: numb
   
   const gapT = rawTime - vd; // Berapa detik kita berada dalam celah kekosongan
   
+  // 🩹 v16.1 CINEMATIC DREAM-BLUR:
+  // Kita beri efek blur lembut pada background video yang sedang beku agar bertransisi secara halus & indah
+  const blurAmount = Math.min(6, gapT * 2.5);
+  if (blurAmount > 0.1) {
+    ctx.save();
+    ctx.filter = `blur(${Math.round(blurAmount)}px)`;
+    ctx.drawImage(s._canvas, 0, 0, W, H);
+    ctx.restore();
+  }
+
+  // 🩹 v16.1 WARM GOLDEN LIGHT LEAK FLASH:
+  // Tambahkan efek cahaya bocor (light leak) hangat yang perlahan memudar masuk di ujung video untuk mengeliminasi kebosanan visual
+  const lightAlpha = Math.min(0.35, gapT * 0.15) + 0.04 * Math.sin(gapT * 3);
+  if (lightAlpha > 0.01) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const lg = ctx.createRadialGradient(W * 0.1, H * 0.1, 0, W * 0.1, H * 0.1, W * 0.6);
+    lg.addColorStop(0, `rgba(255, 175, 75, ${lightAlpha})`);
+    lg.addColorStop(0.6, `rgba(255, 120, 50, ${lightAlpha * 0.4})`);
+    lg.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+  
   // Ambil lirik aktif untuk slide ini
   let text = "";
   if (s.captions && Array.isArray(s.captions)) {
@@ -1988,10 +2013,11 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     slideOpts.forEach((o, i) => { if (o) o.trans = tids[i]; });
   }
   const clipsTotal = timeline ? timeline.total : imgs.length*slideDur+transDur;
-  // 🩹 v15.6: Batasi total durasi video murni mengikuti panjang slide/klip (clipsTotal),
-  // jangan dipaksa sepanjang durasi lagu penuh (audio.duration) agar render 10x lebih cepat
-  // dan lagu otomatis di-cut & fade-out halus di akhir slide, persis seperti CapCut!
-  const totalDur = clipsTotal;
+  // 🩹 v16.1 OPTIMASI DURASI SUTRADARA: Kita kembalikan totalDur mengikuti panjang musik penuh
+  // agar seluruh lirik & alur lagu ter-sync secara presisi 100% tanpa terpotong di tengah jalan.
+  // Berkat optimasi Seek-Skip & Freeze-on-End baru kita, frame beku di penghujung tidak lagi memakan waktu render,
+  // sehingga video 6 menit penuh kini bisa di-render secepat kilat (wus-wus) tanpa risiko OOM / crash!
+  const totalDur = Math.max(audio?.duration||0, clipsTotal);
 
   // Warning: jika musik lebih pendek dari total slide (tanpa TTS)
   if (audio && audio.duration < totalDur - 0.5) {
