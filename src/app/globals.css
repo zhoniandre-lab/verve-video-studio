@@ -1995,3 +1995,7 @@ b.ok, b.warn, b.err { color:inherit; }
 /* ✅ v18.4 Production checklist langsung di Ekspor */
 .v6-prodcheck{margin-top:8px;border:1px solid #ffffff22;background:#10131acc;border-radius:14px;padding:10px 11px;font-size:10px;color:#cbd5e1}
 .v6-prodcheck b{display:block;color:#fff;font-size:11px;margin-bottom:6px}.v6-prodcheck div{display:flex;flex-wrap:wrap;gap:5px}.v6-prodcheck span{border:1px solid #ffffff1f;border-radius:999px;padding:4px 7px;white-space:nowrap}.v6-prodcheck span.ok{color:#bbf7d0;background:#052e1a99;border-color:#22c55e44}.v6-prodcheck span.todo{color:#d1d5db;background:#11182799}
+
+/* 💾 v18.8 Backup/Restore proyek JSON */
+.v6-backupbox{margin-top:8px;border:1px solid #60a5fa44;background:#07111fcc;border-radius:14px;padding:10px 11px;color:#dbeafe}
+.v6-backupbox b{display:block;font-size:11.5px;color:#eff6ff;margin-bottom:4px}.v6-backupbox p{font-size:10px;line-height:1.45;color:#93a4bd;margin:0 0 8px}.v6-backupbox div{display:flex;gap:8px;flex-wrap:wrap}.v6-backupbox .v6-chip{flex:1;min-width:120px;text-align:center;border-color:#60a5fa55;color:#bfdbfe;background:#0b1628}

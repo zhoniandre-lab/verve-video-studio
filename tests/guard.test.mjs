@@ -19,6 +19,7 @@ const sc = await loadTs("../src/lib/guard/scene.ts");
 const job = await loadTs("../src/lib/guard/job.ts");
 const prod = await loadTs("../src/lib/guard/production.ts");
 const mc = await loadTs("../src/lib/guard/material-cache.ts");
+const pb = await loadTs("../src/lib/guard/project-backup.ts");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -124,7 +125,20 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   if (oldLS) globalThis.localStorage = oldLS; else delete globalThis.localStorage;
 }
 
-// 9) production helpers: 3 varian + upload kit
+// 9) project backup: envelope valid + restore jadi salinan baru
+{
+  const snap = { id: "d_lama", title: "Doa Ibu", slides: [{ id: "s1", imageUrl: "x" }], slideOptsById: { s1: { dur: 3 } } };
+  const env = pb.makeProjectBackupEnvelope(snap, 1234);
+  T("backup envelope dikenali", env.kind === pb.PROJECT_BACKUP_KIND && env.project.id === "d_lama");
+  T("normalize backup envelope", pb.normalizeProjectBackupPayload(env)?.title === "Doa Ibu");
+  T("normalize raw snapshot", pb.normalizeProjectBackupPayload(snap)?.id === "d_lama");
+  T("tolak file ngawur", pb.normalizeProjectBackupPayload({ hello: true }) === null);
+  const imp = pb.cloneImportedProject(snap, (p) => `${p}_baru`, 9999);
+  T("import jadi id baru + suffix", imp.id === "d_baru" && /Import$/.test(imp.title) && imp.updatedAt === 9999);
+  T("nama backup aman", /^Doa_Ibu_1234\.json$/.test(pb.safeBackupName("Doa Ibu!!!", 1234)), pb.safeBackupName("Doa Ibu!!!", 1234));
+}
+
+// 10) production helpers: 3 varian + upload kit
 {
   const vs = prod.moneyPrinterVariants();
   T("3 varian produksi tersedia", vs.length === 3 && vs.some(v => v.id === "shorts"));

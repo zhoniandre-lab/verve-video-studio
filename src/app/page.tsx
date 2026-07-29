@@ -13,6 +13,7 @@ import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: 
 import { applyMoneyPrinterVariant, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
+import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -3447,6 +3448,28 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const txt = `=== JUDUL (High CTR) ===\n${meta.titleHighCTR || ""}\n\n=== ALTERNATIF ===\n${(meta.titleAlternatives || []).map((t: string, i: number) => `${i + 1}. ${t}`).join("\n")}\n\n=== DESKRIPSI ===\n${meta.description || ""}\n\n=== TAGS ===\n${(meta.tags || []).join(", ")}\n\n=== HASHTAGS ===\n${meta.hashtags || ""}\n\nDibuat dengan VERVE`;
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `meta_${Date.now()}.txt`);
   }
+  function downloadProjectBackup() {
+    const snap = buildSnapshot();
+    if (!snap.slides.length) { flash("⚠️ Belum ada isi proyek untuk di-backup"); return; }
+    const env = makeProjectBackupEnvelope(snap);
+    downloadBlob(new Blob([JSON.stringify(env, null, 2)], { type: "application/json;charset=utf-8" }), safeBackupName(snap.title || projTitle));
+    flash("💾 Backup proyek JSON terdownload — simpan di Drive/WA biar aman");
+  }
+  async function importProjectBackupFile(f?: File | null) {
+    if (!f) return;
+    try {
+      const raw = JSON.parse(await f.text());
+      const snap0 = normalizeProjectBackupPayload(raw);
+      if (!snap0) throw new Error("File bukan backup proyek VERVE yang sah");
+      const snap = cloneImportedProject(snap0, uid);
+      const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+      const next = [snap, ...arr.filter((d: any) => d?.id !== snap.id)].slice(0, MAX_DRAFTS);
+      localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+      setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null); setThumbU(u => { if (u) URL.revokeObjectURL(u); return ""; }); thumbBlobRef.current = null;
+      applySnapshot(snap); onSaved();
+      flash("📥 Backup dipulihkan sebagai proyek BARU — cek/lanjut edit, lalu 💾 simpan");
+    } catch (e: any) { setErr({ message: e?.message || "Gagal membaca backup JSON" }); }
+  }
   function audioSourcesForUploadKit() {
     const out: { kind: string; name?: string; status?: "ok" | "warn" | "info"; note?: string; urlKind?: string }[] = [];
     if (musicUrl) {
@@ -4271,7 +4294,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
-            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, importProjectBackupFile,
+            downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
           }}
@@ -6216,6 +6240,16 @@ function EksporSheet({ api: A, onClose }: any) {
               <span style={{ fontSize: 18 }}>💎</span>
               <div className="tt">Peningkat Ketajaman ✨<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Video lebih jernih & halus (filter ketajaman saat render)</div></div>
               <button className={`v6-toggle ${A.qualitySharp ? "on" : ""}`} />
+            </div>
+            <div className="v6-backupbox">
+              <b>💾 Backup / Restore Proyek</b>
+              <p>Selamatkan proyek ke file JSON — bisa dipindah HP atau dipulihkan kalau cache Chrome ngaco.</p>
+              <div>
+                <button className="v6-chip" onClick={A.downloadProjectBackup}>📤 Backup JSON</button>
+                <label className="v6-chip" style={{ cursor: "pointer" }}>📥 Restore JSON
+                  <input type="file" accept="application/json,.json" hidden onChange={(e) => { A.importProjectBackupFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                </label>
+              </div>
             </div>
             <div className="v6-prodcheck">
               <b>📋 Checklist Produksi · {prodDone}/{prodChecks.length}</b>
