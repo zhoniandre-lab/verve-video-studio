@@ -1966,3 +1966,16 @@ b.ok, b.warn, b.err { color:inherit; }
 }
 .v6e-trans-mid.off { background:rgba(255,255,255,.4); box-shadow:0 0 0 1px rgba(0,0,0,.4); }
 .v6e-trans-mid.off:hover, .v6e-trans-mid.off:active { background:#6b7280; }
+
+/* 🛡️ v18 Guard Health Chip — indikator stabilitas timeline (ringan, tidak menyentuh render) */
+.v6e-health{
+  display:inline-flex;align-items:center;gap:4px;max-width:42vw;min-height:24px;
+  padding:4px 8px;border-radius:999px;border:1px solid #ffffff22;background:#111827cc;
+  color:#dbeafe;font-size:10.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  cursor:pointer;flex:0 1 auto;backdrop-filter:blur(8px);
+}
+.v6e-health.ok{border-color:#22c55e55;color:#bbf7d0;background:#052e1acc;}
+.v6e-health.warn{border-color:#f59e0b66;color:#fde68a;background:#2b1d05d9;}
+.v6e-health.error{border-color:#ef444466;color:#fecaca;background:#3a0b0bd9;}
+.v6e-health:active{transform:scale(.98);}
+@media (max-width:420px){.v6e-health{max-width:38vw;font-size:9.8px;padding:3px 7px;}}

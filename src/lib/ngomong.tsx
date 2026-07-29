@@ -10,6 +10,7 @@
  * Rute server /api/hcnsec/transcribe TIDAK diubah (sudah terbukti live: wav → teks Indonesia per-kata).
  */
 import { useEffect, useRef, useState } from "react";
+import { fetchJsonResult } from "@/lib/guard/net";
 
 type Stt = "" | "rec" | "up";
 
@@ -93,14 +94,21 @@ export default function Ngomong(p: { onText: (t: string) => void; hint?: string;
       fd.append("lang", lg);
       if (p.hint && lg === "id") fd.append("hint", p.hint); // (2) kamus Indonesia HANYA utk Indonesia — bahasa lain dibiarkan bersih biar AI tak bias
       const ac = new AbortController(); abortRef.current = ac;
-      const to = setTimeout(() => ac.abort(), 25000); // anti-gantung di 4G desa
-      const r = await fetch("/api/hcnsec/transcribe", { method: "POST", body: fd, signal: ac.signal });
-      clearTimeout(to);
-      const j = await r.json().catch(() => null);
+      const res = await fetchJsonResult<any>("/api/hcnsec/transcribe", {
+        method: "POST",
+        body: fd,
+        signal: ac.signal,
+        timeoutMs: 25_000, // anti-gantung di 4G desa
+        retries: 1,
+        retryDelayMs: 700,
+        label: "Ngomong → teks",
+        rawBody: true,
+      });
       bersih(); setStt("");
+      const j = res.ok ? res.data : null;
       const t = (j?.text || "").trim(); // teks apa adanya dari mesin — tidak dipoles-sembunyi
       if (t) { p.onText(t); say("✅ Terisi — cek dulu lalu lanjut"); }
-      else say(j?.error ? `⚠️ ${String(j.error).slice(0, 80)}` : "⚠️ Suara tak terbaca — coba lebih dekat ke mic");
+      else say(res.ok && j?.error ? `⚠️ ${String(j.error).slice(0, 80)}` : (res.ok ? "⚠️ Suara tak terbaca — coba lebih dekat ke mic" : res.error.slice(0, 96)));
     } catch (e: any) {
       bersih(); setStt("");
       say(e?.name === "AbortError" ? "🐌 Jaringan lambat — coba lagi pas sinyal bagus" : "⚠️ Gagal mengirim suara — coba sekali lagi");

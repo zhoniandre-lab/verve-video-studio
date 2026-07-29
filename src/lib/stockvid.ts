@@ -2,6 +2,8 @@
    Lisensi Pexels: bebas pakai SEMUA durasi, bebas edit, TANPA atribusi wajib, aman monetisasi YouTube.
    (BUKAN video berhak cipta — jadi aturan "berapa detik boleh" tidak berlaku, semuanya halal.) */
 
+import { fetchJsonResult } from "@/lib/guard/net";
+
 export type VidPick = { id: number; src: string; sd: string; thumb: string; dur: number; by: string; link: string; w?: number; h?: number };
 
 export type CariHasil = { ok: boolean; hasil: VidPick[]; total: number; err: string };
@@ -13,27 +15,23 @@ export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariH
   const translated = terjemahkanKueri(q);
   const query = translated.trim().replace(/\s+/g, " ").slice(0, 60);
   if (query.length < 2) return { ok: false, hasil: [], total: 0, err: "Kata kunci terlalu pendek bro." };
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 15000); // jam pengaman per pencarian
-  try {
-    const r = await fetch(`/api/hcnsec/stock-video?q=${encodeURIComponent(query)}&page=${page}&per=${per}`, { signal: ac.signal });
-    clearTimeout(t);
-    const j: any = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok) {
-      if (j.code === "TANPA_KUNCI")
-        return { ok: false, hasil: [], total: 0, err: "🔑 Kunci gudang video belum terpasang di server — lapor admin ya bro." };
-      if (j.code === "KECEPETAN")
-        return { ok: false, hasil: [], total: 0, err: "⏳ Terlalu sering cari dalam 10 menit — tarik napas dulu ya bro." };
-      return { ok: false, hasil: [], total: 0, err: j.error || `Gudang gagal dihubungi (HTTP ${r.status})` };
-    }
-    return { ok: true, hasil: j.hasil || [], total: j.total || 0, err: "" };
-  } catch (e: any) {
-    clearTimeout(t);
-    return {
-      ok: false, hasil: [], total: 0,
-      err: e?.name === "AbortError" ? "⏱ Koneksi lambat (>15 detik) — coba lagi ya bro." : (e?.message || "Koneksi gagal"),
-    };
+  const res = await fetchJsonResult<any>(`/api/hcnsec/stock-video?q=${encodeURIComponent(query)}&page=${page}&per=${per}`, {
+    timeoutMs: 15_000,
+    retries: 1,
+    retryDelayMs: 700,
+    label: "Gudang video",
+    cache: "no-store",
+  });
+  if (!res.ok) return { ok: false, hasil: [], total: 0, err: res.error };
+  const j: any = res.data || {};
+  if (!j.ok) {
+    if (j.code === "TANPA_KUNCI")
+      return { ok: false, hasil: [], total: 0, err: "🔑 Kunci gudang video belum terpasang di server — lapor admin ya bro." };
+    if (j.code === "KECEPETAN")
+      return { ok: false, hasil: [], total: 0, err: "⏳ Terlalu sering cari dalam 10 menit — tarik napas dulu ya bro." };
+    return { ok: false, hasil: [], total: 0, err: j.error || `Gudang gagal dihubungi (HTTP ${res.status})` };
   }
+  return { ok: true, hasil: j.hasil || [], total: j.total || 0, err: "" };
 }
 
 /** 🇮🇩 Cari pintar RASA INDONESIA: coba dulu "+ indonesia"; stok Nusantara kosong → dilebarkan ke gudang dunia (dilapor JUJUR via lebar=true). */

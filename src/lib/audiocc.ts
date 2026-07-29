@@ -1,3 +1,5 @@
+import { fetchJsonResult } from "@/lib/guard/net";
+
 // ✂️📦 AUDIOPOTONG WHISPER (v13.22) — pintu lagu BESAR (di atas pagar unggah server ±4,5MB).
 // Cerita: lagu 4–5 menit dari HP (Suno dll) = 5–8MB → kena pagar unggah server → klien lama
 // terpaksa MENDENGARKAN lagu realtime (1× durasi lagu, lama!). Solusi: decode SEKALI di HP →
@@ -144,13 +146,16 @@ export async function transcribeBlobBesar(
     for (let coba = 0; coba < 2 && !j?.ok; coba++) { // 🔁 v13.23: sekali coba-ulang otomatis — jaringan HP goyang ≠ gagal total
       kaliCoba = coba + 1;
       if (coba) { onTahap?.(`🔁 Bagian ${c.idx + 1}/${potong.length} mencoba ulang sekali lagi...`); await new Promise((r) => setTimeout(r, 2000)); }
-      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 150_000); // 🕰️ v13.25: upload 4G lambat butuh napas
-      try {
-        const r = await fetch("/api/hcnsec/transcribe", { method: "POST", body: fd, signal: ctl.signal });
-        j = await r.json().catch(() => null);
-      } catch { j = null; }
-      finally { clearTimeout(to); }
-      if (!j?.ok) salahTerakhir = String(j?.error || "AI tak terjangkau (jaringan)");
+      const res = await fetchJsonResult<any>("/api/hcnsec/transcribe", {
+        method: "POST",
+        body: fd,
+        timeoutMs: 150_000, // 🕰️ v13.25: upload 4G lambat butuh napas
+        retries: 0,         // retry luar tetap 1× supaya log klinis jelas: coba 1, lalu coba 2
+        label: `Whisper bagian ${c.idx + 1}/${potong.length}`,
+        rawBody: true,
+      });
+      j = res.ok ? res.data : null;
+      if (!j?.ok) salahTerakhir = String((res.ok ? j?.error : res.error) || "AI tak terjangkau (jaringan)");
     }
     if (j?.ok) ccDiag("✅", `bagian ${c.idx + 1}/${potong.length} BERES · ${Array.isArray(j.words) ? j.words.length : 0} kata · ${Date.now() - tC0}ms · ${j.engine || "?"}`);
     else ccDiag("❌", `bagian ${c.idx + 1}/${potong.length} GAGAL ${kaliCoba}× · ${Date.now() - tC0}ms`);

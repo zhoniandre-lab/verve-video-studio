@@ -9,6 +9,7 @@ import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
+import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -1356,6 +1357,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [slides, slideOptsById, slideDuration, transitionDur, transition]);
   const timelineRef = useRef<Timeline | null>(null); useEffect(() => { timelineRef.current = timeline; }, [timeline]);
   const clipsTotal = timeline?.total || 0;
+  const health = useMemo(() => ringkasTimelineHealth({
+    slides,
+    slideOptsById,
+    slideDuration,
+    total: clipsTotal,
+    capWords,
+    audios: [
+      { kind: "Musik", url: musicUrl, dur: musicDur, off: musicOff },
+      { kind: "Narasi", url: ttsUrl, dur: ttsDur, off: ttsOff },
+      { kind: "Rekaman", url: voiceUrl, dur: voiceDur, off: voiceOff },
+    ],
+  }), [slides, slideOptsById, slideDuration, clipsTotal, capWords, musicUrl, musicDur, musicOff, ttsUrl, ttsDur, ttsOff, voiceUrl, voiceDur, voiceOff]);
 
   // v8.2.1: pindai teks lirik karaoke (id prefix lyr_) + caption bawaan adegan (MENEMPEL di klip — biang rasa "teks gabung sama lagu")
   const lyrScan = useMemo(() => {
@@ -3894,6 +3907,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           dan membingungkan). Satu-satunya penggaris = skala detik asli di dalam track, persis seperti CapCut. ============ */}
       <div className="v6e-timerow">
         <span><b>{formatDur(curT)}</b> / {formatDur(durT)}</span>
+        <button
+          type="button"
+          className={`v6e-health ${health.level}`}
+          title={[health.short, ...health.issues.slice(1).map((x) => x.message)].join("\n")}
+          onClick={() => flash(`${health.icon} ${health.short}`)}
+        >
+          {health.icon} {health.label}{health.warn || health.error ? ` · ${health.error ? health.error + " error" : health.warn + " catatan"}` : ""}
+        </button>
         <span className="v6e-timerow-tip">🕒 penggaris detik di track — cubit utk zoom</span>
       </div>
 
