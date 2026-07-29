@@ -443,23 +443,34 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
     gerak TIDAK PERNAH berhenti & TIDAK ADA lompatan kasar. */
 export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
-  // 🩹 v15.6 SLOW HALUS (Cinematic Slow-Mo): Turunkan batas kecepatan minimal (RMIN) dari 0.5 menjadi 0.20.
-  // Ini memungkinkan klip video diperlambat secara halus hingga 20% kecepatan asli untuk mengisi durasi slide yang panjang,
-  // meminimalkan pengulangan video (looping) yang berlebihan dan memberikan efek Cinematic Travel Vlog yang sangat estetik.
-  const RMIN = 0.20, RMAX = 1.4;
+  
+  // 🩹 v16.0 SMOOTH CINEMATIC FLUIDITY:
+  // Kita hilangkan pemaksaan slow-mo ekstrim (RMIN=0.20) yang membuat fps video anjlok menjadi patah-patah (6fps).
+  // Kecepatan otomatis dijepit secara ketat di [0.85, 1.2], sehingga video selalu berputar pada kecepatan aslinya yang super mulus (30fps/60fps murni)!
+  const RMIN = 0.85, RMAX = 1.2;
   let rate = vd / (slot > 0.2 ? slot : vd);
   if (rate < RMIN) rate = RMIN; else if (rate > RMAX) rate = RMAX;
-  // ⏱ v13.13: kendali MANUAL dari bro — setelah jepit auto, dikali pilihannya sendiri (0.20×..2×)
-  const sMul = spd >= 0.20 && spd <= 2 ? spd : 1;
+  
+  const sMul = spd >= 0.25 && spd <= 2 ? spd : 1;
   rate *= sMul;
-  if (rate < 0.20) rate = 0.20; else if (rate > 2) rate = 2;
+  if (rate < 0.25) rate = 0.25; else if (rate > 2) rate = 2;
+  
   const st = Math.max(0, raw) * rate;
-  const cyc = Math.floor(st / vd);
-  const pos = st - cyc * vd;
+  
+  // 🩹 v16.0 FREEZE-ON-END (Anti-Looping):
+  // Jika video sudah habis (st >= vd), alih-alih mengulang-ulang secara tidak estetik ("bolak-balik"),
+  // video akan diam mematung (freeze-frame) di frame terakhirnya yang tajam & indah, layaknya still photo premium!
+  let cyc = 0;
+  let pos = st;
+  if (st >= vd) {
+    pos = vd - 0.05; // Diam di frame terakhir
+    cyc = 0;
+  }
+  
   const XF = Math.min(0.5, vd * 0.15);
   const inX = vd > XF * 2 && pos >= vd - XF;
   const x = inX ? Math.min(1, (pos - (vd - XF)) / XF) : 0;
-  return { cyc, pos, inX, x, rate, act: cyc % 2 === 0 ? "a" : "b" };
+  return { cyc, pos, inX, x, rate, act: "a" };
 }
 
 /** 🌀 v13.15 LOOP LUMAT KONTINU (khusus PREVIEW Studio) — beda dari vidPlan (render): setelah crossfade
@@ -664,8 +675,111 @@ interface DrawState {
   // v5 per-klip
   clipT?: number; clipDur?: number; transId?: string;
   timeline?: Timeline | null; slideOpts?: SlideOpt[] | null; grainAmt?: number;
+  vidMap?: Map<number, any>;
   // v8.7 cache bingkai: gambar hanya lapisan tertentu (A=dunia klip · OV1=glow+spektrum · B=judul/logo/caption · OV2=stiker-spektrum+progress)
   only?: "all"|"A"|"OV1"|"B"|"OV2";
+}
+
+function paintKineticGapFiller(ctx: CanvasRenderingContext2D, W: number, H: number, s: any) {
+  const vidMap = s.vidMap as Map<number, any> | undefined;
+  if (!vidMap || !vidMap.size) return;
+  
+  const slideIdx = s.slideIdx;
+  const vC = vidMap.get(slideIdx);
+  if (!vC) return;
+  
+  const vd = vC.a.duration || vC.b.duration || 0;
+  if (!(vd > 0)) return;
+  
+  const timeline = s.timeline;
+  const perSlide = s.clipDur || 5;
+  const s0 = timeline ? (timeline.starts[slideIdx] ?? 0) : slideIdx * perSlide;
+  const slot0 = timeline ? (((timeline as any).durs?.[slideIdx]) ?? perSlide) : perSlide;
+  const rawTime = s.time - s0;
+  
+  // Kita aktif HANYA bila video sudah berakhir (rawTime >= vd) dan slot slide masih tersisa kekosongan
+  if (rawTime < vd || rawTime >= slot0) return;
+  
+  const gapT = rawTime - vd; // Berapa detik kita berada dalam celah kekosongan
+  
+  // Ambil lirik aktif untuk slide ini
+  let text = "";
+  if (s.captions && Array.isArray(s.captions)) {
+    const slideStart = s0;
+    const slideEnd = s0 + slot0;
+    const words = s.captions.filter((w: any) => w.start >= slideStart && w.start <= slideEnd);
+    if (words.length) {
+      text = words.map((w: any) => w.text).join(" ");
+    }
+  }
+  
+  // Fallback ke judul proyek / niche jika lirik kosong
+  if (!text.trim()) {
+    text = s.title || "";
+  }
+  if (!text.trim()) return;
+  
+  ctx.save();
+  ctx.filter = "none"; // Matikan filter gambar agar teks lirik super tajam
+  
+  // Efek zoom kinetik sinematik yang sangat halus (slowly expanding)
+  const scale = 1.0 + Math.min(0.08, gapT * 0.025);
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(scale, scale);
+  
+  // Gambar bayangan gelap lembut di belakang teks agar mudah dibaca di background apapun (cinematic backdrop)
+  const boxW = W * 0.72;
+  const boxH = H * 0.16;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+  ctx.beginPath();
+  
+  // Bulatkan rect dengan aman
+  if (typeof (ctx as any).roundRect === "function") {
+    (ctx as any).roundRect(-boxW / 2, -boxH / 2, boxW, boxH, 12);
+  } else {
+    ctx.rect(-boxW / 2, -boxH / 2, boxW, boxH);
+  }
+  ctx.fill();
+  
+  // Menggambar teks lirik sinematik di dead-center
+  // Gunakan font Serif premium (Georgia / Times New Roman) untuk estetika film tinggi
+  ctx.font = `italic 700 ${Math.max(14, Math.round(W * 0.038))}px Georgia, serif`;
+  ctx.fillStyle = "#ffd93d"; // Warna kuning emas premium khas CapCut Pro
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+  ctx.shadowBlur = 10;
+  
+  // Bungkus teks ke 2 baris jika terlalu panjang
+  const maxW = boxW - 40;
+  const wordsList = text.split(" ");
+  let line = "";
+  const lines: string[] = [];
+  for (let n = 0; n < wordsList.length; n++) {
+    const testLine = line + wordsList[n] + " ";
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxW && n > 0) {
+      lines.push(line.trim());
+      line = wordsList[n] + " ";
+    } else {
+      line = testLine;
+    }
+  }
+  lines.push(line.trim());
+  
+  // Efek memudar lembut (fade-in) di awal kekosongan
+  const fadeAlpha = Math.min(1, gapT * 2);
+  ctx.globalAlpha = fadeAlpha;
+  
+  if (lines.length === 1) {
+    ctx.fillText(lines[0], 0, 0);
+  } else {
+    const spacing = W * 0.045;
+    ctx.fillText(lines[0], 0, -spacing / 2);
+    ctx.fillText(lines[1], 0, spacing / 2);
+  }
+  
+  ctx.restore();
 }
 
 function drawFrame(s: DrawState) {
@@ -734,6 +848,11 @@ function drawFrame(s: DrawState) {
     // teks lepas waktu (start/dur sendiri — digeser di track)
     // 💎 v13.9: paintFloatingStickers PINDAH ke lapisan hidup OV2 (digambar tiap frame) — lihat di bawah
     paintFloatingTexts(ctx, W, H, optsArr, s.time);
+    
+    // 🩹 v16.0 KINETIC LYRIC GAP-FILLER:
+    // Jika video klip sudah berakhir tapi durasi slide masih tersisa (kekosongan),
+    // sistem otomatis menampilkan kalimat lirik aktif dengan animasi zoom & pudar kinetik yang sangat estetik di tengah layar!
+    paintKineticGapFiller(ctx, W, H, s);
   }
 
   // Vignette PRA-RENDERED (dibuat sekali di setup) — tidak buat radial gradient tiap frame
@@ -2203,6 +2322,7 @@ async function renderWebCodecs(b:any){
       _cinebars: !!(b as any).cinebars, // 🎬 v13.5
       textLayers: b.textLayers,
       clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt,
+      vidMap, // 🩹 Pass vidMap so drawFrame can access video durations
     };
 
     let frameIdKey = "";
@@ -2431,7 +2551,9 @@ async function renderMediaRecorder(b:any){
       spectrumSticker: b.spectrumSticker,
       _cinebars: !!(b as any).cinebars, // 🎬 v13.5
       textLayers: b.textLayers,
-      clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt} as any);
+      clipT, clipDur: frameDur, transId, timeline, slideOpts, grainAmt,
+      vidMap, // 🩹 Pass vidMap so drawFrame can access video durations
+    } as any);
     onProgress?.(t/totalDur);
     if(elapsed<totalDur+0.2) requestAnimationFrame(tick);
     else{mr.stop();actx?.close();}
