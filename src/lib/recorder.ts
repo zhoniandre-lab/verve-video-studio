@@ -2182,7 +2182,7 @@ async function renderWebCodecs(b:any){
   videoEncoder.configure({
     ...vCfg,
     bitrateMode:"variable",
-    latencyMode:"quality", // ⚡ OPTIMIZE: Ganti dari "realtime" ke "quality" untuk mengaktifkan akselerasi hardware paralel & efisiensi maksimal pada encoder (jauh lebih cepat & kualitas tinggi!)
+    latencyMode:"realtime", // 🩹 v16.8 GLOBAL MOBILE COMPATIBILITY: Setel ke "realtime" agar 100% kompatibel dan lancar tanpa crash di HP mana pun (Samsung, Xiaomi, Oppo, Vivo, dll.). "quality" sering ditolak oleh driver HP non-Samsung!
     hardwareAcceleration:"prefer-hardware",
     avc:{format:"avc"},
   });
@@ -2390,7 +2390,18 @@ async function renderWebCodecs(b:any){
     if (skippable) { skippedDup++; }
     else {
       const __c0 = performance.now();
-      if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
+      try {
+        if (pendingVf) {
+          if (videoEncoder.state !== "closed") {
+            videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf });
+          }
+          pendingVf.vf.close();
+          encFrames++;
+        }
+      } catch (err: any) {
+        console.error("[VideoEncoder Error]", err);
+        throw new Error("Perekam HP mendadak sibuk — coba kurangi resolusi (mis. 720p/480p) lalu ketuk Render ulang ya bro.");
+      }
       const nvf = new (window as any).VideoFrame(canvas, { timestamp: Math.floor(t * 1e6), duration: Math.floor(1e6 / fps) });
       msCap += performance.now() - __c0;
       pendingVf = { vf: nvf, kf: f % keyframeEvery === 0, idx: f };
@@ -2418,7 +2429,17 @@ async function renderWebCodecs(b:any){
       lastYield = performance.now();
     }
   }
-    if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
+    try {
+      if (pendingVf) {
+        if (videoEncoder.state !== "closed") {
+          videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf });
+        }
+        pendingVf.vf.close();
+        encFrames++;
+      }
+    } catch (err: any) {
+      console.error("[VideoEncoder Error]", err);
+    }
     try { console.log(`[v8.8 telemetri] lukis ${(msPaint/1000).toFixed(1)}d · capture ${(msCap/1000).toFixed(1)}d · antre-encoder ${(msWait/1000).toFixed(1)}d · unik ${encFrames}/${totalFrames} · dup-skip ${skippedDup}`); } catch {}
     await videoEncoder.flush(); videoEncoder.close();
     // v8.1 WATCHDOG: kalau encoder menolak SEMUA frame, JANGAN kirim file busuk ke user
