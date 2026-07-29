@@ -3473,6 +3473,36 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
+  function unwrapRemoteMediaUrl(u: string): string {
+    if (!u) return "";
+    if (/^https?:\/\//i.test(u)) return u;
+    try {
+      const x = new URL(u, location.origin);
+      const inner = x.searchParams.get("url");
+      if (inner && /^https?:\/\//i.test(inner)) return inner;
+    } catch { /* no-op */ }
+    return u;
+  }
+  async function cloudSaveMusic() {
+    const raw = unwrapRemoteMediaUrl(musicUrl);
+    if (!raw || !/^https?:\/\//i.test(raw)) { flash("☁️ Cloud musik tahap ini hanya bisa menyalin link online http(s). Audio upload/blob lokal menyusul jalur khusus."); return; }
+    setLoading("cloudmedia"); setError("");
+    try {
+      const r = await fetch("/api/hcnsec/brankas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaUrl: raw, kind: "audio", fileName: `${musicName || projTitle || "verve_music"}.mp3` }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || `Cloud media error ${r.status}`);
+      setMusicUrl(String(d.url || ""));
+      if (!musicName) setMusicName("Musik Cloud");
+      await copyTxt(String(d.url || ""));
+      setTimeout(() => persistSnapshot(true), 80);
+      flash(`☁️ Musik tersalin ke Supabase (${((Number(d.bytes) || 0) / 1048576).toFixed(1)}MB) — link cloud disalin`);
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
+  }
   async function importProjectBackupFile(f?: File | null) {
     if (!f) return;
     try {
@@ -4312,7 +4342,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
-            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, importProjectBackupFile,
+            meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, cloudSaveMusic, importProjectBackupFile,
             downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
@@ -6265,6 +6295,7 @@ function EksporSheet({ api: A, onClose }: any) {
               <div>
                 <button className="v6-chip" onClick={A.downloadProjectBackup}>📤 Backup JSON</button>
                 <button className="v6-chip" disabled={A.loading === "cloudbackup"} onClick={A.uploadProjectBackupCloud}>{A.loading === "cloudbackup" ? "⏳ Upload…" : "☁️ Upload Cloud"}</button>
+                {A.musicUrl && <button className="v6-chip" disabled={A.loading === "cloudmedia"} onClick={A.cloudSaveMusic}>{A.loading === "cloudmedia" ? "⏳ Musik…" : "🎵 Musik Cloud"}</button>}
                 <label className="v6-chip" style={{ cursor: "pointer" }}>📥 Restore JSON
                   <input type="file" accept="application/json,.json" hidden onChange={(e) => { A.importProjectBackupFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
                 </label>

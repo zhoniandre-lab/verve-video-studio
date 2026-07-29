@@ -145,6 +145,10 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("safeCloudName bersih + json", cb.safeCloudName("Doa Ibu!!!") === "Doa_Ibu.json", cb.safeCloudName("Doa Ibu!!!"));
   const path = cb.cloudBackupPath("Doa Ibu.json", Date.UTC(2026, 6, 30));
   T("cloudBackupPath folder tanggal", /^backups\/2026\/07\/30\//.test(path), path);
+  T("safeRemoteMediaUrl terima https publik", cb.safeRemoteMediaUrl("https://example.com/a.mp3") === true);
+  T("safeRemoteMediaUrl tolak localhost/private", cb.safeRemoteMediaUrl("http://127.0.0.1/a.mp3") === false && cb.safeRemoteMediaUrl("http://192.168.1.2/a.mp3") === false);
+  T("media ext dari mime", cb.mediaExtFromMime("audio/mpeg") === "mp3" && cb.mediaExtFromMime("audio/mp4") === "m4a");
+  T("cloudMediaPath folder audio", /^media\/audio\/2026\/07\/30\//.test(cb.cloudMediaPath("lagu.mp3", "audio", Date.UTC(2026, 6, 30), "audio/mpeg")));
   T("byteLen unicode > char len", cb.byteLen("ibu 💛") > "ibu 💛".length);
 }
 
