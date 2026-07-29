@@ -4180,7 +4180,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             addSticker, delSticker, uploadOverlayImg, moveSticker,
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
-            estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText,
+            estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText, guardJob,
             openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             voiceUrl, setVoiceUrl,
@@ -6160,6 +6160,12 @@ function EksporSheet({ api: A, onClose }: any) {
             <button className="v6-btn" style={{ width: "100%", marginTop: 8, borderColor: "rgba(59,130,246,.45)", color: "#bfdbfe" }} onClick={A.saveMoneyPrinterVariants}>🎲 Simpan 3 versi draft (Emosi · Sinematik · Shorts)</button>
             <button className="v6-bigcta" onClick={A.doRender} disabled={A.loading === "render"}>
               {A.loading === "render" ? `⏳ Rendering… ${Math.round(A.progress * 100)}%` : A.videoUrl ? "🔄 Render Ulang" : "Ekspor"}</button>
+            {A.guardJob && (
+              <div className={`v6-jobbox ${A.guardJob.state}`}>
+                <b>{summarizeJob(A.guardJob)}</b>
+                {(A.guardJob.logs || []).slice(-5).map((l: string, i: number) => <span key={i}>{l}</span>)}
+              </div>
+            )}
             {!!A.videoUrl && (
               <>
                 <video src={A.videoUrl} controls style={{ width: "100%", borderRadius: 12, marginTop: 10, border: "1px solid var(--v6-line)" }} />

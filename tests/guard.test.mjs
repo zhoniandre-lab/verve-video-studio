@@ -18,6 +18,7 @@ const tl = await loadTs("../src/lib/guard/timeline.ts");
 const sc = await loadTs("../src/lib/guard/scene.ts");
 const job = await loadTs("../src/lib/guard/job.ts");
 const prod = await loadTs("../src/lib/guard/production.ts");
+const mc = await loadTs("../src/lib/guard/material-cache.ts");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -106,7 +107,24 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("job gagal punya state error", j.state === "error" && j.stages.some(s => s.id === "materials" && s.state === "error"));
 }
 
-// 8) production helpers: 3 varian + upload kit
+// 8) material cache: query sama tidak perlu bakar request ulang
+{
+  const mem = new Map();
+  const oldLS = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => mem.has(k) ? mem.get(k) : null,
+    setItem: (k, v) => mem.set(k, String(v)),
+    removeItem: (k) => mem.delete(k),
+  };
+  const key = mc.materialCacheKey(" Mother   Crying ", 2, 8);
+  T("materialCacheKey normalisasi query", key === "mother crying|p=2|n=8", key);
+  mc.writeMaterialCache("mother crying", 2, 8, { ok: true, hasil: [1] }, 1000, 5000);
+  T("material cache hit segar", mc.readMaterialCache("mother crying", 2, 8, 3000)?.hasil?.[0] === 1);
+  T("material cache expired hilang", mc.readMaterialCache("mother crying", 2, 8, 7001) === null);
+  if (oldLS) globalThis.localStorage = oldLS; else delete globalThis.localStorage;
+}
+
+// 9) production helpers: 3 varian + upload kit
 {
   const vs = prod.moneyPrinterVariants();
   T("3 varian produksi tersedia", vs.length === 3 && vs.some(v => v.id === "shorts"));

@@ -3,6 +3,7 @@
    (BUKAN video berhak cipta — jadi aturan "berapa detik boleh" tidak berlaku, semuanya halal.) */
 
 import { fetchJsonResult } from "@/lib/guard/net";
+import { readMaterialCache, writeMaterialCache } from "@/lib/guard/material-cache";
 
 export type VidPick = { id: number; src: string; sd: string; thumb: string; dur: number; by: string; link: string; w?: number; h?: number; provider?: string };
 
@@ -15,6 +16,8 @@ export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariH
   const translated = terjemahkanKueri(q);
   const query = translated.trim().replace(/\s+/g, " ").slice(0, 60);
   if (query.length < 2) return { ok: false, hasil: [], total: 0, err: "Kata kunci terlalu pendek bro." };
+  const cached = readMaterialCache<CariHasil>(query, page, per);
+  if (cached?.ok && Array.isArray(cached.hasil)) return { ...cached, err: "" };
   const res = await fetchJsonResult<any>(`/api/hcnsec/stock-video?q=${encodeURIComponent(query)}&page=${page}&per=${per}`, {
     timeoutMs: 15_000,
     retries: 1,
@@ -31,7 +34,9 @@ export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariH
       return { ok: false, hasil: [], total: 0, err: "⏳ Terlalu sering cari dalam 10 menit — tarik napas dulu ya bro." };
     return { ok: false, hasil: [], total: 0, err: j.error || `Gudang gagal dihubungi (HTTP ${res.status})` };
   }
-  return { ok: true, hasil: j.hasil || [], total: j.total || 0, err: "" };
+  const out = { ok: true, hasil: j.hasil || [], total: j.total || 0, err: "" };
+  writeMaterialCache(query, page, per, out);
+  return out;
 }
 
 /** 🇮🇩 Cari pintar RASA INDONESIA: coba dulu "+ indonesia"; stok Nusantara kosong → dilebarkan ke gudang dunia (dilapor JUJUR via lebar=true). */

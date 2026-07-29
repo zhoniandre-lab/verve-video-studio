@@ -3,3 +3,4 @@ export * from "./timeline";
 export * from "./scene";
 export * from "./job";
 export * from "./production";
+export * from "./material-cache";
