@@ -2389,19 +2389,6 @@ async function renderWebCodecs(b:any){
     const skippable = fastOk && !b.spectrumSticker && pendingVf && frameIdKey === lastFrameKey;
     if (skippable) { skippedDup++; }
     else {
-      // 🩹 v15.8 CINEMATIC MOTION BLUR (Temporal Anti-Aliasing):
-      // Jika di HP, campurkan 18% dari frame sebelumnya (cvMotionBlur) untuk menciptakan efek bayangan motion-blur halus,
-      // melenyapkan getaran kasar/patah-patah pada video dan slow-mo agar tampil sangat lumat & sinematik!
-      if (f > 0 && mobileOptimized) {
-        mctx.save();
-        mctx.globalCompositeOperation = "source-over";
-        mctx.globalAlpha = 0.18; // 18% decay rate
-        mctx.drawImage(cvMotionBlur, 0, 0);
-        mctx.restore();
-      }
-      const mbCtx = cvMotionBlur.getContext("2d")!;
-      mbCtx.drawImage(canvas, 0, 0);
-
       const __c0 = performance.now();
       if (pendingVf) { videoEncoder.encode(pendingVf.vf, { keyFrame: pendingVf.kf }); pendingVf.vf.close(); encFrames++; }
       const nvf = new (window as any).VideoFrame(canvas, { timestamp: Math.floor(t * 1e6), duration: Math.floor(1e6 / fps) });
