@@ -3488,6 +3488,23 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
+  async function deleteCloudBackup(item: any) {
+    const path = String(item?.path || "");
+    if (!path || !confirm(`Hapus backup cloud ini?\n${item?.label || path}`)) return;
+    setLoading("clouddelete"); setError("");
+    try {
+      const r = await fetch("/api/hcnsec/brankas", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || `Cloud delete error ${r.status}`);
+      setCloudBackups((cur) => cur.filter((x) => x.path !== path));
+      flash("🗑 Backup cloud dihapus — storage lebih lega");
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
+  }
   async function restoreCloudBackup(item: any) {
     const url = String(item?.url || "");
     if (!/^https?:\/\//i.test(url)) { flash("⚠️ Link cloud backup tidak valid"); return; }
@@ -4378,7 +4395,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, cloudSaveMusic, importProjectBackupFile,
-            listCloudBackups, restoreCloudBackup, cloudBackups, cloudListOpen, setCloudListOpen,
+            listCloudBackups, restoreCloudBackup, deleteCloudBackup, cloudBackups, cloudListOpen, setCloudListOpen,
             downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
@@ -6345,6 +6362,7 @@ function EksporSheet({ api: A, onClose }: any) {
                       <span className="dt">{b.createdAt ? dateLabel(new Date(b.createdAt).getTime()) : "cloud"} · {b.size ? `${(b.size / 1024).toFixed(0)}KB` : "JSON"}</span>
                       <button onClick={() => A.restoreCloudBackup?.(b)} disabled={A.loading === "cloudrestore"}>{A.loading === "cloudrestore" ? "⏳" : "Restore"}</button>
                       <button onClick={() => A.copyFld?.("cloud", b.url || "")}>Link</button>
+                      <button className="danger" onClick={() => A.deleteCloudBackup?.(b)} disabled={A.loading === "clouddelete"}>{A.loading === "clouddelete" ? "⏳" : "Hapus"}</button>
                     </div>
                   ))}
                 </div>

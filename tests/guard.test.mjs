@@ -145,7 +145,7 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("safeCloudName bersih + json", cb.safeCloudName("Doa Ibu!!!") === "Doa_Ibu.json", cb.safeCloudName("Doa Ibu!!!"));
   const path = cb.cloudBackupPath("Doa Ibu.json", Date.UTC(2026, 6, 30));
   T("cloudBackupPath folder tanggal", /^backups\/2026\/07\/30\//.test(path), path);
-  T("isCloudBackupPath benar", cb.isCloudBackupPath("backups/2026/07/30/123_abcd_Doa_Ibu.json") === true && cb.isCloudBackupPath("media/audio/a.mp3") === false);
+  T("isCloudBackupPath benar", cb.isCloudBackupPath("backups/2026/07/30/123_abcd_Doa_Ibu.json") === true && cb.isCloudBackupPath("media/audio/a.mp3") === false && cb.isCloudBackupPath("backups/../../x.json") === false);
   T("cloudBackupLabel rapi", cb.cloudBackupLabel("backups/2026/07/30/123_abcd_Doa_Ibu.json") === "Doa Ibu", cb.cloudBackupLabel("backups/2026/07/30/123_abcd_Doa_Ibu.json"));
   T("safeRemoteMediaUrl terima https publik", cb.safeRemoteMediaUrl("https://example.com/a.mp3") === true);
   T("safeRemoteMediaUrl tolak localhost/private", cb.safeRemoteMediaUrl("http://127.0.0.1/a.mp3") === false && cb.safeRemoteMediaUrl("http://192.168.1.2/a.mp3") === false);

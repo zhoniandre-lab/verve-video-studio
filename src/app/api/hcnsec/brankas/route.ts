@@ -86,6 +86,29 @@ export async function GET(req: Request) {
   }
 }
 
+export async function DELETE(req: Request) {
+  const ip = (req.headers.get("x-forwarded-for") || "anon").split(",")[0].trim();
+  if (!bolehUpload(ip)) return NextResponse.json({ ok: false, error: "Terlalu sering hapus backup cloud — tunggu sebentar ya bro." }, { status: 429 });
+  const a = adminClient();
+  if (!a.ok) return NextResponse.json({ ok: false, code: "SUPABASE_BELUM_AKTIF", error: a.error }, { status: 503 });
+  try {
+    const u = new URL(req.url);
+    let path = u.searchParams.get("path") || "";
+    if (!path) {
+      const body = await req.json().catch(() => ({}));
+      path = String(body?.path || "");
+    }
+    path = path.replace(/^\/+/, "");
+    if (!isCloudBackupPath(path)) return NextResponse.json({ ok: false, error: "Path backup tidak sah — hanya file backups/...json yang boleh dihapus." }, { status: 400 });
+    await ensureBucket(a.supabase);
+    const del = await a.supabase.storage.from(CLOUD_BRANKAS_BUCKET).remove([path]);
+    if (del.error) throw del.error;
+    return NextResponse.json({ ok: true, bucket: CLOUD_BRANKAS_BUCKET, path });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || String(e || "hapus cloud gagal") }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   const ip = (req.headers.get("x-forwarded-for") || "anon").split(",")[0].trim();
   if (!bolehUpload(ip)) return NextResponse.json({ ok: false, error: "Terlalu sering upload backup cloud — tunggu sebentar ya bro." }, { status: 429 });
