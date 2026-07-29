@@ -3419,6 +3419,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       hasMetadata: !!meta,
       hasThumbnail: !!thumbBlobRef.current,
     });
+    const stockSources = slides.map((s, i) => ({ scene: i + 1, ...((slideOptsById[s.id] as any)?.stock || {}) })).filter((x: any) => x.provider || x.by || x.link || x.id);
     const txt = makeUploadKitText({
       title: meta.titleHighCTR || projTitle,
       description: meta.description || "",
@@ -3431,6 +3432,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       hasThumbnail: !!thumbBlobRef.current,
       health,
       checklist,
+      sources: stockSources,
     });
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `upload_kit_${Date.now()}.txt`);
     flash("📦 Paket Upload YouTube terdownload — video & thumbnail tetap unduh dari tombolnya masing-masing");

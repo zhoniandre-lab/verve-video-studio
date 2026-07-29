@@ -55,6 +55,7 @@ export type UploadKitInput = {
   hasThumbnail?: boolean;
   health?: { label?: string; short?: string; level?: string } | null;
   checklist?: { id: string; label: string; done: boolean }[];
+  sources?: { scene?: number; provider?: string; by?: string; link?: string; id?: number | string; dur?: number }[];
 };
 
 function fmtDur(s?: number): string {
@@ -83,6 +84,7 @@ export function applyMoneyPrinterVariant<T extends { id?: string; title?: string
 
 export function makeUploadKitText(i: UploadKitInput): string {
   const checklist = i.checklist || [];
+  const sources = (i.sources || []).filter((s) => s && (s.provider || s.by || s.link || s.id));
   return [
     "=== VERVE UPLOAD KIT ===",
     `Proyek: ${i.projectTitle || i.title || "VERVE"}`,
@@ -106,6 +108,9 @@ export function makeUploadKitText(i: UploadKitInput): string {
     "",
     "=== HASHTAGS ===",
     i.hashtags || "",
+    "",
+    "=== SUMBER STOCK VIDEO ===",
+    ...(sources.length ? sources.map((s) => `${s.scene ? `Adegan ${s.scene}: ` : ""}${s.provider || "stock"}${s.by ? ` · ${s.by}` : ""}${s.id ? ` · id ${s.id}` : ""}${s.dur ? ` · ${s.dur}s` : ""}${s.link ? ` · ${s.link}` : ""}`) : ["Tidak ada stock video tercatat / proyek memakai gambar lokal atau AI."]),
     "",
     "=== CATATAN UPLOAD ===",
     "1. Upload video MP4 dari tombol Download video.",

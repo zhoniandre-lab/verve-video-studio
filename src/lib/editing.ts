@@ -47,6 +47,7 @@ export interface SlideOpt {
   text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
   texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
   stickers?: StickerItem[];
+  stock?: { provider?: string; by?: string; link?: string; id?: number; dur?: number }; // 🧾 sumber stock video (Pexels/Pixabay/Coverr) utk Upload Kit & audit
 }
 export interface AdjustState {
   b: number; c: number; s: number; e: number;      // brightness/contrast/saturation/exposure (-50..50)

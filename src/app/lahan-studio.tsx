@@ -1322,6 +1322,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         dur: per,
         trans: "dissolve",
         ...(sc.vidOn && sc.vid && sc.vidSpd && sc.vidSpd !== 1 ? { spd: sc.vidSpd } : {}), // ⏱ v13.13: kecepatan manual ikut ke render
+        ...(sc.vidOn && sc.vid ? { stock: { provider: sc.vid.provider || (sc.vid.by || "").split("·").pop()?.trim().toLowerCase() || "stock", by: sc.vid.by, link: sc.vid.link, id: sc.vid.id, dur: sc.vid.dur } } : {}), // 🧾 v18.5: jejak sumber stock ikut ke Studio/Upload Kit
           texts: cap
           ? [{
               id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
