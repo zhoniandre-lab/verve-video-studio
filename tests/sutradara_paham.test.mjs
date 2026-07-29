@@ -22,9 +22,9 @@ const lucut = (js) => js
   .replace(/: number/g, "")
   .replace(/: string/g, "");
 
-const src = ["gram2", "miripKata", "adaKataMirip", "mintaKeteranganOtomatis"].map(n => lucut(potongFungsi(pg, n))).join("\n");
-const P = new Function(`${src}; return { miripKata, mintaKeteranganOtomatis };`)();
-console.log("🎧 Menguji detektor ASLI mintaKeteranganOtomatis dari page.tsx");
+const src = ["gram2", "miripKata", "adaKataMirip", "mintaKeteranganOtomatis", "mintaTigaVersi", "paketUploadIntent", "speedGlobalIntent"].map(n => lucut(potongFungsi(pg, n))).join("\n");
+const P = new Function(`${src}; return { miripKata, mintaKeteranganOtomatis, mintaTigaVersi, paketUploadIntent, speedGlobalIntent };`)();
+console.log("🎧 Menguji detektor ASLI niat lokal Sutradara dari page.tsx");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -70,5 +70,17 @@ T("asing total = 0", Math.abs(P.miripKata("abcde", "vwxyz")) < 1e-9);
 T('typo "ketermgan"≈"keterangan"', P.miripKata("ketermgan", "keterangan") >= 0.55, P.miripKata("ketermgan", "keterangan").toFixed(2));
 T('typo "otimatis"≈"otomatis"', P.miripKata("otimatis", "otomatis") >= 0.6, P.miripKata("otimatis", "otomatis").toFixed(2));
 
-console.log(gagal ? `\n💥 ${gagal} uji GAGAL` : "\n🏁 SUTRADARA PAHAM LOKAL — niat keterangan otomatis dikenali, niat lain ditolak sopan");
+// 4) MoneyPrinter commands lokal — harus paham tanpa AI jauh
+T("paham: buat tiga versi draft", P.mintaTigaVersi("buat tiga versi draft dong") === true);
+T("paham: moneyprinter/batch", P.mintaTigaVersi("gas moneyprinter batch") === true);
+T("tolak: hapus tiga versi", P.mintaTigaVersi("hapus tiga versi") === false);
+T("paket upload default download", P.paketUploadIntent("buat paket upload youtube") === "download");
+T("paket upload salin", P.paketUploadIntent("salin upload kit lengkap") === "copy");
+T("tolak hapus paket upload", P.paketUploadIntent("hapus paket upload") === "");
+T("speed shorts cepat = 1.18", Math.abs(P.speedGlobalIntent("mode shorts cepat") - 1.18) < 1e-9);
+T("speed dreamy = 0.75", Math.abs(P.speedGlobalIntent("dreamy semua") - 0.75) < 1e-9);
+T("speed normal = 1", Math.abs(P.speedGlobalIntent("normal semua") - 1) < 1e-9);
+T("speed curhat biasa = 0", P.speedGlobalIntent("keterangan kok lambat ya") === 0);
+
+console.log(gagal ? `\n💥 ${gagal} uji GAGAL` : "\n🏁 SUTRADARA PAHAM LOKAL — niat keterangan otomatis + MoneyPrinter dikenali, niat lain ditolak sopan");
 process.exit(gagal ? 1 : 0);

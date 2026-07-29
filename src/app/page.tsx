@@ -71,6 +71,26 @@ function mintaKeteranganOtomatis(teks: string): boolean {
   const aksi = adaKataMirip(kata, ["otomatis", "sinkron", "selaras", "pasang", "buat", "buatkan", "bikinkan", "nyalakan", "jadi", "gas"], 0.58);
   return objek && aksi;
 }
+function mintaTigaVersi(teks: string): boolean {
+  const t = teks.toLowerCase();
+  if (/hapus|buang|delete|bersih/.test(t)) return false;
+  return /(3|tiga)\s+(versi|variasi|draft)/.test(t) || /buat.*(versi|variasi).*(emosi|sinematik|shorts)/.test(t) || /money\s*printer|moneyprinter|batch/.test(t);
+}
+function paketUploadIntent(teks: string) {
+  const t = teks.toLowerCase();
+  if (/hapus|buang|delete|bersih/.test(t)) return "";
+  const has = /paket\s*upload|upload\s*kit|paket\s*youtube|metadata\s*lengkap/.test(t);
+  if (!has) return "";
+  return /salin|copy|clipboard|tempel/.test(t) ? "copy" : "download";
+}
+function speedGlobalIntent(teks: string): number {
+  const t = teks.toLowerCase();
+  if (/hapus|buang|delete/.test(t)) return 0;
+  if (/shorts?\s*cepat|cepat.*shorts?|reels?\s*cepat|tiktok\s*cepat/.test(t)) return 1.18;
+  if (/dreamy|emosional|emosi\s*semua|slow\s*semua|pelan\s*semua|lambat\s*semua/.test(t)) return 0.75;
+  if (/normal\s*semua|speed\s*normal|kecepatan\s*normal|1x\s*semua/.test(t)) return 1;
+  return 0;
+}
 const normTok = (s: string) => s.toLowerCase().replace(/[^a-z0-9']/g, "");
 interface LyricLine { text: string; words: string[]; pause: number }
 interface LineSpan { start: number; end: number; kws: { w: string; start: number; end: number }[] }
@@ -2347,6 +2367,25 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
     // ⚡ OPTIMIZE: Deteksi Gaya Sinematik / Jedag-Jeduk / Retro Vlog secara LOKAL & instan!
     const lower = msg.toLowerCase();
+    if (mintaTigaVersi(msg)) {
+      dirPush("sys", "🎲 Dipahami lokal: bikin 3 versi draft ala MoneyPrinter — Emosional, Sinematik, dan Shorts cepat. Cek tab Proyek setelah ini.");
+      saveMoneyPrinterVariants();
+      return;
+    }
+    const upIntent = paketUploadIntent(msg);
+    if (upIntent) {
+      dirPush("sys", upIntent === "copy" ? "📋 Dipahami lokal: salin Paket Upload lengkap." : "📦 Dipahami lokal: download Paket Upload YouTube.");
+      if (upIntent === "copy") await copyUploadKit(); else downloadUploadKit();
+      return;
+    }
+    const spGlobal = speedGlobalIntent(msg);
+    if (spGlobal) {
+      if (spGlobal === 1.18) { setRatio("9:16"); setTransition("push-l"); setTransitionDur(0.35); }
+      else if (spGlobal === 0.75) { setRatio("16:9"); setTransition("dissolve"); setTransitionDur(0.85); }
+      applyGlobalSpeed(spGlobal);
+      dirPush("sys", `⚡ Dipahami lokal: speed global ${spGlobal}× diterapkan${spGlobal === 1.18 ? " + format Shorts cepat" : spGlobal === 0.75 ? " + rasa dreamy/emosional" : ""}.`);
+      return;
+    }
     if (lower.includes("travel") || lower.includes("vlog travel") || lower.includes("perjalanan") || lower.includes("petualang")) {
       dirPush("sys", "🌋 Dipahami lokal: Menerapkan Gaya 'Cinematic Travel Vlog' (Framing 16:9, Letterbox 2.39:1, Alur Cerita Hollywood 10-Klip, Sound Design Ambient Ducking, Kodak Color Grading).");
       applyStylePreset("cinematic_travel");
@@ -4198,7 +4237,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               placeholder="perintah… (Enter)"
               style={{ flex: 1, background: "#12151c", color: "#e8edf5", border: "1px solid #ffffff22", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
             />
-            <Ngomong lang={micLang} onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia gaya santai (boleh salah ketik): keterangan otomatis, transisi, zoom pelan, animasikan adegan, kecilkan musik, render, karaoke, lirik, narasi" title="🎤 Bicara perintah ke Sutradara — ketuk, ngomong, ketuk ⏹ (<60d)" /> {/* v14.5 */}
+            <Ngomong lang={micLang} onText={(t) => setDirInp((v) => (v ? v + " " : "") + t)} hint="perintah edit video bahasa Indonesia gaya santai (boleh salah ketik): keterangan otomatis, transisi, zoom pelan, animasikan adegan, kecilkan musik, render, karaoke, lirik, narasi, buat 3 versi, paket upload, salin paket upload, shorts cepat" title="🎤 Bicara perintah ke Sutradara — ketuk, ngomong, ketuk ⏹ (<60d)" /> {/* v14.5 */}
             <button onClick={() => { const v = dirInp; setDirInp(""); void sendDirectorStudio(v); }} disabled={dirBusy} style={{ background: "linear-gradient(135deg,#0d9488,#14b8a6)", color: "#052a26", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 800, cursor: "pointer" }}>➤</button>
           </div>
           {videoUrl ? <div style={{ fontSize: 11, color: "#86efac" }}>✅ Hasil render siap — tombol ⬇ Download aktif.</div> : null}
