@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { dateDaysAgo, ensureYoutubeAccess, setEncryptedTokenCookie, todayDate, ytAuthedGet, youtubeOAuthConfig } from "@/lib/server/youtube-oauth";
+import { dateDaysAgo, ensureYoutubeAccess, isoDurToSec, setEncryptedTokenCookie, todayDate, ytAuthedGet, youtubeOAuthConfig } from "@/lib/server/youtube-oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type AnalyticsRes = { columnHeaders?: { name: string }[]; rows?: (string | number)[][] };
+type VideosRes = { items?: { id: string; snippet?: { title?: string; publishedAt?: string; thumbnails?: unknown }; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string }; contentDetails?: { duration?: string } }[] };
 
 function num(v: unknown): number | null { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 10) / 10 : null; }
 function trafficLabel(k: string): string {
@@ -64,6 +65,26 @@ export async function GET(req: Request) {
   const endDate = String(u.searchParams.get("endDate") || todayDate());
 
   try {
+    let video: Record<string, unknown> | null = null;
+    try {
+      const vUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+      vUrl.searchParams.set("part", "snippet,statistics,contentDetails");
+      vUrl.searchParams.set("id", videoId);
+      const vd = await ytAuthedGet<VideosRes>(vUrl.toString(), auth.accessToken);
+      const v = vd.items?.[0];
+      if (v) video = {
+        id: v.id,
+        title: v.snippet?.title || "Video YouTube",
+        publishedAt: v.snippet?.publishedAt || "",
+        durationSec: isoDurToSec(v.contentDetails?.duration),
+        viewCount: Number(v.statistics?.viewCount || 0),
+        likeCount: Number(v.statistics?.likeCount || 0),
+        commentCount: Number(v.statistics?.commentCount || 0),
+        thumbnails: v.snippet?.thumbnails || null,
+        url: `https://www.youtube.com/watch?v=${v.id}`,
+      };
+    } catch { /* metadata publik opsional */ }
+
     const base = { ids: "channel==MINE", startDate, endDate, filters: `video==${videoId}` };
     const main = rowObj(await report(auth.accessToken, {
       ...base,
@@ -111,6 +132,7 @@ export async function GET(req: Request) {
     const body = {
       ok: true,
       videoId,
+      video,
       dateRange: { startDate, endDate, days },
       metrics,
       traffic,

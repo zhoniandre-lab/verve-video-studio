@@ -4,6 +4,7 @@ import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } fr
 import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
+import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
 
 function num(v: string): number | undefined {
   const raw = String(v ?? "").trim();
@@ -97,7 +98,7 @@ function textCoverageText(r: YtStudioTextResult): string {
 
 type YtStatus = { configured: boolean; connected: boolean; missing?: string[]; error?: string; channel?: { id?: string; title?: string; thumbnail?: string } | null };
 type YtVideo = { id: string; title: string; publishedAt?: string; durationSec?: number; viewCount?: number; likeCount?: number; commentCount?: number; url?: string };
-type YtMetricPayload = { ok?: boolean; error?: string; metrics?: { views?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
+type YtMetricPayload = { ok?: boolean; error?: string; video?: Partial<YtVideo>; metrics?: { views?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
 
 export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
@@ -128,6 +129,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [audienceFacts, setAudienceFacts] = useState<YtStudioTextResult["audience"]>([]);
   const [ytStatus, setYtStatus] = useState<YtStatus | null>(null);
   const [ytVideos, setYtVideos] = useState<YtVideo[]>([]);
+  const [ytUrl, setYtUrl] = useState("");
   const [ytBusy, setYtBusy] = useState(false);
   const [ytMsg, setYtMsg] = useState("");
 
@@ -250,9 +252,9 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     } finally { setYtBusy(false); }
   };
   const applyYoutubeVideo = async (v: YtVideo) => {
-    setYtBusy(true); setYtMsg(`⏳ Membaca analytics: ${v.title}`);
+    setYtBusy(true); setYtMsg(`⏳ Membaca analytics: ${v.title || v.id}`);
     try {
-      setTitle(v.title || "");
+      if (v.title) setTitle(v.title);
       if (v.durationSec) setDur(secToClock(v.durationSec));
       if (v.likeCount != null) setLikes(String(v.likeCount));
       if (v.commentCount != null) setComments(String(v.commentCount));
@@ -263,8 +265,18 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       const r = await fetch(`/api/youtube/analytics/video?videoId=${encodeURIComponent(v.id)}&days=28`, { cache: "no-store" });
       const j: YtMetricPayload = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Analytics belum bisa dibaca");
+      const meta = j.video || {};
+      if (meta.title) setTitle(String(meta.title));
+      if (typeof meta.durationSec === "number" && meta.durationSec > 0) setDur(secToClock(meta.durationSec));
+      if (typeof meta.likeCount === "number") setLikes(String(meta.likeCount));
+      if (typeof meta.commentCount === "number") setComments(String(meta.commentCount));
+      if (meta.publishedAt) {
+        const h = Math.max(1, Math.round((Date.now() - +new Date(String(meta.publishedAt))) / 36e5));
+        if (Number.isFinite(h)) setAge(String(h));
+      }
       const m = j.metrics || {};
       if (m.views != null) setViews(String(m.views));
+      else if (typeof meta.viewCount === "number") setViews(String(meta.viewCount));
       else if (v.viewCount != null) setViews(String(v.viewCount));
       if (m.impressions != null) setImpressions(String(m.impressions));
       if (m.ctrPct != null) setCtr(String(m.ctrPct));
@@ -278,6 +290,11 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       setYtMsg(`✅ Data analytics masuk. ${j.warnings?.length ? j.warnings[0] : "Read-only, aman."}`);
     } catch (e) { setYtMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal membaca analytics"}`); }
     finally { setYtBusy(false); }
+  };
+  const applyYoutubeUrl = async () => {
+    const id = extractYoutubeVideoId(ytUrl);
+    if (!id) { setYtMsg("Tempel URL YouTube/videoId yang valid dulu."); return; }
+    await applyYoutubeVideo({ id, title: "Video dari URL" });
   };
 
   useEffect(() => {
@@ -391,6 +408,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             <b>✅ Terhubung{ytStatus.channel?.title ? `: ${ytStatus.channel.title}` : ""}</b>
             <span>Mode read-only · YouTube Analytics API resmi</span>
             <div className="gd-textactions"><button onClick={loadYtVideos} disabled={ytBusy}>📺 Muat Video</button><button className="muted" onClick={disconnectYt} disabled={ytBusy}>Putus</button></div>
+            <div className="gd-yturl"><input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="Tempel URL video YouTube" /><button onClick={applyYoutubeUrl} disabled={ytBusy}>Baca URL</button></div>
           </div>
         ) : (
           <button className="gd-ytconnect" onClick={() => { location.href = "/api/youtube/oauth/start"; }}>🔗 Hubungkan YouTube</button>
