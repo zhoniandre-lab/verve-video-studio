@@ -21,6 +21,7 @@ const prod = await loadTs("../src/lib/guard/production.ts");
 const mc = await loadTs("../src/lib/guard/material-cache.ts");
 const pb = await loadTs("../src/lib/guard/project-backup.ts");
 const cb = await loadTs("../src/lib/guard/cloud-brankas.ts");
+const dm = await loadTs("../src/lib/guard/draft-idb.ts");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -154,7 +155,16 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("byteLen unicode > char len", cb.byteLen("ibu 💛") > "ibu 💛".length);
 }
 
-// 11) production helpers: 3 varian + upload kit
+// 11) draft IndexedDB mirror pure helpers: meta + merge
+{
+  const a = { id: "d1", title: "A", slides: [{}, {}], updatedAt: 10, coverThumb: "t" };
+  const m = dm.draftMeta(a);
+  T("draftMeta ringkas", m.id === "d1" && m.slides === 2 && m.thumb === "t");
+  const merged = dm.mergeDraftMetas([{ id: "d1", title: "A local", slides: 1, updatedAt: 20 }, { id: "d2", title: "B", slides: 1, updatedAt: 5 }], [{ id: "d1", title: "A old", slides: 2, updatedAt: 10 }, { id: "d3", title: "C", slides: 3, updatedAt: 30 }]);
+  T("mergeDraftMetas pilih terbaru + urut", merged.map(x => x.id).join(",") === "d3,d1,d2" && merged.find(x => x.id === "d1").title === "A local", merged.map(x => x.id).join(","));
+}
+
+// 12) production helpers: 3 varian + upload kit
 {
   const vs = prod.moneyPrinterVariants();
   T("3 varian produksi tersedia", vs.length === 3 && vs.some(v => v.id === "shorts"));

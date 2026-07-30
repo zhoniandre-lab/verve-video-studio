@@ -14,6 +14,7 @@ import { applyMoneyPrinterVariant, makeUploadKitText, moneyPrinterVariants, prod
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
+import { clearDraftMirror, deleteDraftMirror, listDraftMirrorMetas, mergeDraftMetas, mirrorDraft, mirrorDrafts, readDraftMirror } from "@/lib/guard/draft-idb"; // 🗄️ mirror draft IndexedDB
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -320,8 +321,15 @@ export default function Page() {
         arr.unshift(seedDraft);
         localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
       }
-      setDrafts(arr.map((d: any) => ({ id: d.id, title: d.title || "Draft", slides: Array.isArray(d.slides) ? d.slides.length : 0, updatedAt: d.updatedAt || 0, thumb: d.thumb || d.coverThumb || "" })).sort((a: Draft0, b: Draft0) => b.updatedAt - a.updatedAt));
-    } catch { setDrafts([]); }
+      const localMetas = arr.map((d: any) => ({ id: d.id, title: d.title || "Draft", slides: Array.isArray(d.slides) ? d.slides.length : 0, updatedAt: d.updatedAt || 0, thumb: d.thumb || d.coverThumb || "" })).sort((a: Draft0, b: Draft0) => b.updatedAt - a.updatedAt);
+      setDrafts(localMetas);
+      // 🗄️ v18.13 Mirror IndexedDB: localStorage tetap utama, IDB jadi cadangan kuat & async agar UI tidak berat.
+      void mirrorDrafts(arr).catch(() => {});
+      void listDraftMirrorMetas().then((ms) => setDrafts((cur) => mergeDraftMetas(cur as any, ms as any) as any)).catch(() => {});
+    } catch {
+      setDrafts([]);
+      void listDraftMirrorMetas().then((ms) => setDrafts(ms as any)).catch(() => {});
+    }
   }, []);
   useEffect(() => { refreshDrafts(); }, [refreshDrafts, screen]);
 
@@ -634,6 +642,7 @@ function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => 
         const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
         arr.unshift(newDraft);
         localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+        void mirrorDraft(newDraft).catch(() => {});
         gotoEditor(newProjId);
       } catch (e: any) {
         // 🩹 v17.4-quota-fix: Jika memori localStorage browser HP penuh (>5MB Quota Limit),
@@ -645,6 +654,7 @@ function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => 
             arr = arr.slice(0, 2); // Hanya sisakan 2 draf proyek terbaru
             arr.unshift(newDraft);
             localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+            void mirrorDraft(newDraft).catch(() => {});
             gotoEditor(newProjId);
             return;
           }
@@ -840,6 +850,7 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
     try {
       const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]").filter((d: any) => d.id !== id);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
+      void deleteDraftMirror(id).catch(() => {});
       refresh();
     } catch {}
   }
@@ -1005,7 +1016,7 @@ function SayaPage({ refresh }: { refresh: () => void }) {
   }
   function wipe() {
     if (!confirm("Hapus SEMUA proyek & data lokal?")) return;
-    try { [DRAFTS_KEY, SESSION_KEY, SUNO_TASK_KEY].forEach(k => localStorage.removeItem(k)); refresh(); alert("Bersih! ✨"); } catch {}
+    try { [DRAFTS_KEY, SESSION_KEY, SUNO_TASK_KEY].forEach(k => localStorage.removeItem(k)); void clearDraftMirror().catch(() => {}); refresh(); alert("Bersih! ✨"); } catch {}
   }
   return (
     <div className="v6-body">
@@ -2017,6 +2028,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const teksSimpan = JSON.stringify(arr);
       try { localStorage.setItem(DRAFTS_KEY, teksSimpan); } catch { flash("⚠️ GAGAL SIMPAN — memori HP penuh. Hapus draf lama di tab Proyek, lalu 💾 ulangi."); return; } // v14.5 SIMPAN-JUJUR #1 (biang 'setting balik ke versi lama')
       try { const bacaBalik = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); if (!bacaBalik.some((x: any) => x?.id === snap.id)) throw new Error("readback"); } catch { flash("⚠️ SIMPANAN RAGU — HP tak memastikan tulisan nempel. Coba 💾 sekali lagi."); return; } // v14.5 SIMPAN-JUJUR #2 bukti-tulis
+      void mirrorDraft(snap).catch(() => {}); // 🗄️ Mirror IndexedDB: cadangan kuat, tidak mengganggu jalur lama
       if (!draftId) setDraftId(snap.id);
       onSaved();
       if (manual) flash("✅ Proyek tersimpan");
@@ -2043,7 +2055,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
         const d = arr.find((x: any) => x.id === openDraftId);
         if (d) applySnapshot(d);
-        else flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya"); // v14.5 JUJUR #3: tidak senyap lagi
+        else {
+          void readDraftMirror(openDraftId).then((m) => {
+            if (m) { applySnapshot(m); flash("🗄️ Proyek dipulihkan dari cadangan IndexedDB"); }
+            else flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya");
+          }).catch(() => flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya"));
+        }
       } catch {}
     }
     if (cmd?.preset) {
@@ -3519,6 +3536,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
       const next = [snap, ...arr.filter((d: any) => d?.id !== snap.id)].slice(0, MAX_DRAFTS);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+      void mirrorDraft(snap).catch(() => {});
       setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null); setThumbU(u => { if (u) URL.revokeObjectURL(u); return ""; }); thumbBlobRef.current = null;
       applySnapshot(snap); onSaved();
       flash("☁️ Backup cloud dipulihkan sebagai proyek BARU — cek/lanjut edit, lalu 💾 simpan");
@@ -3565,6 +3583,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
       const next = [snap, ...arr.filter((d: any) => d?.id !== snap.id)].slice(0, MAX_DRAFTS);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+      void mirrorDraft(snap).catch(() => {});
       setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null); setThumbU(u => { if (u) URL.revokeObjectURL(u); return ""; }); thumbBlobRef.current = null;
       applySnapshot(snap); onSaved();
       flash("📥 Backup dipulihkan sebagai proyek BARU — cek/lanjut edit, lalu 💾 simpan");
@@ -3636,6 +3655,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
       const next = [...vars, ...arr.filter((d: any) => d?.id !== base.id)].slice(0, MAX_DRAFTS);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
+      void mirrorDrafts(vars).catch(() => {});
       onSaved();
       flash("🎲 3 versi draft dibuat: Emosional · Sinematik · Shorts cepat — cek tab Proyek");
     } catch {
