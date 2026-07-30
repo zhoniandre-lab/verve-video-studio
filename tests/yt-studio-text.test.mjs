@@ -92,5 +92,40 @@ Hype
   T("interaksi screenshot OCR parsial", r.watchTimeHours === 2.5 && r.avgViewSec === 107 && r.retention30Pct === 40.1, JSON.stringify(r));
 }
 
+{
+  const text = `18.02 C 8
+{ •
+4G+
+3
+OUKAI
+TERAKHIR
+AYAH
+MEMBUATKU
+MENANGIS
+5.35
+SURAT TERAKHIR AYAH
+MEMBUATKU MENANGIS (Cer...
+26 Juli 2026 • Dipublikasikan
+Visibilitas
+Publik
+Pemberitahuan -
+Performa video
+3 hari 21 jam pertama
+Peringkat menurut jumlah pena... 5 dari 10 >
+Penayangan
+144
+Rasio klik-tayang dari tayangan
+3,6%
+Rata-rata durasi tonton
+2.03
+Dasbor
+Konten
+Analytics
+Komunitas
+Penghasil...`;
+  const r = P.extractStudioText(text, "long");
+  T("screenshot HP performa video mobile 144 views", r.views === 144 && r.ctrPct === 3.6 && r.avgViewSec === 123 && r.durationSec === 335 && r.uploadAgeHours === 93, JSON.stringify(r));
+}
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI TEXT PARSER GAGAL`); process.exit(1); }
 console.log("\n🏁 TEXT PARSER SEHAT — paste teks screenshot siap");

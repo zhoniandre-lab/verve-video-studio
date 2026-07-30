@@ -49,8 +49,8 @@ async function makeOcrBlob(file: File, crop?: { y: number; h: number }, tag = "f
     const sw = img.width;
     const sh = Math.max(1, Math.min(img.height - sy, Math.round((crop?.h || 1) * img.height)));
     // Crop di-upscale supaya OCR lebih mudah baca teks kecil di screenshot HP.
-    const targetW = crop ? 1500 : Math.min(1500, Math.max(img.width, 900));
-    const scale = crop ? targetW / sw : Math.min(1.25, targetW / sw);
+    const targetW = Math.min(1080, Math.max(img.width, 720));
+    const scale = targetW / sw;
     const w = Math.max(1, Math.round(sw * scale));
     const h = Math.max(1, Math.round(sh * scale));
     const canvas = document.createElement("canvas");
@@ -199,21 +199,33 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     setOcrBusy(true); setOcrMsg("⏳ Membaca screenshot...");
     try {
       setOcrPreview(await readFileDataUrl(f));
-      const images = await makeOcrImages(f);
-      const texts: string[] = [];
-      let lastError = "OCR gagal membaca screenshot";
-      for (let i = 0; i < images.length; i++) {
-        setOcrMsg(`⏳ Membaca screenshot (${i + 1}/${images.length})...`);
-        const fd = new FormData();
-        fd.set("image", images[i]);
-        const res = await fetch("/api/hcnsec/studio-ocr", { method: "POST", body: fd });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok && j.text) texts.push(String(j.text));
-        else lastError = j?.error || lastError;
+      const fullBlob = await makeOcrBlob(f, undefined, "full");
+      const fdFull = new FormData();
+      fdFull.set("image", fullBlob);
+      const resFull = await fetch("/api/hcnsec/studio-ocr", { method: "POST", body: fdFull });
+      const jFull = await resFull.json().catch(() => ({}));
+      let text = resFull.ok && jFull?.ok && jFull.text ? String(jFull.text) : "";
+      let out = text ? extractStudioText(text, mode) : null;
+      let lastError = jFull?.error || "OCR gagal membaca screenshot";
+
+      if (!out || (out.views == null && out.ctrPct == null && out.avgViewSec == null && out.durationSec == null)) {
+        setOcrMsg("⏳ Membaca area angka...");
+        const variants = await makeOcrImages(f);
+        const texts: string[] = text ? [text] : [];
+        for (let i = 0; i < variants.length; i++) {
+          if (variants[i].name === fullBlob.name) continue;
+          setOcrMsg(`⏳ Membaca area angka (${i + 1}/${variants.length})...`);
+          const fd = new FormData();
+          fd.set("image", variants[i]);
+          const res = await fetch("/api/hcnsec/studio-ocr", { method: "POST", body: fd });
+          const j = await res.json().catch(() => ({}));
+          if (res.ok && j?.ok && j.text) texts.push(String(j.text));
+          else lastError = j?.error || lastError;
+        }
+        if (!texts.length) throw new Error(lastError);
+        text = Array.from(new Set(texts.flatMap((x) => x.split("\n").map((l) => l.trim()).filter(Boolean)))).join("\n");
+        out = extractStudioText(text, mode);
       }
-      if (!texts.length) throw new Error(lastError);
-      const text = Array.from(new Set(texts.flatMap((x) => x.split("\n").map((l) => l.trim()).filter(Boolean)))).join("\n");
-      const out = extractStudioText(text, mode);
       setStudioText(text);
       setStudioTextResult(out);
       applyStudioText(out, false);

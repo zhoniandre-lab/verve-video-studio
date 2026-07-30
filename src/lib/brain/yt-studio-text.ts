@@ -115,10 +115,18 @@ const hasNumeric = (s: string) => /\d/.test(s);
 function candidate(lines: string[], i: number): string {
   const cur = lines[i] || "";
   if (hasNumeric(cur)) return cur;
+  const isRet = isRetention(norm(cur));
   const out = [cur];
-  for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
-    out.push(lines[j] || "");
-    if (hasNumeric(lines[j] || "")) break;
+  for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
+    const next = lines[j] || "";
+    const nNext = norm(next);
+    if (j > i && isAnyMetricLabel(nNext) && !hasNumeric(next)) {
+      if (!(isRet && isAvgView(nNext))) {
+        break;
+      }
+    }
+    out.push(next);
+    if (hasNumeric(next)) break;
   }
   return out.join(" ").trim();
 }
@@ -135,6 +143,17 @@ function firstNumber(text: string): number | undefined {
   return m ? parseStudioNumber(m[0]) : undefined;
 }
 
+function countValue(text: string): number | undefined {
+  const all = [...String(text || "").matchAll(/[-+]?\d[\d.,]*(?:\s*(?:rb|ribu|jt|juta|k|m))?(?:\s*%)?/gi)].map((m) => m[0]);
+  for (const item of all) {
+    if (!/%/.test(item)) {
+      const n = parseStudioNumber(item);
+      if (n != null) return n;
+    }
+  }
+  return undefined;
+}
+
 function lastNumber(text: string): number | undefined {
   const all = [...String(text || "").matchAll(/[-+]?\d[\d.,]*(?:\s*(?:rb|ribu|jt|juta|k|m))?\s*%?/gi)].map((m) => m[0]);
   return all.length ? parseStudioNumber(all[all.length - 1]) : undefined;
@@ -149,17 +168,35 @@ function durationValue(text: string): number | undefined { return parseStudioDur
 function pctValue(text: string): number | undefined { return lastPercent(text) ?? lastNumber(text); }
 
 const isTitle = (n: string) => /\bjudul video\b|\bvideo title\b|\btitle\b/.test(n);
-const isViews = (n: string) => (/\bpenayangan\b|\bviews\b|\bditonton\b/.test(n)) && !/lebih|biasanya|impression|rasio|klik|ctr|waktu|durasi|penonton unik/.test(n);
-const isImpressions = (n: string) => (/\btayangan\b|\bimpressions?\b|\bimpresi\b/.test(n)) && !/penayangan|views|rasio|klik|ctr|waktu|durasi/.test(n);
-const isCtr = (n: string) => /rasio klik|klik tayang|click through|click thru|\bctr\b/.test(n);
+const isViews = (n: string) => (/\bpenayangan\b|\bviews\b|\bditonton\b/.test(n)) && !/lebih|biasanya|impression|rasio|klik|ctr|waktu|durasi|penonton unik|peringkat|menurut|rank|ranking|dari \d/i.test(n);
+const isImpressions = (n: string) => (/\btayangan\b|\bimpressions?\b|\bimpresi\b/.test(n)) && !/penayangan|views|rasio|klik|ctr|waktu|durasi|peringkat|menurut|rank|ranking|dari \d/i.test(n);
+const isCtr = (n: string) => (/rasio klik|klik tayang|click through|click thru|\bctr\b/.test(n)) && !/peringkat|menurut|rank|ranking/i.test(n);
 const isWatchTime = (n: string) => /\bwaktu tonton\b|\bwatch time\b/.test(n) && !/rata rata|average|avg|durasi tonton/.test(n);
-const isAvgView = (n: string) => /rata rata durasi tonton|durasi tonton rata rata|average view duration|avg view duration|average watch time/.test(n) || (/rata rat/.test(n) && /durasi|tonton|view|watch/.test(n));
+const isAvgView = (n: string) => ((/rata rata durasi tonton|durasi tonton rata rata|average view duration|avg view duration|average watch time/.test(n) || (/rata rat/.test(n) && /durasi|tonton|view|watch/.test(n))) && !/semua|all|retensi|retention/.test(n));
 const isRetention = (n: string) => /retensi|retention|average percentage viewed|persentase ditonton/.test(n);
 const isDuration = (n: string) => /durasi video|video duration|panjang video|video length|\bduration\b|\bdurasi\b/.test(n) && !/rata rata|average|avg|durasi tonton|watch time|waktu tonton|retensi|retention/.test(n);
 const isLikes = (n: string) => /\bsuka\b|\blikes?\b/.test(n) && !/tidak suka|dislike/.test(n);
 const isComments = (n: string) => /\bkomentar\b|\bcomments?\b/.test(n);
 const isSubs = (n: string) => (/subscriber diperoleh|subscriber didapat|subscriber gained|subscribers gained|perubahan subscriber|\bsubs \+\b/.test(n)) && !/tidak|not |disubscribe|subscribed/.test(n);
-const isAge = (n: string) => /umur upload|usia upload|hours since upload|upload age|jam sejak|setelah dipublikasikan/.test(n);
+const isAge = (n: string) => /umur upload|usia upload|hours since upload|upload age|jam sejak|setelah dipublikasikan|hari.*jam pertama|jam pertama/.test(n);
+
+function isAnyMetricLabel(n: string): boolean {
+  return isViews(n) || isImpressions(n) || isCtr(n) || isWatchTime(n) || isAvgView(n) || isRetention(n) || isDuration(n) || isLikes(n) || isComments(n) || isSubs(n) || isAge(n);
+}
+
+function parseStudioAge(v: string): number | undefined {
+  const raw = String(v || "").trim();
+  if (!raw || raw === "-" || raw === "—") return undefined;
+  const mHariJam = raw.match(/\b(\d+)\s*hari(?:\s*(\d+)\s*jam)?/i);
+  if (mHariJam) {
+    const days = Number(mHariJam[1] || 0);
+    const hrs = Number(mHariJam[2] || 0);
+    return days * 24 + hrs;
+  }
+  const mJam = raw.match(/\b(\d+)\s*jam\b/i);
+  if (mJam) return Number(mJam[1]);
+  return countValue(raw);
+}
 
 function titleValue(raw: string): string | undefined {
   const cleaned = raw.replace(/^(judul video|video title|title)\s*[:\-–—]?\s*/i, "").trim();
@@ -259,10 +296,25 @@ export function extractStudioText(text: string, mode: GrowthMode = "long"): YtSt
   const subsLine = findCandidate(lines, isSubs);
   const ageLine = findCandidate(lines, isAge);
 
-  const views = firstNumber(viewsLine);
-  const watchTimeHours = firstNumber(watchTimeLine);
+  const views = countValue(viewsLine);
+  const watchTimeHours = countValue(watchTimeLine);
   const avgViewFromLine = durationValue(avdLine);
   const avgViewSec = avgViewFromLine ?? (watchTimeHours != null && views != null && views > 0 ? round1((watchTimeHours * 3600) / views) : undefined);
+  let durationSec = durationValue(durationLine);
+  if (durationSec == null) {
+    for (let i = 2; i < lines.length; i++) {
+      const l = lines[i];
+      if (l === avdLine || isAge(norm(l))) continue;
+      const m = l.match(/^\s*(\d{1,2})[.:](\d{2})\s*$/);
+      if (m) {
+        const d = Number(m[1]) * 60 + Number(m[2]);
+        if (d >= 5 && d <= 3600 && d !== avgViewSec) {
+          durationSec = d;
+          break;
+        }
+      }
+    }
+  }
   const traffic = parseTraffic(lines);
   const audience = parseAudience(lines);
 
@@ -272,16 +324,16 @@ export function extractStudioText(text: string, mode: GrowthMode = "long"): YtSt
     mode,
     title: titleValue(titleLine),
     views,
-    impressions: firstNumber(impressionsLine),
+    impressions: countValue(impressionsLine),
     ctrPct: pctValue(ctrLine),
-    durationSec: durationValue(durationLine),
+    durationSec,
     avgViewSec,
     watchTimeHours,
     retention30Pct: pctValue(retentionLine),
-    likes: firstNumber(likesLine),
-    comments: firstNumber(commentsLine),
-    subs: firstNumber(subsLine),
-    uploadAgeHours: firstNumber(ageLine),
+    likes: countValue(likesLine),
+    comments: countValue(commentsLine),
+    subs: countValue(subsLine),
+    uploadAgeHours: parseStudioAge(ageLine),
     traffic,
     audience,
     notes: [],
