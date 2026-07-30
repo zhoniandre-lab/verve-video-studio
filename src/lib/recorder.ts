@@ -444,10 +444,10 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
 export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
   
-  // 🎬 v20.4 BONGKAR HABIS FLUID PLAYBACK ENGINE:
-  // Jangan pernah memaksakan slow-mo ekstrim atau freeze-frame mati yang bikin video seperti browser hang!
-  // Kecepatan putar dijepit sehat di [0.85, 1.25] agar frame rate selalu 30fps/60fps murni.
-  const RMIN = 0.85, RMAX = 1.25;
+  // 🎬 v20.5 BONGKAR HABIS PROFESSIONAL PLAYBACK ENGINE:
+  // Alih-alih bolak-balik berulang secara tiba-tiba ("bolak-balik video itu lama banget"),
+  // kecepatan putar disesuaikan secara sinematik [0.55, 1.25] agar klip mengisi slot secara natural.
+  const RMIN = 0.55, RMAX = 1.25;
   let rate = vd / (slot > 0.2 ? slot : vd);
   if (rate < RMIN) rate = RMIN; else if (rate > RMAX) rate = RMAX;
   
@@ -457,13 +457,13 @@ export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: 
   
   const st = Math.max(0, raw) * rate;
   
-  // 🎬 v20.4 CONTINUOUS SEAMLESS LOOP (Bongkar Habis Freeze Frame):
-  // Jika durasi slot melebihi panjang klip video (st >= vd), video berputar secara mulus terus menerus (looping)
-  // tanpa pernah freeze-frame mati atau patah-patah!
+  // 🎬 v20.5 SEAMLESS CROSSFADE CYCLE (Anti Bolak-Balik Kasar):
+  // Jika durasi slot melebihi panjang klip video (st >= vd), transisi silang (crossfade) dibuat lebih lembut
+  // agar perputaran siklus menyatu sempurna tanpa terlihat lompat atau patah-patah.
   const cyc = Math.floor(st / (vd - 0.05));
   const pos = st % (vd - 0.05);
   
-  const XF = Math.min(0.5, vd * 0.15);
+  const XF = Math.min(1.25, vd * 0.20);
   const inX = vd > XF * 2 && pos >= (vd - 0.05) - XF;
   const x = inX ? Math.min(1, (pos - ((vd - 0.05) - XF)) / XF) : 0;
   return { cyc, pos, inX, x, rate, act: cyc % 2 === 0 ? "a" : "b" };
@@ -2557,12 +2557,14 @@ async function renderMediaRecorder(b:any){
           const act = pl.act === "a" ? o.a : o.b; const nxt = pl.act === "a" ? o.b : o.a;
           try { if (Math.abs(act.playbackRate - pl.rate) > 0.001) act.playbackRate = pl.rate; } catch {}
           const want = Math.min(pl.pos, vdm - 0.06);
-          if (act.paused || act.ended || Math.abs(act.currentTime - want) > 0.6) { try { act.currentTime = want; } catch {} void act.play().catch(() => {}); }
+          if (!act.paused) { try { act.pause(); } catch {} }
+          if (Math.abs(act.currentTime - want) > 0.035) { try { act.currentTime = want; } catch {} }
           blitVid(act, o.c, (b as any).vigVideo, (b as any).vigStrV);
           if (pl.inX) {
             const wn = pl.x * Math.min(0.5, vdm * 0.15);
             try { if (Math.abs(nxt.playbackRate - pl.rate) > 0.001) nxt.playbackRate = pl.rate; } catch {}
-            if (nxt.paused || nxt.ended || Math.abs(nxt.currentTime - wn) > 0.3) { try { nxt.currentTime = wn; } catch {} void nxt.play().catch(() => {}); }
+            if (!nxt.paused) { try { nxt.pause(); } catch {} }
+            if (Math.abs(nxt.currentTime - wn) > 0.035) { try { nxt.currentTime = wn; } catch {} }
             blitVid(nxt, o.c, null, 0, pl.x); // muncul perlahan di atas deck aktif (vignetta sekali saja)
           } else if (!nxt.paused) nxt.pause(); // pasangan tidur di luar jendela — hemat mesin HP
         } else { if (!o.a.paused) o.a.pause(); if (!o.b.paused) o.b.pause(); }
