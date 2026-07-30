@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
 import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
+import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 
 type ShotKey = "ringkasan" | "jangkauan" | "interaksi" | "audiens";
 const SHOTS: { id: ShotKey; label: string; hint: string; need: string }[] = [
@@ -38,6 +39,12 @@ function csvCoverageText(r: YtStudioCsvRow): string {
   const missing = c.missing.length ? c.missing.join(", ") : "lengkap";
   return `Terbaca: ${found}. Belum ada: ${missing}`;
 }
+function textCoverageText(r: YtStudioTextResult): string {
+  const c = summarizeStudioText(r);
+  const found = c.found.length ? c.found.join(", ") : "belum ada";
+  const missing = c.missing.length ? c.missing.join(", ") : "lengkap";
+  return `Terbaca: ${found}. Belum ada: ${missing}`;
+}
 
 export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
@@ -60,6 +67,9 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [activeShot, setActiveShot] = useState<ShotKey | null>(null);
   const [csvRows, setCsvRows] = useState<YtStudioCsvRow[]>([]);
   const [csvMsg, setCsvMsg] = useState("");
+  const [studioText, setStudioText] = useState("");
+  const [studioTextResult, setStudioTextResult] = useState<YtStudioTextResult | null>(null);
+  const [studioTextMsg, setStudioTextMsg] = useState("");
 
   const applyRow = (r: YtStudioCsvRow) => {
     // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
@@ -92,6 +102,31 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     let next = ledger;
     csvRows.forEach((r) => { next = addSnapshotToLedger(next, createGrowthSnapshot(r, diagnoseGrowth(r))); });
     persistLedger(next, `📊 ${csvRows.length} baris CSV masuk baseline channel`);
+  };
+  const parseStudioTextBox = () => {
+    const raw = studioText.trim();
+    if (!raw) { setStudioTextMsg("Paste teks hasil salin dari screenshot/Google Lens dulu"); return; }
+    const out = extractStudioText(raw, mode);
+    setStudioTextResult(out);
+    setStudioTextMsg(out.parsedFields.length ? `📋 Teks terbaca. ${textCoverageText(out)}` : "⚠️ Teks terbaca, tapi metrik YouTube Studio belum dikenali.");
+  };
+  const applyStudioText = (r: YtStudioTextResult, replace = false) => {
+    if (replace) {
+      setTitle(""); setViews(""); setImpressions(""); setCtr(""); setDur(""); setAvd(""); setRet30(""); setLikes(""); setComments(""); setSubs(""); setAge("");
+    }
+    if (r.title) setTitle(r.title);
+    if (r.views != null) setViews(String(r.views));
+    if (r.impressions != null) setImpressions(String(r.impressions));
+    if (r.ctrPct != null) setCtr(String(r.ctrPct));
+    if (r.durationSec != null) setDur(secToClock(r.durationSec));
+    if (r.avgViewSec != null) setAvd(secToClock(r.avgViewSec));
+    if (r.retention30Pct != null) setRet30(String(r.retention30Pct));
+    if (r.likes != null) setLikes(String(r.likes));
+    if (r.comments != null) setComments(String(r.comments));
+    if (r.subs != null) setSubs(String(r.subs));
+    if (r.uploadAgeHours != null) setAge(String(r.uploadAgeHours));
+    setRan(true);
+    setStudioTextMsg(`${replace ? "🧹 Reset + " : "✅ "}Data teks dipakai. ${textCoverageText(r)}`);
   };
 
   const pickShot = (id: ShotKey, f?: File | null) => {
@@ -139,6 +174,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const currentSnap = useMemo(() => createGrowthSnapshot(input, dx), [input, dx]);
   const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
   const show = ran || !!views || !!ctr || !!ret30 || !!impressions;
+  const studioTextSummary = studioTextResult ? summarizeStudioText(studioTextResult) : null;
   const shotChecklist = [
     { label: "Views/Ringkasan", ok: !!shots.ringkasan || !!views },
     { label: "Impressions", ok: !!shots.jangkauan || !!impressions },
@@ -223,6 +259,38 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         <div className="gd-shotchecks">
           {shotChecklist.map((c) => <span key={c.label} className={c.ok ? "ok" : ""}>{c.ok ? "✅" : "⬜"} {c.label}</span>)}
         </div>
+      </div>
+
+      <div className="gd-card gd-textbox">
+        <div className="gd-label">📋 PASTE TEKS SCREENSHOT</div>
+        <p>Kalau bro pakai HP: buka screenshot Studio → Google Lens/Gallery → Salin teks → paste di sini. VERVE akan ambil angka yang benar-benar terbaca.</p>
+        <textarea value={studioText} onChange={(e) => setStudioText(e.target.value)} placeholder={"Contoh:\nPenayangan 673\nTayangan 10,6 rb\nRasio klik-tayang dari tayangan 5,0%\nRata-rata durasi tonton 2:18\nRetensi Penonton 39,4%"} />
+        <div className="gd-textactions">
+          <button onClick={parseStudioTextBox}>🔎 Baca Teks</button>
+          <button className="muted" onClick={() => { setStudioText(""); setStudioTextResult(null); setStudioTextMsg(""); }}>hapus</button>
+        </div>
+        {!!studioTextMsg && <em>{studioTextMsg}</em>}
+        {studioTextResult && studioTextSummary && (
+          <div className="gd-textpreview">
+            <b>Aku membaca:</b>
+            <div className="gd-textmetrics">
+              <span>Views <strong>{studioTextResult.views ?? "?"}</strong></span>
+              <span>Impr <strong>{studioTextResult.impressions ?? "?"}</strong></span>
+              <span>CTR <strong>{studioTextResult.ctrPct ?? "?"}%</strong></span>
+              <span>Avg <strong>{studioTextResult.avgViewSec != null ? secToClock(studioTextResult.avgViewSec) : "?"}</strong></span>
+              <span>Ret <strong>{studioTextResult.retention30Pct ?? "?"}%</strong></span>
+              <span>Dur <strong>{studioTextResult.durationSec != null ? secToClock(studioTextResult.durationSec) : "?"}</strong></span>
+            </div>
+            <small>Terbaca: {studioTextSummary.found.join(", ") || "belum ada"}</small>
+            <small>Belum ada: {studioTextSummary.missing.join(", ") || "lengkap"}</small>
+            {!!studioTextSummary.extra.length && <small>Ekstra: {studioTextSummary.extra.slice(0, 6).join(" · ")}</small>}
+            {studioTextResult.notes.map((n, i) => <small key={i}>Catatan: {n}</small>)}
+            <div className="gd-textactions">
+              <button onClick={() => applyStudioText(studioTextResult)}>✅ Pakai/Gabung</button>
+              <button className="muted" onClick={() => applyStudioText(studioTextResult, true)}>🧹 Reset + Pakai</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="gd-card gd-csvbox">
