@@ -830,7 +830,8 @@ function drawFrame(s: DrawState) {
   const kb = (W <= 720) ? 0.03 : 0.08;
   // 🎬 v11.4: Ken Burns KERAS dari Sutradara menang atas ramp bawaan (yang cuma 3–8%, tak terasa di HP)
   const kbC = (s as any)._kb as { dir?: string; s?: number } | undefined;
-  let zoomBase = 1.0 + slideT*kb + (beat?0.008:0);
+  const hasPulseEffect = useV5 && s.slideOpts && s.slideOpts[slideIdx % s.slideOpts.length]?.effect === "pulse";
+  let zoomBase = 1.0 + slideT*kb + (hasPulseEffect && beat ? 0.008 : 0);
   let kbdx = 0, kbdy = 0; // 🎬 v13.3
   if (kbC) {
     const Sk = Math.min(0.5, Math.max(0.05, kbC.s || 0.3));
@@ -905,7 +906,7 @@ function drawFrame(s: DrawState) {
     else if (s._transition==="blur") { drawImg(nxt,t,1); ctx.fillStyle=`rgba(0,0,0,${0.4*(1-t)})`; ctx.fillRect(0,0,W,H); }
     else if (s._transition==="glitch") {
       if (t<0.5) drawImg(cur,1,zoomBase); else drawImg(nxt,1,1);
-      if (beat||t>0.3){
+      if (hasPulseEffect && (beat||t>0.3)){
         ctx.globalCompositeOperation="lighter"; ctx.globalAlpha=0.4;
         ctx.drawImage(cur||nxt,(Math.random()-0.5)*10*t*10,(Math.random()-0.5)*4,W,H);
         ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
@@ -915,7 +916,7 @@ function drawFrame(s: DrawState) {
 
   } // gA — lapisan dunia klip
 
-  if (gO1) {
+  if (gO1 && style !== "none") {
   // Glow wash tipis (solid color dengan alpha variasi bass — jauhi gradient)
   ctx.fillStyle = `rgba(${rgb[0]|0},${rgb[1]|0},${rgb[2]|0},${(0.05+bass*0.10).toFixed(3)})`;
   ctx.fillRect(0,0,W,H);
@@ -1969,27 +1970,23 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = rW; canvas.height = rH;
   const ctx = canvas.getContext("2d",{alpha:false,desynchronized:true})!;
-  onStage?.("Menyiapkan aset...");
+  onStage?.("⚡ Swarm Paralel: menyiapkan gambar, audio, & aset...");
   let __m = __tp();
-  const imgs = await prepareImages(images, rW, rH, onStage, !!opts.sharpen);
-  prepT.gambar = __tp() - __m;
-  // 🎬 v11.8: siapkan klip video AI (opsional — tanpa field videos = slideshow murni seperti biasa)
-  const vidMap = await prepareVideos(opts.videos || [], rW, rH, imgs, onStage);
-  // v6: preload gambar stiker (overlay foto) supaya tergambar di export
+  const stickerUrls: string[] = [];
   try {
-    const stickerUrls: string[] = [];
     (opts.slideOpts || []).forEach(o => (o?.stickers || []).forEach(st => { if ((st as any).img) stickerUrls.push((st as any).img); }));
-    if (stickerUrls.length) { onStage?.("Memuat stiker overlay..."); await preloadStickerImages([...new Set(stickerUrls)]); }
   } catch {}
 
-  let logoImg: HTMLImageElement|null = null;
-  if (opts.logoUrl && opts.logoPosition!=="none"){
-    try{ logoImg = await loadImage(opts.logoUrl); }catch{logoImg=null;}
-  }
-
-  let audio: {data:Float32Array;sampleRate:number;duration:number}|null = null;
+  const [imgs, audio, _, logoImg] = await Promise.all([
+    prepareImages(images, rW, rH, onStage, !!opts.sharpen),
+    audioUrl ? decodeAudio(audioUrl, onStage).catch(() => null) : Promise.resolve(null),
+    stickerUrls.length ? preloadStickerImages([...new Set(stickerUrls)]).catch(() => null) : Promise.resolve(null),
+    (opts.logoUrl && opts.logoPosition !== "none") ? loadImage(opts.logoUrl).catch(() => null) : Promise.resolve(null),
+  ]);
+  prepT.gambar = __tp() - __m;
   __m = __tp();
-  if (audioUrl) audio = await decodeAudio(audioUrl, onStage);
+  // Setelah imgs jadi, siapkan video map Pexels / AI video
+  const vidMap = await prepareVideos(opts.videos || [], rW, rH, imgs, onStage);
   prepT.audio = __tp() - __m;
 
   const slideDur = Math.max(1, slideDuration);
@@ -2354,7 +2351,8 @@ async function renderWebCodecs(b:any){
     let frameIdKey = "";
     if (fastOk) {
       const __p0 = performance.now();
-      let kA = slideIdx + "." + Math.round(Math.min(1, Math.max(0, slideT)) * 96) + "." + (beat ? 1 : 0);
+      const hasPulseA = st.slideOpts && st.slideOpts[slideIdx % st.slideOpts.length]?.effect === "pulse";
+      let kA = slideIdx + "." + Math.round(Math.min(1, Math.max(0, slideT)) * 96) + "." + (hasPulseA && beat ? "1" : "0");
       for (let di = 0; di < tdesc.length; di++) {
         const d = tdesc[di];
         const st0 = d.abs0 != null ? d.abs0 : (timeline?.starts?.[d.si] ?? 0);
@@ -2365,7 +2363,7 @@ async function renderWebCodecs(b:any){
       }
       if (kA !== keyA) { keyA = kA; paintFrames++; drawFrame({ ...st, _canvas: cvA, only: "A" }); }
       mctx.drawImage(cvA, 0, 0);
-      drawFrame({ ...st, _canvas: canvas, only: "OV1" });
+      if (vizStyle !== "none") drawFrame({ ...st, _canvas: canvas, only: "OV1" });
       const kB = Math.round(Math.min(1, slideT * 2) * 24) + "";
       if (kB !== keyB) { keyB = kB; bctx.clearRect(0, 0, canvas.width, canvas.height); drawFrame({ ...st, _canvas: cvB, only: "B" }); }
       mctx.drawImage(cvB, 0, 0);
