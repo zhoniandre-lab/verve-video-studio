@@ -47,7 +47,8 @@ export type GrowthDiagnosis = {
   planText: string;
 };
 
-const n = (v: unknown, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d;
+const isNum = (v: unknown) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
+const n = (v: unknown, d = 0) => isNum(v) ? Number(v) : d;
 const clamp = (x: number, a = 0, b = 100) => Math.max(a, Math.min(b, Math.round(x)));
 const pct = (x: number | null | undefined) => x == null || !Number.isFinite(x) ? null : Math.round(x * 10) / 10;
 
@@ -77,7 +78,11 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
   const avdPct = duration > 0 && avd > 0 ? (avd / duration) * 100 : null;
   const ret30 = n(input.retention30Pct, NaN);
   const retention30 = Number.isFinite(ret30) && ret30 >= 0 ? ret30 : null;
-  const engagement = views > 0 ? ((Math.max(0, n(input.likes)) + Math.max(0, n(input.comments))) / views) * 100 : null;
+  const likesKnown = isNum(input.likes);
+  const commentsKnown = isNum(input.comments);
+  const engagement = views > 0 && (likesKnown || commentsKnown)
+    ? ((Math.max(0, n(input.likes)) + Math.max(0, n(input.comments))) / views) * 100
+    : null;
   const vph = n(input.uploadAgeHours) > 0 ? views / n(input.uploadAgeHours) : null;
 
   const ctrTarget = mode === "long" ? 5 : 7;

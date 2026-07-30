@@ -2026,3 +2026,15 @@ b.ok, b.warn, b.err { color:inherit; }
 
 /* 📥 Phase 19C — CSV Import Basic */
 .gd-csvbox p{font-size:10.5px;color:#aab7ca;line-height:1.45;margin:0 0 10px}.gd-csvpick{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:14px;border:1px solid #22c55e55;background:#052e1a;color:#bbf7d0;font-size:12px;font-weight:950;cursor:pointer}.gd-csvbox>em{display:block;font-style:normal;font-size:10.5px;color:#86efac;margin-top:8px}.gd-csvrows{display:flex;flex-direction:column;gap:7px;margin-top:10px}.gd-csvrows button{border-radius:14px;border:1px solid #ffffff18;background:#09111e;color:#fff;text-align:left;padding:9px 10px;cursor:pointer}.gd-csvrows button.save{text-align:center;background:#0b1628;color:#bfdbfe;border-color:#60a5fa55;font-weight:900}.gd-csvrows b{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gd-csvrows span{display:block;font-size:9.5px;color:#94a3b8;margin-top:3px}
+.gd-csvrows small{display:block;font-size:9px;color:#6ee7b7;margin-top:3px;line-height:1.25}
+.gd-ledger-actions button.danger{grid-column:1/-1;background:#2a1010;border-color:#ef444466;color:#fecaca}
+
+/* 📱 Growth Doctor — mobile layout consistency across HP widths */
+.gd-basegrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:380px){
+  .gd-grid,.gd-scoregrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .gd-seg{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+  .gd-seg button{font-size:10px;padding:0 3px;min-height:38px}
+  .gd-field input{font-size:15px;padding:0 10px}
+  .gd-score b{font-size:22px}
+}

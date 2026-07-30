@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
 import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
-import { extractStudioRows, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
+import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 
 type ShotKey = "ringkasan" | "jangkauan" | "interaksi" | "audiens";
 const SHOTS: { id: ShotKey; label: string; hint: string; need: string }[] = [
@@ -12,8 +12,32 @@ const SHOTS: { id: ShotKey; label: string; hint: string; need: string }[] = [
   { id: "audiens", label: "Audiens", hint: "Subscriber vs non-sub, geografi, subtitle", need: "Opsional" },
 ];
 
-function num(v: string): number | undefined { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : undefined; }
+function num(v: string): number | undefined {
+  const raw = String(v ?? "").trim();
+  if (!raw) return undefined;
+  const n = Number(raw.replace(",", "."));
+  return Number.isFinite(n) ? n : undefined;
+}
+function clockInput(v: string): number | undefined {
+  if (!String(v || "").trim()) return undefined;
+  const sec = parseClockToSec(v);
+  return sec > 0 ? sec : undefined;
+}
 function copy(t: string) { try { navigator.clipboard.writeText(t); } catch {} }
+function secToClock(v?: number): string {
+  if (v == null || !Number.isFinite(v)) return "";
+  const n = Math.max(0, Math.round(v));
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = n % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+function csvCoverageText(r: YtStudioCsvRow): string {
+  const c = summarizeStudioRow(r);
+  const found = c.found.length ? c.found.join(", ") : "belum ada";
+  const missing = c.missing.length ? c.missing.join(", ") : "lengkap";
+  return `Terbaca: ${found}. Belum ada: ${missing}`;
+}
 
 export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
@@ -38,19 +62,20 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [csvMsg, setCsvMsg] = useState("");
 
   const applyRow = (r: YtStudioCsvRow) => {
+    // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
     setTitle(r.title || "");
-    if (r.views != null) setViews(String(r.views));
-    if (r.impressions != null) setImpressions(String(r.impressions));
-    if (r.ctrPct != null) setCtr(String(r.ctrPct));
-    if (r.durationSec != null) setDur(String(r.durationSec));
-    if (r.avgViewSec != null) setAvd(String(r.avgViewSec));
-    if (r.retention30Pct != null) setRet30(String(r.retention30Pct));
-    if (r.likes != null) setLikes(String(r.likes));
-    if (r.comments != null) setComments(String(r.comments));
-    if (r.subs != null) setSubs(String(r.subs));
-    if (r.uploadAgeHours != null) setAge(String(r.uploadAgeHours));
+    setViews(r.views != null ? String(r.views) : "");
+    setImpressions(r.impressions != null ? String(r.impressions) : "");
+    setCtr(r.ctrPct != null ? String(r.ctrPct) : "");
+    setDur(r.durationSec != null ? secToClock(r.durationSec) : "");
+    setAvd(r.avgViewSec != null ? secToClock(r.avgViewSec) : "");
+    setRet30(r.retention30Pct != null ? String(r.retention30Pct) : "");
+    setLikes(r.likes != null ? String(r.likes) : "");
+    setComments(r.comments != null ? String(r.comments) : "");
+    setSubs(r.subs != null ? String(r.subs) : "");
+    setAge(r.uploadAgeHours != null ? String(r.uploadAgeHours) : "");
     setRan(true);
-    setCsvMsg(`✅ Baris ${r.rowIndex} dipakai: ${r.title}`);
+    setCsvMsg(`✅ Baris ${r.rowIndex} dipakai: ${r.title}. ${csvCoverageText(r)}`);
   };
   const importCsv = async (f?: File | null) => {
     if (!f) return;
@@ -100,8 +125,8 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     views: num(views),
     impressions: num(impressions),
     ctrPct: num(ctr),
-    durationSec: parseClockToSec(dur),
-    avgViewSec: parseClockToSec(avd),
+    durationSec: clockInput(dur),
+    avgViewSec: clockInput(avd),
     retention30Pct: num(ret30),
     likes: num(likes),
     comments: num(comments),
@@ -129,6 +154,10 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     if (!show) { setSavedMsg("Diagnosa dulu sebelum bikin eksperimen"); return; }
     const exp = createExperimentFromDiagnosis(input, dx, baseline);
     persistLedger(addExperimentToLedger(addSnapshotToLedger(ledger, exp.before), exp), "🧪 Eksperimen dibuat: cek ulang 48–72 jam");
+  };
+  const clearLedger = () => {
+    if (!confirm("Hapus baseline & eksperimen Growth Doctor di HP ini? Pakai ini kalau sempat menyimpan data placeholder/salah.")) return;
+    persistLedger(emptyGrowthLedger(), "🧹 Baseline Growth Doctor dibersihkan");
   };
   const gradePendingExperiment = (exp: GrowthExperiment) => {
     if (!input.views && !input.impressions && !input.ctrPct && !input.retention30Pct) { setSavedMsg("Isi data terbaru dulu untuk menilai eksperimen"); return; }
@@ -206,12 +235,16 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         {!!csvRows.length && (
           <div className="gd-csvrows">
             <button className="save" onClick={saveCsvBaseline}>📊 Simpan {csvRows.length} baris jadi baseline</button>
-            {csvRows.slice(0, 8).map((r) => (
-              <button key={`${r.rowIndex}-${r.title}`} onClick={() => applyRow(r)}>
-                <b>{r.title}</b>
-                <span>Views {r.views ?? "?"} · Impr {r.impressions ?? "?"} · CTR {r.ctrPct ?? "?"}% · Ret {r.retention30Pct ?? "?"}%</span>
-              </button>
-            ))}
+            {csvRows.slice(0, 8).map((r) => {
+              const c = summarizeStudioRow(r);
+              return (
+                <button key={`${r.rowIndex}-${r.title}`} onClick={() => applyRow(r)}>
+                  <b>{r.title}</b>
+                  <span>Views {r.views ?? "?"} · Impr {r.impressions ?? "?"} · CTR {r.ctrPct ?? "?"}% · Ret {r.retention30Pct ?? "?"}%</span>
+                  <small>CSV isi: {c.found.join(", ") || "belum ada"}</small>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -250,6 +283,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         <div className="gd-ledger-actions">
           <button onClick={saveSnapshot}>💾 Simpan Snapshot</button>
           <button onClick={makeExperiment}>🧪 Buat Eksperimen</button>
+          <button className="danger" onClick={clearLedger}>🧹 Reset Baseline</button>
         </div>
         {!!savedMsg && <p>{savedMsg}</p>}
         {!!ledger.experiments.length && <small>Eksperimen aktif: {ledger.experiments.filter(e => e.status === "pending").length} pending · total {ledger.experiments.length}</small>}

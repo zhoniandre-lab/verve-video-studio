@@ -39,5 +39,19 @@ T("parse duration dot mobile", P.parseStudioDuration("2.18") === 138, String(P.p
   T("english headers", r.title === "I miss mother" && r.views === 120 && r.impressions === 8000 && r.ctrPct === 1.2 && r.avgViewSec === 27 && r.retention30Pct === 18);
 }
 
+{
+  const csv = 'Judul video;Penayangan;Tayangan;Rasio klik-tayang dari tayangan (%);Durasi tonton rata-rata;Persentase ditonton rata-rata (%);Suka;Komentar ditambahkan\nTotal;49;1408;3,2%;00:27;18%;20;3';
+  const r = P.extractStudioRows(csv, "long")[0];
+  T("semicolon csv tidak pecah angka koma", r.title === "Total" && r.views === 49 && r.impressions === 1408 && r.ctrPct === 3.2, JSON.stringify(r));
+  T("header studio id variasi interaksi", r.avgViewSec === 27 && r.retention30Pct === 18 && r.likes === 20 && r.comments === 3, JSON.stringify(r));
+  T("coverage csv jujur", r.parsedFields.includes("avd") && r.missingFields.includes("subs"), JSON.stringify(P.summarizeStudioRow(r)));
+}
+
+{
+  const csv = 'Video title,Views,Watch time (hours),Impressions,Impressions click-through rate (%)\nWatchtime compute,120,0.9,8000,1.2%';
+  const r = P.extractStudioRows(csv, "long")[0];
+  T("watch time hours bisa hitung avg view aman", r.avgViewSec === 27, JSON.stringify(r));
+}
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI CSV GAGAL`); process.exit(1); }
 console.log("\n🏁 CSV PARSER SEHAT — import YouTube Studio siap");

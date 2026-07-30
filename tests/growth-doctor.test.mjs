@@ -40,6 +40,13 @@ T("parse 1:02:03 → 3723", G.parseClockToSec("1:02:03") === 3723);
 }
 
 {
+  const d = G.diagnoseGrowth({ mode: "long", views: 49, impressions: 1408, ctrPct: 3.2 });
+  T("data 3 metrik saja tidak divonis hook 0", !d.issues.some(i => i.code === "LOW_RETENTION_OR_AVD") && !d.facts.join(" ").includes("Retention 30 detik: 0%"), d.planText);
+  T("data 3 metrik saja engagement tetap unknown", d.derived.engagementPct === null && !d.issues.some(i => i.code === "LOW_ENGAGEMENT"), JSON.stringify(d.derived));
+  T("data 3 metrik fokus ke CTR lemah", d.issues.some(i => i.code === "WEAK_CTR") && d.status.level === "warn", d.status.summary);
+}
+
+{
   const d = G.diagnoseGrowth({});
   T("data kosong minta lengkapi", d.actions.some(a => a.id === "collect"));
   T("data kosong confidence rendah/issue insufficient", d.issues.some(i => i.code === "DATA_INSUFFICIENT") && d.confidence.level === "low");

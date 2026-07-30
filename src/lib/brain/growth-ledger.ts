@@ -63,13 +63,14 @@ export type GrowthExperiment = {
 
 export type GrowthLedger = { snapshots: GrowthSnapshot[]; experiments: GrowthExperiment[] };
 
-const num = (v: unknown, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d;
+const hasNum = (v: unknown) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
+const num = (v: unknown, d = 0) => hasNum(v) ? Number(v) : d;
 const round1 = (v: number | null | undefined) => v == null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10;
 
 export function emptyGrowthLedger(): GrowthLedger { return { snapshots: [], experiments: [] }; }
 
 function median(vals: (number | null | undefined)[]): number | null {
-  const a = vals.filter((x): x is number => Number.isFinite(Number(x))).map(Number).sort((x, y) => x - y);
+  const a = vals.filter((x): x is number => typeof x === "number" && Number.isFinite(x)).sort((x, y) => x - y);
   if (!a.length) return null;
   const m = Math.floor(a.length / 2);
   return round1(a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2);
@@ -85,10 +86,12 @@ export function metricsFromInput(input: GrowthInput): GrowthMetrics {
   const avdPct = durationSec > 0 && avgViewSec > 0 ? (avgViewSec / durationSec) * 100 : null;
   const retGiven = num(input.retention30Pct, NaN);
   const retention30Pct = Number.isFinite(retGiven) && retGiven >= 0 ? retGiven : null;
-  const likes = Math.max(0, num(input.likes));
-  const comments = Math.max(0, num(input.comments));
-  const subs = Math.max(0, num(input.subs));
-  const engagementPct = views > 0 ? ((likes + comments) / views) * 100 : null;
+  const likesKnown = hasNum(input.likes);
+  const commentsKnown = hasNum(input.comments);
+  const likes = likesKnown ? Math.max(0, num(input.likes)) : 0;
+  const comments = commentsKnown ? Math.max(0, num(input.comments)) : 0;
+  const subs = hasNum(input.subs) ? Math.max(0, num(input.subs)) : 0;
+  const engagementPct = views > 0 && (likesKnown || commentsKnown) ? ((likes + comments) / views) * 100 : null;
   const viewsPerHour = num(input.uploadAgeHours) > 0 ? views / num(input.uploadAgeHours) : null;
   return { views, impressions, ctrPct: round1(ctrPct), durationSec, avgViewSec, avdPct: round1(avdPct), retention30Pct: round1(retention30Pct), likes, comments, subs, engagementPct: round1(engagementPct), viewsPerHour: round1(viewsPerHour) };
 }

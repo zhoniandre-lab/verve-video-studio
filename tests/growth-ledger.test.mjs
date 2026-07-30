@@ -30,6 +30,13 @@ const cmp = L.compareSnapshotToBaseline(cur, b);
 T("CTR index 0.5", cmp.ctrIndex === 0.5, String(cmp.ctrIndex));
 T("Retention index 0.5", cmp.retentionIndex === 0.5, String(cmp.retentionIndex));
 
+{
+  const only3 = L.createGrowthSnapshot({ title: "Only 3", mode: "long", views: 49, impressions: 1408, ctrPct: 3.2 }, undefined, 4500);
+  T("snapshot 3 metrik tidak mengisi retention palsu", only3.metrics.retention30Pct === null && only3.metrics.engagementPct === null, JSON.stringify(only3.metrics));
+  const b3 = L.computeGrowthBaseline([only3], { mode: "long" });
+  T("baseline 3 metrik tidak jadi ret/eng 0", b3.retention30Median === null && b3.engagementMedian === null, JSON.stringify(b3));
+}
+
 const dx = G.diagnoseGrowth({ title: "D", mode: "long", views: 120, impressions: 8000, ctrPct: 1.2, durationSec: 270, avgViewSec: 27, retention30Pct: 18 });
 const exp = L.createExperimentFromDiagnosis({ title: "D", mode: "long", views: 120, impressions: 8000, ctrPct: 1.2, durationSec: 270, avgViewSec: 27, retention30Pct: 18 }, dx, b, 5000);
 T("experiment pending", exp.status === "pending" && exp.issueCode === "LOW_CTR_WITH_IMPRESSIONS", exp.issueCode);
