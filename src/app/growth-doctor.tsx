@@ -1,6 +1,7 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
+import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, GROWTH_LEDGER_KEY, type GrowthLedger } from "@/lib/brain/growth-ledger";
 
 function num(v: string): number | undefined { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : undefined; }
 function copy(t: string) { try { navigator.clipboard.writeText(t); } catch {} }
@@ -20,8 +21,26 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [subs, setSubs] = useState("");
   const [age, setAge] = useState("");
   const [ran, setRan] = useState(false);
+  const [ledger, setLedger] = useState<GrowthLedger>(() => emptyGrowthLedger());
+  const [savedMsg, setSavedMsg] = useState("");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(GROWTH_LEDGER_KEY);
+      if (raw) {
+        const j = JSON.parse(raw);
+        setLedger({ snapshots: Array.isArray(j.snapshots) ? j.snapshots : [], experiments: Array.isArray(j.experiments) ? j.experiments : [] });
+      }
+    } catch { /* no-op */ }
+  }, []);
+  const persistLedger = (next: GrowthLedger, msg: string) => {
+    setLedger(next);
+    try { localStorage.setItem(GROWTH_LEDGER_KEY, JSON.stringify(next)); } catch { /* penuh? tetap tampil sesi ini */ }
+    setSavedMsg(msg); setTimeout(() => setSavedMsg(""), 2200);
+  };
 
   const input: GrowthInput = useMemo(() => ({
+
     mode,
     title,
     symptom,
@@ -38,7 +57,19 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   }), [mode, title, symptom, views, impressions, ctr, dur, avd, ret30, likes, comments, subs, age]);
 
   const dx = useMemo(() => diagnoseGrowth(input), [input]);
+  const baseline = useMemo(() => computeGrowthBaseline(ledger.snapshots || [], { mode }), [ledger.snapshots, mode]);
+  const currentSnap = useMemo(() => createGrowthSnapshot(input, dx), [input, dx]);
+  const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
   const show = ran || !!views || !!ctr || !!ret30 || !!impressions;
+  const saveSnapshot = () => {
+    if (!input.views && !input.impressions && !input.ctrPct) { setSavedMsg("Isi minimal views/impressions/CTR dulu"); return; }
+    persistLedger(addSnapshotToLedger(ledger, createGrowthSnapshot(input, dx)), "📊 Snapshot performa tersimpan");
+  };
+  const makeExperiment = () => {
+    if (!show) { setSavedMsg("Diagnosa dulu sebelum bikin eksperimen"); return; }
+    const exp = createExperimentFromDiagnosis(input, dx, baseline);
+    persistLedger(addExperimentToLedger(addSnapshotToLedger(ledger, exp.before), exp), "🧪 Eksperimen dibuat: cek ulang 48–72 jam");
+  };
 
   const metric = (label: string, value: string, set: (v: string) => void, ph: string, inputMode: "decimal" | "text" = "decimal") => (
     <label className="gd-field">
@@ -94,6 +125,27 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           {metric("Umur upload (jam)", age, setAge, "24")}
         </div>
         <button className="gd-diagnose" onClick={() => setRan(true)}>🩺 Diagnosa Sekarang</button>
+      </div>
+
+      <div className="gd-ledger">
+        <div className="gd-label">BASELINE CHANNEL</div>
+        <div className="gd-basegrid">
+          <span><b>{baseline.sample}</b><em>snapshot</em></span>
+          <span><b>{baseline.ctrMedian ?? "?"}%</b><em>CTR median</em></span>
+          <span><b>{baseline.retention30Median ?? "?"}%</b><em>Ret30 median</em></span>
+          <span><b>{baseline.avdPctMedian ?? "?"}%</b><em>AVD median</em></span>
+        </div>
+        <div className="gd-indexes">
+          <i>CTR index: {baselineCmp.ctrIndex ?? "?"}×</i>
+          <i>Hook index: {baselineCmp.retentionIndex ?? "?"}×</i>
+          <i>Eng index: {baselineCmp.engagementIndex ?? "?"}×</i>
+        </div>
+        <div className="gd-ledger-actions">
+          <button onClick={saveSnapshot}>💾 Simpan Snapshot</button>
+          <button onClick={makeExperiment}>🧪 Buat Eksperimen</button>
+        </div>
+        {!!savedMsg && <p>{savedMsg}</p>}
+        {!!ledger.experiments.length && <small>Eksperimen aktif: {ledger.experiments.filter(e => e.status === "pending").length} pending · total {ledger.experiments.length}</small>}
       </div>
 
       {show && (
