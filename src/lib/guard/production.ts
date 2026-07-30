@@ -59,6 +59,15 @@ export type UploadKitInput = {
   audioSources?: { kind: string; name?: string; status?: "ok" | "warn" | "info"; note?: string; urlKind?: string }[];
 };
 
+export type ProductionReportInput = UploadKitInput & {
+  reportAt?: number;
+  render?: { resolution?: number; fps?: number; mbps?: number; estMB?: number; qualitySharp?: boolean; transition?: string; transitionDur?: number; bgMode?: string };
+  healthIssues?: { level?: string; code?: string; message?: string }[];
+  jobLogs?: string[];
+  cloud?: { backupCount?: number; musicCloud?: boolean; lastBackupUrl?: string };
+  draft?: { id?: string; title?: string; slides?: number; mirrored?: boolean };
+};
+
 function fmtDur(s?: number): string {
   const n = Math.max(0, Number(s) || 0);
   const m = Math.floor(n / 60), sec = Math.round(n % 60);
@@ -123,6 +132,65 @@ export function makeUploadKitText(i: UploadKitInput): string {
     "3. Tempel judul/deskripsi/tags dari paket ini.",
     "4. Cek ulang hak cipta audio sebelum publish.",
     "",
+    "Dibuat dengan VERVE.",
+  ].join("\n");
+}
+export function makeProductionReportText(i: ProductionReportInput): string {
+  const checklist = i.checklist || [];
+  const sources = (i.sources || []).filter((s) => s && (s.provider || s.by || s.link || s.id));
+  const audioSources = (i.audioSources || []).filter((s) => s && (s.kind || s.name || s.note));
+  const issues = i.healthIssues || [];
+  const done = checklist.filter((c) => c.done).length;
+  const reportDate = new Date(i.reportAt || Date.now()).toISOString();
+  return [
+    "=== VERVE PRODUCTION REPORT ===",
+    `Dibuat: ${reportDate}`,
+    `Proyek: ${i.projectTitle || i.title || "VERVE"}`,
+    `Draft ID: ${i.draft?.id || "?"}`,
+    `Adegan: ${i.draft?.slides ?? "?"}`,
+    `Durasi timeline: ${fmtDur(i.durationSec)}`,
+    `Rasio: ${i.ratio || "?"}`,
+    "",
+    "=== STATUS PRODUKSI ===",
+    `Checklist: ${done}/${checklist.length}`,
+    ...(checklist.length ? checklist.map((c) => `${c.done ? "✅" : "⬜"} ${c.label}`) : ["(belum ada checklist)"]),
+    "",
+    "=== HEALTH / GUARD ===",
+    i.health ? `${i.health.level || "?"} · ${i.health.label || "?"} — ${i.health.short || ""}` : "Belum dicek",
+    ...(issues.length ? issues.map((x) => `${x.level || "?"} · ${x.code || "?"} · ${x.message || ""}`) : ["Tidak ada issue health yang tercatat." ]),
+    "",
+    "=== RENDER SETTINGS ===",
+    `Resolusi: ${i.render?.resolution || "?"}p`,
+    `FPS: ${i.render?.fps || "?"}`,
+    `Bitrate: ${i.render?.mbps || "?"} Mbps`,
+    `Estimasi ukuran: ${i.render?.estMB != null ? `${Number(i.render.estMB).toFixed(Number(i.render.estMB) > 80 ? 0 : 1)} MB` : "?"}`,
+    `Ketajaman: ${i.render?.qualitySharp ? "ON" : "OFF"}`,
+    `Transisi: ${i.render?.transition || "?"} (${i.render?.transitionDur ?? "?"}s)`,
+    `Background: ${i.render?.bgMode || "?"}`,
+    "",
+    "=== METADATA YOUTUBE ===",
+    `Judul: ${i.title || ""}`,
+    "Deskripsi:",
+    i.description || "",
+    `Tags: ${(i.tags || []).join(", ")}`,
+    `Hashtags: ${i.hashtags || ""}`,
+    "",
+    "=== SUMBER STOCK VIDEO ===",
+    ...(sources.length ? sources.map((s) => `${s.scene ? `Adegan ${s.scene}: ` : ""}${s.provider || "stock"}${s.by ? ` · ${s.by}` : ""}${s.id ? ` · id ${s.id}` : ""}${s.dur ? ` · ${s.dur}s` : ""}${s.link ? ` · ${s.link}` : ""}`) : ["Tidak ada stock video tercatat / proyek memakai gambar lokal atau AI."]),
+    "",
+    "=== SUMBER AUDIO / HAK CIPTA ===",
+    ...(audioSources.length ? audioSources.map((s) => `${s.status === "warn" ? "⚠️" : s.status === "ok" ? "✅" : "ℹ️"} ${s.kind}${s.name ? `: ${s.name}` : ""}${s.urlKind ? ` · ${s.urlKind}` : ""}${s.note ? ` — ${s.note}` : ""}`) : ["Tidak ada audio tercatat."]),
+    "",
+    "=== CLOUD / BACKUP ===",
+    `Backup cloud terdaftar: ${i.cloud?.backupCount ?? 0}`,
+    `Musik cloud: ${i.cloud?.musicCloud ? "YA" : "TIDAK / belum dicek"}`,
+    `IndexedDB mirror: ${i.draft?.mirrored ? "YA" : "cadangan berjalan di background"}`,
+    "",
+    "=== JOB LOG TERAKHIR ===",
+    ...((i.jobLogs || []).length ? (i.jobLogs || []).slice(-20) : ["Belum ada job log render tercatat."]),
+    "",
+    "=== CATATAN ===",
+    "Report ini untuk arsip produksi. Video final tetap harus disimpan/download terpisah.",
     "Dibuat dengan VERVE.",
   ].join("\n");
 }

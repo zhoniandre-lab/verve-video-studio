@@ -10,7 +10,7 @@ import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
-import { applyMoneyPrinterVariant, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
+import { applyMoneyPrinterVariant, makeProductionReportText, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
@@ -3647,6 +3647,47 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `upload_kit_${Date.now()}.txt`);
     flash("📦 Paket Upload YouTube terdownload — video & thumbnail tetap unduh dari tombolnya masing-masing");
   }
+  function buildProductionReportText(): string {
+    const checklist = productionChecklist({
+      hasScript: slides.length > 0,
+      hasMaterials: slides.some(s => !!s.imageUrl || !!s.videoUrl),
+      hasAudio: !!(musicUrl || ttsUrl || voiceUrl || ambientUrl),
+      hasSubtitle: !!(lyrScan.list.length || capWords.length),
+      hasRender: !!videoBlob,
+      hasMetadata: !!meta,
+      hasThumbnail: !!thumbBlobRef.current,
+    });
+    const stockSources = slides.map((s, i) => ({ scene: i + 1, ...((slideOptsById[s.id] as any)?.stock || {}) })).filter((x: any) => x.provider || x.by || x.link || x.id);
+    return makeProductionReportText({
+      title: meta?.titleHighCTR || projTitle,
+      description: meta?.description || "",
+      tags: meta?.tags || [],
+      hashtags: meta?.hashtags || "",
+      projectTitle: projTitle,
+      ratio,
+      durationSec: clipsTotal,
+      hasVideo: !!videoBlob,
+      hasThumbnail: !!thumbBlobRef.current,
+      health,
+      healthIssues: health.issues || [],
+      checklist,
+      sources: stockSources,
+      audioSources: audioSourcesForUploadKit(),
+      render: { resolution: exRes, fps: exFps, mbps: exMbps, estMB, qualitySharp, transition, transitionDur, bgMode },
+      jobLogs: guardJob?.logs || [],
+      cloud: { backupCount: cloudBackups.length, musicCloud: /supabase\.co\/storage\/v1\/object\/public\/verve-brankas/i.test(musicUrl) },
+      draft: { id: draftId, title: projTitle, slides: slides.length, mirrored: true },
+    });
+  }
+  async function copyProductionReport() {
+    const txt = buildProductionReportText();
+    if (await copyTxt(txt)) flash("📋 Production Report tersalin lengkap");
+  }
+  function downloadProductionReport() {
+    const txt = buildProductionReportText();
+    downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), `production_report_${Date.now()}.txt`);
+    flash("📄 Production Report terdownload — simpan bareng video/thumbnail");
+  }
   function saveMoneyPrinterVariants() {
     if (!slides.length) { flash("⚠️ Tambahkan media dulu sebelum bikin 3 versi draft"); return; }
     try {
@@ -4416,7 +4457,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             captionStyle: capStyle, setCaptionStyle: setCapStyle,
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, cloudSaveMusic, importProjectBackupFile,
             listCloudBackups, restoreCloudBackup, deleteCloudBackup, cloudBackups, cloudListOpen, setCloudListOpen,
-            downloadUploadKit, copyUploadKit, saveMoneyPrinterVariants, projTitle,
+            downloadUploadKit, copyUploadKit, downloadProductionReport, copyProductionReport, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed,
           }}
@@ -6387,6 +6428,14 @@ function EksporSheet({ api: A, onClose }: any) {
                   ))}
                 </div>
               )}
+            </div>
+            <div className="v6-reportbox">
+              <b>📄 Production Report</b>
+              <p>Arsip teknis lengkap: health, checklist, render setting, sumber stock/audio, metadata, cloud & job log.</p>
+              <div>
+                <button className="v6-chip" onClick={A.downloadProductionReport}>📥 Download Report</button>
+                <button className="v6-chip" onClick={A.copyProductionReport}>📋 Salin Report</button>
+              </div>
             </div>
             <div className="v6-prodcheck">
               <b>📋 Checklist Produksi · {prodDone}/{prodChecks.length}</b>

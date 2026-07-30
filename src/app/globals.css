@@ -2004,3 +2004,7 @@ b.ok, b.warn, b.err { color:inherit; }
 .v6-cloudlist{margin-top:9px;border-top:1px solid #60a5fa22;padding-top:8px;display:flex!important;flex-direction:column;gap:6px!important;width:100%}
 .v6-cloudlist .empty{font-size:10.5px;color:#93a4bd;padding:6px 2px}.v6-cloudlist .item{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;align-items:center;background:#07111fcc;border:1px solid #60a5fa26;border-radius:10px;padding:7px}
 .v6-cloudlist .nm{font-size:10.5px;font-weight:800;color:#dbeafe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v6-cloudlist .dt{grid-column:1/2;font-size:9px;color:#8aa0bd;margin-top:-3px}.v6-cloudlist button{background:#0b1628;border:1px solid #60a5fa55;color:#bfdbfe;border-radius:8px;padding:5px 7px;font-size:9.5px;font-weight:800;cursor:pointer}.v6-cloudlist button.danger{border-color:#ef444466;color:#fecaca;background:#2a0d12}.v6-cloudlist button:disabled{opacity:.55}
+
+/* 📄 v18.14 Production Report */
+.v6-reportbox{margin-top:8px;border:1px solid #a78bfa44;background:#120b24cc;border-radius:14px;padding:10px 11px;color:#ede9fe}
+.v6-reportbox b{display:block;font-size:11.5px;color:#f5f3ff;margin-bottom:4px}.v6-reportbox p{font-size:10px;line-height:1.45;color:#b7a9d6;margin:0 0 8px}.v6-reportbox div{display:flex;gap:8px;flex-wrap:wrap}.v6-reportbox .v6-chip{flex:1;min-width:120px;text-align:center;border-color:#a78bfa55;color:#ddd6fe;background:#160d2d}

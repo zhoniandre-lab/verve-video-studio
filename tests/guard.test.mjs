@@ -174,6 +174,8 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("upload kit memuat judul/tags/checklist", /Doa Ibu/.test(kit) && /ibu, lagu/.test(kit) && /CHECKLIST/.test(kit));
   T("upload kit memuat sumber stock", /SUMBER STOCK VIDEO/.test(kit) && /pexels/.test(kit) && /77/.test(kit));
   T("upload kit memuat sumber audio", /SUMBER AUDIO/.test(kit) && /Lagu AI/.test(kit) && /orisinal/.test(kit));
+  const report = prod.makeProductionReportText({ title: "Doa Ibu", projectTitle: "Doa Ibu", ratio: "16:9", durationSec: 125, checklist, render: { resolution: 1080, fps: 30, mbps: 12, estMB: 180, qualitySharp: true, transition: "dissolve", transitionDur: 0.6, bgMode: "cover" }, health: { level: "ok", label: "Stabil", short: "sehat" }, healthIssues: [], jobLogs: ["+1s render"], cloud: { backupCount: 2, musicCloud: true }, draft: { id: "d1", slides: 7, mirrored: true }, sources: [{ scene: 1, provider: "pexels" }], audioSources: [{ kind: "Musik", name: "Lagu AI", status: "ok" }] });
+  T("production report memuat render/cloud/job", /PRODUCTION REPORT/.test(report) && /Resolusi: 1080p/.test(report) && /Backup cloud terdaftar: 2/.test(report) && /\+1s render/.test(report));
   const snap = { id: "d0", title: "Dasar", ratio: "16:9", transition: "dissolve", transitionDur: 0.6, capStyle: "capcut", slideOptsById: { s1: { dur: 3 } } };
   const vv = prod.applyMoneyPrinterVariant(snap, vs[2], (p) => `${p}_baru`);
   T("apply varian bikin draft baru + speed global", vv.id === "d_baru" && vv.ratio === "9:16" && vv.slideOptsById.s1.speed === vs[2].globalSpeed);
