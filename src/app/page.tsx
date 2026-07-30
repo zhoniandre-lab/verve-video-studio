@@ -8,6 +8,7 @@ import { avWarm, avPut } from "@/lib/avault";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
+import GrowthDoctor from "./growth-doctor";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
 import { applyMoneyPrinterVariant, makeProductionReportText, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
@@ -33,7 +34,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
 
 interface Slide { id: string; imageUrl: string; videoUrl?: string; dur?: number; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
-type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan";
+type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan" | "growth";
 
 const DRAFTS_KEY = "verve_drafts_v1";
 const SESSION_KEY = "verve_session_v6";
@@ -339,7 +340,7 @@ export default function Page() {
     setScreen("editor");
   }
 
-  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan";
+  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan" || screen === "growth";
   return (
     <div className="v6-root">
       <div className="v6-app">
@@ -351,6 +352,7 @@ export default function Page() {
         {screen === "editor" && <EditorScreen onExit={() => { setScreen("home"); }} openDraftId={openDraft} cmd={editorCmd} onSaved={refreshDrafts} />}
         {screen === "spectrum" && <SpectrumStudio onExit={() => setScreen("home")} />}
         {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
+        {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
         {screen === "transkrip" && <TranskripPage onExit={() => setScreen("home")} />}
         {!inSub && (
@@ -379,6 +381,7 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
     { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
     { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
+    { ic: "🩺", lb: "Dokter", bb: "NEW", act: () => go("growth") },
     { ic: "🖼️", lb: "Alat foto", act: () => go("editfoto") },
     { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
     { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
