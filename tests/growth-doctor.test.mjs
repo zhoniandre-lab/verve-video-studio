@@ -47,6 +47,11 @@ T("parse 1:02:03 → 3723", G.parseClockToSec("1:02:03") === 3723);
 }
 
 {
+  const d = G.diagnoseGrowth({ mode: "long", views: 673, impressions: 10600, ctrPct: 5, avgViewSec: 138, retention30Pct: 39.4, trafficSources: [{ key: "suggested", label: "Rekomendasi video", pct: 72.7 }], audienceFacts: [{ key: "notSubscribed", label: "Tidak subscribe", pct: 96.7 }] });
+  T("traffic OCR jadi fakta bukan missing", d.facts.some(f => f.includes("Traffic utama")) && !d.missingData.includes("Traffic source split (Browse/Search/Suggested/Shorts)"), JSON.stringify({ facts: d.facts, missing: d.missingData }));
+}
+
+{
   const d = G.diagnoseGrowth({});
   T("data kosong minta lengkapi", d.actions.some(a => a.id === "collect"));
   T("data kosong confidence rendah/issue insufficient", d.issues.some(i => i.code === "DATA_INSUFFICIENT") && d.confidence.level === "low");

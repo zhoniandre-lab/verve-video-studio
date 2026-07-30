@@ -5,14 +5,6 @@ import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, comp
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 
-type ShotKey = "ringkasan" | "jangkauan" | "interaksi" | "audiens";
-const SHOTS: { id: ShotKey; label: string; hint: string; need: string }[] = [
-  { id: "ringkasan", label: "Ringkasan", hint: "Views, watch time, traffic ringkas", need: "Views" },
-  { id: "jangkauan", label: "Jangkauan", hint: "Tayangan/impressions, CTR, traffic source", need: "Impressions + CTR" },
-  { id: "interaksi", label: "Interaksi", hint: "AVD, retention, durasi tonton", need: "AVD + Retention" },
-  { id: "audiens", label: "Audiens", hint: "Subscriber vs non-sub, geografi, subtitle", need: "Opsional" },
-];
-
 function num(v: string): number | undefined {
   const raw = String(v ?? "").trim();
   if (!raw) return undefined;
@@ -32,6 +24,43 @@ function secToClock(v?: number): string {
   const m = Math.floor((n % 3600) / 60);
   const s = n % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+function readFileDataUrl(f: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ""));
+    r.onerror = () => reject(new Error("Gagal membaca file"));
+    r.readAsDataURL(f);
+  });
+}
+async function compressImageForOcr(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) return file;
+  try {
+    const dataUrl = await readFileDataUrl(file);
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error("Gagal memuat gambar"));
+      im.src = dataUrl;
+    });
+    const maxSide = 1400;
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    let q = 0.82;
+    let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", q));
+    while (blob && blob.size > 1_100_000 && q > 0.52) {
+      q -= 0.1;
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", q));
+    }
+    return blob ? new File([blob], "studio-ocr.jpg", { type: "image/jpeg" }) : file;
+  } catch { return file; }
 }
 function csvCoverageText(r: YtStudioCsvRow): string {
   const c = summarizeStudioRow(r);
@@ -63,13 +92,16 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ran, setRan] = useState(false);
   const [ledger, setLedger] = useState<GrowthLedger>(() => emptyGrowthLedger());
   const [savedMsg, setSavedMsg] = useState("");
-  const [shots, setShots] = useState<Partial<Record<ShotKey, string>>>({});
-  const [activeShot, setActiveShot] = useState<ShotKey | null>(null);
   const [csvRows, setCsvRows] = useState<YtStudioCsvRow[]>([]);
   const [csvMsg, setCsvMsg] = useState("");
   const [studioText, setStudioText] = useState("");
   const [studioTextResult, setStudioTextResult] = useState<YtStudioTextResult | null>(null);
   const [studioTextMsg, setStudioTextMsg] = useState("");
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrMsg, setOcrMsg] = useState("");
+  const [ocrPreview, setOcrPreview] = useState("");
+  const [trafficFacts, setTrafficFacts] = useState<YtStudioTextResult["traffic"]>([]);
+  const [audienceFacts, setAudienceFacts] = useState<YtStudioTextResult["audience"]>([]);
 
   const applyRow = (r: YtStudioCsvRow) => {
     // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
@@ -105,14 +137,16 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   };
   const parseStudioTextBox = () => {
     const raw = studioText.trim();
-    if (!raw) { setStudioTextMsg("Paste teks hasil salin dari screenshot/Google Lens dulu"); return; }
+    if (!raw) { setStudioTextMsg("Paste/koreksi teks OCR dulu"); return null; }
     const out = extractStudioText(raw, mode);
     setStudioTextResult(out);
     setStudioTextMsg(out.parsedFields.length ? `📋 Teks terbaca. ${textCoverageText(out)}` : "⚠️ Teks terbaca, tapi metrik YouTube Studio belum dikenali.");
+    return out;
   };
   const applyStudioText = (r: YtStudioTextResult, replace = false) => {
     if (replace) {
       setTitle(""); setViews(""); setImpressions(""); setCtr(""); setDur(""); setAvd(""); setRet30(""); setLikes(""); setComments(""); setSubs(""); setAge("");
+      setTrafficFacts([]); setAudienceFacts([]);
     }
     if (r.title) setTitle(r.title);
     if (r.views != null) setViews(String(r.views));
@@ -125,17 +159,32 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     if (r.comments != null) setComments(String(r.comments));
     if (r.subs != null) setSubs(String(r.subs));
     if (r.uploadAgeHours != null) setAge(String(r.uploadAgeHours));
+    if (r.traffic.length) setTrafficFacts(r.traffic);
+    if (r.audience.length) setAudienceFacts(r.audience);
     setRan(true);
     setStudioTextMsg(`${replace ? "🧹 Reset + " : "✅ "}Data teks dipakai. ${textCoverageText(r)}`);
   };
-
-  const pickShot = (id: ShotKey, f?: File | null) => {
+  const ocrStudioShot = async (f?: File | null) => {
     if (!f) return;
-    const r = new FileReader();
-    r.onload = () => { setShots((s) => ({ ...s, [id]: String(r.result || "") })); setActiveShot(id); };
-    r.readAsDataURL(f);
+    setOcrBusy(true); setOcrMsg("⏳ Membaca screenshot...");
+    try {
+      setOcrPreview(await readFileDataUrl(f));
+      const image = await compressImageForOcr(f);
+      const fd = new FormData();
+      fd.set("image", image);
+      const res = await fetch("/api/hcnsec/studio-ocr", { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) throw new Error(j?.error || "OCR gagal membaca screenshot");
+      const text = String(j.text || "");
+      const out = extractStudioText(text, mode);
+      setStudioText(text);
+      setStudioTextResult(out);
+      applyStudioText(out, false);
+      setOcrMsg(out.parsedFields.length ? `✅ Screenshot terbaca otomatis. ${textCoverageText(out)}` : "⚠️ OCR jalan, tapi angka Studio belum dikenali. Coba screenshot lebih dekat/crop bagian analytics.");
+    } catch (e) {
+      setOcrMsg(`⚠️ ${e instanceof Error ? e.message : "OCR gagal"}`);
+    } finally { setOcrBusy(false); }
   };
-  const clearShot = (id: ShotKey) => setShots((s) => { const n = { ...s }; delete n[id]; return n; });
 
   useEffect(() => {
     try {
@@ -167,7 +216,9 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     comments: num(comments),
     subs: num(subs),
     uploadAgeHours: num(age),
-  }), [mode, title, symptom, views, impressions, ctr, dur, avd, ret30, likes, comments, subs, age]);
+    trafficSources: trafficFacts,
+    audienceFacts,
+  }), [mode, title, symptom, views, impressions, ctr, dur, avd, ret30, likes, comments, subs, age, trafficFacts, audienceFacts]);
 
   const dx = useMemo(() => diagnoseGrowth(input), [input]);
   const baseline = useMemo(() => computeGrowthBaseline(ledger.snapshots || [], { mode }), [ledger.snapshots, mode]);
@@ -175,13 +226,6 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
   const show = ran || !!views || !!ctr || !!ret30 || !!impressions;
   const studioTextSummary = studioTextResult ? summarizeStudioText(studioTextResult) : null;
-  const shotChecklist = [
-    { label: "Views/Ringkasan", ok: !!shots.ringkasan || !!views },
-    { label: "Impressions", ok: !!shots.jangkauan || !!impressions },
-    { label: "CTR", ok: !!shots.jangkauan || !!ctr },
-    { label: "AVD/Retention", ok: !!shots.interaksi || !!avd || !!ret30 },
-    { label: "Audiens opsional", ok: !!shots.audiens },
-  ];
   const saveSnapshot = () => {
     if (!input.views && !input.impressions && !input.ctrPct) { setSavedMsg("Isi minimal views/impressions/CTR dulu"); return; }
     persistLedger(addSnapshotToLedger(ledger, createGrowthSnapshot(input, dx)), "📊 Snapshot performa tersimpan");
@@ -242,34 +286,14 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         </div>
       </div>
 
-      <div className="gd-card gd-shotbox">
-        <div className="gd-label">📷 SCREENSHOT STUDIO COMPANION</div>
-        <p>Upload screenshot dari tab YouTube Studio. Belum OCR — lihat preview sambil isi angka di form bawah.</p>
-        <div className="gd-shotgrid">
-          {SHOTS.map((s) => (
-            <div className={`gd-shot ${shots[s.id] ? "ok" : ""}`} key={s.id}>
-              <b>{s.label}</b><span>{s.hint}</span><em>{s.need}</em>
-              {shots[s.id] ? <img src={shots[s.id]} alt={s.label} onClick={() => setActiveShot(activeShot === s.id ? null : s.id)} /> : null}
-              <label>{shots[s.id] ? "Ganti" : "Upload"}<input type="file" accept="image/*" hidden onChange={(e) => { pickShot(s.id, e.target.files?.[0]); e.currentTarget.value = ""; }} /></label>
-              {shots[s.id] ? <button onClick={() => clearShot(s.id)}>hapus</button> : null}
-            </div>
-          ))}
-        </div>
-        {activeShot && shots[activeShot] ? <img className="gd-shotbig" src={shots[activeShot]} alt="preview besar" /> : null}
-        <div className="gd-shotchecks">
-          {shotChecklist.map((c) => <span key={c.label} className={c.ok ? "ok" : ""}>{c.ok ? "✅" : "⬜"} {c.label}</span>)}
-        </div>
-      </div>
-
-      <div className="gd-card gd-textbox">
-        <div className="gd-label">📋 PASTE TEKS SCREENSHOT</div>
-        <p>Kalau bro pakai HP: buka screenshot Studio → Google Lens/Gallery → Salin teks → paste di sini. VERVE akan ambil angka yang benar-benar terbaca.</p>
-        <textarea value={studioText} onChange={(e) => setStudioText(e.target.value)} placeholder={"Contoh:\nPenayangan 673\nTayangan 10,6 rb\nRasio klik-tayang dari tayangan 5,0%\nRata-rata durasi tonton 2:18\nRetensi Penonton 39,4%"} />
-        <div className="gd-textactions">
-          <button onClick={parseStudioTextBox}>🔎 Baca Teks</button>
-          <button className="muted" onClick={() => { setStudioText(""); setStudioTextResult(null); setStudioTextMsg(""); }}>hapus</button>
-        </div>
-        {!!studioTextMsg && <em>{studioTextMsg}</em>}
+      <div className="gd-card gd-ocrbox">
+        <div className="gd-label">⚡ BACA SCREENSHOT OTOMATIS</div>
+        <p>Upload screenshot YouTube Studio apa saja. VERVE akan OCR, ambil angka yang terbaca, lalu isi form otomatis. Bisa upload beberapa screenshot satu per satu.</p>
+        <label className={`gd-ocrpick ${ocrBusy ? "busy" : ""}`}>{ocrBusy ? "⏳ Membaca..." : "📸 Upload Screenshot"}
+          <input type="file" accept="image/*" hidden disabled={ocrBusy} onChange={(e) => { ocrStudioShot(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+        </label>
+        {ocrPreview ? <img className="gd-ocrpreview" src={ocrPreview} alt="preview screenshot" /> : null}
+        {!!ocrMsg && <em>{ocrMsg}</em>}
         {studioTextResult && studioTextSummary && (
           <div className="gd-textpreview">
             <b>Aku membaca:</b>
@@ -291,11 +315,20 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             </div>
           </div>
         )}
+        <details className="gd-textedit">
+          <summary>✏️ Koreksi teks OCR / paste manual</summary>
+          <textarea value={studioText} onChange={(e) => setStudioText(e.target.value)} placeholder={"Kalau OCR kurang rapi, edit/paste teks di sini lalu tekan Baca Ulang."} />
+          <div className="gd-textactions">
+            <button onClick={() => { const out = parseStudioTextBox(); if (out) applyStudioText(out); }}>🔎 Baca Ulang</button>
+            <button className="muted" onClick={() => { setStudioText(""); setStudioTextResult(null); setStudioTextMsg(""); setOcrMsg(""); }}>hapus teks</button>
+          </div>
+          {!!studioTextMsg && <em>{studioTextMsg}</em>}
+        </details>
       </div>
 
-      <div className="gd-card gd-csvbox">
-        <div className="gd-label">📥 CSV YOUTUBE STUDIO</div>
-        <p>Kalau bro punya CSV dari Studio desktop/laptop, upload di sini. VERVE akan baca baris video dan bisa simpan semuanya jadi baseline channel.</p>
+      <details className="gd-card gd-csvbox gd-advanced">
+        <summary>📥 Opsional: CSV YouTube Studio</summary>
+        <p>Kalau bro punya CSV dari Studio desktop/laptop, upload di sini. Mode utama sekarang cukup upload screenshot otomatis.</p>
         <label className="gd-csvpick">📂 Import CSV
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { importCsv(e.target.files?.[0]); e.currentTarget.value = ""; }} />
         </label>
@@ -315,7 +348,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             })}
           </div>
         )}
-      </div>
+      </details>
 
       <div className="gd-card">
         <div className="gd-label">DATA CEPAT</div>
@@ -332,6 +365,12 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           {metric("Subs +", subs, setSubs, "1")}
           {metric("Umur upload (jam)", age, setAge, "24")}
         </div>
+        {!!(trafficFacts.length || audienceFacts.length) && (
+          <div className="gd-extra-facts">
+            {trafficFacts.slice(0, 4).map((x) => <span key={`t-${x.key}`}>Traffic: {x.label} {x.pct}%</span>)}
+            {audienceFacts.slice(0, 4).map((x, i) => <span key={`a-${x.key}-${i}`}>Audiens: {x.label} {x.pct}%</span>)}
+          </div>
+        )}
         <button className="gd-diagnose" onClick={() => setRan(true)}>🩺 Diagnosa Sekarang</button>
       </div>
 

@@ -4,6 +4,8 @@
 
 export type GrowthMode = "long" | "shorts" | "reels";
 export type GrowthLevel = "ok" | "warn" | "danger" | "unknown";
+export type GrowthTrafficSource = { key: string; label: string; pct: number };
+export type GrowthAudienceFact = { key: string; label: string; pct: number };
 
 export type GrowthInput = {
   mode?: GrowthMode;
@@ -19,6 +21,8 @@ export type GrowthInput = {
   comments?: number;
   subs?: number;
   uploadAgeHours?: number;
+  trafficSources?: GrowthTrafficSource[];
+  audienceFacts?: GrowthAudienceFact[];
   symptom?: string;
 };
 
@@ -84,6 +88,9 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
     ? ((Math.max(0, n(input.likes)) + Math.max(0, n(input.comments))) / views) * 100
     : null;
   const vph = n(input.uploadAgeHours) > 0 ? views / n(input.uploadAgeHours) : null;
+  const trafficSources = Array.isArray(input.trafficSources) ? input.trafficSources.filter((x) => x && Number.isFinite(Number(x.pct))) : [];
+  const audienceFacts = Array.isArray(input.audienceFacts) ? input.audienceFacts.filter((x) => x && Number.isFinite(Number(x.pct))) : [];
+  const topTraffic = [...trafficSources].sort((a, b) => Number(b.pct) - Number(a.pct))[0];
 
   const ctrTarget = mode === "long" ? 5 : 7;
   const retTarget = mode === "long" ? 45 : 70;
@@ -118,7 +125,8 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
   if (retention30 != null) facts.push(`Retention 30 detik: ${fmt(pct(retention30))}`); else missingSet.add("Retention 30 detik");
   if (engagement != null) facts.push(`Engagement: ${fmt(pct(engagement))} (like+comment/views)`); else missingSet.add("Likes + comments");
   if (vph != null) facts.push(`Views per hour: ${pct(vph)}`); else missingSet.add("Umur upload (jam)");
-  missingSet.add("Traffic source split (Browse/Search/Suggested/Shorts)");
+  if (topTraffic) facts.push(`Traffic utama: ${topTraffic.label} ${fmt(pct(Number(topTraffic.pct)))}`); else missingSet.add("Traffic source split (Browse/Search/Suggested/Shorts)");
+  if (audienceFacts.length) facts.push(`Audiens terbaca: ${audienceFacts.slice(0, 3).map((x) => `${x.label} ${fmt(pct(Number(x.pct)))}`).join(", ")}`);
 
   const addIssue = (issue: GrowthIssue) => issues.push(issue);
 
@@ -196,6 +204,11 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
     addIssue({ code: "WEAK_RETENTION", title: "Retention sedang, belum cukup kuat", confidence: "medium", evidence: [`Retention 30 detik ${fmt(pct(retention30))} < target ${retTarget}%+`], missingData: ["Retention graph detail"], actionIds: ["pacing"] });
   }
 
+  if (topTraffic && /suggested|browse/i.test(String(topTraffic.key)) && impressions >= 1000) {
+    kokBisa.push(`Traffic ${topTraffic.label} ${fmt(pct(Number(topTraffic.pct)))} berarti YouTube sudah mulai mengetes video ke permukaan rekomendasi/jelajah.`);
+    seharusnya.push("Karena traffic rekomendasi/jelajah sudah ada, keputusan berikutnya harus dilihat dari CTR + AVD/retention, bukan dari views saja.");
+  }
+
   if (lowDist && !lowCtr) {
     kenapa.push("Masalah utama kemungkinan distribusi awal: impressions masih kecil, jadi YouTube belum banyak mengetes video.");
     kokBisa.push("Topik/keyword/channel authority mungkin belum cukup jelas, atau video butuh pemicu dari Shorts/komunitas eksternal.");
@@ -233,8 +246,8 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
   const missingData = [...missingSet].filter(Boolean).slice(0, 10);
   const high = issues.filter((x) => x.confidence === "high").length;
   const medium = issues.filter((x) => x.confidence === "medium").length;
-  const filledSignals = [views > 0, impressions > 0, ctr != null, retention30 != null, avdPct != null, duration > 0, engagement != null].filter(Boolean).length;
-  const confScore = clamp((filledSignals / 7) * 70 + high * 15 + medium * 8, 0, 100);
+  const filledSignals = [views > 0, impressions > 0, ctr != null, retention30 != null, avdPct != null, duration > 0, engagement != null, trafficSources.length > 0, audienceFacts.length > 0].filter(Boolean).length;
+  const confScore = clamp((filledSignals / 9) * 70 + high * 15 + medium * 8, 0, 100);
   const confidence = {
     level: (confScore >= 75 ? "high" : confScore >= 45 ? "medium" : "low") as "low" | "medium" | "high",
     score: confScore,
