@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
 import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
+import { extractStudioRows, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 
 type ShotKey = "ringkasan" | "jangkauan" | "interaksi" | "audiens";
 const SHOTS: { id: ShotKey; label: string; hint: string; need: string }[] = [
@@ -33,6 +34,40 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [savedMsg, setSavedMsg] = useState("");
   const [shots, setShots] = useState<Partial<Record<ShotKey, string>>>({});
   const [activeShot, setActiveShot] = useState<ShotKey | null>(null);
+  const [csvRows, setCsvRows] = useState<YtStudioCsvRow[]>([]);
+  const [csvMsg, setCsvMsg] = useState("");
+
+  const applyRow = (r: YtStudioCsvRow) => {
+    setTitle(r.title || "");
+    if (r.views != null) setViews(String(r.views));
+    if (r.impressions != null) setImpressions(String(r.impressions));
+    if (r.ctrPct != null) setCtr(String(r.ctrPct));
+    if (r.durationSec != null) setDur(String(r.durationSec));
+    if (r.avgViewSec != null) setAvd(String(r.avgViewSec));
+    if (r.retention30Pct != null) setRet30(String(r.retention30Pct));
+    if (r.likes != null) setLikes(String(r.likes));
+    if (r.comments != null) setComments(String(r.comments));
+    if (r.subs != null) setSubs(String(r.subs));
+    if (r.uploadAgeHours != null) setAge(String(r.uploadAgeHours));
+    setRan(true);
+    setCsvMsg(`✅ Baris ${r.rowIndex} dipakai: ${r.title}`);
+  };
+  const importCsv = async (f?: File | null) => {
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const rows = extractStudioRows(text, mode);
+      setCsvRows(rows.slice(0, 50));
+      setCsvMsg(rows.length ? `📥 ${rows.length} baris CSV terbaca. Pilih video atau simpan jadi baseline.` : "⚠️ CSV terbaca tapi kolom video/metrik tidak dikenali.");
+      if (rows.length === 1) applyRow(rows[0]);
+    } catch { setCsvMsg("⚠️ Gagal membaca CSV. Pastikan file dari YouTube Studio / format CSV."); }
+  };
+  const saveCsvBaseline = () => {
+    if (!csvRows.length) { setCsvMsg("Belum ada CSV yang terbaca"); return; }
+    let next = ledger;
+    csvRows.forEach((r) => { next = addSnapshotToLedger(next, createGrowthSnapshot(r, diagnoseGrowth(r))); });
+    persistLedger(next, `📊 ${csvRows.length} baris CSV masuk baseline channel`);
+  };
 
   const pickShot = (id: ShotKey, f?: File | null) => {
     if (!f) return;
@@ -159,6 +194,26 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         <div className="gd-shotchecks">
           {shotChecklist.map((c) => <span key={c.label} className={c.ok ? "ok" : ""}>{c.ok ? "✅" : "⬜"} {c.label}</span>)}
         </div>
+      </div>
+
+      <div className="gd-card gd-csvbox">
+        <div className="gd-label">📥 CSV YOUTUBE STUDIO</div>
+        <p>Kalau bro punya CSV dari Studio desktop/laptop, upload di sini. VERVE akan baca baris video dan bisa simpan semuanya jadi baseline channel.</p>
+        <label className="gd-csvpick">📂 Import CSV
+          <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { importCsv(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+        </label>
+        {!!csvMsg && <em>{csvMsg}</em>}
+        {!!csvRows.length && (
+          <div className="gd-csvrows">
+            <button className="save" onClick={saveCsvBaseline}>📊 Simpan {csvRows.length} baris jadi baseline</button>
+            {csvRows.slice(0, 8).map((r) => (
+              <button key={`${r.rowIndex}-${r.title}`} onClick={() => applyRow(r)}>
+                <b>{r.title}</b>
+                <span>Views {r.views ?? "?"} · Impr {r.impressions ?? "?"} · CTR {r.ctrPct ?? "?"}% · Ret {r.retention30Pct ?? "?"}%</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="gd-card">
