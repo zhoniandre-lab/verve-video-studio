@@ -22,7 +22,10 @@ T("parse 1:02:03 → 3723", G.parseClockToSec("1:02:03") === 3723);
   T("low CTR + low retention = danger", d.status.level === "danger", d.status.summary);
   T("diagnosis menyebut CTR", d.kenapa.join(" ").toLowerCase().includes("ctr"));
   T("aksi thumbnail dan hook ada", d.actions.some(a => a.id === "thumbnail") && d.actions.some(a => a.id === "hook"));
-  T("planText punya Kenapa/Kok Bisa/Seharusnya", /KENAPA/.test(d.planText) && /KOK BISA/.test(d.planText) && /SEHARUSNYA/.test(d.planText));
+  T("evidence issue CTR high confidence", d.issues.some(i => i.code === "LOW_CTR_WITH_IMPRESSIONS" && i.confidence === "high" && i.evidence.join(" ").includes("CTR")));
+  T("confidence summary high/medium", ["high", "medium"].includes(d.confidence.level), `${d.confidence.level} ${d.confidence.score}`);
+  T("facts dan missingData tersedia", d.facts.length >= 4 && d.missingData.includes("Traffic source split (Browse/Search/Suggested/Shorts)"));
+  T("planText punya Fakta/Bukti/Kenapa/Kok Bisa/Seharusnya", /FAKTA/.test(d.planText) && /ISSUE \+ BUKTI/.test(d.planText) && /KENAPA/.test(d.planText) && /KOK BISA/.test(d.planText) && /SEHARUSNYA/.test(d.planText));
 }
 
 {
@@ -39,6 +42,7 @@ T("parse 1:02:03 → 3723", G.parseClockToSec("1:02:03") === 3723);
 {
   const d = G.diagnoseGrowth({});
   T("data kosong minta lengkapi", d.actions.some(a => a.id === "collect"));
+  T("data kosong confidence rendah/issue insufficient", d.issues.some(i => i.code === "DATA_INSUFFICIENT") && d.confidence.level === "low");
 }
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI GROWTH DOCTOR GAGAL`); process.exit(1); }

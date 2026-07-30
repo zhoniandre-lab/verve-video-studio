@@ -103,6 +103,23 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             <div><b>{dx.status.title}</b><p>{dx.status.summary}</p></div>
           </div>
 
+          <div className={`gd-proof ${dx.confidence.level}`}>
+            <div className="head"><b>🔬 Bukti & Keyakinan</b><span>{dx.confidence.level.toUpperCase()} · {dx.confidence.score}/100</span></div>
+            <p>{dx.confidence.reason}</p>
+            <details open>
+              <summary>Fakta yang dipakai ({dx.facts.length || 0})</summary>
+              {(dx.facts.length ? dx.facts : ["Belum ada fakta metrik yang cukup."]).map((f, i) => <em key={i}>• {f}</em>)}
+            </details>
+            <details>
+              <summary>Issue + bukti ({dx.issues.length || 0})</summary>
+              {dx.issues.map((iss) => <em key={iss.code}>• {iss.code} [{iss.confidence}] — {iss.evidence.join("; ")}</em>)}
+            </details>
+            <details>
+              <summary>Data yang masih kurang</summary>
+              {dx.missingData.slice(0, 8).map((m, i) => <em key={i}>• {m}</em>)}
+            </details>
+          </div>
+
           <div className="gd-scoregrid">
             {dx.scores.map((s) => (
               <div className={`gd-score ${s.level}`} key={s.id}>
