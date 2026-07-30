@@ -162,6 +162,8 @@ T("400 tidak retry", net.isRetryableStatus(400) === false);
   T("draftMeta ringkas", m.id === "d1" && m.slides === 2 && m.thumb === "t");
   const merged = dm.mergeDraftMetas([{ id: "d1", title: "A local", slides: 1, updatedAt: 20 }, { id: "d2", title: "B", slides: 1, updatedAt: 5 }], [{ id: "d1", title: "A old", slides: 2, updatedAt: 10 }, { id: "d3", title: "C", slides: 3, updatedAt: 30 }]);
   T("mergeDraftMetas pilih terbaru + urut", merged.map(x => x.id).join(",") === "d3,d1,d2" && merged.find(x => x.id === "d1").title === "A local", merged.map(x => x.id).join(","));
+  const eq = dm.mergeDraftMetas([{ id: "d4", title: "local", slides: 1, updatedAt: 9 }], [{ id: "d4", title: "idb", slides: 2, updatedAt: 9 }]);
+  T("mergeDraftMetas timestamp sama: IndexedDB menang", eq[0].title === "idb");
 }
 
 // 12) production helpers: 3 varian + upload kit

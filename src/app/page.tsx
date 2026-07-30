@@ -2018,26 +2018,39 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     try {
       const snap = buildSnapshot();
       if (!snap.slides.length && !manual) return;
-      const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+      let arr: any[] = [];
+      try { arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); } catch { arr = []; }
+      if (!Array.isArray(arr)) arr = [];
       const idx = arr.findIndex((d: any) => d.id === snap.id);
       const prevThumb = idx >= 0 ? arr[idx].coverThumb : "";
       if (!snap.coverThumb && prevThumb) snap.coverThumb = prevThumb;
       if (idx >= 0) arr[idx] = snap; else arr.unshift(snap);
       while (arr.length > MAX_DRAFTS) arr.pop();
       const teksSimpan = JSON.stringify(arr);
-      const simpanIDBSaja = (alasan: string) => {
-        void mirrorDraft(snap).then(() => {
+      const simpanLocalBestEffort = (): boolean => {
+        try { localStorage.setItem(DRAFTS_KEY, teksSimpan); }
+        catch { return false; }
+        try {
+          const bacaBalik = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+          return Array.isArray(bacaBalik) && bacaBalik.some((x: any) => x?.id === snap.id);
+        } catch { return false; }
+      };
+      // 🗄️ v18.16B: IndexedDB jadi penulis UTAMA. localStorage kini best-effort fallback/legacy.
+      void mirrorDraft(snap).then(() => {
+        const localOk = simpanLocalBestEffort();
+        if (!draftId) setDraftId(snap.id);
+        onSaved();
+        if (manual) flash(localOk ? "✅ Proyek tersimpan (IndexedDB utama + localStorage)" : "🗄️ Proyek tersimpan di IndexedDB — localStorage penuh/ragu");
+      }).catch(() => {
+        const localOk = simpanLocalBestEffort();
+        if (localOk) {
           if (!draftId) setDraftId(snap.id);
           onSaved();
-          flash(`🗄️ Proyek disimpan di cadangan IndexedDB — ${alasan}. Backup JSON/Cloud tetap disarankan.`);
-        }).catch(() => flash(`⚠️ ${alasan}; IndexedDB juga gagal. Hapus draf lama lalu 💾 ulangi.`));
-      };
-      try { localStorage.setItem(DRAFTS_KEY, teksSimpan); } catch { simpanIDBSaja("localStorage HP penuh"); return; } // v18.15: localStorage gagal ≠ proyek hilang, IDB jadi jalur selamat
-      try { const bacaBalik = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); if (!bacaBalik.some((x: any) => x?.id === snap.id)) throw new Error("readback"); } catch { simpanIDBSaja("simpan localStorage ragu/readback gagal"); return; }
-      void mirrorDraft(snap).catch(() => {}); // 🗄️ Mirror IndexedDB: cadangan kuat, tidak mengganggu jalur lama
-      if (!draftId) setDraftId(snap.id);
-      onSaved();
-      if (manual) flash("✅ Proyek tersimpan");
+          if (manual) flash("✅ Proyek tersimpan di localStorage (IndexedDB gagal)");
+        } else {
+          flash("⚠️ GAGAL SIMPAN — IndexedDB dan localStorage sama-sama gagal. Backup JSON/Cloud lalu kosongkan ruang HP.");
+        }
+      });
     } catch {}
   }
   const flash = (t: string) => { setStageText(t); setTimeout(() => setStageText(""), 1800); };

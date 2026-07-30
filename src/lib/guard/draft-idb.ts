@@ -31,7 +31,9 @@ export function mergeDraftMetas(local: DraftMirrorMeta[], mirror: DraftMirrorMet
   for (const d of [...mirror, ...local]) {
     if (!d?.id) continue;
     const old = map.get(d.id);
-    if (!old || (Number(d.updatedAt) || 0) >= (Number(old.updatedAt) || 0)) map.set(d.id, d);
+    // Jika timestamp sama, sumber yang masuk lebih dulu menang. Karena mirror dibaca lebih dulu,
+    // ini membuat IndexedDB menjadi prioritas tanpa memutus localStorage fallback.
+    if (!old || (Number(d.updatedAt) || 0) > (Number(old.updatedAt) || 0)) map.set(d.id, d);
   }
   return [...map.values()].sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
 }
