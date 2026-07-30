@@ -1320,35 +1320,57 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       if (durEff > 1) { setSong((s) => (s ? { ...s, duration: durEff } : s)); flash(`🎵 Lagu terukur ${Math.round(durEff)} detik — adegan aku selaraskan`); }
     }
     const totalEff = durEff > 1 ? Math.round(durEff) : totalDur;
-    const per = Math.round((totalEff / doneScenes.length) * 100) / 100;
-    const builtSlides = doneScenes.map((sc) => ({
-      id: uidL("c"),
-      imageUrl: sc.vidOn && sc.vid ? sc.vid.thumb : (sc.url as string), // 🎞️ poster = pengganti gambar (fallback aman)
-      ...(sc.vidOn && sc.vid ? { videoUrl: sc.vid.src } : {}), // 🎬 v13.11.2 FASE 2: pipa resmi v11.8 — Studio & render melukis VIDEO BERGERAK
-    }));
+    // 🎬 v20.4 BONGKAR HABIS CINEMATIC B-ROLL ENGINE:
+    // Alih-alih membagi durasi lagu dengan jumlah adegan (yang bikin 1 slide = 30 detik freeze-frame mati),
+    // kita gunakan standar ritme sinematik Hollywood & CapCut: setiap cut visual berdurasi ideal 5.5 detik!
+    const IDEAL_CUT_DUR = 5.5;
+    const totalCuts = Math.max(doneScenes.length, Math.ceil(totalEff / IDEAL_CUT_DUR));
+    const perCutDur = Math.round((totalEff / totalCuts) * 100) / 100;
+    const KB_MODES: ("in" | "out" | "l" | "r")[] = ["in", "l", "out", "r"];
+    const TRANS_MODES = ["dissolve", "fade", "slide", "blur"];
+
+    const builtSlides: { id: string; imageUrl: string; videoUrl?: string }[] = [];
     const slideOptsById: Record<string, unknown> = {};
-    builtSlides.forEach((sl, i) => {
-      const sc = doneScenes[i];
+
+    for (let c = 0; c < totalCuts; c++) {
+      const scIdx = c % doneScenes.length;
+      const sc = doneScenes[scIdx];
+      const sid = uidL("c");
+      const isVideo = sc.vidOn && sc.vid;
+      const thumb = isVideo ? sc.vid!.thumb : (sc.url as string);
+      const vsrc = isVideo ? sc.vid!.src : undefined;
+
+      builtSlides.push({
+        id: sid,
+        imageUrl: thumb,
+        ...(vsrc ? { videoUrl: vsrc } : {}),
+      });
+
+      const kbMode = KB_MODES[Math.floor(c / doneScenes.length) % KB_MODES.length];
+      const transMode = TRANS_MODES[c % TRANS_MODES.length];
       const cap = (sc.lyric_line || sc.scene_desc || "").trim().slice(0, 80);
-      slideOptsById[sl.id] = {
-        dur: per,
-        trans: "dissolve",
-        ...(sc.vidOn && sc.vid && sc.vidSpd && sc.vidSpd !== 1 ? { spd: sc.vidSpd } : {}), // ⏱ v13.13: kecepatan manual ikut ke render
-        ...(sc.vidOn && sc.vid ? { stock: { provider: sc.vid.provider || (sc.vid.by || "").split("·").pop()?.trim().toLowerCase() || "stock", by: sc.vid.by, link: sc.vid.link, id: sc.vid.id, dur: sc.vid.dur } } : {}), // 🧾 v18.5: jejak sumber stock ikut ke Studio/Upload Kit
-          texts: cap
+
+      slideOptsById[sid] = {
+        dur: perCutDur,
+        trans: c === totalCuts - 1 ? "fade" : transMode,
+        transDur: 0.7,
+        kb: { dir: kbMode, s: 0.15 },
+        ...(isVideo && sc.vidSpd && sc.vidSpd !== 1 ? { spd: sc.vidSpd } : {}),
+        ...(isVideo && sc.vid ? { stock: { provider: sc.vid.provider || (sc.vid.by || "").split("·").pop()?.trim().toLowerCase() || "stock", by: sc.vid.by, link: sc.vid.link, id: sc.vid.id, dur: sc.vid.dur } } : {}),
+        texts: cap
           ? [{
               id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
               bold: true, italic: false, shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5,
               bg: true, bgColor: "rgba(0,0,0,0.45)", y: 0.84, align: "center", anim: "none",
-              lahanPill: true, // v8.2.1: penanda caption bawaan adegan (untuk tombol 🧹 di Keterangan otomatis)
+              lahanPill: true,
             } as any]
           : [],
       };
-    });
+    }
     const draft = {
       v: 6, id: uidL("d"), title: selTitle.slice(0, 80), updatedAt: Date.now(),
       slides: builtSlides, slideOptsById,
-      ratio: "16:9", slideDuration: per, transition: "dissolve", transitionDur: 0.6,
+      ratio: "16:9", slideDuration: perCutDur, transition: "dissolve", transitionDur: 0.6,
       bgMode: "cover", bgColor: "#000000",
       musicUrl: song.url, musicName: (song.title || selTitle).slice(0, 60),
       musicDur: Math.round((durEff || song.duration || 0) * 100) / 100 || 0,

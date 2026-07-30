@@ -444,10 +444,10 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
 export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
   
-  // 🩹 v16.0 SMOOTH CINEMATIC FLUIDITY:
-  // Kita hilangkan pemaksaan slow-mo ekstrim (RMIN=0.20) yang membuat fps video anjlok menjadi patah-patah (6fps).
-  // Kecepatan otomatis dijepit secara ketat di [0.85, 1.2], sehingga video selalu berputar pada kecepatan aslinya yang super mulus (30fps/60fps murni)!
-  const RMIN = 0.85, RMAX = 1.2;
+  // 🎬 v20.4 BONGKAR HABIS FLUID PLAYBACK ENGINE:
+  // Jangan pernah memaksakan slow-mo ekstrim atau freeze-frame mati yang bikin video seperti browser hang!
+  // Kecepatan putar dijepit sehat di [0.85, 1.25] agar frame rate selalu 30fps/60fps murni.
+  const RMIN = 0.85, RMAX = 1.25;
   let rate = vd / (slot > 0.2 ? slot : vd);
   if (rate < RMIN) rate = RMIN; else if (rate > RMAX) rate = RMAX;
   
@@ -457,20 +457,16 @@ export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: 
   
   const st = Math.max(0, raw) * rate;
   
-  // 🩹 v16.0 FREEZE-ON-END (Anti-Looping):
-  // Jika video sudah habis (st >= vd), alih-alih mengulang-ulang secara tidak estetik ("bolak-balik"),
-  // video akan diam mematung (freeze-frame) di frame terakhirnya yang tajam & indah, layaknya still photo premium!
-  let cyc = 0;
-  let pos = st;
-  if (st >= vd) {
-    pos = vd - 0.05; // Diam di frame terakhir
-    cyc = 0;
-  }
+  // 🎬 v20.4 CONTINUOUS SEAMLESS LOOP (Bongkar Habis Freeze Frame):
+  // Jika durasi slot melebihi panjang klip video (st >= vd), video berputar secara mulus terus menerus (looping)
+  // tanpa pernah freeze-frame mati atau patah-patah!
+  const cyc = Math.floor(st / (vd - 0.05));
+  const pos = st % (vd - 0.05);
   
   const XF = Math.min(0.5, vd * 0.15);
-  const inX = vd > XF * 2 && pos >= vd - XF;
-  const x = inX ? Math.min(1, (pos - (vd - XF)) / XF) : 0;
-  return { cyc, pos, inX, x, rate, act: "a" };
+  const inX = vd > XF * 2 && pos >= (vd - 0.05) - XF;
+  const x = inX ? Math.min(1, (pos - ((vd - 0.05) - XF)) / XF) : 0;
+  return { cyc, pos, inX, x, rate, act: cyc % 2 === 0 ? "a" : "b" };
 }
 
 /** 🌀 v13.15 LOOP LUMAT KONTINU (khusus PREVIEW Studio) — beda dari vidPlan (render): setelah crossfade
