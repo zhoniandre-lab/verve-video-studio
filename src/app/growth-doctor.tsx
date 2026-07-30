@@ -3,6 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
 import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
 
+type ShotKey = "ringkasan" | "jangkauan" | "interaksi" | "audiens";
+const SHOTS: { id: ShotKey; label: string; hint: string; need: string }[] = [
+  { id: "ringkasan", label: "Ringkasan", hint: "Views, watch time, traffic ringkas", need: "Views" },
+  { id: "jangkauan", label: "Jangkauan", hint: "Tayangan/impressions, CTR, traffic source", need: "Impressions + CTR" },
+  { id: "interaksi", label: "Interaksi", hint: "AVD, retention, durasi tonton", need: "AVD + Retention" },
+  { id: "audiens", label: "Audiens", hint: "Subscriber vs non-sub, geografi, subtitle", need: "Opsional" },
+];
+
 function num(v: string): number | undefined { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : undefined; }
 function copy(t: string) { try { navigator.clipboard.writeText(t); } catch {} }
 
@@ -23,6 +31,16 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ran, setRan] = useState(false);
   const [ledger, setLedger] = useState<GrowthLedger>(() => emptyGrowthLedger());
   const [savedMsg, setSavedMsg] = useState("");
+  const [shots, setShots] = useState<Partial<Record<ShotKey, string>>>({});
+  const [activeShot, setActiveShot] = useState<ShotKey | null>(null);
+
+  const pickShot = (id: ShotKey, f?: File | null) => {
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { setShots((s) => ({ ...s, [id]: String(r.result || "") })); setActiveShot(id); };
+    r.readAsDataURL(f);
+  };
+  const clearShot = (id: ShotKey) => setShots((s) => { const n = { ...s }; delete n[id]; return n; });
 
   useEffect(() => {
     try {
@@ -61,6 +79,13 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const currentSnap = useMemo(() => createGrowthSnapshot(input, dx), [input, dx]);
   const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
   const show = ran || !!views || !!ctr || !!ret30 || !!impressions;
+  const shotChecklist = [
+    { label: "Views/Ringkasan", ok: !!shots.ringkasan || !!views },
+    { label: "Impressions", ok: !!shots.jangkauan || !!impressions },
+    { label: "CTR", ok: !!shots.jangkauan || !!ctr },
+    { label: "AVD/Retention", ok: !!shots.interaksi || !!avd || !!ret30 },
+    { label: "Audiens opsional", ok: !!shots.audiens },
+  ];
   const saveSnapshot = () => {
     if (!input.views && !input.impressions && !input.ctrPct) { setSavedMsg("Isi minimal views/impressions/CTR dulu"); return; }
     persistLedger(addSnapshotToLedger(ledger, createGrowthSnapshot(input, dx)), "📊 Snapshot performa tersimpan");
@@ -114,6 +139,25 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           {["video sepi", "klik rendah", "keluar awal", "view turun", "shorts mentok", "judul lemah", "thumbnail lemah"].map((s) => (
             <button key={s} className={symptom === s ? "on" : ""} onClick={() => setSymptom(s)}>{s}</button>
           ))}
+        </div>
+      </div>
+
+      <div className="gd-card gd-shotbox">
+        <div className="gd-label">📷 SCREENSHOT STUDIO COMPANION</div>
+        <p>Upload screenshot dari tab YouTube Studio. Belum OCR — lihat preview sambil isi angka di form bawah.</p>
+        <div className="gd-shotgrid">
+          {SHOTS.map((s) => (
+            <div className={`gd-shot ${shots[s.id] ? "ok" : ""}`} key={s.id}>
+              <b>{s.label}</b><span>{s.hint}</span><em>{s.need}</em>
+              {shots[s.id] ? <img src={shots[s.id]} alt={s.label} onClick={() => setActiveShot(activeShot === s.id ? null : s.id)} /> : null}
+              <label>{shots[s.id] ? "Ganti" : "Upload"}<input type="file" accept="image/*" hidden onChange={(e) => { pickShot(s.id, e.target.files?.[0]); e.currentTarget.value = ""; }} /></label>
+              {shots[s.id] ? <button onClick={() => clearShot(s.id)}>hapus</button> : null}
+            </div>
+          ))}
+        </div>
+        {activeShot && shots[activeShot] ? <img className="gd-shotbig" src={shots[activeShot]} alt="preview besar" /> : null}
+        <div className="gd-shotchecks">
+          {shotChecklist.map((c) => <span key={c.label} className={c.ok ? "ok" : ""}>{c.ok ? "✅" : "⬜"} {c.label}</span>)}
         </div>
       </div>
 
