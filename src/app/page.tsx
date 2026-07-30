@@ -850,9 +850,8 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
     try {
       const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]").filter((d: any) => d.id !== id);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(arr));
-      void deleteDraftMirror(id).catch(() => {});
-      refresh();
-    } catch {}
+    } catch { /* localStorage mungkin penuh/rusak; mirror tetap dihapus di bawah */ }
+    void deleteDraftMirror(id).finally(() => refresh()).catch(() => refresh());
   }
   return (
     <div className="v6-body">
@@ -881,7 +880,7 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
             <div className="th">{d.thumb ? <img src={d.thumb} alt="" /> : <span style={{ fontSize: 34, opacity: .35 }}>🎬</span>}</div>
             <div className="inf">
               <div className="nm">{d.title}</div>
-              <div className="st"><span>🎞 {d.slides} · {dateLabel(d.updatedAt)}</span>
+              <div className="st"><span>🎞 {d.slides} · {dateLabel(d.updatedAt)}{(d as any).mirror ? " · 🗄️ cadangan" : ""}</span>
                 <button onClick={(e) => { e.stopPropagation(); delDraft(d.id); }} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer" }}>🗑</button>
               </div>
             </div>
@@ -2026,8 +2025,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (idx >= 0) arr[idx] = snap; else arr.unshift(snap);
       while (arr.length > MAX_DRAFTS) arr.pop();
       const teksSimpan = JSON.stringify(arr);
-      try { localStorage.setItem(DRAFTS_KEY, teksSimpan); } catch { flash("⚠️ GAGAL SIMPAN — memori HP penuh. Hapus draf lama di tab Proyek, lalu 💾 ulangi."); return; } // v14.5 SIMPAN-JUJUR #1 (biang 'setting balik ke versi lama')
-      try { const bacaBalik = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); if (!bacaBalik.some((x: any) => x?.id === snap.id)) throw new Error("readback"); } catch { flash("⚠️ SIMPANAN RAGU — HP tak memastikan tulisan nempel. Coba 💾 sekali lagi."); return; } // v14.5 SIMPAN-JUJUR #2 bukti-tulis
+      const simpanIDBSaja = (alasan: string) => {
+        void mirrorDraft(snap).then(() => {
+          if (!draftId) setDraftId(snap.id);
+          onSaved();
+          flash(`🗄️ Proyek disimpan di cadangan IndexedDB — ${alasan}. Backup JSON/Cloud tetap disarankan.`);
+        }).catch(() => flash(`⚠️ ${alasan}; IndexedDB juga gagal. Hapus draf lama lalu 💾 ulangi.`));
+      };
+      try { localStorage.setItem(DRAFTS_KEY, teksSimpan); } catch { simpanIDBSaja("localStorage HP penuh"); return; } // v18.15: localStorage gagal ≠ proyek hilang, IDB jadi jalur selamat
+      try { const bacaBalik = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); if (!bacaBalik.some((x: any) => x?.id === snap.id)) throw new Error("readback"); } catch { simpanIDBSaja("simpan localStorage ragu/readback gagal"); return; }
       void mirrorDraft(snap).catch(() => {}); // 🗄️ Mirror IndexedDB: cadangan kuat, tidak mengganggu jalur lama
       if (!draftId) setDraftId(snap.id);
       onSaved();
