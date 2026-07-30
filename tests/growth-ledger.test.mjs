@@ -38,11 +38,16 @@ T("experiment target metric ctr", exp.targetMetric === "ctrPct" && exp.targetVal
 const after = L.createGrowthSnapshot({ title: "D after", mode: "long", views: 700, impressions: 12000, ctrPct: 5.0, durationSec: 270, avgViewSec: 60, retention30Pct: 32 }, undefined, 9000);
 const graded = L.gradeExperiment(exp, after);
 T("experiment success jika after capai target", graded.status === "success", graded.resultNote);
+const afterPartial = L.createGrowthSnapshot({ title: "D partial", mode: "long", views: 400, impressions: 12000, ctrPct: 2.5, durationSec: 270, avgViewSec: 50, retention30Pct: 25 }, undefined, 9100);
+const partial = L.gradeExperiment(exp, afterPartial);
+T("experiment partial jika naik tapi belum target", partial.status === "partial", partial.resultNote);
 
 let ledger = L.emptyGrowthLedger();
 ledger = L.addSnapshotToLedger(ledger, s1);
 ledger = L.addExperimentToLedger(ledger, exp);
 T("ledger simpan snapshot+experiment", ledger.snapshots.length === 1 && ledger.experiments.length === 1);
+ledger = L.updateExperimentInLedger(ledger, graded);
+T("updateExperimentInLedger mengganti status", ledger.experiments[0].status === "success" && ledger.experiments.length === 1);
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI GROWTH LEDGER GAGAL`); process.exit(1); }
 console.log("\n🏁 GROWTH LEDGER SEHAT — baseline dan eksperimen siap");

@@ -186,6 +186,14 @@ export function addSnapshotToLedger(ledger: GrowthLedger, snap: GrowthSnapshot):
   return { snapshots, experiments: (ledger.experiments || []).slice(0, GROWTH_LEDGER_MAX_EXPERIMENTS) };
 }
 
+export function updateExperimentInLedger(ledger: GrowthLedger, exp: GrowthExperiment): GrowthLedger {
+  const exists = (ledger.experiments || []).some((x) => x.id === exp.id);
+  const experiments = exists
+    ? (ledger.experiments || []).map((x) => x.id === exp.id ? exp : x)
+    : [exp, ...(ledger.experiments || [])];
+  return { snapshots: ledger.snapshots || [], experiments: experiments.slice(0, GROWTH_LEDGER_MAX_EXPERIMENTS) };
+}
+
 export function addExperimentToLedger(ledger: GrowthLedger, exp: GrowthExperiment): GrowthLedger {
   const experiments = [exp, ...(ledger.experiments || [])].slice(0, GROWTH_LEDGER_MAX_EXPERIMENTS);
   return { snapshots: ledger.snapshots || [], experiments };

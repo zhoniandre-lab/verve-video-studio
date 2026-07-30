@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
-import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, GROWTH_LEDGER_KEY, type GrowthLedger } from "@/lib/brain/growth-ledger";
+import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
 
 function num(v: string): number | undefined { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : undefined; }
 function copy(t: string) { try { navigator.clipboard.writeText(t); } catch {} }
@@ -70,6 +70,14 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     const exp = createExperimentFromDiagnosis(input, dx, baseline);
     persistLedger(addExperimentToLedger(addSnapshotToLedger(ledger, exp.before), exp), "🧪 Eksperimen dibuat: cek ulang 48–72 jam");
   };
+  const gradePendingExperiment = (exp: GrowthExperiment) => {
+    if (!input.views && !input.impressions && !input.ctrPct && !input.retention30Pct) { setSavedMsg("Isi data terbaru dulu untuk menilai eksperimen"); return; }
+    const after = createGrowthSnapshot(input, dx);
+    const graded = gradeExperiment(exp, after);
+    const next = updateExperimentInLedger(addSnapshotToLedger(ledger, after), graded);
+    persistLedger(next, graded.status === "success" ? "🏆 Eksperimen berhasil" : graded.status === "partial" ? "🟡 Eksperimen naik sebagian" : "🔴 Eksperimen belum berhasil");
+  };
+  const statusEmoji = (s: string) => s === "success" ? "🏆" : s === "partial" ? "🟡" : s === "failed" ? "🔴" : "⏳";
 
   const metric = (label: string, value: string, set: (v: string) => void, ph: string, inputMode: "decimal" | "text" = "decimal") => (
     <label className="gd-field">
@@ -146,6 +154,18 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         </div>
         {!!savedMsg && <p>{savedMsg}</p>}
         {!!ledger.experiments.length && <small>Eksperimen aktif: {ledger.experiments.filter(e => e.status === "pending").length} pending · total {ledger.experiments.length}</small>}
+        {!!ledger.experiments.length && (
+          <div className="gd-exp-list">
+            {ledger.experiments.slice(0, 5).map((e) => (
+              <div className={`gd-exp ${e.status}`} key={e.id}>
+                <b>{statusEmoji(e.status)} {e.videoTitle}</b>
+                <span>{e.issueCode} · target {e.targetMetric} ≥ {e.targetValue}</span>
+                <em>{e.resultNote || e.action}</em>
+                {e.status === "pending" ? <button onClick={() => gradePendingExperiment(e)}>Nilai pakai data sekarang</button> : <button onClick={() => copy(`${e.videoTitle}\n${e.status}\n${e.resultNote || ""}`)}>Salin hasil</button>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {show && (
