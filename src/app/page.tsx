@@ -2057,17 +2057,26 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } catch {}
     // buka draft / sesi / proyek baru
     if (openDraftId) {
-      try {
-        const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
-        const d = arr.find((x: any) => x.id === openDraftId);
-        if (d) applySnapshot(d);
-        else {
-          void readDraftMirror(openDraftId).then((m) => {
-            if (m) { applySnapshot(m); flash("🗄️ Proyek dipulihkan dari cadangan IndexedDB"); }
-            else flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya");
-          }).catch(() => flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya"));
-        }
-      } catch {}
+      // 🗄️ v18.16 Phase 16A: IndexedDB DULU, localStorage fallback.
+      // Ini mulai menggeser draft besar ke storage yang lebih kuat tanpa memutus proyek lama.
+      void (async () => {
+        let opened = false;
+        try {
+          const m = await readDraftMirror(openDraftId);
+          if (m) {
+            applySnapshot(m);
+            flash("🗄️ Proyek dibuka dari IndexedDB (storage utama bertahap)");
+            opened = true;
+          }
+        } catch { /* IDB tak ada/rusak → fallback localStorage */ }
+        if (opened) return;
+        try {
+          const arr = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]");
+          const d = Array.isArray(arr) ? arr.find((x: any) => x.id === openDraftId) : null;
+          if (d) { applySnapshot(d); void mirrorDraft(d).catch(() => {}); flash("📦 Proyek dibuka dari localStorage lalu dicadangkan ke IndexedDB"); }
+          else flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya");
+        } catch { flash("⚠️ Proyek titipan tak ketemu di memori HP — lembar baru terbuka; 💾 manual ya"); }
+      })();
     }
     if (cmd?.preset) {
       const c = cmd.preset;
