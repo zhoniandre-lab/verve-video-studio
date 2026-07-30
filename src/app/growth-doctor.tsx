@@ -33,7 +33,7 @@ function readFileDataUrl(f: File | Blob): Promise<string> {
     r.readAsDataURL(f);
   });
 }
-async function compressImageForOcr(file: File): Promise<File> {
+async function makeOcrBlob(file: File, crop?: { y: number; h: number }, tag = "full"): Promise<File> {
   if (!file.type.startsWith("image/")) return file;
   try {
     const dataUrl = await readFileDataUrl(file);
@@ -43,24 +43,44 @@ async function compressImageForOcr(file: File): Promise<File> {
       im.onerror = () => reject(new Error("Gagal memuat gambar"));
       im.src = dataUrl;
     });
-    const maxSide = 1400;
-    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-    const w = Math.max(1, Math.round(img.width * scale));
-    const h = Math.max(1, Math.round(img.height * scale));
+    const sx = 0;
+    const sy = Math.max(0, Math.round((crop?.y || 0) * img.height));
+    const sw = img.width;
+    const sh = Math.max(1, Math.min(img.height - sy, Math.round((crop?.h || 1) * img.height)));
+    // Crop di-upscale supaya OCR lebih mudah baca teks kecil di screenshot HP.
+    const targetW = crop ? 1500 : Math.min(1500, Math.max(img.width, 900));
+    const scale = crop ? targetW / sw : Math.min(1.25, targetW / sw);
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
     const canvas = document.createElement("canvas");
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
     ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    let q = 0.82;
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+    let q = 0.88;
     let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", q));
-    while (blob && blob.size > 1_100_000 && q > 0.52) {
-      q -= 0.1;
+    while (blob && blob.size > 1_150_000 && q > 0.54) {
+      q -= 0.08;
       blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", q));
     }
-    return blob ? new File([blob], "studio-ocr.jpg", { type: "image/jpeg" }) : file;
+    return blob ? new File([blob], `studio-ocr-${tag}.jpg`, { type: "image/jpeg" }) : file;
   } catch { return file; }
+}
+async function makeOcrImages(file: File): Promise<File[]> {
+  // Full + crop overlap. Crop membantu OCR.space membaca teks kecil dari screenshot YouTube Studio di HP.
+  const variants = await Promise.all([
+    makeOcrBlob(file, undefined, "full"),
+    makeOcrBlob(file, { y: 0, h: 0.62 }, "top"),
+    makeOcrBlob(file, { y: 0.34, h: 0.66 }, "bottom"),
+  ]);
+  const seen = new Set<string>();
+  return variants.filter((f) => {
+    const k = `${f.name}:${f.size}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, 3);
 }
 function csvCoverageText(r: YtStudioCsvRow): string {
   const c = summarizeStudioRow(r);
@@ -169,13 +189,20 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     setOcrBusy(true); setOcrMsg("⏳ Membaca screenshot...");
     try {
       setOcrPreview(await readFileDataUrl(f));
-      const image = await compressImageForOcr(f);
-      const fd = new FormData();
-      fd.set("image", image);
-      const res = await fetch("/api/hcnsec/studio-ocr", { method: "POST", body: fd });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) throw new Error(j?.error || "OCR gagal membaca screenshot");
-      const text = String(j.text || "");
+      const images = await makeOcrImages(f);
+      const texts: string[] = [];
+      let lastError = "OCR gagal membaca screenshot";
+      for (let i = 0; i < images.length; i++) {
+        setOcrMsg(`⏳ Membaca screenshot (${i + 1}/${images.length})...`);
+        const fd = new FormData();
+        fd.set("image", images[i]);
+        const res = await fetch("/api/hcnsec/studio-ocr", { method: "POST", body: fd });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j?.ok && j.text) texts.push(String(j.text));
+        else lastError = j?.error || lastError;
+      }
+      if (!texts.length) throw new Error(lastError);
+      const text = Array.from(new Set(texts.flatMap((x) => x.split("\n").map((l) => l.trim()).filter(Boolean)))).join("\n");
       const out = extractStudioText(text, mode);
       setStudioText(text);
       setStudioTextResult(out);
@@ -302,6 +329,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
               <span>Impr <strong>{studioTextResult.impressions ?? "?"}</strong></span>
               <span>CTR <strong>{studioTextResult.ctrPct ?? "?"}%</strong></span>
               <span>Avg <strong>{studioTextResult.avgViewSec != null ? secToClock(studioTextResult.avgViewSec) : "?"}</strong></span>
+              <span>Watch <strong>{studioTextResult.watchTimeHours != null ? `${studioTextResult.watchTimeHours} jam` : "?"}</strong></span>
               <span>Ret <strong>{studioTextResult.retention30Pct ?? "?"}%</strong></span>
               <span>Dur <strong>{studioTextResult.durationSec != null ? secToClock(studioTextResult.durationSec) : "?"}</strong></span>
             </div>

@@ -78,5 +78,19 @@ CTR 1.2%`;
   T("watch time menghitung avg view aman", r.avgViewSec === 27 && r.notes.some(x => x.includes("dihitung")), JSON.stringify(r));
 }
 
+{
+  const text = `Waktu tonton (jam)
+2,5
+Rata-rata durasi tonton
+1.47
+Retensi Penonton
+Rata-rata durasi tonton · Semua
+1.48 (40,1%)
+Hype
+0`;
+  const r = P.extractStudioText(text, "long");
+  T("interaksi screenshot OCR parsial", r.watchTimeHours === 2.5 && r.avgViewSec === 107 && r.retention30Pct === 40.1, JSON.stringify(r));
+}
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI TEXT PARSER GAGAL`); process.exit(1); }
 console.log("\n🏁 TEXT PARSER SEHAT — paste teks screenshot siap");

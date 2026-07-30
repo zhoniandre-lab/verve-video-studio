@@ -27,6 +27,7 @@ export type YtStudioTextResult = GrowthInput & {
   missingFields: YtStudioTextMetricKey[];
   traffic: YtStudioTrafficSource[];
   audience: YtStudioAudienceFact[];
+  watchTimeHours?: number;
   notes: string[];
   confidenceScore: number;
 };
@@ -114,7 +115,12 @@ const hasNumeric = (s: string) => /\d/.test(s);
 function candidate(lines: string[], i: number): string {
   const cur = lines[i] || "";
   if (hasNumeric(cur)) return cur;
-  return `${cur} ${lines[i + 1] || ""}`.trim();
+  const out = [cur];
+  for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+    out.push(lines[j] || "");
+    if (hasNumeric(lines[j] || "")) break;
+  }
+  return out.join(" ").trim();
 }
 
 function findCandidate(lines: string[], ok: (normalizedLine: string, rawLine: string) => boolean): string {
@@ -147,7 +153,7 @@ const isViews = (n: string) => (/\bpenayangan\b|\bviews\b|\bditonton\b/.test(n))
 const isImpressions = (n: string) => (/\btayangan\b|\bimpressions?\b|\bimpresi\b/.test(n)) && !/penayangan|views|rasio|klik|ctr|waktu|durasi/.test(n);
 const isCtr = (n: string) => /rasio klik|klik tayang|click through|click thru|\bctr\b/.test(n);
 const isWatchTime = (n: string) => /\bwaktu tonton\b|\bwatch time\b/.test(n) && !/rata rata|average|avg|durasi tonton/.test(n);
-const isAvgView = (n: string) => /rata rata durasi tonton|durasi tonton rata rata|average view duration|avg view duration|average watch time/.test(n);
+const isAvgView = (n: string) => /rata rata durasi tonton|durasi tonton rata rata|average view duration|avg view duration|average watch time/.test(n) || (/rata rat/.test(n) && /durasi|tonton|view|watch/.test(n));
 const isRetention = (n: string) => /retensi|retention|average percentage viewed|persentase ditonton/.test(n);
 const isDuration = (n: string) => /durasi video|video duration|panjang video|video length|\bduration\b|\bdurasi\b/.test(n) && !/rata rata|average|avg|durasi tonton|watch time|waktu tonton|retensi|retention/.test(n);
 const isLikes = (n: string) => /\bsuka\b|\blikes?\b/.test(n) && !/tidak suka|dislike/.test(n);
@@ -220,7 +226,7 @@ function hasMetric(row: Partial<YtStudioTextResult>, key: YtStudioTextMetricKey)
     case "comments": return row.comments != null;
     case "subs": return row.subs != null;
     case "age": return row.uploadAgeHours != null;
-    case "watchTime": return false;
+    case "watchTime": return row.watchTimeHours != null;
     case "traffic": return !!row.traffic?.length;
     case "audience": return !!row.audience?.length;
   }
@@ -270,6 +276,7 @@ export function extractStudioText(text: string, mode: GrowthMode = "long"): YtSt
     ctrPct: pctValue(ctrLine),
     durationSec: durationValue(durationLine),
     avgViewSec,
+    watchTimeHours,
     retention30Pct: pctValue(retentionLine),
     likes: firstNumber(likesLine),
     comments: firstNumber(commentsLine),
@@ -283,7 +290,7 @@ export function extractStudioText(text: string, mode: GrowthMode = "long"): YtSt
     missingFields: [],
   };
   row.parsedFields = (["title", ...BASE_FIELDS] as YtStudioTextMetricKey[]).filter((key) => hasMetric(row, key));
-  if (watchTimeHours != null) row.parsedFields.push("watchTime");
+  if (watchTimeHours != null && !row.parsedFields.includes("watchTime")) row.parsedFields.push("watchTime");
   if (traffic.length) row.parsedFields.push("traffic");
   if (audience.length) row.parsedFields.push("audience");
   row.missingFields = BASE_FIELDS.filter((key) => !hasMetric(row, key));
