@@ -95,6 +95,10 @@ function textCoverageText(r: YtStudioTextResult): string {
   return `Terbaca: ${found}. Belum ada: ${missing}`;
 }
 
+type YtStatus = { configured: boolean; connected: boolean; missing?: string[]; error?: string; channel?: { id?: string; title?: string; thumbnail?: string } | null };
+type YtVideo = { id: string; title: string; publishedAt?: string; durationSec?: number; viewCount?: number; likeCount?: number; commentCount?: number; url?: string };
+type YtMetricPayload = { ok?: boolean; error?: string; metrics?: { views?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
+
 export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
   const [symptom, setSymptom] = useState("video sepi");
@@ -122,6 +126,10 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ocrPreview, setOcrPreview] = useState("");
   const [trafficFacts, setTrafficFacts] = useState<YtStudioTextResult["traffic"]>([]);
   const [audienceFacts, setAudienceFacts] = useState<YtStudioTextResult["audience"]>([]);
+  const [ytStatus, setYtStatus] = useState<YtStatus | null>(null);
+  const [ytVideos, setYtVideos] = useState<YtVideo[]>([]);
+  const [ytBusy, setYtBusy] = useState(false);
+  const [ytMsg, setYtMsg] = useState("");
 
   const applyRow = (r: YtStudioCsvRow) => {
     // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
@@ -212,6 +220,65 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       setOcrMsg(`⚠️ ${e instanceof Error ? e.message : "OCR gagal"}`);
     } finally { setOcrBusy(false); }
   };
+  const loadYtStatus = async () => {
+    try {
+      const r = await fetch("/api/youtube/status", { cache: "no-store" });
+      const j = await r.json();
+      setYtStatus(j);
+      if (j?.connected) loadYtVideos();
+      else if (j?.configured === false) setYtMsg(`OAuth belum aktif: ${(j.missing || []).join(", ")}`);
+    } catch { setYtMsg("Status YouTube belum bisa dicek."); }
+  };
+  const loadYtVideos = async () => {
+    setYtBusy(true); setYtMsg("⏳ Membaca channel read-only...");
+    try {
+      const r = await fetch("/api/youtube/channel", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal membaca channel");
+      setYtVideos(Array.isArray(j.videos) ? j.videos : []);
+      setYtStatus((s) => ({ ...(s || { configured: true, connected: true }), connected: true, channel: j.channel || s?.channel || null }));
+      setYtMsg(`✅ Terhubung read-only${j.channel?.title ? `: ${j.channel.title}` : ""}`);
+    } catch (e) { setYtMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal membaca YouTube"}`); }
+    finally { setYtBusy(false); }
+  };
+  const disconnectYt = async () => {
+    setYtBusy(true);
+    try {
+      await fetch("/api/youtube/disconnect", { method: "POST" });
+      setYtStatus((s) => ({ ...(s || { configured: true, connected: false }), connected: false, channel: null }));
+      setYtVideos([]); setYtMsg("✅ YouTube diputus dari browser ini.");
+    } finally { setYtBusy(false); }
+  };
+  const applyYoutubeVideo = async (v: YtVideo) => {
+    setYtBusy(true); setYtMsg(`⏳ Membaca analytics: ${v.title}`);
+    try {
+      setTitle(v.title || "");
+      if (v.durationSec) setDur(secToClock(v.durationSec));
+      if (v.likeCount != null) setLikes(String(v.likeCount));
+      if (v.commentCount != null) setComments(String(v.commentCount));
+      if (v.publishedAt) {
+        const h = Math.max(1, Math.round((Date.now() - +new Date(v.publishedAt)) / 36e5));
+        if (Number.isFinite(h)) setAge(String(h));
+      }
+      const r = await fetch(`/api/youtube/analytics/video?videoId=${encodeURIComponent(v.id)}&days=28`, { cache: "no-store" });
+      const j: YtMetricPayload = await r.json();
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Analytics belum bisa dibaca");
+      const m = j.metrics || {};
+      if (m.views != null) setViews(String(m.views));
+      else if (v.viewCount != null) setViews(String(v.viewCount));
+      if (m.impressions != null) setImpressions(String(m.impressions));
+      if (m.ctrPct != null) setCtr(String(m.ctrPct));
+      if (m.avgViewSec != null) setAvd(secToClock(m.avgViewSec));
+      if (m.averageViewPercentage != null) setRet30(String(m.averageViewPercentage));
+      if (m.likes != null) setLikes(String(m.likes));
+      if (m.comments != null) setComments(String(m.comments));
+      if (m.subscribersGained != null) setSubs(String(m.subscribersGained));
+      if (Array.isArray(j.traffic) && j.traffic.length) setTrafficFacts(j.traffic);
+      setRan(true);
+      setYtMsg(`✅ Data analytics masuk. ${j.warnings?.length ? j.warnings[0] : "Read-only, aman."}`);
+    } catch (e) { setYtMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal membaca analytics"}`); }
+    finally { setYtBusy(false); }
+  };
 
   useEffect(() => {
     try {
@@ -222,6 +289,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       }
     } catch { /* no-op */ }
   }, []);
+  useEffect(() => { loadYtStatus(); }, []);
   const persistLedger = (next: GrowthLedger, msg: string) => {
     setLedger(next);
     try { localStorage.setItem(GROWTH_LEDGER_KEY, JSON.stringify(next)); } catch { /* penuh? tetap tampil sesi ini */ }
@@ -311,6 +379,33 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             <button key={s} className={symptom === s ? "on" : ""} onClick={() => setSymptom(s)}>{s}</button>
           ))}
         </div>
+      </div>
+
+      <div className="gd-card gd-youtube">
+        <div className="gd-label">🔐 YOUTUBE RESMI — READ ONLY</div>
+        <p>Aman untuk channel: VERVE cuma minta izin baca data analytics. Tidak ada scope upload, edit, hapus, atau komentar.</p>
+        {!ytStatus?.configured ? (
+          <div className="gd-ytnote warn">Belum aktif di server: {(ytStatus?.missing || ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_OAUTH_COOKIE_SECRET"]).join(", ")}</div>
+        ) : ytStatus.connected ? (
+          <div className="gd-ytconnected">
+            <b>✅ Terhubung{ytStatus.channel?.title ? `: ${ytStatus.channel.title}` : ""}</b>
+            <span>Mode read-only · YouTube Analytics API resmi</span>
+            <div className="gd-textactions"><button onClick={loadYtVideos} disabled={ytBusy}>📺 Muat Video</button><button className="muted" onClick={disconnectYt} disabled={ytBusy}>Putus</button></div>
+          </div>
+        ) : (
+          <button className="gd-ytconnect" onClick={() => { location.href = "/api/youtube/oauth/start"; }}>🔗 Hubungkan YouTube</button>
+        )}
+        {!!ytMsg && <em>{ytMsg}</em>}
+        {!!ytVideos.length && (
+          <div className="gd-ytvideos">
+            {ytVideos.slice(0, 8).map((v) => (
+              <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy}>
+                <b>{v.title}</b>
+                <span>{v.viewCount?.toLocaleString("id-ID") || 0} views · {v.likeCount ?? "?"} likes · {v.commentCount ?? "?"} comments</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="gd-card gd-ocrbox">
