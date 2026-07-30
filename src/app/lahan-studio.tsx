@@ -21,6 +21,7 @@ import {
   solutionFor, monetizationHint, deviceAdvice, DATA_GAPS,
 } from "@/lib/brain/audience";
 import { getAudioPeaks } from "@/lib/waveform";
+import { mirrorDraft } from "@/lib/guard/draft-idb";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 
 const LAHAN_KEY = "verve_lahan_v1";
@@ -726,15 +727,16 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     if (!board || genAllBusy) return;
     setGenAllBusy(true);
     let ok = 0;
-    for (let i = 0; i < board.scenes.length; i++) {
-      const sc = board.scenes[i];
-      if (sc.status === "done" || (sc.vidOn && sc.vid)) { ok++; continue; } // 🎞️ v13.11: adegan video = selesai, HEMAT kredit gambar
-      const good = await genScene(i, sc);
-      if (good) ok++;
-      await new Promise((r) => setTimeout(r, 500));
+    const targets = board.scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) => !(sc.status === "done" || (sc.vidOn && sc.vid)));
+    // ⚡ SWARM PARALLEL WORKERS: eksekusi 2 adegan serentak agar 2x lebih cepat & bebas antrean panjang
+    for (let j = 0; j < targets.length; j += 2) {
+      const batch = targets.slice(j, j + 2);
+      const res = await Promise.all(batch.map(({ i, sc }) => genScene(i, sc)));
+      ok += res.filter(Boolean).length;
+      if (j + 2 < targets.length) await new Promise((r) => setTimeout(r, 400));
     }
     setGenAllBusy(false);
-    flash(ok === board.scenes.length ? `✅ ${ok}/${board.scenes.length} adegan siap!` : `⚠️ ${ok}/${board.scenes.length} jadi — ulangi yang gagal`);
+    flash(ok === board.scenes.length ? `✅ Swarm Paralel: ${ok}/${board.scenes.length} adegan siap!` : `⚠️ ${ok}/${board.scenes.length} jadi — ulangi yang gagal`);
   }
 
   function updateScene(i: number, patch: Partial<Scene>) {
@@ -772,21 +774,31 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     let ok = 0; let lebar = 0;
     const dipakai = new Set<number>(); // 🧯 v13.11.1 ANTI-KEMBAR: satu klip hanya boleh tampil SEKALI se-film
     board.scenes.forEach((sc) => { if (sc.vidOn && sc.vid) dipakai.add(sc.vid.id); });
-    for (let i = 0; i < board.scenes.length; i++) {
-      const sc = board.scenes[i];
-      if (sc.vidOn && sc.vid) { ok++; continue; }
-      const gaya = GAYA_EN[i % GAYA_EN.length]; // 🧺 v13.17: gaya sinematik bergilir → kueri tiap adegan beda
-      const r = await cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc, tema, sc.mood, gaya), rasaIndo);
+    // ⚡ SWARM PARALLEL STOCK VIDEO SEARCH: cari dan pilih klip video stok serentak dalam sekejap
+    const targetIdxs = board.scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) => !(sc.vidOn && sc.vid));
+    const searchResults = await Promise.all(
+      targetIdxs.map(({ sc, i }) => {
+        const gaya = GAYA_EN[i % GAYA_EN.length];
+        return cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc, tema, sc.mood, gaya), rasaIndo);
+      })
+    );
+    targetIdxs.forEach(({ sc, i }, idx) => {
+      const r = searchResults[idx];
       if (r.ok && r.hasil.length) {
         if (r.lebar) lebar++;
-        const best = pilihKlipBervariasi(r.hasil, perScene, dipakai); // 🧺 acak dari 5 terbaik, bukan juara 1 terus
-        if (best) { dipakai.add(best.id); updateScene(i, { vid: best, vidOn: true }); ok++; }
+        const best = pilihKlipBervariasi(r.hasil, perScene, dipakai);
+        if (best) {
+          dipakai.add(best.id);
+          sc.vid = best;
+          sc.vidOn = true;
+          ok++;
+        }
       }
-      await new Promise((r2) => setTimeout(r2, 350)); // sopan ke gudang + HP tetap lega
-    }
+    });
+    setBoard((b) => b && ({ ...b, scenes: [...board.scenes] }));
     setVidAllBusy(false);
     flash((ok === board.scenes.length
-      ? `🎞️ ${ok}/${board.scenes.length} adegan kebagian video BEDA-BEDA! Tinjau satu-satu ya bro`
+      ? `🎞️ Swarm Paralel: ${ok}/${board.scenes.length} adegan kebagian video BEDA-BEDA dalam sekejap!`
       : `⚠️ ${ok}/${board.scenes.length} adegan dapat video — yang kosong cari manual dari kartunya`)
       + (lebar ? ` · 🇮🇩 ${lebar} adegan dilebarkan (stok Nusantara tipis kata itu)` : ""));
   }
@@ -1355,6 +1367,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       arr.unshift(draft);
       while (arr.length > 12) arr.pop();
       localStorage.setItem("verve_drafts_v1", JSON.stringify(arr));
+      void mirrorDraft(draft).catch(() => {});
       if (pvAudioRef.current) { pvAudioRef.current.pause(); setPvPlaying(false); }
       flash("🎬 Proyek gabungan terkirim ke Studio!");
       if (gotoEditor) gotoEditor(draft.id);
