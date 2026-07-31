@@ -353,7 +353,7 @@ export default function Page() {
         {screen === "editor" && <EditorScreen onExit={() => { setScreen("home"); }} openDraftId={openDraft} cmd={editorCmd} onSaved={refreshDrafts} />}
         {screen === "spectrum" && <SpectrumStudio onExit={() => setScreen("home")} />}
         {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
-        {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
+        {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
         {screen === "transkrip" && <TranskripPage onExit={() => setScreen("home")} />}
         {!inSub && (
@@ -378,68 +378,124 @@ export default function Page() {
    DASHBOARD / HOME
    ================================================================== */
 function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: ScreenId) => void; gotoEditor: (id?: string, cmd?: any) => void }) {
-  const quick: { ic: string; t: string; d: string; act: () => void; hot?: boolean }[] = [
-    { ic: "🌱", t: "Lahan Awalan", d: "Ide → riset → visual → lagu", act: () => go("lahan"), hot: true },
-    { ic: "🧠", t: "Creator OS", d: "Ide viral + analytics + aksi", act: () => go("growth"), hot: true },
-    { ic: "✨", t: "AI Studio", d: "Gambar, video, musik, narasi", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }), hot: true },
-    { ic: "📂", t: "Proyek", d: "Draft lokal + brankas render", act: () => go("proyek") },
-  ];
-  const tools: { ic: string; lb: string; act: () => void }[] = [
-    { ic: "🎬", lb: "Studio", act: () => gotoEditor(undefined, { newProject: Date.now() }) },
-    { ic: "🎵", lb: "Musik", act: () => gotoEditor(undefined, { tool: "musik", newProject: Date.now() }) },
-    { ic: "🎨", lb: "Gambar", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
-    { ic: "🗣️", lb: "Narasi", act: () => gotoEditor(undefined, { tool: "tts", newProject: Date.now() }) },
-    { ic: "💬", lb: "Caption", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
-    { ic: "🖼️", lb: "Foto", act: () => go("editfoto") },
+  const tools: { ic: string; lb: string; bb?: string; act: () => void }[] = [
+    { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
+    { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
+    { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
+    { ic: "🩺", lb: "Dokter", bb: "NEW", act: () => go("growth") },
+    { ic: "🖼️", lb: "Alat foto", act: () => go("editfoto") },
+    { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
+    { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
+    { ic: "💬", lb: "Keterangan", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
+    { ic: "🫥", lb: "Hapus Latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
     { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
-    { ic: "🔍", lb: "Lab", act: () => go("lab") },
   ];
+
+  // We alternate between Lahan Awalan & Spectrum Studio in a single compact hero banner
+  const [heroIndex, setHeroIndex] = useState(0);
+  useEffect(() => {
+    const itv = setInterval(() => setHeroIndex(i => (i + 1) % 2), 7000);
+    return () => clearInterval(itv);
+  }, []);
+
   return (
-    <div className="v6-body v6-home2">
-      <div className="v6-home2-top">
-        <div><b>VERVE</b><span>Creator Studio AI</span></div>
-        <button onClick={() => go("lab")}>🔍</button>
+    <div className="v6-body">
+      {/* 🔮 SLICK PROFESSIONAL HEADER */}
+      <div className="v6-header">
+        <span className="logo">V E R V E<b className="tag">STUDIO AI</b></span>
+        <button className="v6-search-btn" onClick={() => go("lab")} title="Cari di Lab AI">🔍</button>
       </div>
 
-      <section className="v6-home2-hero">
-        <i />
-        <small>SHORTS · LONG · SQUARE</small>
-        <h1>Bikin video dari ide sampai upload.</h1>
-        <p>Semua alat tetap ada, tapi alurnya lebih bersih: produksi, edit, analisis, monetisasi.</p>
-        <div>
-          <button className="primary" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>＋ Buat Video Baru</button>
-          <button onClick={() => go("lahan")}>🌱 Mulai dari Ide</button>
-        </div>
-      </section>
+      {/* 💎 COMPACT UNIFIED HERO BANNER (ROTATING GLASSMORPHIC) */}
+      <div className="v6-hero-slider">
+        {heroIndex === 0 ? (
+          <div className="v6-hero-card is-ai">
+            <div className="glow-orb" />
+            <span className="badge">💎 SPECTRUM STUDIO</span>
+            <h2 className="title">Video Musik Spectrum + Auto Lirik</h2>
+            <p className="sub">Overlay suasana, lirik karaoke menyala, audio mastering ringan di HP.</p>
+            <button className="action" onClick={() => go("spectrum")}>Coba ›</button>
+          </div>
+        ) : (
+          <div className="v6-hero-card is-lahan">
+            <div className="glow-orb" style={{ background: "radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)" }} />
+            <span className="badge" style={{ background: "rgba(25, 194, 184, 0.16)", borderColor: "rgba(25, 194, 184, 0.3)", color: "#8ff0e4" }}>🌱 LAHAN AWALAN</span>
+            <h2 className="title">Cerita Jadi Lagu: Riset & Judul AI</h2>
+            <p className="sub">Riset YouTube nyata, skor judul juara, visual karakter AI konsisten.</p>
+            <button className="action" style={{ background: "var(--v6-teal)" }} onClick={() => go("lahan")}>Mulai ›</button>
+          </div>
+        )}
+      </div>
 
-      <section className="v6-home2-grid">
-        {quick.map((q) => (
-          <button key={q.t} className={q.hot ? "hot" : ""} onClick={q.act}>
-            <span>{q.ic}</span><b>{q.t}</b><em>{q.d}</em>
+      {/* 🚀 STUDIO HUB ACTION TILES */}
+      <div className="v6-studio-hub">
+        <button className="v6-btn-main" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
+          <span className="glow-back" />
+          <span className="ic">＋</span>
+          <div className="text-group">
+            <span className="title">Video Baru</span>
+            <span className="desc">Editor studio profesional</span>
+          </div>
+        </button>
+        <div className="v6-hub-col">
+          <button className="v6-btn-sub is-violet" onClick={() => go("lahan")}>
+            <span className="ic">🌱</span>
+            <div className="text-group">
+              <span className="title">Lahan Awalan</span>
+              <span className="desc">Ide jadi lagu</span>
+            </div>
           </button>
-        ))}
-      </section>
+          <button className="v6-btn-sub" onClick={() => go("editfoto")}>
+            <span className="ic">🖼️</span>
+            <div className="text-group">
+              <span className="title">Edit Foto</span>
+              <span className="desc">Retouch instan</span>
+            </div>
+          </button>
+        </div>
+      </div>
 
-      <section className="v6-home2-section">
-        <div className="head"><b>Lanjutkan proyek</b>{!!drafts.length && <button onClick={() => go("proyek")}>Semua ›</button>}</div>
-        <div className="v6-home2-projects">
-          {drafts.slice(0, 4).map((d) => (
-            <button key={d.id} onClick={() => gotoEditor(d.id)}>
-              <span>{d.thumb ? <img src={d.thumb} alt="" /> : "🎬"}</span>
-              <b>{d.title}</b>
-              <em>{d.slides} klip · {dateLabel(d.updatedAt)}</em>
+      {/* 📁 COMPACT RECENT PROJECTS SLIDER */}
+      <div className="v6-recent-section">
+        <div className="v6-sec-title">
+          <h3>Proyek Terakhir</h3>
+          {!!drafts.length && <button className="v6-sec-more" onClick={() => go("proyek")}>Semua ›</button>}
+        </div>
+        <div className="v6-recents-compact">
+          {drafts.slice(0, 4).map(d => (
+            <div className="v6-recent-card" key={d.id} onClick={() => gotoEditor(d.id)}>
+              <div className="th">
+                {d.thumb ? <img src={d.thumb} alt="" /> : <span className="ph">🎬</span>}
+                <span className="go">▶</span>
+              </div>
+              <div className="info">
+                <span className="nm">{d.title}</span>
+                <span className="dt">🗂 {dateLabel(d.updatedAt)}</span>
+              </div>
+            </div>
+          ))}
+          {!drafts.length && (
+            <div className="v6-recent-empty" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
+              <span>＋ Buat proyek pertamamu</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ⚡ HORIZONTAL SCROLLING QUICK AI TOOLS */}
+      <div className="v6-tools-section">
+        <div className="v6-sec-title">
+          <h3>Asisten AI Cepat</h3>
+        </div>
+        <div className="v6-tools-row">
+          {tools.map(t => (
+            <button className="v6-tool-mini" key={t.lb} onClick={t.act}>
+              <span className="ic">{t.ic}</span>
+              <span className="lb">{t.lb}</span>
             </button>
           ))}
-          {!drafts.length && <button className="empty" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>＋ Buat proyek pertamamu</button>}
         </div>
-      </section>
-
-      <section className="v6-home2-section">
-        <div className="head"><b>Alat cepat</b><button onClick={() => go("lab")}>Lab AI ›</button></div>
-        <div className="v6-home2-tools">
-          {tools.map((t) => <button key={t.lb} onClick={t.act}><span>{t.ic}</span><b>{t.lb}</b></button>)}
-        </div>
-      </section>
+      </div>
     </div>
   );
 }
@@ -802,37 +858,39 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
     void deleteDraftMirror(id).finally(() => refresh()).catch(() => refresh());
   }
   return (
-    <div className="v6-body v6-projects2">
-      <div className="v6-home2-top">
-        <div><b>Proyek</b><span>Draft lokal · Cloud · render vault</span></div>
-        <button onClick={() => gotoEditor()}>＋</button>
+    <div className="v6-body">
+      <div className="v6-pagehead"><h2>Proyek</h2>
+        <button className="v6-btn" onClick={() => gotoEditor()}>＋ Baru</button>
       </div>
-      <section className="v6-vault-hero">
-        <div><small>TOTAL DRAFT</small><b>{drafts.length}</b><span>tersimpan di HP + IndexedDB</span></div>
-        <div><small>RENDER VAULT</small><b>{vault.length}</b><span>hasil render aman sementara</span></div>
-      </section>
       {!!vault.length && (
-        <section className="v6-vault-list">
-          <div className="head"><b>📼 Hasil Render</b><em>Unduh ke galeri agar abadi.</em></div>
+        <div style={{ margin: "0 14px 12px", padding: 12, borderRadius: 14, background: "rgba(20,184,166,.08)", border: "1px solid rgba(20,184,166,.35)" }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>📼 Hasil render tersimpan di HP</div>
           {vault.map((it) => (
-            <div className="item" key={it.id}>
-              <span>🎬</span><b>{it.name}</b><em>{(it.size / 1048576).toFixed(1)}MB</em>
-              <button onClick={() => downloadBlob(it.blob, it.name)}>⬇️</button>
-              <button onClick={async () => { await vaultDelete(it.id); setVault(await vaultList()); }}>🗑</button>
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+              <span style={{ fontSize: 18 }}>🎬</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{it.name}</span>
+              <span style={{ fontSize: 11, opacity: .7, whiteSpace: "nowrap" }}>{(it.size / 1048576).toFixed(0)}MB</span>
+              <button className="v6-btn" style={{ padding: "6px 10px", fontSize: 12 }} title="Unduh ke HP" onClick={() => downloadBlob(it.blob, it.name)}>⬇️</button>
+              <button className="v6-btn" style={{ padding: "6px 10px", fontSize: 12 }} title="Hapus dari brankas" onClick={async () => { await vaultDelete(it.id); setVault(await vaultList()); }}>🗑</button>
             </div>
           ))}
-        </section>
+          <div style={{ fontSize: 11, opacity: .65, marginTop: 4 }}>Disalin otomatis begitu render selesai (maks {VAULT_MAX} terbaru) — unduh ke Galeri biar abadi selamanya.</div>
+        </div>
       )}
       {!drafts.length && <div className="v6-empty"><div className="big">🎬</div>Belum ada proyek. Buat yang pertama bro!</div>}
-      <section className="v6-project-list2">
-        {drafts.map((d) => (
-          <button key={d.id} onClick={() => gotoEditor(d.id)}>
-            <i>{d.thumb ? <img src={d.thumb} alt="" /> : "🎬"}</i>
-            <span><b>{d.title}</b><em>{d.slides} klip · {dateLabel(d.updatedAt)}{(d as any).mirror ? " · 🗄 cadangan" : ""}</em></span>
-            <strong onClick={(e) => { e.stopPropagation(); delDraft(d.id); }}>🗑</strong>
-          </button>
+      <div className="v6-proj-grid">
+        {drafts.map(d => (
+          <div className="v6-proj" key={d.id} onClick={() => gotoEditor(d.id)}>
+            <div className="th">{d.thumb ? <img src={d.thumb} alt="" /> : <span style={{ fontSize: 34, opacity: .35 }}>🎬</span>}</div>
+            <div className="inf">
+              <div className="nm">{d.title}</div>
+              <div className="st"><span>🎞 {d.slides} · {dateLabel(d.updatedAt)}{(d as any).mirror ? " · 🗄️ cadangan" : ""}</span>
+                <button onClick={(e) => { e.stopPropagation(); delDraft(d.id); }} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer" }}>🗑</button>
+              </div>
+            </div>
+          </div>
         ))}
-      </section>
+      </div>
       <button className="v6-banner-spec" onClick={() => go("spectrum")} style={{ width: "calc(100% - 28px)" }}>
         <div className="ttl">SPECTRUM STUDIO</div><div className="sub">Proyek musik spectrum — studio terpisah, khusus konten musik.</div>
         <div className="bars">{[0,1,2,3,4].map(i => <i key={i} style={{ animationDelay: `${i * 0.15}s` }} />)}</div>
@@ -1011,29 +1069,25 @@ function SayaPage({ refresh }: { refresh: () => void }) {
    ================================================================== */
 const MAIN_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCls?: string; disabled?: boolean }[] = [
   { id: "edit",    icon: "✂️",  label: "Edit" },
-  { id: "media",   icon: "✨",  label: "AI Studio", bdg: "AI", bdgCls: "ai" },
+  { id: "sihir_film", icon: "🎬", label: "Sihir Film", bdg: "NEW" },
   { id: "audio",   icon: "🎵",  label: "Audio" },
   { id: "teks",    icon: "🔤",  label: "Teks" },
-  { id: "filter",  icon: "🎨",  label: "Filter" },
   { id: "efek",    icon: "☆",   label: "Efek" },
-  { id: "sihir_film", icon: "🎬", label: "Cinematic", bdg: "NEW" },
   { id: "overlay", icon: "🖼️", label: "Overlay" },
   { id: "keterangan", icon: "💬", label: "Keterangan" },
-  { id: "stiker",  icon: "😀",  label: "Stiker" },
+  { id: "filter",  icon: "🎨",  label: "Filter" },
   { id: "sesuaikan", icon: "🎚️", label: "Sesuaikan" },
-  { id: "rasio",   icon: "⬜",  label: "Rasio" },
-  { id: "latar",   icon: "▱",   label: "Latar" },
-  { id: "more",    icon: "⋯",   label: "Lainnya" },
+  { id: "stiker",  icon: "😀",  label: "Stiker" },
+  { id: "media",   icon: "✨",  label: "Hasilkan media", bdg: "AI", bdgCls: "ai" },
   { id: "avatar",  icon: "👤",  label: "Avatar AI", bdg: "PRO", bdgCls: "pro", disabled: true },
+  { id: "rasio",   icon: "⬜",  label: "Rasio aspek" },
+  { id: "latar",   icon: "▱",   label: "Latar belakang" },
 ];
 const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCls?: string }[] = [
   { id: "split",   icon: "╫",   label: "Bagi" },
   { id: "animasi", icon: "▷",   label: "Animasi" },
   { id: "efek",    icon: "☆",   label: "Efek" },
   { id: "gambarai", icon: "🖼️", label: "Gambar AI", bdg: "✦", bdgCls: "ai" },
-  { id: "videoai", icon: "🎬", label: "Video AI", bdg: "AI", bdgCls: "ai" },
-  { id: "cinematic", icon: "◇+", label: "Key Film", bdg: "NEW" },
-  { id: "keyframe", icon: "◆", label: "Keyframe" },
   { id: "hapus",   icon: "▢",   label: "Hapus" },
   { id: "pangkas", icon: "▭",   label: "Pangkas" },
   { id: "dup",     icon: "⧉",   label: "Duplikat" },
@@ -1042,7 +1096,6 @@ const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "stiker",  icon: "😀",  label: "Stiker" },
   { id: "speed",   icon: "⚡",  label: "Speed" },
   { id: "transisi", icon: "🔀", label: "Transisi" },
-  { id: "more", icon: "⋯", label: "Lainnya" },
   { id: "geserkir", icon: "◀", label: "Kiri" },
   { id: "geserkan", icon: "▶", label: "Kanan" },
 ];
@@ -1159,8 +1212,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ---------- UI panels ---------- */
   const [tool, setTool] = useState<string | null>(null);
   const [clipBar, setClipBar] = useState(false);
-  const [cleanMode, setCleanMode] = useState(true);
-  const [keySel, setKeySel] = useState<{ sid: string; idx: number } | null>(null);
   // v8.4: susunan jalur track BEBAS & tersimpan permanen (aturan #6 — track bukan denah mati)
   const [laneOrder, setLaneOrder] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem("verve_laneorder_v1") || "[]"); return Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : []; } catch { return []; } });
   const saveLaneOrder = useCallback((o: string[]) => { setLaneOrder(o); try { localStorage.setItem("verve_laneorder_v1", JSON.stringify(o)); } catch {} }, []);
@@ -1437,45 +1488,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     });
     try { navigator.clipboard?.writeText(prompt); flash("📋 Prompt cinematic tersalin"); }
     catch { flash("Prompt cinematic siap disalin"); }
-  }
-  function activeClipAtPlayhead(): { sid: string; idx: number; rel: number } | null {
-    if (!slides.length) return null;
-    const tl = timelineRef.current;
-    const L = tl ? locate(tl, Math.min(curTRef.current, Math.max(0, tl.total - 0.01))) : null;
-    const idx = selId ? Math.max(0, slidesRef.current.findIndex(x => x.id === selId)) : (L ? L.idx : 0);
-    const sl = slidesRef.current[idx] || slidesRef.current[0];
-    if (!sl) return null;
-    const dur = L && idx === L.idx ? L.clipDur : effDur(optsRef.current[sl.id], slideDuration);
-    const rel = L && idx === L.idx ? Math.max(0, Math.min(1, L.clipT / Math.max(0.001, dur))) : 0;
-    return { sid: sl.id, idx, rel };
-  }
-  function addKeyframeAtPlayhead() {
-    const hit = activeClipAtPlayhead();
-    if (!hit) { setTool("media"); return; }
-    const o: any = slideOptsById[hit.sid] || {};
-    const point = { t: Math.round(hit.rel * 1000) / 1000, tx: Number(o.tx || 0), ty: Number(o.ty || 0), tz: Number(o.tz || 1) || 1, rot: 0, alpha: 1, ease: "ease" };
-    const arr = Array.isArray(o.kf) ? [...o.kf] : [];
-    const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
-    if (near >= 0) arr[near] = { ...arr[near], ...point }; else arr.push(point);
-    arr.sort((a: any, b: any) => Number(a.t) - Number(b.t));
-    setSelId(hit.sid); setClipBar(true);
-    const nextKf = arr.slice(0, 8);
-    setOpt(hit.sid, { kf: nextKf, kb: undefined } as any);
-    setKeySel({ sid: hit.sid, idx: Math.max(0, nextKf.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025)) });
-    flash(`◇ Keyframe ${Math.round(point.t * 100)}% disimpan (${nextKf.length} titik)`);
-  }
-  function addKeyMotion() {
-    const hit = activeClipAtPlayhead();
-    if (!hit) { setTool("media"); return; }
-    const dirs = ["in", "l", "out", "r", "u", "d"] as const;
-    const dir = dirs[hit.idx % dirs.length];
-    const end = dir === "in" ? { tx: 0, ty: 0, tz: 1.18 } : dir === "out" ? { tx: 0, ty: 0, tz: 0.94 } :
-      dir === "l" ? { tx: -0.08, ty: 0, tz: 1.12 } : dir === "r" ? { tx: 0.08, ty: 0, tz: 1.12 } :
-      dir === "u" ? { tx: 0, ty: -0.06, tz: 1.12 } : { tx: 0, ty: 0.06, tz: 1.12 };
-    setSelId(hit.sid); setClipBar(true);
-    setOpt(hit.sid, { kf: [{ t: 0, tx: 0, ty: 0, tz: 1, rot: 0, alpha: 1, ease: "ease" }, { t: 1, ...end, rot: 0, alpha: 1, ease: "ease" }], kb: undefined, loop: "none" } as any);
-    setKeySel({ sid: hit.sid, idx: 1 });
-    flash("◇+ Key Film: 2 keyframe kamera cinematic dibuat");
   }
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
   // bersihkan seleksi teks kalau klipnya hilang / teksnya dihapus / pindah pilih klip lain (multi-lapis aware)
@@ -2149,13 +2161,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     prevLenRef.current = n;
   }, [slides]); // eslint-disable-line
 
-  useEffect(() => {
-    try { const v = localStorage.getItem("verve_clean_mode_v1"); if (v === "0") setCleanMode(false); } catch {}
-  }, []);
-  useEffect(() => {
-    try { localStorage.setItem("verve_clean_mode_v1", cleanMode ? "1" : "0"); } catch {}
-  }, [cleanMode]);
-
   // autosave (debounce) setiap perubahan struktural
   useEffect(() => {
     if (!didInit.current) return;
@@ -2191,7 +2196,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (t === "avatar") return;
     if (t === "sesuaikan") { setTool("filter"); setSheetTab("sesuaikan"); return; }
     if (t === "overlay") { setTool("stiker"); setSheetTab("overlayimg"); return; }
-    if (t === "more") { setTool("more"); setSheetTab(""); return; }
     setTool(cur => cur === t ? null : t); setSheetTab("");
     if (t === "teks" && !slides.length) setTool("media");
   }
@@ -2202,10 +2206,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "animasi": setTool("animasi"); setSheetTab("masuk"); break;
       case "efek": setTool("efek"); break;
       case "gambarai": setModal("gambarai"); break;
-      case "videoai": setModal("videoai"); break;
-      case "cinematic": addKeyMotion(); break;
-      case "keyframe": setTool("keyframe"); break;
-      case "more": setTool("clipmore"); break;
       case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
@@ -2739,52 +2739,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       }
     });
   }
-  async function addGeneratedVideoClip(url: string, label = "Video AI") {
-    const vu = String(url || "").trim();
-    if (!/^https?:\/\//i.test(vu) && !vu.startsWith("blob:")) { flash("⚠️ URL video AI belum valid"); return; }
-    pushHist();
-    const id = uid("vgen");
-    const fallbackPoster = (() => {
-      const c = document.createElement("canvas"); c.width = ratio === "9:16" ? 720 : 1280; c.height = ratio === "9:16" ? 1280 : 720;
-      const ctx = c.getContext("2d")!;
-      const g = ctx.createLinearGradient(0, 0, c.width, c.height);
-      g.addColorStop(0, "#05070d"); g.addColorStop(1, "#123a63");
-      ctx.fillStyle = g; ctx.fillRect(0, 0, c.width, c.height);
-      ctx.fillStyle = "#5eead4"; ctx.font = "900 54px system-ui"; ctx.textAlign = "center"; ctx.fillText("VIDEO AI", c.width / 2, c.height / 2 - 14);
-      ctx.fillStyle = "#cbd5e1"; ctx.font = "600 28px system-ui"; ctx.fillText(label.slice(0, 34), c.width / 2, c.height / 2 + 34);
-      return c.toDataURL("image/jpeg", 0.82);
-    })();
-    const finish = (poster: string, dur: number) => {
-      const slide: Slide = { id, imageUrl: poster || fallbackPoster, videoUrl: vu, dur: dur || 5 };
-      setSlides((c) => [...c, slide]);
-      setSlideOptsById((cur) => ({ ...cur, [id]: { ...(cur[id] || {}), dur: Math.round(Math.max(1, dur || 5) * 100) / 100, trans: "dissolve", transDur: 0.55 } as any }));
-      setSelId(id); setClipBar(true); setModal(null);
-      flash("🎬 Video AI masuk timeline sebagai klip baru");
-    };
-    try {
-      const v = document.createElement("video");
-      v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
-      let triedProxy = false;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => { finish(fallbackPoster, 5); resolve(); }, 9000);
-        v.onerror = () => {
-          if (!triedProxy && !vu.startsWith("blob:")) { triedProxy = true; v.src = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(vu)}`; return; }
-          clearTimeout(timer); finish(fallbackPoster, 5); resolve();
-        };
-        v.onloadedmetadata = () => { try { v.currentTime = Math.min(0.2, Math.max(0, (v.duration || 1) - 0.05)); } catch {} };
-        v.onseeked = () => {
-          try {
-            const W = v.videoWidth || 720, H = v.videoHeight || 1280;
-            const c = document.createElement("canvas"); c.width = W; c.height = H;
-            c.getContext("2d")!.drawImage(v, 0, 0, W, H);
-            clearTimeout(timer); finish(c.toDataURL("image/jpeg", 0.85), v.duration || 5); resolve();
-          } catch { clearTimeout(timer); finish(fallbackPoster, v.duration || 5); resolve(); }
-        };
-        v.src = vu;
-      });
-    } catch { finish(fallbackPoster, 5); }
-  }
-
   async function genImageForClip(prompt: string, style: string, replaceId?: string) {
     setLoading("image"); setError("");
     try {
@@ -3960,47 +3914,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [wzN, setWzN] = useState(4);
   const [wzStyle, setWzStyle] = useState("cinematic");
   const [wzAudio, setWzAudio] = useState<"none" | "tts" | "suno">("tts");
-  const [wzSeedNote, setWzSeedNote] = useState("");
-  const [wzSeedPayload, setWzSeedPayload] = useState<any>(null);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("verve_creator_os_seed_payload");
-      const title = localStorage.getItem("verve_creator_os_seed_title") || "";
-      if (!raw && !title) return;
-      const j = raw ? JSON.parse(raw) : {};
-      const idea = [j.title || title, j.hook ? `Hook: ${j.hook}` : "", j.openingScene ? `Opening: ${j.openingScene}` : "", j.thumbnail ? `Thumbnail: ${j.thumbnail}` : ""].filter(Boolean).join("\n");
-      if (idea.trim()) setWzNiche(idea.slice(0, 900));
-      setWzSeedPayload(j && Object.keys(j).length ? j : null);
-      const fmt = String(j.format || "long");
-      if (fmt === "shorts") { setRatio("9:16"); setWzN(4); }
-      else { setRatio("16:9"); setWzN(fmt === "series" ? 8 : 6); }
-      setWzStyle("cinematic"); setWzAudio("tts");
-      setWzSeedNote(j.score ? `🧠 Dari Creator OS: #${j.rank} · score ${j.score} · ${j.format} · rasio ${fmt === "shorts" ? "9:16" : "16:9"}` : "🧠 Dari Creator OS");
-      localStorage.removeItem("verve_creator_os_seed_payload");
-      localStorage.removeItem("verve_creator_os_seed_title");
-    } catch {}
-  }, []);
-
   async function runWizard() {
     if (!wzNiche.trim()) return setErr({ message: "Isi ide/niche dulu bro" });
     setLoading("wizard"); setError("");
     try {
       setNiche(wzNiche);
       setStageText("🧠 Menulis judul...");
-      let title = String(wzSeedPayload?.title || "").trim().slice(0, 90);
-      if (!title) {
-        const kr = await fetch("/api/hcnsec/titles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keyword: wzNiche, niche: wzNiche, n: 1 }) });
-        const kd = await kr.json().catch(() => ({}));
-        title = (kd.titles?.[0] || wzNiche).slice(0, 90);
-      }
+      const kr = await fetch("/api/hcnsec/titles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keyword: wzNiche, niche: wzNiche, n: 1 }) });
+      const kd = await kr.json().catch(() => ({}));
+      const title = (kd.titles?.[0] || wzNiche).slice(0, 90);
       setProjTitle(title);
       setStageText(`🎨 Generate ${wzN} gambar AI...`);
       const newSlides: Slide[] = [];
       for (let i = 0; i < wzN; i++) {
         setStageText(`🎨 Gambar ${i + 1}/${wzN}...`);
         try {
-          const visualSeed = [wzSeedPayload?.openingScene, wzSeedPayload?.thumbnail, wzNiche].filter(Boolean).join(". ");
-          const res = await fetch("/api/hcnsec/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: visualSeed || wzNiche, niche: wzNiche, style: wzStyle }) });
+          const res = await fetch("/api/hcnsec/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: wzNiche, niche: wzNiche, style: wzStyle }) });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || data.error) continue;
           const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = rej; im.src = data.url; });
@@ -4013,7 +3942,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (wzAudio === "tts") {
         setStageText("📝 Menulis naskah narasi...");
         try {
-          const sr = await fetch("/api/hcnsec/script", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: [wzNiche, wzSeedPayload?.hook, wzSeedPayload?.openingScene, wzSeedPayload?.cta].filter(Boolean).join("\n"), slides: wzN }) });
+          const sr = await fetch("/api/hcnsec/script", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: wzNiche, slides: wzN }) });
           const sd = await sr.json().catch(() => ({}));
           const text = (sd.lines || []).join(" ").trim();
           if (text) {
@@ -4295,7 +4224,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
 
   return (
-    <div className={`v6e-root ${cleanMode ? "clean" : "full"}`}>
+    <div className="v6e-root">
       {/* ============ TOPBAR ============ */}
       <header className="v6e-top">
         {loading === "render" && (
@@ -4305,7 +4234,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         )}
         <button className="v6e-tbtn" title="Tutup" onClick={() => { persistSnapshot(true); stopPreview(); onExit(); }}>✕</button>
         <button className="v6e-tbtn" title="Cari alat" onClick={() => flash("🔍 Ketuk alat di toolbar bawah ya bro")}>🔍</button>
-        <button className={`v6e-tbtn ${cleanMode ? "on" : ""}`} title="Mode bersih / semua alat" onClick={() => setCleanMode(v => !v)}>{cleanMode ? "◎" : "☰"}</button>
         <button className="v6e-tbtn" title="Judul proyek" onClick={() => {
           const t = prompt("Judul proyek:", projTitle);
           if (t !== null) { setProjTitle(t.slice(0, 80) || "Proyek Tanpa Judul"); persistSnapshot(true); }
@@ -4358,7 +4286,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           <button className={`cbtn ${pipOn ? "" : ""}`} title="Penanda REC" onClick={() => setPipOn(v => !v)}>
             🎦<span className="mini">{pipOn ? "ON" : "OFF"}</span>
           </button>
-          <button className="cbtn" onClick={addKeyframeAtPlayhead} title="Tambah keyframe transform di posisi playhead">◇+</button>
           <button className="cbtn" onClick={undo} disabled={!canUndo} title="Urungkan">↶</button>
           <button className="cbtn" onClick={redo} disabled={!canRedo} title="Ulangi">↷</button>
           <button
@@ -4418,15 +4345,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
         onSplit={doSplitAtPlayhead} // ✂ v12.7: tombol ╫ melayang di track — sekali ketuk tepat di penanda
-        onKeyframeTap={(sid: string, idx: number) => { setSelId(sid); setClipBar(true); setKeySel({ sid, idx }); setTool("keyframe"); }}
-        onKeyframeDragStart={() => pushHist()}
-        onKeyframeMove={(sid: string, idx: number, rel: number) => setSlideOptsById(cur => {
-          const o: any = cur[sid] || {}; const arr = Array.isArray(o.kf) ? [...o.kf] : [];
-          if (!arr[idx]) return cur;
-          arr[idx] = { ...arr[idx], t: Math.max(0, Math.min(1, rel)) };
-          arr.sort((a: any, b: any) => Number(a.t) - Number(b.t));
-          return { ...cur, [sid]: { ...o, kf: arr } };
-        })}
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
         onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); flash("🗑 Track audio dikosongkan"); }}
@@ -4477,7 +4395,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","gambarai","videoai","cinematic","keyframe","hapus","more"].includes(t.id)) : CLIP_TOOLS).map(t => (
+            {CLIP_TOOLS.map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
@@ -4485,7 +4403,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
         ) : (
           <div className="v6e-tools">
-            {(cleanMode ? MAIN_TOOLS.filter(t => ["edit","media","audio","teks","filter","rasio","more"].includes(t.id)) : MAIN_TOOLS).map(t => (
+            {MAIN_TOOLS.map(t => (
               <button key={t.id} className={`v6e-tlbtn ${tool === t.id ? "on" : ""}`} disabled={t.disabled}
                 onClick={() => {
                   if (t.disabled) { flash("👤 Avatar AI segera hadir di versi berikutnya 🙏"); return; }
@@ -4580,7 +4498,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <EditorSheets
           tool={tool} setTool={setTool} sheetTab={sheetTab} setSheetTab={setSheetTab}
           api={{
-            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt, timeline, curT, keySel, setKeySel, addKeyframeAtPlayhead, selTextSid, getTextOf, setTextObj2, onClipTool,
+            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt,
             filterPreset, setFilterPreset, adj, setAdj, qualitySharp, setQualitySharp,
             presets, setPresets,
             ratio, setRatio, bgMode, setBgMode, bgColor, setBgColor,
@@ -4631,7 +4549,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} mStatus={mStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
         musicUrl={musicUrl} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
-      {modal === "wizard" && <WizardModal onClose={() => setModal(null)} seedNote={wzSeedNote} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
+      {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
       {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
       {modal === "ganti" && (
         <MiniModal title="⇄ Ganti media klip" onClose={() => setModal(null)}>
@@ -4643,7 +4561,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         </MiniModal>
       )}
       {modal === "gambarai" && <GambarAiModal onClose={() => setModal(null)} onGen={(pr: string, st: string) => genImageForClip(pr, st, selId || undefined)} loading={loading} />}
-      {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} onAddVideo={addGeneratedVideoClip} />}
+      {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} />}
       {modal === "hakcipta" && <HakCiptaModal musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl} onClose={() => setModal(null)} />}
 
       {/* toast & loading bar */}
@@ -5293,16 +5211,6 @@ function TimelineV6(p: any) {
                   >
                     {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
                     {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
-                    {((slideOptsById[s.id]?.kf || []) as any[]).map((k: any, ki: number) => (
-                      <button key={`kf${ki}`} className="v6e-kfmark" style={{ left: `${Math.max(2, Math.min(98, Number(k.t || 0) * 100))}%` }} title={`Keyframe ${ki + 1} · ${Math.round(Number(k.t || 0) * 100)}%`} onPointerDown={(e) => {
-                        e.stopPropagation(); p.onKeyframeTap?.(s.id, ki); p.onKeyframeDragStart?.();
-                        const host = (e.currentTarget.parentElement as HTMLElement | null); const rect = host?.getBoundingClientRect(); if (!rect) return;
-                        let moved = false;
-                        const move = (ev: PointerEvent) => { moved = true; const rel = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width))); p.onKeyframeMove?.(s.id, ki, Math.round(rel * 1000) / 1000); };
-                        const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); if (!moved) p.onKeyframeTap?.(s.id, ki); };
-                        window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
-                      }}>◆</button>
-                    ))}
                     <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                     {sel && <>
                       <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>‹</span>
@@ -5854,139 +5762,12 @@ function SihirFilmSheet({ api, onClose }: any) {
   );
 }
 
-function KeyframeSheet({ api: A, onClose }: any) {
-  const [multiMode, setMultiMode] = useState(false);
-  const [multi, setMulti] = useState<number[]>([]);
-  const sid = A.selId || A.keySel?.sid || A.slides?.[0]?.id || "";
-  const idxClip = Math.max(0, (A.slides || []).findIndex((s: any) => s.id === sid));
-  const opt = sid ? (A.slideOptsById?.[sid] || {}) : {};
-  const kfs = Array.isArray(opt.kf) ? [...opt.kf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
-  const fkfs = Array.isArray(opt.fkf) ? [...opt.fkf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
-  const selected = A.keySel && A.keySel.sid === sid ? Math.max(0, Math.min(kfs.length - 1, A.keySel.idx || 0)) : 0;
-  const cur = kfs[selected] || null;
-  const start = A.timeline?.starts?.[idxClip] || 0;
-  const dur = A.timeline?.durs?.[idxClip] || 1;
-  const playRel = Math.max(0, Math.min(1, ((A.curT || 0) - start) / Math.max(0.001, dur)));
-  const textEnc = String(A.selTextSid || "");
-  const splitAt = textEnc.indexOf("::");
-  const textSid = splitAt >= 0 ? textEnc.slice(0, splitAt) : textEnc;
-  const textTid = splitAt >= 0 ? textEnc.slice(splitAt + 2) : "";
-  const textObj = textSid ? A.getTextOf?.(textSid, textTid) : null;
-  const textKfs = Array.isArray(textObj?.kf) ? [...textObj.kf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
-  const saveKf = (next: any[]) => {
-    const clean = next.map((k: any) => ({
-      t: Math.max(0, Math.min(1, Number(k.t) || 0)),
-      tx: Math.round((Number(k.tx) || 0) * 1000) / 1000,
-      ty: Math.round((Number(k.ty) || 0) * 1000) / 1000,
-      tz: Math.round(Math.max(0.2, Math.min(5, Number(k.tz) || 1)) * 1000) / 1000,
-      rot: Math.round((Number(k.rot) || 0) * 10) / 10,
-      alpha: Math.round(Math.max(0, Math.min(1, Number(k.alpha ?? 1))) * 100) / 100,
-      ease: ["linear", "ease", "easeIn", "easeOut"].includes(String(k.ease)) ? String(k.ease) : "ease",
-    })).sort((a: any, b: any) => a.t - b.t).slice(0, 12);
-    A.setOpt(sid, { kf: clean, kb: undefined } as any);
-  };
-  const patchCur = (patch: any) => {
-    if (!cur) return;
-    const next = kfs.map((k: any, i: number) => i === selected ? { ...k, ...patch } : k);
-    saveKf(next);
-  };
-  const seek = (k: any) => A.seekPreview?.(start + Math.max(0, Math.min(1, Number(k.t) || 0)) * dur);
-  const easeY = (x: number, mode: string) => mode === "linear" ? x : mode === "easeIn" ? x * x : mode === "easeOut" ? 1 - Math.pow(1 - x, 2) : x * x * (3 - 2 * x);
-  const curvePts = (mode: string) => Array.from({ length: 18 }).map((_, i) => { const x = i / 17; const y = easeY(x, mode || "ease"); return `${Math.round(10 + x * 180)},${Math.round(92 - y * 72)}`; }).join(" ");
-  const addFxKeyframe = () => {
-    const point = { t: Math.round(playRel * 1000) / 1000, filter: A.filterPreset || opt.filter || "none", effect: opt.effect || "", ease: "ease" };
-    const arr = [...fkfs];
-    const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
-    if (near >= 0) arr[near] = point; else arr.push(point);
-    A.setOpt(sid, { fkf: arr.sort((a: any, b: any) => Number(a.t) - Number(b.t)).slice(0, 12) } as any);
-  };
-  const addTextKeyframe = () => {
-    if (!textObj || !textSid) return;
-    const rel = textObj.start != null && textObj.dur ? Math.max(0, Math.min(1, ((A.curT || 0) - Number(textObj.start || 0)) / Math.max(0.001, Number(textObj.dur || 1)))) : playRel;
-    const point = { t: Math.round(rel * 1000) / 1000, x: textObj.x, y: textObj.y, size: textObj.size, alpha: 1, ease: "ease" };
-    const arr = [...textKfs];
-    const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
-    if (near >= 0) arr[near] = { ...arr[near], ...point }; else arr.push(point);
-    A.setTextObj2?.(textSid, textTid, { kf: arr.sort((a: any, b: any) => Number(a.t) - Number(b.t)).slice(0, 12) });
-  };
-  return (
-    <SheetShell title="◆ Keyframe" onClose={onClose} onOk={onClose} tall>
-      <div className="v6-sheet-body">
-        <div className="v6-note">Keyframe kamera mengatur posisi, zoom, rotasi, dan opacity klip. Titik muncul sebagai diamond di timeline dan bisa digeser langsung.</div>
-        <button className="v6-bigcta" onClick={A.addKeyframeAtPlayhead}>◇+ Tambah keyframe kamera di playhead</button>
-        {!kfs.length && <div className="v6-note">Belum ada keyframe kamera. Atur posisi/zoom gambar, geser playhead, lalu tekan ◇+.</div>}
-        {!!kfs.length && <>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}><button className={`v6-chip ${multiMode ? "on" : ""}`} onClick={() => setMultiMode(v => !v)}>☑ Multi-select</button>{!!multi.length && <button className="v6-chip" onClick={() => { saveKf(kfs.filter((_: any, i: number) => !multi.includes(i))); setMulti([]); }}>🗑 Hapus {multi.length}</button>}</div>
-          <div className="v6-rows" style={{ marginTop: 8 }}>{kfs.map((k: any, i: number) => <button key={`${i}-${k.t}`} className={`v6-chip ${(selected === i || multi.includes(i)) ? "on" : ""}`} onClick={() => { if (multiMode) setMulti(m => m.includes(i) ? m.filter(x => x !== i) : [...m, i]); else { A.setKeySel?.({ sid, idx: i }); seek(k); } }}>◆ {i + 1} · {Math.round(Number(k.t || 0) * 100)}% · {k.ease || "ease"}</button>)}</div>
-        </>}
-        {cur && <>
-          <svg viewBox="0 0 200 104" style={{ width: "100%", height: 82, marginTop: 10, border: "1px solid var(--v6-line)", borderRadius: 12, background: "#070b12" }}><path d="M10 92 L190 92 M10 20 L10 92" stroke="#334155" strokeWidth="1" fill="none" /><polyline points={curvePts(cur.ease || "ease")} stroke="#5eead4" strokeWidth="4" fill="none" strokeLinecap="round" /><circle cx="10" cy="92" r="4" fill="#f59e0b" /><circle cx="190" cy="20" r="4" fill="#f59e0b" /></svg>
-          <div className="v6-slider-row"><div className="lr"><span>Posisi waktu</span><b>{Math.round((cur.t || 0) * 100)}%</b></div><input type="range" min={0} max={1} step={0.01} value={cur.t ?? 0} onChange={e => patchCur({ t: Number(e.target.value) })} /></div>
-          <div className="v6-slider-row"><div className="lr"><span>Geser X</span><b>{Math.round((cur.tx || 0) * 100)}%</b></div><input type="range" min={-0.5} max={0.5} step={0.01} value={cur.tx ?? 0} onChange={e => patchCur({ tx: Number(e.target.value) })} /></div>
-          <div className="v6-slider-row"><div className="lr"><span>Geser Y</span><b>{Math.round((cur.ty || 0) * 100)}%</b></div><input type="range" min={-0.5} max={0.5} step={0.01} value={cur.ty ?? 0} onChange={e => patchCur({ ty: Number(e.target.value) })} /></div>
-          <div className="v6-slider-row"><div className="lr"><span>Zoom</span><b>{Math.round((cur.tz || 1) * 100)}%</b></div><input type="range" min={0.35} max={3} step={0.01} value={cur.tz ?? 1} onChange={e => patchCur({ tz: Number(e.target.value) })} /></div>
-          <div className="v6-slider-row"><div className="lr"><span>Rotasi</span><b>{Math.round(cur.rot || 0)}°</b></div><input type="range" min={-180} max={180} step={1} value={cur.rot ?? 0} onChange={e => patchCur({ rot: Number(e.target.value) })} /></div>
-          <div className="v6-slider-row"><div className="lr"><span>Opacity</span><b>{Math.round((cur.alpha ?? 1) * 100)}%</b></div><input type="range" min={0} max={1} step={0.01} value={cur.alpha ?? 1} onChange={e => patchCur({ alpha: Number(e.target.value) })} /></div>
-          <div className="v6-cardrow" onClick={() => { const all = ["linear", "ease", "easeIn", "easeOut"]; const n = all[(all.indexOf(cur.ease || "ease") + 1) % all.length]; patchCur({ ease: n }); }}><span>〽️</span><div className="tt">Easing</div><span className="val">{cur.ease || "ease"}</span><span className="arr">›</span></div>
-          <button className="v6-btn ghost" style={{ width: "100%", color: "#fca5a5", borderColor: "rgba(239,68,68,.45)" }} onClick={() => { const next = kfs.filter((_: any, i: number) => i !== selected); saveKf(next); A.setKeySel?.(next.length ? { sid, idx: Math.max(0, selected - 1) } : null); }}>🗑 Hapus keyframe ini</button>
-        </>}
-        {!!kfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => { A.setOpt(sid, { kf: undefined } as any); A.setKeySel?.(null); }}>Bersihkan semua keyframe kamera</button>}
-        <div style={{ marginTop: 14, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}><b style={{ fontSize: 12 }}>🎨 Keyframe Filter/Efek</b><div className="v6-note">Step keyframe: filter/efek berubah di titik waktu tertentu.</div><button className="v6-chip" onClick={addFxKeyframe}>◆ Simpan filter/efek saat ini di playhead</button>{!!fkfs.length && <div className="v6-rows" style={{ marginTop: 8 }}>{fkfs.map((k: any, i: number) => <span className="v6-chip" key={i}>◆ {Math.round(Number(k.t || 0) * 100)}% · {k.filter || "none"} · {k.effect || "tanpa efek"}</span>)}</div>}{!!fkfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => A.setOpt(sid, { fkf: undefined } as any)}>Bersihkan filter/efek keyframe</button>}</div>
-        <div style={{ marginTop: 14, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}><b style={{ fontSize: 12 }}>🔤 Keyframe Teks</b>{textObj ? <><div className="v6-note">Teks terpilih: “{String(textObj.txt || "").slice(0,42)}”</div><button className="v6-chip" onClick={addTextKeyframe}>◆ Simpan posisi/ukuran teks di playhead</button>{!!textKfs.length && <div className="v6-rows" style={{ marginTop: 8 }}>{textKfs.map((k: any, i: number) => <span className="v6-chip" key={i}>◆ {Math.round(Number(k.t || 0) * 100)}% · y {Math.round(Number(k.y || 0) * 100)}%</span>)}</div>}{!!textKfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => A.setTextObj2?.(textSid, textTid, { kf: undefined })}>Bersihkan keyframe teks</button>}</> : <div className="v6-note">Pilih teks di preview/timeline dulu untuk keyframe teks.</div>}</div>
-      </div>
-    </SheetShell>
-  );
-}
-
 function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
   const A = api;
   const close = () => setTool(null);
 
   /* ---------------- SIHIR FILM ---------------- */
   if (tool === "sihir_film") return <SihirFilmSheet api={A} onClose={close} />;
-
-  /* ---------------- MENU LAINNYA (clean mode) ---------------- */
-  if (tool === "more") return (
-    <SheetShell title="Lainnya" onClose={close}>
-      <div className="v6-sheet-body v6-moregrid">
-        {([
-          ["keterangan", "💬", "Keterangan", "Auto caption/karaoke"],
-          ["stiker", "😀", "Stiker", "Emoji, CTA, overlay"],
-          ["overlay", "🖼️", "Overlay", "Foto PiP / layer"],
-          ["sesuaikan", "🎚️", "Sesuaikan", "Exposure, vignette, grain"],
-          ["sihir_film", "🎬", "Cinematic", "Sihir film & preset"],
-          ["latar", "▱", "Latar", "Cover/blur/color"],
-          ["ekspor", "📦", "Ekspor", "Video, GIF, backup"],
-        ] as any[]).map(([id, ic, title, desc]) => (
-          <button key={id} className="v6-cardrow" onClick={() => { setTool(id); if (id === "overlay") setSheetTab("overlayimg"); else if (id === "sesuaikan") setSheetTab("sesuaikan"); else setSheetTab(""); }}>
-            <span style={{ fontSize: 20 }}>{ic}</span><div className="tt">{title}<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{desc}</div></div><span className="arr">›</span>
-          </button>
-        ))}
-      </div>
-    </SheetShell>
-  );
-  if (tool === "clipmore") return (
-    <SheetShell title="Alat Klip Lainnya" onClose={close}>
-      <div className="v6-sheet-body v6-moregrid">
-        {([
-          ["pangkas", "▭", "Pangkas", "Atur durasi klip"],
-          ["transisi", "🔀", "Transisi", "Sambungan antar klip"],
-          ["efek", "☆", "Efek", "Leak, hujan, glitch"],
-          ["teks", "🔤", "Teks", "Tambah teks di klip"],
-          ["stiker", "😀", "Stiker", "Tambah elemen"],
-          ["speed", "⚡", "Speed", "Kecepatan klip"],
-          ["ganti", "⇄", "Ganti", "Ganti media"],
-          ["dup", "⧉", "Duplikat", "Salin klip"],
-          ["geserkir", "◀", "Kiri", "Geser urutan"],
-          ["geserkan", "▶", "Kanan", "Geser urutan"],
-        ] as any[]).map(([id, ic, title, desc]) => (
-          <button key={id} className="v6-cardrow" onClick={() => { A.onClipTool?.(id); if (!["dup","geserkir","geserkan"].includes(id)) close(); }}>
-            <span style={{ fontSize: 20 }}>{ic}</span><div className="tt">{title}<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{desc}</div></div><span className="arr">›</span>
-          </button>
-        ))}
-      </div>
-    </SheetShell>
-  );
 
   /* ---------------- AUDIO ---------------- */
   if (tool === "audio") return (
@@ -6179,29 +5960,25 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
   /* ---------------- STIKER / OVERLAY ---------------- */
   if (tool === "stiker") return <StikerSheet api={A} tab0={sheetTab || "stiker"} onClose={close} />;
 
-  /* ---------------- KEYFRAME ---------------- */
-  if (tool === "keyframe") return <KeyframeSheet api={A} onClose={close} />;
-
   /* ---------------- HASILKAN MEDIA ---------------- */
   if (tool === "media") return (
-    <SheetShell title="AI Studio" onClose={close} tall>
-      <div className="v6-sheet-body v6-aihub">
-        <section className="v6-aihero">
-          <small>ALL GENERATORS</small>
-          <b>Buat bahan langsung di Studio</b>
-          <p>Gambar, video, musik, narasi, stok, thumbnail, dan caption tersusun dalam satu panel.</p>
-        </section>
-        <div className="v6-aihub-grid">
-          <button className="hot" onClick={() => { A.openModal("gambarai"); }}><span>🎨</span><b>Gambar AI</b><em>teks → gambar, masuk track</em></button>
-          <button className="hot" onClick={() => { A.openModal("videoai"); }}><span>🎬</span><b>Video AI</b><em>teks/gambar → klip video</em></button>
-          <button onClick={() => { A.openModal("musik"); }}><span>🎵</span><b>Musik AI</b><em>lagu/instrumen → audio track</em></button>
-          <button onClick={() => { A.openModal("tts"); }}><span>🗣️</span><b>Narasi AI</b><em>teks → suara</em></button>
-          <button onClick={() => { A.openModal("wizard"); }}><span>🧠</span><b>Paket AI</b><em>ide → visual + audio</em></button>
-          <button onClick={() => { setTool("keterangan"); }}><span>💬</span><b>Auto Caption</b><em>audio → teks/karaoke</em></button>
-          <label><span>🖼️</span><b>Upload Media</b><em>foto/video dari galeri</em><input type="file" accept="image/*,video/*" multiple hidden onChange={e => { A.addImageFiles(e.target.files, undefined); close(); }} /></label>
-          <button onClick={() => { A.openModal("kamera"); }}><span>📷</span><b>Kamera</b><em>ambil gambar cepat</em></button>
+    <SheetShell title="Hasilkan media" onClose={close} tall>
+      <div className="v6-sheet-body">
+        <label className="v6-cardrow">
+          <span style={{ fontSize: 20 }}>🖼️</span>
+          <div className="tt">Upload foto atau video dari galeri</div><span className="arr">›</span>
+          <input type="file" accept="image/*,video/*" multiple hidden onChange={e => { A.addImageFiles(e.target.files, undefined); close(); }} />
+        </label>
+        <div className="v6-cardrow" onClick={() => { A.openModal("kamera"); }}>
+          <span style={{ fontSize: 20 }}>📷</span><div className="tt">Ambil gambar (kamera)</div><span className="arr">›</span>
         </div>
-        <div className="v6-note">✅ Semua alat lama tetap ada. Mode bersih hanya menyusun ulang supaya tidak pusing di HP.</div>
+        <div className="v6-cardrow" onClick={() => { A.openModal("gambarai"); }}>
+          <span style={{ fontSize: 20 }}>🎨</span><div className="tt">Gambar AI (tulis konsep sendiri)</div><span style={{ fontSize: 8.5, fontWeight: 800, background: "#a855f7", padding: "1px 7px", borderRadius: 999 }}>AI</span><span className="arr">›</span>
+        </div>
+        <div className="v6-cardrow" onClick={() => { A.openModal("videoai"); }}>
+          <span style={{ fontSize: 20 }}>🎬</span><div className="tt">Video AI (beta)</div><span className="arr">›</span>
+        </div>
+        <div className="v6-note">✅ Media yang ditambahkan langsung masuk <b>track 1</b> sebagai klip baru. Tarik ujungnya untuk atur durasi.</div>
       </div>
     </SheetShell>
   );
@@ -7198,8 +6975,7 @@ function WizardModal(p: any) {
       <div className="fb">
         <div className="v6-lbl">IDE / NICHE KONTEN</div>
         <textarea className="v6-inp" style={{ minHeight: 70 }} placeholder="cth: cerita sedih perjuangan ibu membesarkan anak" value={p.niche} onChange={e => p.setNiche(e.target.value)} />
-        {p.seedNote && <div className="v6-okbox">{p.seedNote} — ide sudah dimasukkan ke wizard produksi.</div>}
-        <div className="v6-note" style={{ marginTop: 2 }}>aksi: AI bikin <b>judul → visual → audio</b> otomatis jadi proyek siap edit. Rasio mengikuti format ide: Shorts 9:16, long/series 16:9.</div>
+        <div className="v6-note" style={{ marginTop: 2 }}>aksi: AI bikin <b>judul → visual → audio</b> otomatis jadi proyek siap edit.</div>
         <div className="v6-lbl">JUMLAH KLIP</div>
         <div className="v6-chips" style={{ padding: 0 }}>
           {[3, 4, 6, 8].map(n => <button key={n} className={`v6-chip ${p.n === n ? "on" : ""}`} onClick={() => p.setN(n)}>{n} klip</button>)}
@@ -7302,7 +7078,7 @@ function GambarAiModal({ onClose, onGen, loading }: any) {
 }
 
 /* ---------- VIDEO AI ---------- */
-function VideoAiModal({ onClose, onAddVideo }: any) {
+function VideoAiModal({ onClose }: any) {
   const [pr, setPr] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState("");
@@ -7313,7 +7089,7 @@ function VideoAiModal({ onClose, onAddVideo }: any) {
       const r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: pr, duration: 5, aspectRatio: "9:16" }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.error) throw new Error(d.error || `Error ${r.status}`);
-      if (d.video_url) { const vu = String(d.video_url); setResult(vu); if (onAddVideo) await onAddVideo(vu, pr); }
+      if (d.video_url) setResult(d.video_url);
       else if (d.task_id || d.id) setResult("pending");
       else setResult("pending");
     } catch (e: any) { alert("Gagal: " + e.message); }
@@ -7323,8 +7099,8 @@ function VideoAiModal({ onClose, onAddVideo }: any) {
     <MiniModal title="🎬 Video AI (beta)" onClose={onClose}>
       <textarea className="v6-inp v6-ta" style={{ minHeight: 80 }} placeholder="cth: hujan turun di jendela kafe yang hangat, sinematik" value={pr} onChange={e => setPr(e.target.value)} />
       <button className="v6-bigcta" disabled={busy} onClick={gen}>{busy ? "⏳…" : "✨ Generate video pendek"}</button>
-      {result === "pending" && <div className="v6-okbox">⏳ Video sedang dibuat server. Kalau provider mengembalikan link nanti, buka ulang / cek status provider. Gambar di timeline tetap aman.</div>}
-      {result && result !== "pending" && <a className="v6-okbox" style={{ display: "block" }} href={result} target="_blank" rel="noreferrer">✅ Video AI sudah dimasukkan ke timeline · buka link</a>}
+      {result === "pending" && <div className="v6-okbox">⏳ Video sedang dibuat server. Karena klip video AI belum bisa disisipkan langsung ke timeline (timeline kita berbasis foto klip), hasilnya dibuka di tab baru.</div>}
+      {result && result !== "pending" && <a className="v6-okbox" style={{ display: "block" }} href={result} target="_blank" rel="noreferrer">▶️ Buka hasil video AI</a>}
     </MiniModal>
   );
 }
