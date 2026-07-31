@@ -433,8 +433,8 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
           <span className="glow-back" />
           <span className="ic">＋</span>
           <div className="text-group">
-            <span className="title">Video Baru</span>
-            <span className="desc">Editor studio profesional</span>
+            <span className="title">Buat Video Baru</span>
+            <span className="desc">Shorts · Long · Square — pilih rasio di Studio</span>
           </div>
         </button>
         <div className="v6-hub-col">
@@ -442,7 +442,14 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
             <span className="ic">🌱</span>
             <div className="text-group">
               <span className="title">Lahan Awalan</span>
-              <span className="desc">Ide jadi lagu</span>
+              <span className="desc">Creator launchpad</span>
+            </div>
+          </button>
+          <button className="v6-btn-sub" onClick={() => go("growth")}>
+            <span className="ic">🧠</span>
+            <div className="text-group">
+              <span className="title">Creator OS</span>
+              <span className="desc">Ide · analytics · aksi</span>
             </div>
           </button>
           <button className="v6-btn-sub" onClick={() => go("editfoto")}>
@@ -4349,7 +4356,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
 
   return (
-    <div className="v6e-root">
+    <div className={`v6e-root ${cleanMode ? "clean" : "full"}`}>
       {/* ============ TOPBAR ============ */}
       <header className="v6e-top">
         {loading === "render" && (
@@ -4531,7 +4538,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","efek","gambarai","videoai","cinematic","keyframe","hapus"].includes(t.id)) : CLIP_TOOLS).map(t => (
+            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","efek","gambarai","videoai","cinematic","keyframe","transisi","hapus"].includes(t.id)) : CLIP_TOOLS).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
@@ -4539,7 +4546,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
         ) : (
           <div className="v6e-tools">
-            {(cleanMode ? MAIN_TOOLS.filter(t => ["edit","media","audio","teks","filter","efek","sihir_film"].includes(t.id)) : MAIN_TOOLS).map(t => (
+            {(cleanMode ? MAIN_TOOLS.filter(t => ["edit","media","audio","teks","filter","efek","sihir_film","rasio"].includes(t.id)) : MAIN_TOOLS).map(t => (
               <button key={t.id} className={`v6e-tlbtn ${tool === t.id ? "on" : ""}`} disabled={t.disabled}
                 onClick={() => {
                   if (t.disabled) { flash("👤 Avatar AI segera hadir di versi berikutnya 🙏"); return; }
