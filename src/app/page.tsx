@@ -4015,6 +4015,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [wzStyle, setWzStyle] = useState("cinematic");
   const [wzAudio, setWzAudio] = useState<"none" | "tts" | "suno">("tts");
   const [wzSeedNote, setWzSeedNote] = useState("");
+  const [wzSeedPayload, setWzSeedPayload] = useState<any>(null);
   useEffect(() => {
     try {
       const raw = localStorage.getItem("verve_creator_os_seed_payload");
@@ -4023,8 +4024,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const j = raw ? JSON.parse(raw) : {};
       const idea = [j.title || title, j.hook ? `Hook: ${j.hook}` : "", j.openingScene ? `Opening: ${j.openingScene}` : "", j.thumbnail ? `Thumbnail: ${j.thumbnail}` : ""].filter(Boolean).join("\n");
       if (idea.trim()) setWzNiche(idea.slice(0, 900));
-      setWzN(6); setWzStyle("cinematic"); setWzAudio("tts");
-      setWzSeedNote(j.score ? `🧠 Dari Creator OS: #${j.rank} · score ${j.score} · ${j.format}` : "🧠 Dari Creator OS");
+      setWzSeedPayload(j && Object.keys(j).length ? j : null);
+      const fmt = String(j.format || "long");
+      if (fmt === "shorts") { setRatio("9:16"); setWzN(4); }
+      else { setRatio("16:9"); setWzN(fmt === "series" ? 8 : 6); }
+      setWzStyle("cinematic"); setWzAudio("tts");
+      setWzSeedNote(j.score ? `🧠 Dari Creator OS: #${j.rank} · score ${j.score} · ${j.format} · rasio ${fmt === "shorts" ? "9:16" : "16:9"}` : "🧠 Dari Creator OS");
       localStorage.removeItem("verve_creator_os_seed_payload");
       localStorage.removeItem("verve_creator_os_seed_title");
     } catch {}
@@ -4036,16 +4041,20 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     try {
       setNiche(wzNiche);
       setStageText("🧠 Menulis judul...");
-      const kr = await fetch("/api/hcnsec/titles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keyword: wzNiche, niche: wzNiche, n: 1 }) });
-      const kd = await kr.json().catch(() => ({}));
-      const title = (kd.titles?.[0] || wzNiche).slice(0, 90);
+      let title = String(wzSeedPayload?.title || "").trim().slice(0, 90);
+      if (!title) {
+        const kr = await fetch("/api/hcnsec/titles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keyword: wzNiche, niche: wzNiche, n: 1 }) });
+        const kd = await kr.json().catch(() => ({}));
+        title = (kd.titles?.[0] || wzNiche).slice(0, 90);
+      }
       setProjTitle(title);
       setStageText(`🎨 Generate ${wzN} gambar AI...`);
       const newSlides: Slide[] = [];
       for (let i = 0; i < wzN; i++) {
         setStageText(`🎨 Gambar ${i + 1}/${wzN}...`);
         try {
-          const res = await fetch("/api/hcnsec/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: wzNiche, niche: wzNiche, style: wzStyle }) });
+          const visualSeed = [wzSeedPayload?.openingScene, wzSeedPayload?.thumbnail, wzNiche].filter(Boolean).join(". ");
+          const res = await fetch("/api/hcnsec/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: visualSeed || wzNiche, niche: wzNiche, style: wzStyle }) });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || data.error) continue;
           const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = rej; im.src = data.url; });
@@ -4058,7 +4067,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (wzAudio === "tts") {
         setStageText("📝 Menulis naskah narasi...");
         try {
-          const sr = await fetch("/api/hcnsec/script", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: wzNiche, slides: wzN }) });
+          const sr = await fetch("/api/hcnsec/script", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword: [wzNiche, wzSeedPayload?.hook, wzSeedPayload?.openingScene, wzSeedPayload?.cta].filter(Boolean).join("\n"), slides: wzN }) });
           const sd = await sr.json().catch(() => ({}));
           const text = (sd.lines || []).join(" ").trim();
           if (text) {
@@ -7208,7 +7217,7 @@ function WizardModal(p: any) {
         <div className="v6-lbl">IDE / NICHE KONTEN</div>
         <textarea className="v6-inp" style={{ minHeight: 70 }} placeholder="cth: cerita sedih perjuangan ibu membesarkan anak" value={p.niche} onChange={e => p.setNiche(e.target.value)} />
         {p.seedNote && <div className="v6-okbox">{p.seedNote} — ide sudah dimasukkan ke wizard produksi.</div>}
-        <div className="v6-note" style={{ marginTop: 2 }}>aksi: AI bikin <b>judul → visual → audio</b> otomatis jadi proyek siap edit.</div>
+        <div className="v6-note" style={{ marginTop: 2 }}>aksi: AI bikin <b>judul → visual → audio</b> otomatis jadi proyek siap edit. Rasio mengikuti format ide: Shorts 9:16, long/series 16:9.</div>
         <div className="v6-lbl">JUMLAH KLIP</div>
         <div className="v6-chips" style={{ padding: 0 }}>
           {[3, 4, 6, 8].map(n => <button key={n} className={`v6-chip ${p.n === n ? "on" : ""}`} onClick={() => p.setN(n)}>{n} klip</button>)}
