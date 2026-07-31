@@ -399,7 +399,15 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
     if (gotoEditor) gotoEditor(undefined, { tool: "wizard", newProject: Date.now() });
     else setStudioTextMsg("Buka Studio → AI Studio/Pembuat AI untuk produksi ide ini.");
   };
+  const selectedIdea = creatorOS.ideaBank[Math.max(0, Math.min(osIdeaIdx, creatorOS.ideaBank.length - 1))] || creatorOS.ideaBank[0];
   const copyIdeaBank = () => copy(creatorOS.ideaBank.map((x) => `#${x.rank} [${x.score}] ${x.title}\nHook: ${x.hook}\nThumb: ${x.thumbnail}\nOpening: ${x.openingScene}\nCTA: ${x.cta}`).join("\n\n"));
+  const copySelectedIdea = () => selectedIdea && copy(`${selectedIdea.title}\n\nHOOK:
+${selectedIdea.hook}\n\nTHUMBNAIL:
+${selectedIdea.thumbnail}\n\nOPENING:
+${selectedIdea.openingScene}\n\nCTA:
+${selectedIdea.cta}\n\nWHY:
+${selectedIdea.why}`);
+  const copy7DayAction = () => copy(creatorOS.next7Days.map((x, i) => `${i + 1}. ${x}`).join("\n"));
 
   const statusEmoji = (s: string) => s === "success" ? "🏆" : s === "partial" ? "🟡" : s === "failed" ? "🔴" : "⏳";
 
@@ -470,8 +478,8 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
       </div>
 
       <div className="gd-card gd-osbox">
-        <div className="gd-label">🧠 CREATOR OS — YOUTUBE ALGORITHM SYSTEM</div>
-        <p>Ini versi produk dari prompt strategi YouTube: roadmap monetisasi, niche, viral engine, algoritma, produksi, monetisasi, dan review analytics.</p>
+        <div className="gd-label">🧠 CREATOR OS — ACTION MODE</div>
+        <p><b>Bukan materi belajar.</b> Ini panel aksi: pilih ide, kirim ke Studio, simpan eksperimen, dan review data channel.</p>
         <div className="gd-osgrid">
           <input value={osNiche} onChange={(e) => setOsNiche(e.target.value)} placeholder="Niche channel" />
           <input value={osAudience} onChange={(e) => setOsAudience(e.target.value)} placeholder="Target penonton" />
@@ -485,29 +493,43 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
             <option value="scaling">Scale</option>
           </select>
         </div>
+        <div className="gd-osactions">
+          <button onClick={() => openCreatorStudio(selectedIdea?.title)}>🚀 Produksi Ide Pilihan</button>
+          <button onClick={copySelectedIdea}>📋 Salin Brief Ide</button>
+          <button onClick={makeExperiment}>🧪 Buat Eksperimen</button>
+          <button onClick={saveSnapshot}>💾 Simpan Snapshot</button>
+          <button onClick={copy7DayAction}>🗓️ Salin Aksi 7 Hari</button>
+          <button onClick={loadYtVideos} disabled={!ytStatus?.connected || ytBusy}>📺 Review Video Channel</button>
+        </div>
+        {selectedIdea && (
+          <div className="gd-selectedidea">
+            <b>Ide aktif #{selectedIdea.rank} · score {selectedIdea.score}</b>
+            <strong>{selectedIdea.title}</strong>
+            <span>Hook: {selectedIdea.hook}</span>
+            <em>Thumb: {selectedIdea.thumbnail}</em>
+          </div>
+        )}
         <div className="gd-ostabs">
           {creatorOS.sections.map((s) => <button key={s.id} className={osTab === s.id ? "on" : ""} onClick={() => setOsTab(s.id)}>{s.title.split(" ")[0]} {s.id}</button>)}
         </div>
         <div className="gd-osresult">
           <b>{osSection.title}</b>
           <p>{osSection.subtitle}</p>
-          <details open><summary>Kenapa</summary>{osSection.why.map((x, i) => <em key={i}>• {x}</em>)}</details>
-          <details open><summary>Sistem</summary>{osSection.system.map((x, i) => <em key={i}>• {x}</em>)}</details>
-          <details><summary>Checklist</summary>{osSection.checklist.map((x, i) => <em key={i}>□ {x}</em>)}</details>
-          <details><summary>KPI</summary>{osSection.kpis.map((x, i) => <em key={i}>• {x}</em>)}</details>
-          <details><summary>Prompt engine</summary>{osSection.prompts.map((x, i) => <em key={i}>“{x}”</em>)}</details>
+          <details><summary>Lihat sistem / ilmu di balik aksi</summary>
+            <em><b>Kenapa:</b></em>{osSection.why.map((x, i) => <em key={`w-${i}`}>• {x}</em>)}
+            <em><b>Sistem:</b></em>{osSection.system.map((x, i) => <em key={`s-${i}`}>• {x}</em>)}
+            <em><b>Checklist:</b></em>{osSection.checklist.map((x, i) => <em key={`c-${i}`}>□ {x}</em>)}
+            <em><b>KPI:</b></em>{osSection.kpis.map((x, i) => <em key={`k-${i}`}>• {x}</em>)}
+          </details>
           {osTab === "viral" && (
             <div className="gd-ideabank">
-              <b>🔥 100 Ide Ranked</b>
+              <b>🔥 Pilih Ide Siap Produksi</b>
               {creatorOS.ideaBank.slice(0, 12).map((it, i) => (
-                <button key={it.rank} className={osIdeaIdx === i ? "on" : ""} onClick={() => { setOsIdeaIdx(i); copy(`${it.title}
-Hook: ${it.hook}
-Thumbnail: ${it.thumbnail}
-Opening: ${it.openingScene}`); }}>
+                <button key={it.rank} className={osIdeaIdx === i ? "on" : ""} onClick={() => setOsIdeaIdx(i)}>
                   <strong>#{it.rank} · score {it.score} · {it.format}</strong><span>{it.title}</span><em>{it.hook}</em>
                 </button>
               ))}
-              <div className="gd-textactions"><button onClick={copyIdeaBank}>📋 Salin 100 Ide</button><button className="muted" onClick={() => openCreatorStudio(creatorOS.ideaBank[osIdeaIdx]?.title)}>🚀 Produksi Ide Pilihan</button></div>
+              <div className="gd-textactions"><button onClick={copyIdeaBank}>📋 Salin 100 Ide</button><button className="muted" onClick={() => openCreatorStudio(selectedIdea?.title)}>🚀 Kirim ke Studio</button></div>
             </div>
           )}
           {osTab === "production" && (
