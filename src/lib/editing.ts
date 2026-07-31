@@ -43,7 +43,7 @@ export interface SlideOpt {
   tx?: number;               // geser gambar X (fraksi lebar bingkai) — kunci per-klip
   ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
   tz?: number;               // zoom gambar (1 = normal, 0.5..6)
-  kf?: { t: number; tx?: number; ty?: number; tz?: number }[]; // ◇ keyframe transform relatif klip (0..1) — ala CapCut
+  kf?: { t: number; tx?: number; ty?: number; tz?: number; rot?: number; alpha?: number; ease?: "linear" | "ease" | "easeIn" | "easeOut" }[]; // ◇ keyframe transform relatif klip (0..1) — ala CapCut
   kb?: { dir: "in" | "out" | "l" | "r" | "u" | "d"; s?: number }; // 🎬 v11.4+v13.3: Ken Burns kustom — zoom (in/out) & GESER (l/r/u/d), kekuatan 0.05..0.5
   text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
   texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
@@ -962,12 +962,22 @@ export interface PaintInput {
   kbDx?: number;             // 🎬 v13.3: ken burns GESER-X (fraksi lebar, aliran kamera geser)
   kbDy?: number;             // 🎬 v13.3: ken burns GESER-Y (naik/turun)
 }
-function interpTransformKeyframes(opt: SlideOpt | null | undefined, rel: number): { tx: number; ty: number; tz: number } | null {
+function kfEase(x: number, mode?: string): number {
+  const t = Math.max(0, Math.min(1, x));
+  if (mode === "linear") return t;
+  if (mode === "easeIn") return t * t;
+  if (mode === "easeOut") return 1 - Math.pow(1 - t, 2);
+  return t * t * (3 - 2 * t);
+}
+function interpTransformKeyframes(opt: SlideOpt | null | undefined, rel: number): { tx: number; ty: number; tz: number; rot: number; alpha: number } | null {
   const raw = (opt?.kf || []).filter(k => k && Number.isFinite(Number(k.t))).map(k => ({
     t: Math.max(0, Math.min(1, Number(k.t))),
     tx: Number.isFinite(Number(k.tx)) ? Number(k.tx) : 0,
     ty: Number.isFinite(Number(k.ty)) ? Number(k.ty) : 0,
     tz: Number.isFinite(Number(k.tz)) && Number(k.tz)! > 0 ? Number(k.tz) : 1,
+    rot: Number.isFinite(Number(k.rot)) ? Number(k.rot) : 0,
+    alpha: Number.isFinite(Number(k.alpha)) ? Math.max(0, Math.min(1, Number(k.alpha))) : 1,
+    ease: (k.ease || "ease") as "linear" | "ease" | "easeIn" | "easeOut",
   })).sort((a, b) => a.t - b.t);
   if (raw.length < 2) return null;
   const r = Math.max(0, Math.min(1, rel));
@@ -975,8 +985,14 @@ function interpTransformKeyframes(opt: SlideOpt | null | undefined, rel: number)
   for (let i = 0; i < raw.length - 1; i++) if (r >= raw[i].t && r <= raw[i + 1].t) { a = raw[i]; b = raw[i + 1]; break; }
   const span = Math.max(0.0001, b.t - a.t);
   const x = Math.max(0, Math.min(1, (r - a.t) / span));
-  const e = x * x * (3 - 2 * x);
-  return { tx: a.tx + (b.tx - a.tx) * e, ty: a.ty + (b.ty - a.ty) * e, tz: a.tz + (b.tz - a.tz) * e };
+  const e = kfEase(x, a.ease);
+  return {
+    tx: a.tx + (b.tx - a.tx) * e,
+    ty: a.ty + (b.ty - a.ty) * e,
+    tz: a.tz + (b.tz - a.tz) * e,
+    rot: a.rot + (b.rot - a.rot) * e,
+    alpha: a.alpha + (b.alpha - a.alpha) * e,
+  };
 }
 
 export function paintClips(
@@ -998,6 +1014,7 @@ export function paintClips(
   curP.dx += p.kbDx ?? 0; // 🎬 v13.3: geser kamera (selaras preview & render)
   curP.dy += p.kbDy ?? 0;
   curP.zoom = (p.kbZoom ?? 1) * Math.max(0.1, kfCur ? kfCur.tz : (opt.tz && opt.tz > 0 ? opt.tz : 1));
+  if (kfCur) { curP.rot += kfCur.rot; curP.alpha *= kfCur.alpha; }
   if (opt.effect === "pulse") curP.zoom *= 1 + 0.028 * Math.sin(p.absT * 6.2) + (p.beat ? 0.02 : 0);
   if (opt.effect === "shake") {
     const seed = Math.floor(p.absT * 24);
@@ -1027,6 +1044,7 @@ export function paintClips(
   nxtP.dx += kfNxt ? kfNxt.tx : (p.optNxt?.tx ?? 0);
   nxtP.dy += kfNxt ? kfNxt.ty : (p.optNxt?.ty ?? 0);
   nxtP.zoom = Math.max(0.1, kfNxt ? kfNxt.tz : ((p.optNxt?.tz && p.optNxt.tz > 0) ? p.optNxt.tz : 1));
+  if (kfNxt) { nxtP.rot += kfNxt.rot; nxtP.alpha *= kfNxt.alpha; }
 
   // gambar klip (+transisi)
   if (p.inTrans && nxt && p.transId !== "none") {

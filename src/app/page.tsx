@@ -1090,6 +1090,7 @@ const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "gambarai", icon: "🖼️", label: "Gambar AI", bdg: "✦", bdgCls: "ai" },
   { id: "videoai", icon: "🎬", label: "Video AI", bdg: "AI", bdgCls: "ai" },
   { id: "cinematic", icon: "◇+", label: "Key Film", bdg: "NEW" },
+  { id: "keyframe", icon: "◆", label: "Keyframe" },
   { id: "hapus",   icon: "▢",   label: "Hapus" },
   { id: "pangkas", icon: "▭",   label: "Pangkas" },
   { id: "dup",     icon: "⧉",   label: "Duplikat" },
@@ -1215,6 +1216,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [tool, setTool] = useState<string | null>(null);
   const [clipBar, setClipBar] = useState(false);
   const [cleanMode, setCleanMode] = useState(true);
+  const [keySel, setKeySel] = useState<{ sid: string; idx: number } | null>(null);
   // v8.4: susunan jalur track BEBAS & tersimpan permanen (aturan #6 — track bukan denah mati)
   const [laneOrder, setLaneOrder] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem("verve_laneorder_v1") || "[]"); return Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : []; } catch { return []; } });
   const saveLaneOrder = useCallback((o: string[]) => { setLaneOrder(o); try { localStorage.setItem("verve_laneorder_v1", JSON.stringify(o)); } catch {} }, []);
@@ -1507,14 +1509,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const hit = activeClipAtPlayhead();
     if (!hit) { setTool("media"); return; }
     const o: any = slideOptsById[hit.sid] || {};
-    const point = { t: Math.round(hit.rel * 1000) / 1000, tx: Number(o.tx || 0), ty: Number(o.ty || 0), tz: Number(o.tz || 1) || 1 };
+    const point = { t: Math.round(hit.rel * 1000) / 1000, tx: Number(o.tx || 0), ty: Number(o.ty || 0), tz: Number(o.tz || 1) || 1, rot: 0, alpha: 1, ease: "ease" };
     const arr = Array.isArray(o.kf) ? [...o.kf] : [];
     const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
-    if (near >= 0) arr[near] = point; else arr.push(point);
+    if (near >= 0) arr[near] = { ...arr[near], ...point }; else arr.push(point);
     arr.sort((a: any, b: any) => Number(a.t) - Number(b.t));
     setSelId(hit.sid); setClipBar(true);
-    setOpt(hit.sid, { kf: arr.slice(0, 8), kb: undefined } as any);
-    flash(`◇ Keyframe ${Math.round(point.t * 100)}% disimpan (${arr.length} titik)`);
+    const nextKf = arr.slice(0, 8);
+    setOpt(hit.sid, { kf: nextKf, kb: undefined } as any);
+    setKeySel({ sid: hit.sid, idx: Math.max(0, nextKf.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025)) });
+    flash(`◇ Keyframe ${Math.round(point.t * 100)}% disimpan (${nextKf.length} titik)`);
   }
   function addKeyMotion() {
     const hit = activeClipAtPlayhead();
@@ -1525,7 +1529,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       dir === "l" ? { tx: -0.08, ty: 0, tz: 1.12 } : dir === "r" ? { tx: 0.08, ty: 0, tz: 1.12 } :
       dir === "u" ? { tx: 0, ty: -0.06, tz: 1.12 } : { tx: 0, ty: 0.06, tz: 1.12 };
     setSelId(hit.sid); setClipBar(true);
-    setOpt(hit.sid, { kf: [{ t: 0, tx: 0, ty: 0, tz: 1 }, { t: 1, ...end }], kb: undefined, loop: "none" } as any);
+    setOpt(hit.sid, { kf: [{ t: 0, tx: 0, ty: 0, tz: 1, rot: 0, alpha: 1, ease: "ease" }, { t: 1, ...end, rot: 0, alpha: 1, ease: "ease" }], kb: undefined, loop: "none" } as any);
+    setKeySel({ sid: hit.sid, idx: 1 });
     flash("◇+ Key Film: 2 keyframe kamera cinematic dibuat");
   }
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
@@ -2254,6 +2259,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "gambarai": setModal("gambarai"); break;
       case "videoai": setModal("videoai"); break;
       case "cinematic": addKeyMotion(); break;
+      case "keyframe": setTool("keyframe"); break;
       case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
@@ -4441,6 +4447,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
         onSplit={doSplitAtPlayhead} // ✂ v12.7: tombol ╫ melayang di track — sekali ketuk tepat di penanda
+        onKeyframeTap={(sid: string, idx: number) => { setSelId(sid); setClipBar(true); setKeySel({ sid, idx }); setTool("keyframe"); }}
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
         onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); flash("🗑 Track audio dikosongkan"); }}
@@ -4491,7 +4498,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","efek","gambarai","videoai","cinematic","hapus"].includes(t.id)) : CLIP_TOOLS).map(t => (
+            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","efek","gambarai","videoai","cinematic","keyframe","hapus"].includes(t.id)) : CLIP_TOOLS).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
@@ -4594,7 +4601,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <EditorSheets
           tool={tool} setTool={setTool} sheetTab={sheetTab} setSheetTab={setSheetTab}
           api={{
-            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt,
+            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt, timeline, keySel, setKeySel, addKeyframeAtPlayhead,
             filterPreset, setFilterPreset, adj, setAdj, qualitySharp, setQualitySharp,
             presets, setPresets,
             ratio, setRatio, bgMode, setBgMode, bgColor, setBgColor,
@@ -5307,6 +5314,9 @@ function TimelineV6(p: any) {
                   >
                     {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
                     {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
+                    {((slideOptsById[s.id]?.kf || []) as any[]).map((k: any, ki: number) => (
+                      <button key={`kf${ki}`} className="v6e-kfmark" style={{ left: `${Math.max(2, Math.min(98, Number(k.t || 0) * 100))}%` }} title={`Keyframe ${ki + 1} · ${Math.round(Number(k.t || 0) * 100)}%`} onPointerDown={(e) => { e.stopPropagation(); p.onKeyframeTap?.(s.id, ki); }}>◆</button>
+                    ))}
                     <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                     {sel && <>
                       <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>‹</span>
@@ -5858,6 +5868,64 @@ function SihirFilmSheet({ api, onClose }: any) {
   );
 }
 
+function KeyframeSheet({ api: A, onClose }: any) {
+  const sid = A.selId || A.keySel?.sid || A.slides?.[0]?.id || "";
+  const idxClip = Math.max(0, (A.slides || []).findIndex((s: any) => s.id === sid));
+  const opt = sid ? (A.slideOptsById?.[sid] || {}) : {};
+  const kfs = Array.isArray(opt.kf) ? [...opt.kf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
+  const selected = A.keySel && A.keySel.sid === sid ? Math.max(0, Math.min(kfs.length - 1, A.keySel.idx || 0)) : 0;
+  const cur = kfs[selected] || null;
+  const start = A.timeline?.starts?.[idxClip] || 0;
+  const dur = A.timeline?.durs?.[idxClip] || 1;
+  const saveKf = (next: any[]) => {
+    const clean = next.map((k: any) => ({
+      t: Math.max(0, Math.min(1, Number(k.t) || 0)),
+      tx: Math.round((Number(k.tx) || 0) * 1000) / 1000,
+      ty: Math.round((Number(k.ty) || 0) * 1000) / 1000,
+      tz: Math.round(Math.max(0.2, Math.min(5, Number(k.tz) || 1)) * 1000) / 1000,
+      rot: Math.round((Number(k.rot) || 0) * 10) / 10,
+      alpha: Math.round(Math.max(0, Math.min(1, Number(k.alpha ?? 1))) * 100) / 100,
+      ease: ["linear", "ease", "easeIn", "easeOut"].includes(String(k.ease)) ? String(k.ease) : "ease",
+    })).sort((a: any, b: any) => a.t - b.t).slice(0, 12);
+    A.setOpt(sid, { kf: clean, kb: undefined } as any);
+  };
+  const patchCur = (patch: any) => {
+    if (!cur) return;
+    const next = kfs.map((k: any, i: number) => i === selected ? { ...k, ...patch } : k);
+    saveKf(next);
+  };
+  const seek = (k: any) => A.seekPreview?.(start + Math.max(0, Math.min(1, Number(k.t) || 0)) * dur);
+  return (
+    <SheetShell title="◆ Keyframe Kamera" onClose={onClose} onOk={onClose} tall>
+      <div className="v6-sheet-body">
+        <div className="v6-note">Keyframe mengatur posisi, zoom, rotasi, dan opacity klip. Titik muncul sebagai diamond di timeline.</div>
+        <button className="v6-bigcta" onClick={A.addKeyframeAtPlayhead}>◇+ Tambah keyframe di playhead</button>
+        {!kfs.length && <div className="v6-note">Belum ada keyframe. Atur posisi/zoom gambar, geser playhead, lalu tekan ◇+.</div>}
+        {!!kfs.length && <div className="v6-rows" style={{ marginTop: 10 }}>
+          {kfs.map((k: any, i: number) => (
+            <button key={`${i}-${k.t}`} className={`v6-chip ${selected === i ? "on" : ""}`} onClick={() => { A.setKeySel?.({ sid, idx: i }); seek(k); }}>
+              ◆ {i + 1} · {Math.round(Number(k.t || 0) * 100)}% · {k.ease || "ease"}
+            </button>
+          ))}
+        </div>}
+        {cur && <>
+          <div className="v6-slider-row"><div className="lr"><span>Posisi waktu</span><b>{Math.round((cur.t || 0) * 100)}%</b></div><input type="range" min={0} max={1} step={0.01} value={cur.t ?? 0} onChange={e => patchCur({ t: Number(e.target.value) })} /></div>
+          <div className="v6-slider-row"><div className="lr"><span>Geser X</span><b>{Math.round((cur.tx || 0) * 100)}%</b></div><input type="range" min={-0.5} max={0.5} step={0.01} value={cur.tx ?? 0} onChange={e => patchCur({ tx: Number(e.target.value) })} /></div>
+          <div className="v6-slider-row"><div className="lr"><span>Geser Y</span><b>{Math.round((cur.ty || 0) * 100)}%</b></div><input type="range" min={-0.5} max={0.5} step={0.01} value={cur.ty ?? 0} onChange={e => patchCur({ ty: Number(e.target.value) })} /></div>
+          <div className="v6-slider-row"><div className="lr"><span>Zoom</span><b>{Math.round((cur.tz || 1) * 100)}%</b></div><input type="range" min={0.35} max={3} step={0.01} value={cur.tz ?? 1} onChange={e => patchCur({ tz: Number(e.target.value) })} /></div>
+          <div className="v6-slider-row"><div className="lr"><span>Rotasi</span><b>{Math.round(cur.rot || 0)}°</b></div><input type="range" min={-180} max={180} step={1} value={cur.rot ?? 0} onChange={e => patchCur({ rot: Number(e.target.value) })} /></div>
+          <div className="v6-slider-row"><div className="lr"><span>Opacity</span><b>{Math.round((cur.alpha ?? 1) * 100)}%</b></div><input type="range" min={0} max={1} step={0.01} value={cur.alpha ?? 1} onChange={e => patchCur({ alpha: Number(e.target.value) })} /></div>
+          <div className="v6-cardrow" onClick={() => { const all = ["linear", "ease", "easeIn", "easeOut"]; const n = all[(all.indexOf(cur.ease || "ease") + 1) % all.length]; patchCur({ ease: n }); }}>
+            <span>〽️</span><div className="tt">Easing</div><span className="val">{cur.ease || "ease"}</span><span className="arr">›</span>
+          </div>
+          <button className="v6-btn ghost" style={{ width: "100%", color: "#fca5a5", borderColor: "rgba(239,68,68,.45)" }} onClick={() => { const next = kfs.filter((_: any, i: number) => i !== selected); saveKf(next); A.setKeySel?.(next.length ? { sid, idx: Math.max(0, selected - 1) } : null); }}>🗑 Hapus keyframe ini</button>
+        </>}
+        {!!kfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => { A.setOpt(sid, { kf: undefined } as any); A.setKeySel?.(null); }}>Bersihkan semua keyframe</button>}
+      </div>
+    </SheetShell>
+  );
+}
+
 function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
   const A = api;
   const close = () => setTool(null);
@@ -6055,6 +6123,9 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
 
   /* ---------------- STIKER / OVERLAY ---------------- */
   if (tool === "stiker") return <StikerSheet api={A} tab0={sheetTab || "stiker"} onClose={close} />;
+
+  /* ---------------- KEYFRAME ---------------- */
+  if (tool === "keyframe") return <KeyframeSheet api={A} onClose={close} />;
 
   /* ---------------- HASILKAN MEDIA ---------------- */
   if (tool === "media") return (
