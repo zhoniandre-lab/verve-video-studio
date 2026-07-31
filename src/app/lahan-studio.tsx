@@ -1415,6 +1415,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         })}
       </div>
 
+      <div className="lh-launch">
+        <div>
+          <b>🚀 Creator Launchpad</b>
+          <span>Ide → riset → script → visual → lagu → Studio. Rasio nanti bebas: Shorts 9:16, YouTube 16:9, Feed 1:1.</span>
+        </div>
+        <div className="lh-flowmini"><i className={step >= 1 ? "on" : ""}>Ide</i><i className={step >= 3 ? "on" : ""}>Riset</i><i className={step >= 6 ? "on" : ""}>Cerita</i><i className={step >= 7 ? "on" : ""}>Visual</i><i className={step >= 9 ? "on" : ""}>Studio</i></div>
+        <button onClick={() => { if (step >= 9 && doneScenes.length > 0 && song) void masukStudio(); else setStep(Math.min(9, Math.max(step + 1, 2))); }}>
+          {step >= 9 && doneScenes.length > 0 && song ? "🎬 Kirim ke Studio" : "Lanjutkan ›"}
+        </button>
+      </div>
+
       {err && (
         <div className="lh-card lh-errcard">
           <b>⚠️ {err.code === "missing_api_key" ? "API key YouTube belum terpasang" : err.code === "quota_exceeded" ? "Kuota YouTube API habis hari ini" : "Ada kendala"}</b>
