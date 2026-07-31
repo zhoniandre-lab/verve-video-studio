@@ -1,5 +1,13 @@
 # 🎬 VERVE — Studio Video & Musik AI (v16.8-lock)
 
+> ## ⚠️ Catatan Pemilik Proyek
+>
+> Pengembangan proyek ini **dihentikan dari bantuan Arena.ai** karena hasil bantuan AI sebelumnya tidak memenuhi standar pemilik proyek dan berisiko merusak arah software.
+>
+> Mulai sekarang, perubahan kode, UI/UX, fitur, atau struktur proyek **tidak boleh dilakukan oleh Arena.ai tanpa persetujuan manual yang sangat jelas dari pemilik proyek**.
+>
+> Jika proyek ini ingin dilanjutkan, gunakan maintainer/developer manusia, lakukan audit dulu, dan jalankan seluruh pengujian sebelum deploy.
+
 VERVE adalah editor video kelas CapCut yang hidup **sepenuhnya di browser HP** (PWA Mobile-First), dirancang khusus untuk memotong, menyelaraskan, dan memproduksi video sinematik berkualitas tinggi dari teks cerita hingga menjadi lagu dan lirik karaoke otomatis.
 
 Situs Produksi Live: `https://verve-video-studio.vercel.app`
