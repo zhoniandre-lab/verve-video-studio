@@ -5,6 +5,7 @@ import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, comp
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
+import { buildCreatorOS, type CreatorOsSectionId, type CreatorStage } from "@/lib/brain/creator-os";
 
 function num(v: string): number | undefined {
   const raw = String(v ?? "").trim();
@@ -133,6 +134,13 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ytRange, setYtRange] = useState<"lifetime" | "7" | "28" | "90">("lifetime");
   const [ytBusy, setYtBusy] = useState(false);
   const [ytMsg, setYtMsg] = useState("");
+  const [osTab, setOsTab] = useState<CreatorOsSectionId>("roadmap");
+  const [osNiche, setOsNiche] = useState("cerita emosional keluarga");
+  const [osAudience, setOsAudience] = useState("penonton Indonesia yang suka cerita menyentuh dan musik emosional");
+  const [osGoal, setOsGoal] = useState("mencapai monetisasi YouTube dan membuat video yang konsisten mendapat views");
+  const [osResources, setOsResources] = useState("HP, VERVE Studio, YouTube Studio, 3-5 upload per minggu");
+  const [osUploads, setOsUploads] = useState("3");
+  const [osStage, setOsStage] = useState<CreatorStage>("zero");
 
   const applyRow = (r: YtStudioCsvRow) => {
     // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
@@ -352,6 +360,8 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   }), [mode, title, symptom, views, impressions, ctr, dur, avd, ret30, likes, comments, subs, age, trafficFacts, audienceFacts]);
 
   const dx = useMemo(() => diagnoseGrowth(input), [input]);
+  const creatorOS = useMemo(() => buildCreatorOS({ ...input, niche: osNiche, audience: osAudience, goal: osGoal, resources: osResources, uploadsPerWeek: num(osUploads), stage: osStage }, dx), [input, osNiche, osAudience, osGoal, osResources, osUploads, osStage, dx]);
+  const osSection = creatorOS.sections.find((s) => s.id === osTab) || creatorOS.sections[0];
   const baseline = useMemo(() => computeGrowthBaseline(ledger.snapshots || [], { mode }), [ledger.snapshots, mode]);
   const currentSnap = useMemo(() => createGrowthSnapshot(input, dx), [input, dx]);
   const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
@@ -443,6 +453,37 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="gd-card gd-osbox">
+        <div className="gd-label">🧠 CREATOR OS — YOUTUBE ALGORITHM SYSTEM</div>
+        <p>Ini versi produk dari prompt strategi YouTube: roadmap monetisasi, niche, viral engine, algoritma, produksi, monetisasi, dan review analytics.</p>
+        <div className="gd-osgrid">
+          <input value={osNiche} onChange={(e) => setOsNiche(e.target.value)} placeholder="Niche channel" />
+          <input value={osAudience} onChange={(e) => setOsAudience(e.target.value)} placeholder="Target penonton" />
+          <input value={osGoal} onChange={(e) => setOsGoal(e.target.value)} placeholder="Goal monetisasi/growth" />
+          <input value={osResources} onChange={(e) => setOsResources(e.target.value)} placeholder="Resource & alat" />
+          <input inputMode="numeric" value={osUploads} onChange={(e) => setOsUploads(e.target.value)} placeholder="Upload/minggu" />
+          <select value={osStage} onChange={(e) => setOsStage(e.target.value as CreatorStage)}>
+            <option value="zero">Awal/validasi</option>
+            <option value="traction">Mulai traction</option>
+            <option value="monetizing">Monetisasi</option>
+            <option value="scaling">Scale</option>
+          </select>
+        </div>
+        <div className="gd-ostabs">
+          {creatorOS.sections.map((s) => <button key={s.id} className={osTab === s.id ? "on" : ""} onClick={() => setOsTab(s.id)}>{s.title.split(" ")[0]} {s.id}</button>)}
+        </div>
+        <div className="gd-osresult">
+          <b>{osSection.title}</b>
+          <p>{osSection.subtitle}</p>
+          <details open><summary>Kenapa</summary>{osSection.why.map((x, i) => <em key={i}>• {x}</em>)}</details>
+          <details open><summary>Sistem</summary>{osSection.system.map((x, i) => <em key={i}>• {x}</em>)}</details>
+          <details><summary>Checklist</summary>{osSection.checklist.map((x, i) => <em key={i}>□ {x}</em>)}</details>
+          <details><summary>KPI</summary>{osSection.kpis.map((x, i) => <em key={i}>• {x}</em>)}</details>
+          <details><summary>Prompt engine</summary>{osSection.prompts.map((x, i) => <em key={i}>“{x}”</em>)}</details>
+          <div className="gd-textactions"><button onClick={() => copy(creatorOS.fullText)}>📋 Salin Creator OS</button><button className="muted" onClick={() => copy(creatorOS.weeklyReviewTemplate)}>📊 Template Review</button></div>
+        </div>
       </div>
 
       <div className="gd-card gd-ocrbox">

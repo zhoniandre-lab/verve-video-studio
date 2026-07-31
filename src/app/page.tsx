@@ -382,7 +382,7 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
     { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
     { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
-    { ic: "🩺", lb: "Dokter", bb: "NEW", act: () => go("growth") },
+    { ic: "🧠", lb: "Creator OS", bb: "NEW", act: () => go("growth") },
     { ic: "🖼️", lb: "Alat foto", act: () => go("editfoto") },
     { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
     { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
