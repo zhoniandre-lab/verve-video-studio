@@ -378,131 +378,68 @@ export default function Page() {
    DASHBOARD / HOME
    ================================================================== */
 function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: ScreenId) => void; gotoEditor: (id?: string, cmd?: any) => void }) {
-  const tools: { ic: string; lb: string; bb?: string; act: () => void }[] = [
-    { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
-    { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
-    { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
-    { ic: "🧠", lb: "Creator OS", bb: "NEW", act: () => go("growth") },
-    { ic: "🖼️", lb: "Alat foto", act: () => go("editfoto") },
-    { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
-    { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
-    { ic: "💬", lb: "Keterangan", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
-    { ic: "🫥", lb: "Hapus Latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
-    { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
+  const quick: { ic: string; t: string; d: string; act: () => void; hot?: boolean }[] = [
+    { ic: "🌱", t: "Lahan Awalan", d: "Ide → riset → visual → lagu", act: () => go("lahan"), hot: true },
+    { ic: "🧠", t: "Creator OS", d: "Ide viral + analytics + aksi", act: () => go("growth"), hot: true },
+    { ic: "✨", t: "AI Studio", d: "Gambar, video, musik, narasi", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }), hot: true },
+    { ic: "📂", t: "Proyek", d: "Draft lokal + brankas render", act: () => go("proyek") },
   ];
-
-  // We alternate between Lahan Awalan & Spectrum Studio in a single compact hero banner
-  const [heroIndex, setHeroIndex] = useState(0);
-  useEffect(() => {
-    const itv = setInterval(() => setHeroIndex(i => (i + 1) % 2), 7000);
-    return () => clearInterval(itv);
-  }, []);
-
+  const tools: { ic: string; lb: string; act: () => void }[] = [
+    { ic: "🎬", lb: "Studio", act: () => gotoEditor(undefined, { newProject: Date.now() }) },
+    { ic: "🎵", lb: "Musik", act: () => gotoEditor(undefined, { tool: "musik", newProject: Date.now() }) },
+    { ic: "🎨", lb: "Gambar", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
+    { ic: "🗣️", lb: "Narasi", act: () => gotoEditor(undefined, { tool: "tts", newProject: Date.now() }) },
+    { ic: "💬", lb: "Caption", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
+    { ic: "🖼️", lb: "Foto", act: () => go("editfoto") },
+    { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
+    { ic: "🔍", lb: "Lab", act: () => go("lab") },
+  ];
   return (
-    <div className="v6-body">
-      {/* 🔮 SLICK PROFESSIONAL HEADER */}
-      <div className="v6-header">
-        <span className="logo">V E R V E<b className="tag">STUDIO AI</b></span>
-        <button className="v6-search-btn" onClick={() => go("lab")} title="Cari di Lab AI">🔍</button>
+    <div className="v6-body v6-home2">
+      <div className="v6-home2-top">
+        <div><b>VERVE</b><span>Creator Studio AI</span></div>
+        <button onClick={() => go("lab")}>🔍</button>
       </div>
 
-      {/* 💎 COMPACT UNIFIED HERO BANNER (ROTATING GLASSMORPHIC) */}
-      <div className="v6-hero-slider">
-        {heroIndex === 0 ? (
-          <div className="v6-hero-card is-ai">
-            <div className="glow-orb" />
-            <span className="badge">💎 SPECTRUM STUDIO</span>
-            <h2 className="title">Video Musik Spectrum + Auto Lirik</h2>
-            <p className="sub">Overlay suasana, lirik karaoke menyala, audio mastering ringan di HP.</p>
-            <button className="action" onClick={() => go("spectrum")}>Coba ›</button>
-          </div>
-        ) : (
-          <div className="v6-hero-card is-lahan">
-            <div className="glow-orb" style={{ background: "radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)" }} />
-            <span className="badge" style={{ background: "rgba(25, 194, 184, 0.16)", borderColor: "rgba(25, 194, 184, 0.3)", color: "#8ff0e4" }}>🌱 LAHAN AWALAN</span>
-            <h2 className="title">Cerita Jadi Lagu: Riset & Judul AI</h2>
-            <p className="sub">Riset YouTube nyata, skor judul juara, visual karakter AI konsisten.</p>
-            <button className="action" style={{ background: "var(--v6-teal)" }} onClick={() => go("lahan")}>Mulai ›</button>
-          </div>
-        )}
-      </div>
+      <section className="v6-home2-hero">
+        <i />
+        <small>SHORTS · LONG · SQUARE</small>
+        <h1>Bikin video dari ide sampai upload.</h1>
+        <p>Semua alat tetap ada, tapi alurnya lebih bersih: produksi, edit, analisis, monetisasi.</p>
+        <div>
+          <button className="primary" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>＋ Buat Video Baru</button>
+          <button onClick={() => go("lahan")}>🌱 Mulai dari Ide</button>
+        </div>
+      </section>
 
-      {/* 🚀 STUDIO HUB ACTION TILES */}
-      <div className="v6-studio-hub">
-        <button className="v6-btn-main" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
-          <span className="glow-back" />
-          <span className="ic">＋</span>
-          <div className="text-group">
-            <span className="title">Buat Video Baru</span>
-            <span className="desc">Shorts · Long · Square — pilih rasio di Studio</span>
-          </div>
-        </button>
-        <div className="v6-hub-col">
-          <button className="v6-btn-sub is-violet" onClick={() => go("lahan")}>
-            <span className="ic">🌱</span>
-            <div className="text-group">
-              <span className="title">Lahan Awalan</span>
-              <span className="desc">Creator launchpad</span>
-            </div>
+      <section className="v6-home2-grid">
+        {quick.map((q) => (
+          <button key={q.t} className={q.hot ? "hot" : ""} onClick={q.act}>
+            <span>{q.ic}</span><b>{q.t}</b><em>{q.d}</em>
           </button>
-          <button className="v6-btn-sub" onClick={() => go("growth")}>
-            <span className="ic">🧠</span>
-            <div className="text-group">
-              <span className="title">Creator OS</span>
-              <span className="desc">Ide · analytics · aksi</span>
-            </div>
-          </button>
-          <button className="v6-btn-sub" onClick={() => go("editfoto")}>
-            <span className="ic">🖼️</span>
-            <div className="text-group">
-              <span className="title">Edit Foto</span>
-              <span className="desc">Retouch instan</span>
-            </div>
-          </button>
-        </div>
-      </div>
+        ))}
+      </section>
 
-      {/* 📁 COMPACT RECENT PROJECTS SLIDER */}
-      <div className="v6-recent-section">
-        <div className="v6-sec-title">
-          <h3>Proyek Terakhir</h3>
-          {!!drafts.length && <button className="v6-sec-more" onClick={() => go("proyek")}>Semua ›</button>}
-        </div>
-        <div className="v6-recents-compact">
-          {drafts.slice(0, 4).map(d => (
-            <div className="v6-recent-card" key={d.id} onClick={() => gotoEditor(d.id)}>
-              <div className="th">
-                {d.thumb ? <img src={d.thumb} alt="" /> : <span className="ph">🎬</span>}
-                <span className="go">▶</span>
-              </div>
-              <div className="info">
-                <span className="nm">{d.title}</span>
-                <span className="dt">🗂 {dateLabel(d.updatedAt)}</span>
-              </div>
-            </div>
-          ))}
-          {!drafts.length && (
-            <div className="v6-recent-empty" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
-              <span>＋ Buat proyek pertamamu</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ⚡ HORIZONTAL SCROLLING QUICK AI TOOLS */}
-      <div className="v6-tools-section">
-        <div className="v6-sec-title">
-          <h3>Asisten AI Cepat</h3>
-        </div>
-        <div className="v6-tools-row">
-          {tools.map(t => (
-            <button className="v6-tool-mini" key={t.lb} onClick={t.act}>
-              <span className="ic">{t.ic}</span>
-              <span className="lb">{t.lb}</span>
+      <section className="v6-home2-section">
+        <div className="head"><b>Lanjutkan proyek</b>{!!drafts.length && <button onClick={() => go("proyek")}>Semua ›</button>}</div>
+        <div className="v6-home2-projects">
+          {drafts.slice(0, 4).map((d) => (
+            <button key={d.id} onClick={() => gotoEditor(d.id)}>
+              <span>{d.thumb ? <img src={d.thumb} alt="" /> : "🎬"}</span>
+              <b>{d.title}</b>
+              <em>{d.slides} klip · {dateLabel(d.updatedAt)}</em>
             </button>
           ))}
+          {!drafts.length && <button className="empty" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>＋ Buat proyek pertamamu</button>}
         </div>
-      </div>
+      </section>
+
+      <section className="v6-home2-section">
+        <div className="head"><b>Alat cepat</b><button onClick={() => go("lab")}>Lab AI ›</button></div>
+        <div className="v6-home2-tools">
+          {tools.map((t) => <button key={t.lb} onClick={t.act}><span>{t.ic}</span><b>{t.lb}</b></button>)}
+        </div>
+      </section>
     </div>
   );
 }
@@ -865,39 +802,37 @@ function ProyekPage({ drafts, gotoEditor, refresh, go }: { drafts: Draft0[]; got
     void deleteDraftMirror(id).finally(() => refresh()).catch(() => refresh());
   }
   return (
-    <div className="v6-body">
-      <div className="v6-pagehead"><h2>Proyek</h2>
-        <button className="v6-btn" onClick={() => gotoEditor()}>＋ Baru</button>
+    <div className="v6-body v6-projects2">
+      <div className="v6-home2-top">
+        <div><b>Proyek</b><span>Draft lokal · Cloud · render vault</span></div>
+        <button onClick={() => gotoEditor()}>＋</button>
       </div>
+      <section className="v6-vault-hero">
+        <div><small>TOTAL DRAFT</small><b>{drafts.length}</b><span>tersimpan di HP + IndexedDB</span></div>
+        <div><small>RENDER VAULT</small><b>{vault.length}</b><span>hasil render aman sementara</span></div>
+      </section>
       {!!vault.length && (
-        <div style={{ margin: "0 14px 12px", padding: 12, borderRadius: 14, background: "rgba(20,184,166,.08)", border: "1px solid rgba(20,184,166,.35)" }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>📼 Hasil render tersimpan di HP</div>
+        <section className="v6-vault-list">
+          <div className="head"><b>📼 Hasil Render</b><em>Unduh ke galeri agar abadi.</em></div>
           {vault.map((it) => (
-            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.08)" }}>
-              <span style={{ fontSize: 18 }}>🎬</span>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{it.name}</span>
-              <span style={{ fontSize: 11, opacity: .7, whiteSpace: "nowrap" }}>{(it.size / 1048576).toFixed(0)}MB</span>
-              <button className="v6-btn" style={{ padding: "6px 10px", fontSize: 12 }} title="Unduh ke HP" onClick={() => downloadBlob(it.blob, it.name)}>⬇️</button>
-              <button className="v6-btn" style={{ padding: "6px 10px", fontSize: 12 }} title="Hapus dari brankas" onClick={async () => { await vaultDelete(it.id); setVault(await vaultList()); }}>🗑</button>
+            <div className="item" key={it.id}>
+              <span>🎬</span><b>{it.name}</b><em>{(it.size / 1048576).toFixed(1)}MB</em>
+              <button onClick={() => downloadBlob(it.blob, it.name)}>⬇️</button>
+              <button onClick={async () => { await vaultDelete(it.id); setVault(await vaultList()); }}>🗑</button>
             </div>
           ))}
-          <div style={{ fontSize: 11, opacity: .65, marginTop: 4 }}>Disalin otomatis begitu render selesai (maks {VAULT_MAX} terbaru) — unduh ke Galeri biar abadi selamanya.</div>
-        </div>
+        </section>
       )}
       {!drafts.length && <div className="v6-empty"><div className="big">🎬</div>Belum ada proyek. Buat yang pertama bro!</div>}
-      <div className="v6-proj-grid">
-        {drafts.map(d => (
-          <div className="v6-proj" key={d.id} onClick={() => gotoEditor(d.id)}>
-            <div className="th">{d.thumb ? <img src={d.thumb} alt="" /> : <span style={{ fontSize: 34, opacity: .35 }}>🎬</span>}</div>
-            <div className="inf">
-              <div className="nm">{d.title}</div>
-              <div className="st"><span>🎞 {d.slides} · {dateLabel(d.updatedAt)}{(d as any).mirror ? " · 🗄️ cadangan" : ""}</span>
-                <button onClick={(e) => { e.stopPropagation(); delDraft(d.id); }} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer" }}>🗑</button>
-              </div>
-            </div>
-          </div>
+      <section className="v6-project-list2">
+        {drafts.map((d) => (
+          <button key={d.id} onClick={() => gotoEditor(d.id)}>
+            <i>{d.thumb ? <img src={d.thumb} alt="" /> : "🎬"}</i>
+            <span><b>{d.title}</b><em>{d.slides} klip · {dateLabel(d.updatedAt)}{(d as any).mirror ? " · 🗄 cadangan" : ""}</em></span>
+            <strong onClick={(e) => { e.stopPropagation(); delDraft(d.id); }}>🗑</strong>
+          </button>
         ))}
-      </div>
+      </section>
       <button className="v6-banner-spec" onClick={() => go("spectrum")} style={{ width: "calc(100% - 28px)" }}>
         <div className="ttl">SPECTRUM STUDIO</div><div className="sub">Proyek musik spectrum — studio terpisah, khusus konten musik.</div>
         <div className="bars">{[0,1,2,3,4].map(i => <i key={i} style={{ animationDelay: `${i * 0.15}s` }} />)}</div>
