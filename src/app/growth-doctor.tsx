@@ -141,6 +141,7 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
   const [osResources, setOsResources] = useState("HP, VERVE Studio, YouTube Studio, 3-5 upload per minggu");
   const [osUploads, setOsUploads] = useState("3");
   const [osStage, setOsStage] = useState<CreatorStage>("zero");
+  const [osIdeaIdx, setOsIdeaIdx] = useState(0);
 
   const applyRow = (r: YtStudioCsvRow) => {
     // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
@@ -362,6 +363,8 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
   const dx = useMemo(() => diagnoseGrowth(input), [input]);
   const creatorOS = useMemo(() => buildCreatorOS({ ...input, niche: osNiche, audience: osAudience, goal: osGoal, resources: osResources, uploadsPerWeek: num(osUploads), stage: osStage }, dx), [input, osNiche, osAudience, osGoal, osResources, osUploads, osStage, dx]);
   const osSection = creatorOS.sections.find((s) => s.id === osTab) || creatorOS.sections[0];
+  const ytWinners = useMemo(() => [...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).slice(0, 3), [ytVideos]);
+  const ytWeak = useMemo(() => [...ytVideos].sort((a, b) => (a.viewCount || 0) - (b.viewCount || 0)).slice(0, 3), [ytVideos]);
   const baseline = useMemo(() => computeGrowthBaseline(ledger.snapshots || [], { mode }), [ledger.snapshots, mode]);
   const currentSnap = useMemo(() => createGrowthSnapshot(input, dx), [input, dx]);
   const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
@@ -388,7 +391,11 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
     persistLedger(next, graded.status === "success" ? "🏆 Eksperimen berhasil" : graded.status === "partial" ? "🟡 Eksperimen naik sebagian" : "🔴 Eksperimen belum berhasil");
   };
   const openCreatorStudio = (ideaTitle?: string) => {
-    try { if (ideaTitle) localStorage.setItem("verve_creator_os_seed_title", ideaTitle); } catch {}
+    const idea = creatorOS.ideaBank[osIdeaIdx] || creatorOS.ideaBank[0];
+    try {
+      if (ideaTitle || idea?.title) localStorage.setItem("verve_creator_os_seed_title", ideaTitle || idea.title);
+      if (idea) localStorage.setItem("verve_creator_os_seed_payload", JSON.stringify({ ...idea, niche: creatorOS.niche, audience: creatorOS.audience, osAt: Date.now() }));
+    } catch {}
     if (gotoEditor) gotoEditor(undefined, { tool: "wizard", newProject: Date.now() });
     else setStudioTextMsg("Buka Studio → AI Studio/Pembuat AI untuk produksi ide ini.");
   };
@@ -492,15 +499,15 @@ export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => voi
           {osTab === "viral" && (
             <div className="gd-ideabank">
               <b>🔥 100 Ide Ranked</b>
-              {creatorOS.ideaBank.slice(0, 12).map((it) => (
-                <button key={it.rank} onClick={() => copy(`${it.title}
+              {creatorOS.ideaBank.slice(0, 12).map((it, i) => (
+                <button key={it.rank} className={osIdeaIdx === i ? "on" : ""} onClick={() => { setOsIdeaIdx(i); copy(`${it.title}
 Hook: ${it.hook}
 Thumbnail: ${it.thumbnail}
-Opening: ${it.openingScene}`)}>
-                  <strong>#{it.rank} · {it.score}</strong><span>{it.title}</span><em>{it.hook}</em>
+Opening: ${it.openingScene}`); }}>
+                  <strong>#{it.rank} · score {it.score} · {it.format}</strong><span>{it.title}</span><em>{it.hook}</em>
                 </button>
               ))}
-              <div className="gd-textactions"><button onClick={copyIdeaBank}>📋 Salin 100 Ide</button><button className="muted" onClick={() => openCreatorStudio(creatorOS.ideaBank[0]?.title)}>🚀 Produksi Ide #1</button></div>
+              <div className="gd-textactions"><button onClick={copyIdeaBank}>📋 Salin 100 Ide</button><button className="muted" onClick={() => openCreatorStudio(creatorOS.ideaBank[osIdeaIdx]?.title)}>🚀 Produksi Ide Pilihan</button></div>
             </div>
           )}
           {osTab === "production" && (
@@ -513,6 +520,13 @@ Opening: ${it.openingScene}`)}>
             <div className="gd-prodboard">
               <b>💰 Monetization Ladder</b>
               {creatorOS.monetizationLadder.map((m) => <div key={m.stage}><strong>{m.label}</strong><small>{m.when}</small>{m.actions.map((a) => <em key={a}>• {a}</em>)}</div>)}
+            </div>
+          )}
+          {osTab === "review" && !!ytVideos.length && (
+            <div className="gd-prodboard">
+              <b>🔬 Review Otomatis dari Video Terbaru</b>
+              <div><strong>Video menang</strong>{ytWinners.map((v) => <em key={v.id}>🏆 {v.title.slice(0, 54)} · {(v.viewCount || 0).toLocaleString("id-ID")} views</em>)}</div>
+              <div><strong>Video lemah</strong>{ytWeak.map((v) => <em key={v.id}>🧪 {v.title.slice(0, 54)} · {(v.viewCount || 0).toLocaleString("id-ID")} views</em>)}</div>
             </div>
           )}
           <div className="gd-textactions"><button onClick={() => copy(creatorOS.fullText)}>📋 Salin Creator OS</button><button className="muted" onClick={() => copy(creatorOS.weeklyReviewTemplate)}>📊 Template Review</button></div>

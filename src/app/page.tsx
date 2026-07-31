@@ -4014,6 +4014,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [wzN, setWzN] = useState(4);
   const [wzStyle, setWzStyle] = useState("cinematic");
   const [wzAudio, setWzAudio] = useState<"none" | "tts" | "suno">("tts");
+  const [wzSeedNote, setWzSeedNote] = useState("");
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("verve_creator_os_seed_payload");
+      const title = localStorage.getItem("verve_creator_os_seed_title") || "";
+      if (!raw && !title) return;
+      const j = raw ? JSON.parse(raw) : {};
+      const idea = [j.title || title, j.hook ? `Hook: ${j.hook}` : "", j.openingScene ? `Opening: ${j.openingScene}` : "", j.thumbnail ? `Thumbnail: ${j.thumbnail}` : ""].filter(Boolean).join("\n");
+      if (idea.trim()) setWzNiche(idea.slice(0, 900));
+      setWzN(6); setWzStyle("cinematic"); setWzAudio("tts");
+      setWzSeedNote(j.score ? `🧠 Dari Creator OS: #${j.rank} · score ${j.score} · ${j.format}` : "🧠 Dari Creator OS");
+      localStorage.removeItem("verve_creator_os_seed_payload");
+      localStorage.removeItem("verve_creator_os_seed_title");
+    } catch {}
+  }, []);
+
   async function runWizard() {
     if (!wzNiche.trim()) return setErr({ message: "Isi ide/niche dulu bro" });
     setLoading("wizard"); setError("");
@@ -4660,7 +4676,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} mStatus={mStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
         musicUrl={musicUrl} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
-      {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
+      {modal === "wizard" && <WizardModal onClose={() => setModal(null)} seedNote={wzSeedNote} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
       {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
       {modal === "ganti" && (
         <MiniModal title="⇄ Ganti media klip" onClose={() => setModal(null)}>
@@ -7191,6 +7207,7 @@ function WizardModal(p: any) {
       <div className="fb">
         <div className="v6-lbl">IDE / NICHE KONTEN</div>
         <textarea className="v6-inp" style={{ minHeight: 70 }} placeholder="cth: cerita sedih perjuangan ibu membesarkan anak" value={p.niche} onChange={e => p.setNiche(e.target.value)} />
+        {p.seedNote && <div className="v6-okbox">{p.seedNote} — ide sudah dimasukkan ke wizard produksi.</div>}
         <div className="v6-note" style={{ marginTop: 2 }}>aksi: AI bikin <b>judul → visual → audio</b> otomatis jadi proyek siap edit.</div>
         <div className="v6-lbl">JUMLAH KLIP</div>
         <div className="v6-chips" style={{ padding: 0 }}>
