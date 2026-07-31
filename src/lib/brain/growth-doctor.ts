@@ -103,7 +103,7 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
 
   const scores: GrowthScore[] = [
     { id: "ctr", label: "CTR / Klik", value: ctrScore, level: levelFromScore(ctrScore), note: ctr == null ? "CTR belum diisi" : `CTR ${fmt(pct(ctr))}; target awal ${ctrTarget}%+` },
-    { id: "hook", label: "Hook 30 detik", value: retScore, level: levelFromScore(retScore), note: retention30 == null ? "Retention 30d belum diisi" : `Retention 30d ${fmt(pct(retention30))}; target ${retTarget}%+` },
+    { id: "hook", label: "Retention / Avg%", value: retScore, level: levelFromScore(retScore), note: retention30 == null ? "Retention/avg viewed belum diisi" : `Retention/avg viewed ${fmt(pct(retention30))}; target ${retTarget}%+` },
     { id: "avd", label: mode === "long" ? "Avg View" : "Completion", value: avdScore, level: levelFromScore(avdScore), note: avdPct == null ? "AVD belum diisi" : `AVD ${fmt(pct(avdPct))} dari durasi` },
     { id: "eng", label: "Engagement", value: engScore, level: levelFromScore(engScore), note: engagement == null ? "Like/comment belum cukup" : `Engagement ${fmt(pct(engagement))}` },
     { id: "dist", label: "Distribusi", value: distScore, level: levelFromScore(distScore), note: impressions ? `${impressions.toLocaleString("id-ID")} impressions` : "Impressions belum diisi" },
@@ -122,7 +122,7 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
   if (ctr != null) facts.push(`CTR: ${fmt(pct(ctr))}`); else missingSet.add("CTR atau impressions");
   if (duration > 0) facts.push(`Durasi video: ${fmt(Math.round(duration), "s")}`); else missingSet.add("Durasi video");
   if (avd > 0 && avdPct != null) facts.push(`Average view: ${fmt(Math.round(avd), "s")} (${fmt(pct(avdPct))} dari durasi)`); else missingSet.add("Average view duration");
-  if (retention30 != null) facts.push(`Retention 30 detik: ${fmt(pct(retention30))}`); else missingSet.add("Retention 30 detik");
+  if (retention30 != null) facts.push(`Retention/avg viewed: ${fmt(pct(retention30))}`); else missingSet.add("Retention/avg viewed");
   if (engagement != null) facts.push(`Engagement: ${fmt(pct(engagement))} (like+comment/views)`); else missingSet.add("Likes + comments");
   if (vph != null) facts.push(`Views per hour: ${pct(vph)}`); else missingSet.add("Umur upload (jam)");
   if (topTraffic) facts.push(`Traffic utama: ${topTraffic.label} ${fmt(pct(Number(topTraffic.pct)))}`); else missingSet.add("Traffic source split (Browse/Search/Suggested/Shorts)");
@@ -141,14 +141,14 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
   if (views <= 0 && impressions <= 0) {
     kenapa.push("Data performa belum cukup. Isi minimal views + impressions/CTR agar diagnosis lebih tajam.");
     kokBisa.push("Tanpa impressions/CTR/retention, VERVE belum bisa membedakan masalah packaging, distribusi, atau hook.");
-    seharusnya.push("Ambil angka dari YouTube Studio: impressions, CTR, average view duration, retention 30 detik.");
-    actions.push({ id: "collect", title: "Ambil data Studio", detail: "Screenshot/isi angka CTR, impressions, AVD, dan retention 30 detik.", cta: "Lengkapi data", priority: 1 });
+    seharusnya.push("Ambil angka dari YouTube Studio: impressions, CTR, average view duration, retention/avg viewed.");
+    actions.push({ id: "collect", title: "Ambil data Studio", detail: "Screenshot/isi angka CTR, impressions, AVD, dan retention/avg viewed.", cta: "Lengkapi data", priority: 1 });
     addIssue({
       code: "DATA_INSUFFICIENT",
       title: "Data belum cukup untuk diagnosis kuat",
       confidence: "high",
       evidence: ["Views belum diisi", "Impressions/CTR belum diisi"],
-      missingData: ["Views", "Impressions", "CTR", "AVD", "Retention 30 detik"],
+      missingData: ["Views", "Impressions", "CTR", "AVD", "Retention/avg viewed"],
       actionIds: ["collect"],
     });
   }
@@ -185,14 +185,14 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
   if (lowRet || lowAvd) {
     kenapa.push("Penonton yang klik tidak bertahan cukup lama. Masalah ada di hook/opening atau pacing awal.");
     kokBisa.push("Isi awal kemungkinan tidak langsung memenuhi janji thumbnail/judul, intro terlalu lama, atau visual berubah terlalu lambat.");
-    seharusnya.push(`Retention 30 detik ideal minimal ${retTarget}%${mode === "long" ? ", dan AVD minimal 35% dari durasi" : ", Shorts idealnya mendekati selesai tonton"}.`);
+    seharusnya.push(`Retention/avg viewed ideal minimal ${retTarget}%${mode === "long" ? ", dan AVD minimal 35% dari durasi" : ", Shorts idealnya mendekati selesai tonton"}.`);
     actions.push({ id: "hook", title: "Buat hook 3 detik", detail: "Langsung buka dengan konflik/kalimat paling emosional, jangan intro panjang.", cta: "🎣 Hook baru", priority: 1 });
     actions.push({ id: "shorts", title: "Buat versi Shorts", detail: "Potong bagian paling kuat jadi 25–45 detik untuk mengangkat traffic balik.", cta: "✂️ Shorts draft", priority: 3 });
     addIssue({
       code: "LOW_RETENTION_OR_AVD",
       title: "Hook/opening atau pacing lemah",
       confidence: (retention30 != null && avdPct != null) ? "high" : "medium",
-      evidence: [retention30 != null ? `Retention 30 detik ${fmt(pct(retention30))} vs target ${retTarget}%+` : "Retention 30 detik belum ada", avdPct != null ? `AVD ${fmt(pct(avdPct))} dari durasi` : "AVD belum ada"],
+      evidence: [retention30 != null ? `Retention/avg viewed ${fmt(pct(retention30))} vs target ${retTarget}%+` : "Retention/avg viewed belum ada", avdPct != null ? `AVD ${fmt(pct(avdPct))} dari durasi` : "AVD belum ada"],
       missingData: ["Grafik retention/cliff", "Traffic source", "Komentar penonton di awal video"],
       actionIds: ["hook", "shorts"],
     });
@@ -201,7 +201,7 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
     kokBisa.push("Opening mungkin oke, tetapi bagian tengah butuh pattern interrupt: visual change, teks besar, atau beat shift.");
     seharusnya.push("Tambahkan perubahan visual/teks setiap 3–6 detik agar perhatian tidak turun.");
     actions.push({ id: "pacing", title: "Percepat pacing", detail: "Tambah zoom/potongan visual, kurangi jeda, dan perkuat subtitle/hook line.", cta: "⚡ Pacing", priority: 3 });
-    addIssue({ code: "WEAK_RETENTION", title: "Retention sedang, belum cukup kuat", confidence: "medium", evidence: [`Retention 30 detik ${fmt(pct(retention30))} < target ${retTarget}%+`], missingData: ["Retention graph detail"], actionIds: ["pacing"] });
+    addIssue({ code: "WEAK_RETENTION", title: "Retention sedang, belum cukup kuat", confidence: "medium", evidence: [`Retention/avg viewed ${fmt(pct(retention30))} < target ${retTarget}%+`], missingData: ["Retention graph detail"], actionIds: ["pacing"] });
   }
 
   if (topTraffic && /suggested|browse/i.test(String(topTraffic.key)) && impressions >= 1000) {

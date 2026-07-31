@@ -60,8 +60,10 @@ export async function GET(req: Request) {
   const u = new URL(req.url);
   const videoId = String(u.searchParams.get("videoId") || "").trim();
   if (!/^[a-zA-Z0-9_-]{6,}$/.test(videoId)) return NextResponse.json({ ok: false, error: "videoId tidak valid." }, { status: 400 });
+  const range = String(u.searchParams.get("range") || "lifetime").toLowerCase();
   const days = Math.max(2, Math.min(90, Number(u.searchParams.get("days") || 28) || 28));
-  const startDate = String(u.searchParams.get("startDate") || dateDaysAgo(days));
+  const explicitStartDate = String(u.searchParams.get("startDate") || "").trim();
+  let startDate = explicitStartDate || (range === "lifetime" || range === "since_published" || range === "published" ? "" : dateDaysAgo(days));
   const endDate = String(u.searchParams.get("endDate") || todayDate());
 
   try {
@@ -85,6 +87,11 @@ export async function GET(req: Request) {
       };
     } catch { /* metadata publik opsional */ }
 
+    if (!startDate) {
+      const pub = typeof video?.publishedAt === "string" ? video.publishedAt.slice(0, 10) : "";
+      startDate = pub || dateDaysAgo(3650);
+    }
+    const effectiveDays = Math.max(1, Math.round((+new Date(endDate) - +new Date(startDate)) / 864e5) + 1 || days);
     const base = { ids: "channel==MINE", startDate, endDate, filters: `video==${videoId}` };
     const main = rowObj(await report(auth.accessToken, {
       ...base,
@@ -133,10 +140,11 @@ export async function GET(req: Request) {
       ok: true,
       videoId,
       video,
-      dateRange: { startDate, endDate, days },
+      dateRange: { startDate, endDate, days: effectiveDays, range: startDate === explicitStartDate ? "custom" : range },
       metrics,
       traffic,
       warnings: [impressionWarn].filter(Boolean),
+      metricMeanings: { averageViewPercentage: "Rata-rata persentase ditonton / average viewed, bukan retention 30 detik spesifik." },
       honesty: "Data ini dibaca via YouTube Analytics API read-only. Tidak melakukan aksi apa pun ke channel.",
     };
     const res = NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });

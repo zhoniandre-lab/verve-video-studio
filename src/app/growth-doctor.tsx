@@ -130,6 +130,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ytStatus, setYtStatus] = useState<YtStatus | null>(null);
   const [ytVideos, setYtVideos] = useState<YtVideo[]>([]);
   const [ytUrl, setYtUrl] = useState("");
+  const [ytRange, setYtRange] = useState<"lifetime" | "7" | "28" | "90">("lifetime");
   const [ytBusy, setYtBusy] = useState(false);
   const [ytMsg, setYtMsg] = useState("");
 
@@ -264,7 +265,8 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     } finally { setYtBusy(false); }
   };
   const applyYoutubeVideo = async (v: YtVideo) => {
-    setYtBusy(true); setYtMsg(`⏳ Membaca analytics: ${v.title || v.id}`);
+    const rangeLabel = ytRange === "lifetime" ? "sejak publish" : `${ytRange} hari`;
+    setYtBusy(true); setYtMsg(`⏳ Membaca analytics ${rangeLabel}: ${v.title || v.id}`);
     try {
       if (v.title) setTitle(v.title);
       if (v.durationSec) setDur(secToClock(v.durationSec));
@@ -274,7 +276,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         const h = Math.max(1, Math.round((Date.now() - +new Date(v.publishedAt)) / 36e5));
         if (Number.isFinite(h)) setAge(String(h));
       }
-      const r = await fetch(`/api/youtube/analytics/video?videoId=${encodeURIComponent(v.id)}&days=28`, { cache: "no-store" });
+      const r = await fetch(`/api/youtube/analytics/video?videoId=${encodeURIComponent(v.id)}&range=${ytRange}&days=${ytRange === "lifetime" ? 28 : ytRange}`, { cache: "no-store" });
       const j: YtMetricPayload = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Analytics belum bisa dibaca");
       const meta = j.video || {};
@@ -512,7 +514,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           {metric("CTR %", ctr, setCtr, "1.2")}
           {metric("Durasi", dur, setDur, "04:30", "text")}
           {metric("Avg View", avd, setAvd, "00:27", "text")}
-          {metric("Retention 30s %", ret30, setRet30, "18")}
+          {metric("Retention/Avg %", ret30, setRet30, "40.1")}
           {metric("Likes", likes, setLikes, "20")}
           {metric("Comments", comments, setComments, "3")}
           {metric("Subs +", subs, setSubs, "1")}
