@@ -12,6 +12,7 @@ import GrowthDoctor from "./growth-doctor";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
 import { applyMoneyPrinterVariant, makeProductionReportText, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
+import { buildCinematicEditPrompt, buildVerveCinematicStudioSummary, VERVE_CINEMATIC_ADJUST } from "@/lib/guard/cinematic-prompt"; // 🎬 Cinematic Prompt Kit
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
@@ -1454,6 +1455,39 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       return nx;
     });
     flash(`⚡ Semua klip disetel ${sp}× — ala global speed MoneyPrinter`);
+  }
+  function applyCinematicKit() {
+    if (!slides.length) { flash("Tambahkan klip dulu, baru pakai Cinematic Kit"); return; }
+    pushHist();
+    setFilterPreset("sinematik");
+    setAdj({ ...VERVE_CINEMATIC_ADJUST });
+    setCineBars(true);
+    setTransition("dissolve");
+    setTransitionDur(0.72);
+    const dirs = ["in", "l", "out", "r", "u", "d"] as const;
+    setSlideOptsById((cur) => {
+      const next: Record<string, SlideOpt> = { ...cur };
+      slides.forEach((sl, k) => {
+        next[sl.id] = {
+          ...(next[sl.id] || {}),
+          kb: { dir: dirs[k % dirs.length], s: k % 2 ? 0.14 : 0.21 },
+          loop: "none",
+          trans: k === slides.length - 1 ? (next[sl.id]?.trans || transition) : "dissolve",
+          transDur: 0.72,
+        } as SlideOpt;
+      });
+      return next;
+    });
+    flash("🎬 Cinematic Kit aktif: lighting hangat, gerak kamera pelan, grade film, letterbox");
+  }
+  function copyCinematicPrompt() {
+    const subject = projTitle || mTitle || "main subject";
+    const prompt = buildCinematicEditPrompt({
+      mainSubject: subject,
+      keepDetails: "the main subject, identity, outfit, original timing, and important background details",
+    });
+    try { navigator.clipboard?.writeText(prompt); flash("📋 Prompt cinematic tersalin"); }
+    catch { flash("Prompt cinematic siap disalin"); }
   }
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
   // bersihkan seleksi teks kalau klipnya hilang / teksnya dihapus / pindah pilih klip lain (multi-lapis aware)
@@ -4490,7 +4524,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             listCloudBackups, restoreCloudBackup, deleteCloudBackup, cloudBackups, cloudListOpen, setCloudListOpen,
             downloadUploadKit, copyUploadKit, downloadProductionReport, copyProductionReport, saveMoneyPrinterVariants, projTitle,
             thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
-            applyGlobalSpeed,
+            applyGlobalSpeed, applyCinematicKit, copyCinematicPrompt,
           }}
         />
       )}
@@ -6288,6 +6322,15 @@ function FilterSheet({ api: A, tab0, onClose }: any) {
         {tab === "preset" && (
           <>
             <button className="v6-bigcta" style={{ marginTop: 4 }} onClick={savePreset}>＋ Simpan gaya sekarang jadi preset</button>
+            <div style={{ marginTop: 10, border: "1px solid rgba(251,191,36,.28)", background: "linear-gradient(135deg,rgba(15,23,42,.96),rgba(69,26,3,.68))", borderRadius: 16, padding: 12 }}>
+              <b style={{ fontSize: 13 }}>🎬 Cinematic Prompt Kit</b>
+              <div style={{ fontSize: 10.5, color: "#f5d59b", lineHeight: 1.45, marginTop: 4, whiteSpace: "pre-line" }}>{buildVerveCinematicStudioSummary()}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+                <button className="v6-chip on" style={{ justifyContent: "center", minHeight: 38 }} onClick={A.applyCinematicKit}>Terapkan</button>
+                <button className="v6-chip" style={{ justifyContent: "center", minHeight: 38 }} onClick={A.copyCinematicPrompt}>Salin Prompt</button>
+              </div>
+              <div className="v6-note" style={{ marginTop: 9 }}>Aman: VERVE tidak mengubah wajah/subjek. Yang diubah hanya lighting look, warna, gerak kamera, letterbox, grain/vignette.</div>
+            </div>
             <div className="v6-grid4">
               {!A.presets.length && <div className="v6-note" style={{ gridColumn: "1/-1" }}>Belum ada preset. Atur filter + sesuaikan, lalu simpan di sini biar tinggal 1 tap nanti.</div>}
               {A.presets.map((p: any) => (
