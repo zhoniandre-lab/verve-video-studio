@@ -18,6 +18,7 @@ export interface ClipText {
   anim: string;        // id TEXT_ANIMS
   karaokeWords?: { w: string; start: number; end: number }[]; // timing kata (keterangan otomatis)
   karaokeColor?: string;
+  kf?: { t: number; x?: number; y?: number; size?: number; alpha?: number; ease?: "linear" | "ease" | "easeIn" | "easeOut" }[]; // keyframe teks
   id?: string;         // id lapisan (utk teks tambahan di SlideOpt.texts)
   x?: number;          // 0.05..0.95 (posisi horizontal bebas — default: ikut align)
   start?: number | null; // detik ABSOLUT di timeline (undefined/null = ikut klip)
@@ -44,6 +45,7 @@ export interface SlideOpt {
   ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
   tz?: number;               // zoom gambar (1 = normal, 0.5..6)
   kf?: { t: number; tx?: number; ty?: number; tz?: number; rot?: number; alpha?: number; ease?: "linear" | "ease" | "easeIn" | "easeOut" }[]; // ◇ keyframe transform relatif klip (0..1) — ala CapCut
+  fkf?: { t: number; filter?: string; effect?: string; ease?: "linear" | "ease" | "easeIn" | "easeOut" }[]; // keyframe filter/efek (step-based, aman)
   kb?: { dir: "in" | "out" | "l" | "r" | "u" | "d"; s?: number }; // 🎬 v11.4+v13.3: Ken Burns kustom — zoom (in/out) & GESER (l/r/u/d), kekuatan 0.05..0.5
   text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
   texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
@@ -775,9 +777,11 @@ export function paintStickers(ctx: CanvasRenderingContext2D, W: number, H: numbe
 /* ---------------------- TEKS KLIP ---------------------- */
 export function paintClipText(ctx: CanvasRenderingContext2D, W: number, H: number, ct: ClipText, clipT: number, clipDur: number, absT: number, fadeMul: number) {
   if (!ct || !ct.txt || !ct.txt.trim()) return;
+  const tkf = interpTextKeyframes(ct, clipDur > 0 ? clipT / clipDur : 0);
+  if (tkf) ct = { ...ct, x: tkf.x, y: tkf.y, size: tkf.size };
   const stack = TEXT_FONTS.find(f => f.id === ct.font)?.stack || TEXT_FONTS[0].stack;
   let fs = Math.max(10, ct.size * H);
-  let alpha = 1, scale = 1, dy = 0, shadowPulse = 0;
+  let alpha = tkf ? tkf.alpha : 1, scale = 1, dy = 0, shadowPulse = 0;
   let txt = ct.txt;
   const ain = Math.min(1, clipT / 0.45);
   switch (ct.anim) {
@@ -994,6 +998,31 @@ function interpTransformKeyframes(opt: SlideOpt | null | undefined, rel: number)
     alpha: a.alpha + (b.alpha - a.alpha) * e,
   };
 }
+function pickFxKeyframe(opt: SlideOpt | null | undefined, rel: number): { filter?: string; effect?: string } | null {
+  const raw = (opt?.fkf || []).filter(k => k && Number.isFinite(Number(k.t))).sort((a, b) => Number(a.t) - Number(b.t));
+  if (!raw.length) return null;
+  const r = Math.max(0, Math.min(1, rel));
+  let cur = raw[0];
+  for (const k of raw) { if (Number(k.t) <= r + 0.0001) cur = k; else break; }
+  return { filter: cur.filter, effect: cur.effect };
+}
+function interpTextKeyframes(ct: ClipText | null | undefined, rel: number): { x: number | undefined; y: number; size: number; alpha: number } | null {
+  const raw = (ct?.kf || []).filter(k => k && Number.isFinite(Number(k.t))).map(k => ({
+    t: Math.max(0, Math.min(1, Number(k.t))),
+    x: Number.isFinite(Number(k.x)) ? Number(k.x) : undefined,
+    y: Number.isFinite(Number(k.y)) ? Number(k.y) : (ct?.y ?? 0.82),
+    size: Number.isFinite(Number(k.size)) ? Number(k.size) : (ct?.size ?? 0.055),
+    alpha: Number.isFinite(Number(k.alpha)) ? Math.max(0, Math.min(1, Number(k.alpha))) : 1,
+    ease: (k.ease || "ease") as "linear" | "ease" | "easeIn" | "easeOut",
+  })).sort((a, b) => a.t - b.t);
+  if (raw.length < 2) return null;
+  const r = Math.max(0, Math.min(1, rel));
+  let a = raw[0], b = raw[raw.length - 1];
+  for (let i = 0; i < raw.length - 1; i++) if (r >= raw[i].t && r <= raw[i + 1].t) { a = raw[i]; b = raw[i + 1]; break; }
+  const e = kfEase(Math.max(0, Math.min(1, (r - a.t) / Math.max(0.0001, b.t - a.t))), a.ease);
+  const ax = a.x == null ? b.x : a.x, bx = b.x == null ? ax : b.x;
+  return { x: ax == null ? undefined : ax + (bx! - ax) * e, y: a.y + (b.y - a.y) * e, size: a.size + (b.size - a.size) * e, alpha: a.alpha + (b.alpha - a.alpha) * e };
+}
 
 export function paintClips(
   ctx: CanvasRenderingContext2D, W: number, H: number,
@@ -1001,14 +1030,16 @@ export function paintClips(
   p: PaintInput,
 ) {
   const opt = p.optCur || {};
-  const clipFilter = buildClipFilter(opt.filter || "", null);
+  const relCur = p.clipDur > 0 ? p.clipT / p.clipDur : 0;
+  const fxCur = pickFxKeyframe(opt, relCur);
+  const clipFilter = buildClipFilter((fxCur?.filter ?? opt.filter) || "", null);
   const filter = joinFilters(clipFilter, p.globalFilter);
   const animDur = Math.max(0.15, opt.animDur ?? 0.6);
 
   // params klip aktif
   const curP = baseP(filter);
   // transform manual per-klip (cubit/geser gambar) atau keyframe ala CapCut bila ada >=2 titik
-  const kfCur = interpTransformKeyframes(opt, p.clipDur > 0 ? p.clipT / p.clipDur : 0);
+  const kfCur = interpTransformKeyframes(opt, relCur);
   curP.dx += kfCur ? kfCur.tx : (opt.tx ?? 0);
   curP.dy += kfCur ? kfCur.ty : (opt.ty ?? 0);
   curP.dx += p.kbDx ?? 0; // 🎬 v13.3: geser kamera (selaras preview & render)
@@ -1038,7 +1069,8 @@ export function paintClips(
     }
   }
 
-  const nxtP = baseP(joinFilters(buildClipFilter(p.optNxt?.filter || "", null), p.globalFilter));
+  const fxNxt = pickFxKeyframe(p.optNxt, 0);
+  const nxtP = baseP(joinFilters(buildClipFilter((fxNxt?.filter ?? p.optNxt?.filter) || "", null), p.globalFilter));
   // klip berikutnya juga bawa transform manual/keyframe awalnya sendiri
   const kfNxt = interpTransformKeyframes(p.optNxt, 0);
   nxtP.dx += kfNxt ? kfNxt.tx : (p.optNxt?.tx ?? 0);
@@ -1067,7 +1099,7 @@ export function paintClips(
   }
 
   // overlay efek (klip aktif)
-  const eff = opt.effect || "";
+  const eff = (fxCur?.effect ?? opt.effect) || "";
   if (eff && eff !== "pulse" && eff !== "shake" && eff !== "cermin") {
     if (eff === "rgb" && cur) {
       ctx.save();

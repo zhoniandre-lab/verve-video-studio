@@ -4448,6 +4448,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onSeek={(t: number) => seekPreview(t)}
         onSplit={doSplitAtPlayhead} // ✂ v12.7: tombol ╫ melayang di track — sekali ketuk tepat di penanda
         onKeyframeTap={(sid: string, idx: number) => { setSelId(sid); setClipBar(true); setKeySel({ sid, idx }); setTool("keyframe"); }}
+        onKeyframeDragStart={() => pushHist()}
+        onKeyframeMove={(sid: string, idx: number, rel: number) => setSlideOptsById(cur => {
+          const o: any = cur[sid] || {}; const arr = Array.isArray(o.kf) ? [...o.kf] : [];
+          if (!arr[idx]) return cur;
+          arr[idx] = { ...arr[idx], t: Math.max(0, Math.min(1, rel)) };
+          arr.sort((a: any, b: any) => Number(a.t) - Number(b.t));
+          return { ...cur, [sid]: { ...o, kf: arr } };
+        })}
         onAddClip={() => setTool("media")}
         onAddAudio={() => { setTool("audio"); }}
         onDelAudio={() => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); flash("🗑 Track audio dikosongkan"); }}
@@ -4601,7 +4609,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <EditorSheets
           tool={tool} setTool={setTool} sheetTab={sheetTab} setSheetTab={setSheetTab}
           api={{
-            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt, timeline, keySel, setKeySel, addKeyframeAtPlayhead,
+            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt, timeline, curT, keySel, setKeySel, addKeyframeAtPlayhead, selTextSid, getTextOf, setTextObj2,
             filterPreset, setFilterPreset, adj, setAdj, qualitySharp, setQualitySharp,
             presets, setPresets,
             ratio, setRatio, bgMode, setBgMode, bgColor, setBgColor,
@@ -5315,7 +5323,14 @@ function TimelineV6(p: any) {
                     {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
                     {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
                     {((slideOptsById[s.id]?.kf || []) as any[]).map((k: any, ki: number) => (
-                      <button key={`kf${ki}`} className="v6e-kfmark" style={{ left: `${Math.max(2, Math.min(98, Number(k.t || 0) * 100))}%` }} title={`Keyframe ${ki + 1} · ${Math.round(Number(k.t || 0) * 100)}%`} onPointerDown={(e) => { e.stopPropagation(); p.onKeyframeTap?.(s.id, ki); }}>◆</button>
+                      <button key={`kf${ki}`} className="v6e-kfmark" style={{ left: `${Math.max(2, Math.min(98, Number(k.t || 0) * 100))}%` }} title={`Keyframe ${ki + 1} · ${Math.round(Number(k.t || 0) * 100)}%`} onPointerDown={(e) => {
+                        e.stopPropagation(); p.onKeyframeTap?.(s.id, ki); p.onKeyframeDragStart?.();
+                        const host = (e.currentTarget.parentElement as HTMLElement | null); const rect = host?.getBoundingClientRect(); if (!rect) return;
+                        let moved = false;
+                        const move = (ev: PointerEvent) => { moved = true; const rel = Math.max(0, Math.min(1, (ev.clientX - rect.left) / Math.max(1, rect.width))); p.onKeyframeMove?.(s.id, ki, Math.round(rel * 1000) / 1000); };
+                        const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); if (!moved) p.onKeyframeTap?.(s.id, ki); };
+                        window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+                      }}>◆</button>
                     ))}
                     <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
                     {sel && <>
@@ -5869,14 +5884,24 @@ function SihirFilmSheet({ api, onClose }: any) {
 }
 
 function KeyframeSheet({ api: A, onClose }: any) {
+  const [multiMode, setMultiMode] = useState(false);
+  const [multi, setMulti] = useState<number[]>([]);
   const sid = A.selId || A.keySel?.sid || A.slides?.[0]?.id || "";
   const idxClip = Math.max(0, (A.slides || []).findIndex((s: any) => s.id === sid));
   const opt = sid ? (A.slideOptsById?.[sid] || {}) : {};
   const kfs = Array.isArray(opt.kf) ? [...opt.kf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
+  const fkfs = Array.isArray(opt.fkf) ? [...opt.fkf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
   const selected = A.keySel && A.keySel.sid === sid ? Math.max(0, Math.min(kfs.length - 1, A.keySel.idx || 0)) : 0;
   const cur = kfs[selected] || null;
   const start = A.timeline?.starts?.[idxClip] || 0;
   const dur = A.timeline?.durs?.[idxClip] || 1;
+  const playRel = Math.max(0, Math.min(1, ((A.curT || 0) - start) / Math.max(0.001, dur)));
+  const textEnc = String(A.selTextSid || "");
+  const splitAt = textEnc.indexOf("::");
+  const textSid = splitAt >= 0 ? textEnc.slice(0, splitAt) : textEnc;
+  const textTid = splitAt >= 0 ? textEnc.slice(splitAt + 2) : "";
+  const textObj = textSid ? A.getTextOf?.(textSid, textTid) : null;
+  const textKfs = Array.isArray(textObj?.kf) ? [...textObj.kf].sort((a: any, b: any) => Number(a.t) - Number(b.t)) : [];
   const saveKf = (next: any[]) => {
     const clean = next.map((k: any) => ({
       t: Math.max(0, Math.min(1, Number(k.t) || 0)),
@@ -5895,32 +5920,48 @@ function KeyframeSheet({ api: A, onClose }: any) {
     saveKf(next);
   };
   const seek = (k: any) => A.seekPreview?.(start + Math.max(0, Math.min(1, Number(k.t) || 0)) * dur);
+  const easeY = (x: number, mode: string) => mode === "linear" ? x : mode === "easeIn" ? x * x : mode === "easeOut" ? 1 - Math.pow(1 - x, 2) : x * x * (3 - 2 * x);
+  const curvePts = (mode: string) => Array.from({ length: 18 }).map((_, i) => { const x = i / 17; const y = easeY(x, mode || "ease"); return `${Math.round(10 + x * 180)},${Math.round(92 - y * 72)}`; }).join(" ");
+  const addFxKeyframe = () => {
+    const point = { t: Math.round(playRel * 1000) / 1000, filter: A.filterPreset || opt.filter || "none", effect: opt.effect || "", ease: "ease" };
+    const arr = [...fkfs];
+    const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
+    if (near >= 0) arr[near] = point; else arr.push(point);
+    A.setOpt(sid, { fkf: arr.sort((a: any, b: any) => Number(a.t) - Number(b.t)).slice(0, 12) } as any);
+  };
+  const addTextKeyframe = () => {
+    if (!textObj || !textSid) return;
+    const rel = textObj.start != null && textObj.dur ? Math.max(0, Math.min(1, ((A.curT || 0) - Number(textObj.start || 0)) / Math.max(0.001, Number(textObj.dur || 1)))) : playRel;
+    const point = { t: Math.round(rel * 1000) / 1000, x: textObj.x, y: textObj.y, size: textObj.size, alpha: 1, ease: "ease" };
+    const arr = [...textKfs];
+    const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
+    if (near >= 0) arr[near] = { ...arr[near], ...point }; else arr.push(point);
+    A.setTextObj2?.(textSid, textTid, { kf: arr.sort((a: any, b: any) => Number(a.t) - Number(b.t)).slice(0, 12) });
+  };
   return (
-    <SheetShell title="◆ Keyframe Kamera" onClose={onClose} onOk={onClose} tall>
+    <SheetShell title="◆ Keyframe" onClose={onClose} onOk={onClose} tall>
       <div className="v6-sheet-body">
-        <div className="v6-note">Keyframe mengatur posisi, zoom, rotasi, dan opacity klip. Titik muncul sebagai diamond di timeline.</div>
-        <button className="v6-bigcta" onClick={A.addKeyframeAtPlayhead}>◇+ Tambah keyframe di playhead</button>
-        {!kfs.length && <div className="v6-note">Belum ada keyframe. Atur posisi/zoom gambar, geser playhead, lalu tekan ◇+.</div>}
-        {!!kfs.length && <div className="v6-rows" style={{ marginTop: 10 }}>
-          {kfs.map((k: any, i: number) => (
-            <button key={`${i}-${k.t}`} className={`v6-chip ${selected === i ? "on" : ""}`} onClick={() => { A.setKeySel?.({ sid, idx: i }); seek(k); }}>
-              ◆ {i + 1} · {Math.round(Number(k.t || 0) * 100)}% · {k.ease || "ease"}
-            </button>
-          ))}
-        </div>}
+        <div className="v6-note">Keyframe kamera mengatur posisi, zoom, rotasi, dan opacity klip. Titik muncul sebagai diamond di timeline dan bisa digeser langsung.</div>
+        <button className="v6-bigcta" onClick={A.addKeyframeAtPlayhead}>◇+ Tambah keyframe kamera di playhead</button>
+        {!kfs.length && <div className="v6-note">Belum ada keyframe kamera. Atur posisi/zoom gambar, geser playhead, lalu tekan ◇+.</div>}
+        {!!kfs.length && <>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}><button className={`v6-chip ${multiMode ? "on" : ""}`} onClick={() => setMultiMode(v => !v)}>☑ Multi-select</button>{!!multi.length && <button className="v6-chip" onClick={() => { saveKf(kfs.filter((_: any, i: number) => !multi.includes(i))); setMulti([]); }}>🗑 Hapus {multi.length}</button>}</div>
+          <div className="v6-rows" style={{ marginTop: 8 }}>{kfs.map((k: any, i: number) => <button key={`${i}-${k.t}`} className={`v6-chip ${(selected === i || multi.includes(i)) ? "on" : ""}`} onClick={() => { if (multiMode) setMulti(m => m.includes(i) ? m.filter(x => x !== i) : [...m, i]); else { A.setKeySel?.({ sid, idx: i }); seek(k); } }}>◆ {i + 1} · {Math.round(Number(k.t || 0) * 100)}% · {k.ease || "ease"}</button>)}</div>
+        </>}
         {cur && <>
+          <svg viewBox="0 0 200 104" style={{ width: "100%", height: 82, marginTop: 10, border: "1px solid var(--v6-line)", borderRadius: 12, background: "#070b12" }}><path d="M10 92 L190 92 M10 20 L10 92" stroke="#334155" strokeWidth="1" fill="none" /><polyline points={curvePts(cur.ease || "ease")} stroke="#5eead4" strokeWidth="4" fill="none" strokeLinecap="round" /><circle cx="10" cy="92" r="4" fill="#f59e0b" /><circle cx="190" cy="20" r="4" fill="#f59e0b" /></svg>
           <div className="v6-slider-row"><div className="lr"><span>Posisi waktu</span><b>{Math.round((cur.t || 0) * 100)}%</b></div><input type="range" min={0} max={1} step={0.01} value={cur.t ?? 0} onChange={e => patchCur({ t: Number(e.target.value) })} /></div>
           <div className="v6-slider-row"><div className="lr"><span>Geser X</span><b>{Math.round((cur.tx || 0) * 100)}%</b></div><input type="range" min={-0.5} max={0.5} step={0.01} value={cur.tx ?? 0} onChange={e => patchCur({ tx: Number(e.target.value) })} /></div>
           <div className="v6-slider-row"><div className="lr"><span>Geser Y</span><b>{Math.round((cur.ty || 0) * 100)}%</b></div><input type="range" min={-0.5} max={0.5} step={0.01} value={cur.ty ?? 0} onChange={e => patchCur({ ty: Number(e.target.value) })} /></div>
           <div className="v6-slider-row"><div className="lr"><span>Zoom</span><b>{Math.round((cur.tz || 1) * 100)}%</b></div><input type="range" min={0.35} max={3} step={0.01} value={cur.tz ?? 1} onChange={e => patchCur({ tz: Number(e.target.value) })} /></div>
           <div className="v6-slider-row"><div className="lr"><span>Rotasi</span><b>{Math.round(cur.rot || 0)}°</b></div><input type="range" min={-180} max={180} step={1} value={cur.rot ?? 0} onChange={e => patchCur({ rot: Number(e.target.value) })} /></div>
           <div className="v6-slider-row"><div className="lr"><span>Opacity</span><b>{Math.round((cur.alpha ?? 1) * 100)}%</b></div><input type="range" min={0} max={1} step={0.01} value={cur.alpha ?? 1} onChange={e => patchCur({ alpha: Number(e.target.value) })} /></div>
-          <div className="v6-cardrow" onClick={() => { const all = ["linear", "ease", "easeIn", "easeOut"]; const n = all[(all.indexOf(cur.ease || "ease") + 1) % all.length]; patchCur({ ease: n }); }}>
-            <span>〽️</span><div className="tt">Easing</div><span className="val">{cur.ease || "ease"}</span><span className="arr">›</span>
-          </div>
+          <div className="v6-cardrow" onClick={() => { const all = ["linear", "ease", "easeIn", "easeOut"]; const n = all[(all.indexOf(cur.ease || "ease") + 1) % all.length]; patchCur({ ease: n }); }}><span>〽️</span><div className="tt">Easing</div><span className="val">{cur.ease || "ease"}</span><span className="arr">›</span></div>
           <button className="v6-btn ghost" style={{ width: "100%", color: "#fca5a5", borderColor: "rgba(239,68,68,.45)" }} onClick={() => { const next = kfs.filter((_: any, i: number) => i !== selected); saveKf(next); A.setKeySel?.(next.length ? { sid, idx: Math.max(0, selected - 1) } : null); }}>🗑 Hapus keyframe ini</button>
         </>}
-        {!!kfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => { A.setOpt(sid, { kf: undefined } as any); A.setKeySel?.(null); }}>Bersihkan semua keyframe</button>}
+        {!!kfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => { A.setOpt(sid, { kf: undefined } as any); A.setKeySel?.(null); }}>Bersihkan semua keyframe kamera</button>}
+        <div style={{ marginTop: 14, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}><b style={{ fontSize: 12 }}>🎨 Keyframe Filter/Efek</b><div className="v6-note">Step keyframe: filter/efek berubah di titik waktu tertentu.</div><button className="v6-chip" onClick={addFxKeyframe}>◆ Simpan filter/efek saat ini di playhead</button>{!!fkfs.length && <div className="v6-rows" style={{ marginTop: 8 }}>{fkfs.map((k: any, i: number) => <span className="v6-chip" key={i}>◆ {Math.round(Number(k.t || 0) * 100)}% · {k.filter || "none"} · {k.effect || "tanpa efek"}</span>)}</div>}{!!fkfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => A.setOpt(sid, { fkf: undefined } as any)}>Bersihkan filter/efek keyframe</button>}</div>
+        <div style={{ marginTop: 14, border: "1px solid var(--v6-line)", borderRadius: 14, padding: 12 }}><b style={{ fontSize: 12 }}>🔤 Keyframe Teks</b>{textObj ? <><div className="v6-note">Teks terpilih: “{String(textObj.txt || "").slice(0,42)}”</div><button className="v6-chip" onClick={addTextKeyframe}>◆ Simpan posisi/ukuran teks di playhead</button>{!!textKfs.length && <div className="v6-rows" style={{ marginTop: 8 }}>{textKfs.map((k: any, i: number) => <span className="v6-chip" key={i}>◆ {Math.round(Number(k.t || 0) * 100)}% · y {Math.round(Number(k.y || 0) * 100)}%</span>)}</div>}{!!textKfs.length && <button className="v6-btn ghost" style={{ width: "100%" }} onClick={() => A.setTextObj2?.(textSid, textTid, { kf: undefined })}>Bersihkan keyframe teks</button>}</> : <div className="v6-note">Pilih teks di preview/timeline dulu untuk keyframe teks.</div>}</div>
       </div>
     </SheetShell>
   );
