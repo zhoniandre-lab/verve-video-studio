@@ -6138,30 +6138,23 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
   /* ---------------- HASILKAN MEDIA ---------------- */
   if (tool === "media") return (
     <SheetShell title="AI Studio" onClose={close} tall>
-      <div className="v6-sheet-body">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
-          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("gambarai"); }}>
-            <span style={{ fontSize: 22 }}>🎨</span><div className="tt">Gambar AI<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>teks → gambar, masuk track</div></div>
-          </button>
-          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("videoai"); }}>
-            <span style={{ fontSize: 22 }}>🎬</span><div className="tt">Video AI<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>teks/gambar → klip</div></div>
-          </button>
-          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("musik"); }}>
-            <span style={{ fontSize: 22 }}>🎵</span><div className="tt">Musik AI<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>lagu/instrumen → audio track</div></div>
-          </button>
-          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("wizard"); }}>
-            <span style={{ fontSize: 22 }}>🧠</span><div className="tt">Buat Paket<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>ide → visual + audio</div></div>
-          </button>
+      <div className="v6-sheet-body v6-aihub">
+        <section className="v6-aihero">
+          <small>ALL GENERATORS</small>
+          <b>Buat bahan langsung di Studio</b>
+          <p>Gambar, video, musik, narasi, stok, thumbnail, dan caption tersusun dalam satu panel.</p>
+        </section>
+        <div className="v6-aihub-grid">
+          <button className="hot" onClick={() => { A.openModal("gambarai"); }}><span>🎨</span><b>Gambar AI</b><em>teks → gambar, masuk track</em></button>
+          <button className="hot" onClick={() => { A.openModal("videoai"); }}><span>🎬</span><b>Video AI</b><em>teks/gambar → klip video</em></button>
+          <button onClick={() => { A.openModal("musik"); }}><span>🎵</span><b>Musik AI</b><em>lagu/instrumen → audio track</em></button>
+          <button onClick={() => { A.openModal("tts"); }}><span>🗣️</span><b>Narasi AI</b><em>teks → suara</em></button>
+          <button onClick={() => { A.openModal("wizard"); }}><span>🧠</span><b>Paket AI</b><em>ide → visual + audio</em></button>
+          <button onClick={() => { setTool("keterangan"); }}><span>💬</span><b>Auto Caption</b><em>audio → teks/karaoke</em></button>
+          <label><span>🖼️</span><b>Upload Media</b><em>foto/video dari galeri</em><input type="file" accept="image/*,video/*" multiple hidden onChange={e => { A.addImageFiles(e.target.files, undefined); close(); }} /></label>
+          <button onClick={() => { A.openModal("kamera"); }}><span>📷</span><b>Kamera</b><em>ambil gambar cepat</em></button>
         </div>
-        <label className="v6-cardrow">
-          <span style={{ fontSize: 20 }}>🖼️</span>
-          <div className="tt">Upload foto atau video dari galeri</div><span className="arr">›</span>
-          <input type="file" accept="image/*,video/*" multiple hidden onChange={e => { A.addImageFiles(e.target.files, undefined); close(); }} />
-        </label>
-        <div className="v6-cardrow" onClick={() => { A.openModal("kamera"); }}>
-          <span style={{ fontSize: 20 }}>📷</span><div className="tt">Ambil gambar (kamera)</div><span className="arr">›</span>
-        </div>
-        <div className="v6-note">✅ Semua generator sekarang ada di Studio. Hasil gambar/video masuk ke track 1; musik masuk ke track audio.</div>
+        <div className="v6-note">✅ Semua alat lama tetap ada. Mode bersih hanya menyusun ulang supaya tidak pusing di HP.</div>
       </div>
     </SheetShell>
   );

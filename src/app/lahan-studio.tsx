@@ -1401,29 +1401,36 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         <button className="lh-reset" title="Lahan baru" onClick={resetLahan}>↺</button>
       </div>
 
-      <div className="lh-steps">
-        {STEP_LABEL.map((lb, i) => {
-          const k = i + 1;
-          const on = step === k;
-          const done = k < step && canGo(k + 1);
-          return (
-            <button key={lb} className={`lh-dot ${on ? "on" : ""} ${done ? "done" : ""}`} disabled={!canGo(k)} onClick={() => setStep(k)}>
-              <i>{done ? "✓" : k}</i>
-              <span>{lb}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="lh-launch">
-        <div>
-          <b>🚀 Creator Launchpad</b>
-          <span>Ide → riset → script → visual → lagu → Studio. Rasio nanti bebas: Shorts 9:16, YouTube 16:9, Feed 1:1.</span>
+      <div className="lh-launch pro">
+        <div className="lh-launch-head">
+          <div>
+            <small>CREATOR LAUNCHPAD</small>
+            <b>Bangun video dari ide sampai Studio</b>
+            <span>Rasio bebas: Shorts 9:16, YouTube 16:9, Feed 1:1. Semua langkah tetap ada, tapi disusun seperti pipeline produksi.</span>
+          </div>
+          <button className="mini" onClick={resetLahan}>Reset</button>
         </div>
-        <div className="lh-flowmini"><i className={step >= 1 ? "on" : ""}>Ide</i><i className={step >= 3 ? "on" : ""}>Riset</i><i className={step >= 6 ? "on" : ""}>Cerita</i><i className={step >= 7 ? "on" : ""}>Visual</i><i className={step >= 9 ? "on" : ""}>Studio</i></div>
-        <button onClick={() => { if (step >= 9 && doneScenes.length > 0 && song) void masukStudio(); else setStep(Math.min(9, Math.max(step + 1, 2))); }}>
-          {step >= 9 && doneScenes.length > 0 && song ? "🎬 Kirim ke Studio" : "Lanjutkan ›"}
-        </button>
+        <div className="lh-pipeline">
+          {([
+            [1, "Ide", "Tulis niat & sudut", "🌱"],
+            [3, "Riset", "Demand + kompetitor", "📊"],
+            [4, "Judul", "Hook & packaging", "🏆"],
+            [6, "Script", "Cerita siap produksi", "📝"],
+            [7, "Visual", "Gambar/video adegan", "🎬"],
+            [8, "Lagu", "Musik/voice", "🎵"],
+            [9, "Studio", "Edit & export", "🚀"],
+          ] as any[]).map(([k, title, desc, ic]) => {
+            const on = step === k;
+            const done = step > k && canGo(Math.min(9, k + 1));
+            return <button key={k} className={`${on ? "on" : ""} ${done ? "done" : ""}`} disabled={!canGo(k)} onClick={() => setStep(k)}><i>{done ? "✓" : ic}</i><b>{title}</b><span>{desc}</span></button>;
+          })}
+        </div>
+        <div className="lh-launch-actions">
+          <button onClick={() => { if (step >= 9 && doneScenes.length > 0 && song) void masukStudio(); else setStep(Math.min(9, Math.max(step + 1, 2))); }}>
+            {step >= 9 && doneScenes.length > 0 && song ? "🎬 Kirim ke Studio" : "Lanjutkan langkah"}
+          </button>
+          <button className="ghost" onClick={() => setStep(7)}>Lompat Visual</button>
+        </div>
       </div>
 
       {err && (
