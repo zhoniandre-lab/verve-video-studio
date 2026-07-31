@@ -1214,6 +1214,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ---------- UI panels ---------- */
   const [tool, setTool] = useState<string | null>(null);
   const [clipBar, setClipBar] = useState(false);
+  const [cleanMode, setCleanMode] = useState(true);
   // v8.4: susunan jalur track BEBAS & tersimpan permanen (aturan #6 — track bukan denah mati)
   const [laneOrder, setLaneOrder] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem("verve_laneorder_v1") || "[]"); return Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : []; } catch { return []; } });
   const saveLaneOrder = useCallback((o: string[]) => { setLaneOrder(o); try { localStorage.setItem("verve_laneorder_v1", JSON.stringify(o)); } catch {} }, []);
@@ -1491,17 +1492,41 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     try { navigator.clipboard?.writeText(prompt); flash("📋 Prompt cinematic tersalin"); }
     catch { flash("Prompt cinematic siap disalin"); }
   }
-  function addKeyMotion() {
-    if (!slides.length) { setTool("media"); return; }
+  function activeClipAtPlayhead(): { sid: string; idx: number; rel: number } | null {
+    if (!slides.length) return null;
     const tl = timelineRef.current;
     const L = tl ? locate(tl, Math.min(curTRef.current, Math.max(0, tl.total - 0.01))) : null;
-    const sid = selId || (L ? slidesRef.current[L.idx]?.id : slidesRef.current[0]?.id) || "";
-    if (!sid) return;
+    const idx = selId ? Math.max(0, slidesRef.current.findIndex(x => x.id === selId)) : (L ? L.idx : 0);
+    const sl = slidesRef.current[idx] || slidesRef.current[0];
+    if (!sl) return null;
+    const dur = L && idx === L.idx ? L.clipDur : effDur(optsRef.current[sl.id], slideDuration);
+    const rel = L && idx === L.idx ? Math.max(0, Math.min(1, L.clipT / Math.max(0.001, dur))) : 0;
+    return { sid: sl.id, idx, rel };
+  }
+  function addKeyframeAtPlayhead() {
+    const hit = activeClipAtPlayhead();
+    if (!hit) { setTool("media"); return; }
+    const o: any = slideOptsById[hit.sid] || {};
+    const point = { t: Math.round(hit.rel * 1000) / 1000, tx: Number(o.tx || 0), ty: Number(o.ty || 0), tz: Number(o.tz || 1) || 1 };
+    const arr = Array.isArray(o.kf) ? [...o.kf] : [];
+    const near = arr.findIndex((k: any) => Math.abs(Number(k.t) - point.t) < 0.025);
+    if (near >= 0) arr[near] = point; else arr.push(point);
+    arr.sort((a: any, b: any) => Number(a.t) - Number(b.t));
+    setSelId(hit.sid); setClipBar(true);
+    setOpt(hit.sid, { kf: arr.slice(0, 8), kb: undefined } as any);
+    flash(`◇ Keyframe ${Math.round(point.t * 100)}% disimpan (${arr.length} titik)`);
+  }
+  function addKeyMotion() {
+    const hit = activeClipAtPlayhead();
+    if (!hit) { setTool("media"); return; }
     const dirs = ["in", "l", "out", "r", "u", "d"] as const;
-    const idx = Math.max(0, slidesRef.current.findIndex((x) => x.id === sid));
-    setSelId(sid); setClipBar(true);
-    setOpt(sid, { kb: { dir: dirs[idx % dirs.length], s: 0.22 }, loop: "none" } as any);
-    flash("◇+ Key Film: gerak kamera pelan ditambahkan ke klip terpilih");
+    const dir = dirs[hit.idx % dirs.length];
+    const end = dir === "in" ? { tx: 0, ty: 0, tz: 1.18 } : dir === "out" ? { tx: 0, ty: 0, tz: 0.94 } :
+      dir === "l" ? { tx: -0.08, ty: 0, tz: 1.12 } : dir === "r" ? { tx: 0.08, ty: 0, tz: 1.12 } :
+      dir === "u" ? { tx: 0, ty: -0.06, tz: 1.12 } : { tx: 0, ty: 0.06, tz: 1.12 };
+    setSelId(hit.sid); setClipBar(true);
+    setOpt(hit.sid, { kf: [{ t: 0, tx: 0, ty: 0, tz: 1 }, { t: 1, ...end }], kb: undefined, loop: "none" } as any);
+    flash("◇+ Key Film: 2 keyframe kamera cinematic dibuat");
   }
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
   // bersihkan seleksi teks kalau klipnya hilang / teksnya dihapus / pindah pilih klip lain (multi-lapis aware)
@@ -2175,6 +2200,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     prevLenRef.current = n;
   }, [slides]); // eslint-disable-line
 
+  useEffect(() => {
+    try { const v = localStorage.getItem("verve_clean_mode_v1"); if (v === "0") setCleanMode(false); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("verve_clean_mode_v1", cleanMode ? "1" : "0"); } catch {}
+  }, [cleanMode]);
+
   // autosave (debounce) setiap perubahan struktural
   useEffect(() => {
     if (!didInit.current) return;
@@ -2755,6 +2787,52 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       }
     });
   }
+  async function addGeneratedVideoClip(url: string, label = "Video AI") {
+    const vu = String(url || "").trim();
+    if (!/^https?:\/\//i.test(vu) && !vu.startsWith("blob:")) { flash("⚠️ URL video AI belum valid"); return; }
+    pushHist();
+    const id = uid("vgen");
+    const fallbackPoster = (() => {
+      const c = document.createElement("canvas"); c.width = ratio === "9:16" ? 720 : 1280; c.height = ratio === "9:16" ? 1280 : 720;
+      const ctx = c.getContext("2d")!;
+      const g = ctx.createLinearGradient(0, 0, c.width, c.height);
+      g.addColorStop(0, "#05070d"); g.addColorStop(1, "#123a63");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = "#5eead4"; ctx.font = "900 54px system-ui"; ctx.textAlign = "center"; ctx.fillText("VIDEO AI", c.width / 2, c.height / 2 - 14);
+      ctx.fillStyle = "#cbd5e1"; ctx.font = "600 28px system-ui"; ctx.fillText(label.slice(0, 34), c.width / 2, c.height / 2 + 34);
+      return c.toDataURL("image/jpeg", 0.82);
+    })();
+    const finish = (poster: string, dur: number) => {
+      const slide: Slide = { id, imageUrl: poster || fallbackPoster, videoUrl: vu, dur: dur || 5 };
+      setSlides((c) => [...c, slide]);
+      setSlideOptsById((cur) => ({ ...cur, [id]: { ...(cur[id] || {}), dur: Math.round(Math.max(1, dur || 5) * 100) / 100, trans: "dissolve", transDur: 0.55 } as any }));
+      setSelId(id); setClipBar(true); setModal(null);
+      flash("🎬 Video AI masuk timeline sebagai klip baru");
+    };
+    try {
+      const v = document.createElement("video");
+      v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
+      let triedProxy = false;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => { finish(fallbackPoster, 5); resolve(); }, 9000);
+        v.onerror = () => {
+          if (!triedProxy && !vu.startsWith("blob:")) { triedProxy = true; v.src = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(vu)}`; return; }
+          clearTimeout(timer); finish(fallbackPoster, 5); resolve();
+        };
+        v.onloadedmetadata = () => { try { v.currentTime = Math.min(0.2, Math.max(0, (v.duration || 1) - 0.05)); } catch {} };
+        v.onseeked = () => {
+          try {
+            const W = v.videoWidth || 720, H = v.videoHeight || 1280;
+            const c = document.createElement("canvas"); c.width = W; c.height = H;
+            c.getContext("2d")!.drawImage(v, 0, 0, W, H);
+            clearTimeout(timer); finish(c.toDataURL("image/jpeg", 0.85), v.duration || 5); resolve();
+          } catch { clearTimeout(timer); finish(fallbackPoster, v.duration || 5); resolve(); }
+        };
+        v.src = vu;
+      });
+    } catch { finish(fallbackPoster, 5); }
+  }
+
   async function genImageForClip(prompt: string, style: string, replaceId?: string) {
     setLoading("image"); setError("");
     try {
@@ -4250,6 +4328,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         )}
         <button className="v6e-tbtn" title="Tutup" onClick={() => { persistSnapshot(true); stopPreview(); onExit(); }}>✕</button>
         <button className="v6e-tbtn" title="Cari alat" onClick={() => flash("🔍 Ketuk alat di toolbar bawah ya bro")}>🔍</button>
+        <button className={`v6e-tbtn ${cleanMode ? "on" : ""}`} title="Mode bersih / semua alat" onClick={() => setCleanMode(v => !v)}>{cleanMode ? "◎" : "☰"}</button>
         <button className="v6e-tbtn" title="Judul proyek" onClick={() => {
           const t = prompt("Judul proyek:", projTitle);
           if (t !== null) { setProjTitle(t.slice(0, 80) || "Proyek Tanpa Judul"); persistSnapshot(true); }
@@ -4302,7 +4381,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           <button className={`cbtn ${pipOn ? "" : ""}`} title="Penanda REC" onClick={() => setPipOn(v => !v)}>
             🎦<span className="mini">{pipOn ? "ON" : "OFF"}</span>
           </button>
-          <button className="cbtn" onClick={addKeyMotion} title="Tambah Key Film / gerak kamera halus ke klip terpilih">◇+</button>
+          <button className="cbtn" onClick={addKeyframeAtPlayhead} title="Tambah keyframe transform di posisi playhead">◇+</button>
           <button className="cbtn" onClick={undo} disabled={!canUndo} title="Urungkan">↶</button>
           <button className="cbtn" onClick={redo} disabled={!canRedo} title="Ulangi">↷</button>
           <button
@@ -4412,7 +4491,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {CLIP_TOOLS.map(t => (
+            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","efek","gambarai","videoai","cinematic","hapus"].includes(t.id)) : CLIP_TOOLS).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
@@ -4420,7 +4499,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
         ) : (
           <div className="v6e-tools">
-            {MAIN_TOOLS.map(t => (
+            {(cleanMode ? MAIN_TOOLS.filter(t => ["edit","media","audio","teks","filter","efek","sihir_film"].includes(t.id)) : MAIN_TOOLS).map(t => (
               <button key={t.id} className={`v6e-tlbtn ${tool === t.id ? "on" : ""}`} disabled={t.disabled}
                 onClick={() => {
                   if (t.disabled) { flash("👤 Avatar AI segera hadir di versi berikutnya 🙏"); return; }
@@ -4578,7 +4657,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         </MiniModal>
       )}
       {modal === "gambarai" && <GambarAiModal onClose={() => setModal(null)} onGen={(pr: string, st: string) => genImageForClip(pr, st, selId || undefined)} loading={loading} />}
-      {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} />}
+      {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} onAddVideo={addGeneratedVideoClip} />}
       {modal === "hakcipta" && <HakCiptaModal musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl} onClose={() => setModal(null)} />}
 
       {/* toast & loading bar */}
@@ -7103,7 +7182,7 @@ function GambarAiModal({ onClose, onGen, loading }: any) {
 }
 
 /* ---------- VIDEO AI ---------- */
-function VideoAiModal({ onClose }: any) {
+function VideoAiModal({ onClose, onAddVideo }: any) {
   const [pr, setPr] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState("");
@@ -7114,7 +7193,7 @@ function VideoAiModal({ onClose }: any) {
       const r = await fetch("/api/hcnsec/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: pr, duration: 5, aspectRatio: "9:16" }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.error) throw new Error(d.error || `Error ${r.status}`);
-      if (d.video_url) setResult(d.video_url);
+      if (d.video_url) { const vu = String(d.video_url); setResult(vu); if (onAddVideo) await onAddVideo(vu, pr); }
       else if (d.task_id || d.id) setResult("pending");
       else setResult("pending");
     } catch (e: any) { alert("Gagal: " + e.message); }
@@ -7124,8 +7203,8 @@ function VideoAiModal({ onClose }: any) {
     <MiniModal title="🎬 Video AI (beta)" onClose={onClose}>
       <textarea className="v6-inp v6-ta" style={{ minHeight: 80 }} placeholder="cth: hujan turun di jendela kafe yang hangat, sinematik" value={pr} onChange={e => setPr(e.target.value)} />
       <button className="v6-bigcta" disabled={busy} onClick={gen}>{busy ? "⏳…" : "✨ Generate video pendek"}</button>
-      {result === "pending" && <div className="v6-okbox">⏳ Video sedang dibuat server. Karena klip video AI belum bisa disisipkan langsung ke timeline (timeline kita berbasis foto klip), hasilnya dibuka di tab baru.</div>}
-      {result && result !== "pending" && <a className="v6-okbox" style={{ display: "block" }} href={result} target="_blank" rel="noreferrer">▶️ Buka hasil video AI</a>}
+      {result === "pending" && <div className="v6-okbox">⏳ Video sedang dibuat server. Kalau provider mengembalikan link nanti, buka ulang / cek status provider. Gambar di timeline tetap aman.</div>}
+      {result && result !== "pending" && <a className="v6-okbox" style={{ display: "block" }} href={result} target="_blank" rel="noreferrer">✅ Video AI sudah dimasukkan ke timeline · buka link</a>}
     </MiniModal>
   );
 }

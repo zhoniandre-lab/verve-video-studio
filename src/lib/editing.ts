@@ -43,6 +43,7 @@ export interface SlideOpt {
   tx?: number;               // geser gambar X (fraksi lebar bingkai) — kunci per-klip
   ty?: number;               // geser gambar Y (fraksi tinggi bingkai)
   tz?: number;               // zoom gambar (1 = normal, 0.5..6)
+  kf?: { t: number; tx?: number; ty?: number; tz?: number }[]; // ◇ keyframe transform relatif klip (0..1) — ala CapCut
   kb?: { dir: "in" | "out" | "l" | "r" | "u" | "d"; s?: number }; // 🎬 v11.4+v13.3: Ken Burns kustom — zoom (in/out) & GESER (l/r/u/d), kekuatan 0.05..0.5
   text?: ClipText | null;    // LAPISAN UTAMA (kompatibel lama)
   texts?: ClipText[];        // LAPISAN TAMBAHAN — satu klip bisa banyak teks (ala CapCut)
@@ -961,6 +962,23 @@ export interface PaintInput {
   kbDx?: number;             // 🎬 v13.3: ken burns GESER-X (fraksi lebar, aliran kamera geser)
   kbDy?: number;             // 🎬 v13.3: ken burns GESER-Y (naik/turun)
 }
+function interpTransformKeyframes(opt: SlideOpt | null | undefined, rel: number): { tx: number; ty: number; tz: number } | null {
+  const raw = (opt?.kf || []).filter(k => k && Number.isFinite(Number(k.t))).map(k => ({
+    t: Math.max(0, Math.min(1, Number(k.t))),
+    tx: Number.isFinite(Number(k.tx)) ? Number(k.tx) : 0,
+    ty: Number.isFinite(Number(k.ty)) ? Number(k.ty) : 0,
+    tz: Number.isFinite(Number(k.tz)) && Number(k.tz)! > 0 ? Number(k.tz) : 1,
+  })).sort((a, b) => a.t - b.t);
+  if (raw.length < 2) return null;
+  const r = Math.max(0, Math.min(1, rel));
+  let a = raw[0], b = raw[raw.length - 1];
+  for (let i = 0; i < raw.length - 1; i++) if (r >= raw[i].t && r <= raw[i + 1].t) { a = raw[i]; b = raw[i + 1]; break; }
+  const span = Math.max(0.0001, b.t - a.t);
+  const x = Math.max(0, Math.min(1, (r - a.t) / span));
+  const e = x * x * (3 - 2 * x);
+  return { tx: a.tx + (b.tx - a.tx) * e, ty: a.ty + (b.ty - a.ty) * e, tz: a.tz + (b.tz - a.tz) * e };
+}
+
 export function paintClips(
   ctx: CanvasRenderingContext2D, W: number, H: number,
   cur: CanvasImageSource | null, nxt: CanvasImageSource | null,
@@ -973,12 +991,13 @@ export function paintClips(
 
   // params klip aktif
   const curP = baseP(filter);
-  // transform manual per-klip (cubit/geser gambar di preview ala CapCut — dikunci ke klip)
-  curP.dx += opt.tx ?? 0;
-  curP.dy += opt.ty ?? 0;
+  // transform manual per-klip (cubit/geser gambar) atau keyframe ala CapCut bila ada >=2 titik
+  const kfCur = interpTransformKeyframes(opt, p.clipDur > 0 ? p.clipT / p.clipDur : 0);
+  curP.dx += kfCur ? kfCur.tx : (opt.tx ?? 0);
+  curP.dy += kfCur ? kfCur.ty : (opt.ty ?? 0);
   curP.dx += p.kbDx ?? 0; // 🎬 v13.3: geser kamera (selaras preview & render)
   curP.dy += p.kbDy ?? 0;
-  curP.zoom = (p.kbZoom ?? 1) * Math.max(0.1, opt.tz && opt.tz > 0 ? opt.tz : 1);
+  curP.zoom = (p.kbZoom ?? 1) * Math.max(0.1, kfCur ? kfCur.tz : (opt.tz && opt.tz > 0 ? opt.tz : 1));
   if (opt.effect === "pulse") curP.zoom *= 1 + 0.028 * Math.sin(p.absT * 6.2) + (p.beat ? 0.02 : 0);
   if (opt.effect === "shake") {
     const seed = Math.floor(p.absT * 24);
@@ -1003,10 +1022,11 @@ export function paintClips(
   }
 
   const nxtP = baseP(joinFilters(buildClipFilter(p.optNxt?.filter || "", null), p.globalFilter));
-  // klip berikutnya juga bawa transform manualnya sendiri
-  nxtP.dx += (p.optNxt?.tx ?? 0);
-  nxtP.dy += (p.optNxt?.ty ?? 0);
-  nxtP.zoom = Math.max(0.1, (p.optNxt?.tz && p.optNxt.tz > 0) ? p.optNxt.tz : 1);
+  // klip berikutnya juga bawa transform manual/keyframe awalnya sendiri
+  const kfNxt = interpTransformKeyframes(p.optNxt, 0);
+  nxtP.dx += kfNxt ? kfNxt.tx : (p.optNxt?.tx ?? 0);
+  nxtP.dy += kfNxt ? kfNxt.ty : (p.optNxt?.ty ?? 0);
+  nxtP.zoom = Math.max(0.1, kfNxt ? kfNxt.tz : ((p.optNxt?.tz && p.optNxt.tz > 0) ? p.optNxt.tz : 1));
 
   // gambar klip (+transisi)
   if (p.inTrans && nxt && p.transId !== "none") {
