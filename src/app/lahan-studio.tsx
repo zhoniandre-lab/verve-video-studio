@@ -1411,51 +1411,47 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
 
   /* ================= RENDER ================= */
   return (
-    <div className="lh-wrap">
+    <div className="lh-wrap ref9">
       <div className="lh-top">
         <button className="lh-back" onClick={onExit}>‹</button>
-        <div className="lh-top-t">
-          <b>🌱 Lahan Awalan</b>
-          <span>Cerita Jadi Lagu · wizard produksi AI</span>
+        <div className="lh-top-t lh-refbrand">
+          <b>VERVE</b>
+          <span>Lahan Awalan · Creator Launchpad</span>
         </div>
         <button className="lh-reset" title="Lahan baru" onClick={resetLahan}>↺</button>
       </div>
 
-      <div className="lh-launch pro">
-        <div className="lh-launch-head">
-          <div>
-            <small>CREATOR LAUNCHPAD</small>
-            <b>Bangun video dari ide sampai Studio</b>
-            <span>Rasio bebas: Shorts 9:16, YouTube 16:9, Feed 1:1. Semua langkah tetap ada, tapi disusun seperti pipeline produksi.</span>
-          </div>
-          <button className="mini" onClick={resetLahan}>Reset</button>
-        </div>
-        <div className="lh-pipeline">
+      <div className="lh-refhero">
+        <div className="lh-refprogress">
           {([
-            [1, "Ide", "Tulis niat & sudut", "🌱"],
-            [3, "Riset", "Demand + kompetitor", "📊"],
-            [4, "Judul", "Hook & packaging", "🏆"],
-            [6, "Script", "Cerita siap produksi", "📝"],
-            [7, "Visual", "Gambar/video adegan", "🎬"],
-            [8, "Lagu", "Musik/voice", "🎵"],
-            [9, "Studio", "Edit & export", "🚀"],
-          ] as any[]).map(([k, title, desc, ic]) => {
-            const on = step === k;
-            const done = step > k && canGo(Math.min(9, k + 1));
-            return <button key={k} className={`${on ? "on" : ""} ${done ? "done" : ""}`} disabled={!canGo(k)} onClick={() => setStep(k)}><i>{done ? "✓" : ic}</i><b>{title}</b><span>{desc}</span></button>;
+            [1, "💡", "Ide"],
+            [3, "🔎", "Riset"],
+            [6, "✍️", "Script"],
+            [7, "📷", "Visual"],
+            [8, "🎵", "Lagu"],
+          ] as any[]).map(([k, ic, lb], idx) => {
+            const active = step >= k;
+            return <button key={lb} className={active ? "on" : ""} disabled={!canGo(k)} onClick={() => setStep(k)}><i>{idx + 1}</i><b>{ic}</b><span>{lb}</span></button>;
           })}
         </div>
-        <div className="lh-launch-actions">
-          <button onClick={() => { if (step >= 9 && doneScenes.length > 0 && song) void masukStudio(); else setStep(Math.min(9, Math.max(step + 1, 2))); }}>
-            {step >= 9 && doneScenes.length > 0 && song ? "🎬 Kirim ke Studio" : "Lanjutkan langkah"}
-          </button>
-          <button className="ghost" onClick={() => setStep(7)}>Lompat Visual</button>
+        <div className="lh-refcard">
+          <small>Langkah {Math.min(step, 9)} · {act.title}</small>
+          <b>{step <= 1 ? "Mulai dari Ide" : step <= 3 ? "Validasi Riset" : step <= 6 ? "Bangun Script" : step === 7 ? "Produksi Visual" : step === 8 ? "Musik AI" : "Siap ke Studio"}</b>
+          <p>{act.desc}</p>
+          {step <= 1 && (
+            <>
+              <textarea className="lh-ta" rows={4} placeholder='Masukkan ide video, tema, atau topik utama. Contoh: "ibu aku rindu", "ayah pulang", "tips travel murah"' value={topic} onChange={(e) => setTopic(e.target.value)} />
+              <div className="lh-chips refchips">{["rindu ibu", "cerita ayah", "tips travel", "edukasi saham"].map((p) => <button key={p} className="lh-chip" onClick={() => setTopic(p)}>{p}</button>)}</div>
+            </>
+          )}
+          <button className="lh-refcta" disabled={act.disabled} onClick={act.run}>{step <= 1 ? "Buat Paket Video →" : act.cta}</button>
         </div>
-      </div>
-
-      <div className="lh-actionpanel">
-        <div><b>{act.title}</b><span>{act.desc}</span></div>
-        <button disabled={act.disabled} onClick={act.run}>{act.cta}</button>
+        <div className="lh-refquick">
+          <button onClick={() => setStep(3)}>📊 <b>Riset YouTube</b><span>Tren topik</span></button>
+          <button onClick={() => setStep(4)}>🪝 <b>Hook & Judul</b><span>Catchy headlines</span></button>
+          <button onClick={() => setStep(7)}>🎞️ <b>Storyboard</b><span>Alur video</span></button>
+          <button onClick={() => setStep(8)}>🎵 <b>Musik AI</b><span>Suara latar</span></button>
+        </div>
       </div>
 
       {err && (
