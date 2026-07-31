@@ -1069,25 +1069,27 @@ function SayaPage({ refresh }: { refresh: () => void }) {
    ================================================================== */
 const MAIN_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCls?: string; disabled?: boolean }[] = [
   { id: "edit",    icon: "✂️",  label: "Edit" },
-  { id: "sihir_film", icon: "🎬", label: "Sihir Film", bdg: "NEW" },
+  { id: "media",   icon: "✨",  label: "AI Studio", bdg: "AI", bdgCls: "ai" },
   { id: "audio",   icon: "🎵",  label: "Audio" },
   { id: "teks",    icon: "🔤",  label: "Teks" },
+  { id: "filter",  icon: "🎨",  label: "Filter" },
   { id: "efek",    icon: "☆",   label: "Efek" },
+  { id: "sihir_film", icon: "🎬", label: "Cinematic", bdg: "NEW" },
   { id: "overlay", icon: "🖼️", label: "Overlay" },
   { id: "keterangan", icon: "💬", label: "Keterangan" },
-  { id: "filter",  icon: "🎨",  label: "Filter" },
-  { id: "sesuaikan", icon: "🎚️", label: "Sesuaikan" },
   { id: "stiker",  icon: "😀",  label: "Stiker" },
-  { id: "media",   icon: "✨",  label: "Hasilkan media", bdg: "AI", bdgCls: "ai" },
+  { id: "sesuaikan", icon: "🎚️", label: "Sesuaikan" },
+  { id: "rasio",   icon: "⬜",  label: "Rasio" },
+  { id: "latar",   icon: "▱",   label: "Latar" },
   { id: "avatar",  icon: "👤",  label: "Avatar AI", bdg: "PRO", bdgCls: "pro", disabled: true },
-  { id: "rasio",   icon: "⬜",  label: "Rasio aspek" },
-  { id: "latar",   icon: "▱",   label: "Latar belakang" },
 ];
 const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCls?: string }[] = [
   { id: "split",   icon: "╫",   label: "Bagi" },
   { id: "animasi", icon: "▷",   label: "Animasi" },
   { id: "efek",    icon: "☆",   label: "Efek" },
   { id: "gambarai", icon: "🖼️", label: "Gambar AI", bdg: "✦", bdgCls: "ai" },
+  { id: "videoai", icon: "🎬", label: "Video AI", bdg: "AI", bdgCls: "ai" },
+  { id: "cinematic", icon: "◇+", label: "Key Film", bdg: "NEW" },
   { id: "hapus",   icon: "▢",   label: "Hapus" },
   { id: "pangkas", icon: "▭",   label: "Pangkas" },
   { id: "dup",     icon: "⧉",   label: "Duplikat" },
@@ -1488,6 +1490,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     });
     try { navigator.clipboard?.writeText(prompt); flash("📋 Prompt cinematic tersalin"); }
     catch { flash("Prompt cinematic siap disalin"); }
+  }
+  function addKeyMotion() {
+    if (!slides.length) { setTool("media"); return; }
+    const tl = timelineRef.current;
+    const L = tl ? locate(tl, Math.min(curTRef.current, Math.max(0, tl.total - 0.01))) : null;
+    const sid = selId || (L ? slidesRef.current[L.idx]?.id : slidesRef.current[0]?.id) || "";
+    if (!sid) return;
+    const dirs = ["in", "l", "out", "r", "u", "d"] as const;
+    const idx = Math.max(0, slidesRef.current.findIndex((x) => x.id === sid));
+    setSelId(sid); setClipBar(true);
+    setOpt(sid, { kb: { dir: dirs[idx % dirs.length], s: 0.22 }, loop: "none" } as any);
+    flash("◇+ Key Film: gerak kamera pelan ditambahkan ke klip terpilih");
   }
   useEffect(() => { if (selId && !slides.some(s => s.id === selId)) { setSelId(""); setClipBar(false); } }, [slides, selId]);
   // bersihkan seleksi teks kalau klipnya hilang / teksnya dihapus / pindah pilih klip lain (multi-lapis aware)
@@ -2206,6 +2220,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "animasi": setTool("animasi"); setSheetTab("masuk"); break;
       case "efek": setTool("efek"); break;
       case "gambarai": setModal("gambarai"); break;
+      case "videoai": setModal("videoai"); break;
+      case "cinematic": addKeyMotion(); break;
       case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
@@ -4286,6 +4302,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           <button className={`cbtn ${pipOn ? "" : ""}`} title="Penanda REC" onClick={() => setPipOn(v => !v)}>
             🎦<span className="mini">{pipOn ? "ON" : "OFF"}</span>
           </button>
+          <button className="cbtn" onClick={addKeyMotion} title="Tambah Key Film / gerak kamera halus ke klip terpilih">◇+</button>
           <button className="cbtn" onClick={undo} disabled={!canUndo} title="Urungkan">↶</button>
           <button className="cbtn" onClick={redo} disabled={!canRedo} title="Ulangi">↷</button>
           <button
@@ -5962,8 +5979,22 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
 
   /* ---------------- HASILKAN MEDIA ---------------- */
   if (tool === "media") return (
-    <SheetShell title="Hasilkan media" onClose={close} tall>
+    <SheetShell title="AI Studio" onClose={close} tall>
       <div className="v6-sheet-body">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("gambarai"); }}>
+            <span style={{ fontSize: 22 }}>🎨</span><div className="tt">Gambar AI<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>teks → gambar, masuk track</div></div>
+          </button>
+          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("videoai"); }}>
+            <span style={{ fontSize: 22 }}>🎬</span><div className="tt">Video AI<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>teks/gambar → klip</div></div>
+          </button>
+          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("musik"); }}>
+            <span style={{ fontSize: 22 }}>🎵</span><div className="tt">Musik AI<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>lagu/instrumen → audio track</div></div>
+          </button>
+          <button className="v6-cardrow" style={{ minHeight: 78, alignItems: "flex-start" }} onClick={() => { A.openModal("wizard"); }}>
+            <span style={{ fontSize: 22 }}>🧠</span><div className="tt">Buat Paket<div style={{ fontSize: 9.5, color: "#8b8b98", fontWeight: 500 }}>ide → visual + audio</div></div>
+          </button>
+        </div>
         <label className="v6-cardrow">
           <span style={{ fontSize: 20 }}>🖼️</span>
           <div className="tt">Upload foto atau video dari galeri</div><span className="arr">›</span>
@@ -5972,13 +6003,7 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
         <div className="v6-cardrow" onClick={() => { A.openModal("kamera"); }}>
           <span style={{ fontSize: 20 }}>📷</span><div className="tt">Ambil gambar (kamera)</div><span className="arr">›</span>
         </div>
-        <div className="v6-cardrow" onClick={() => { A.openModal("gambarai"); }}>
-          <span style={{ fontSize: 20 }}>🎨</span><div className="tt">Gambar AI (tulis konsep sendiri)</div><span style={{ fontSize: 8.5, fontWeight: 800, background: "#a855f7", padding: "1px 7px", borderRadius: 999 }}>AI</span><span className="arr">›</span>
-        </div>
-        <div className="v6-cardrow" onClick={() => { A.openModal("videoai"); }}>
-          <span style={{ fontSize: 20 }}>🎬</span><div className="tt">Video AI (beta)</div><span className="arr">›</span>
-        </div>
-        <div className="v6-note">✅ Media yang ditambahkan langsung masuk <b>track 1</b> sebagai klip baru. Tarik ujungnya untuk atur durasi.</div>
+        <div className="v6-note">✅ Semua generator sekarang ada di Studio. Hasil gambar/video masuk ke track 1; musik masuk ke track audio.</div>
       </div>
     </SheetShell>
   );
