@@ -101,7 +101,7 @@ type YtStatus = { configured: boolean; connected: boolean; missing?: string[]; e
 type YtVideo = { id: string; title: string; publishedAt?: string; durationSec?: number; viewCount?: number; likeCount?: number; commentCount?: number; url?: string };
 type YtMetricPayload = { ok?: boolean; error?: string; video?: Partial<YtVideo>; metrics?: { views?: number | null; analyticsViews?: number | null; publicViews?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
 
-export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
+export default function GrowthDoctor({ onExit, gotoEditor }: { onExit: () => void; gotoEditor?: (id?: string, cmd?: any) => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
   const [symptom, setSymptom] = useState("video sepi");
   const [title, setTitle] = useState("");
@@ -387,6 +387,13 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     const next = updateExperimentInLedger(addSnapshotToLedger(ledger, after), graded);
     persistLedger(next, graded.status === "success" ? "🏆 Eksperimen berhasil" : graded.status === "partial" ? "🟡 Eksperimen naik sebagian" : "🔴 Eksperimen belum berhasil");
   };
+  const openCreatorStudio = (ideaTitle?: string) => {
+    try { if (ideaTitle) localStorage.setItem("verve_creator_os_seed_title", ideaTitle); } catch {}
+    if (gotoEditor) gotoEditor(undefined, { tool: "wizard", newProject: Date.now() });
+    else setStudioTextMsg("Buka Studio → AI Studio/Pembuat AI untuk produksi ide ini.");
+  };
+  const copyIdeaBank = () => copy(creatorOS.ideaBank.map((x) => `#${x.rank} [${x.score}] ${x.title}\nHook: ${x.hook}\nThumb: ${x.thumbnail}\nOpening: ${x.openingScene}\nCTA: ${x.cta}`).join("\n\n"));
+
   const statusEmoji = (s: string) => s === "success" ? "🏆" : s === "partial" ? "🟡" : s === "failed" ? "🔴" : "⏳";
 
   const metric = (label: string, value: string, set: (v: string) => void, ph: string, inputMode: "decimal" | "text" = "decimal") => (
@@ -482,6 +489,32 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           <details><summary>Checklist</summary>{osSection.checklist.map((x, i) => <em key={i}>□ {x}</em>)}</details>
           <details><summary>KPI</summary>{osSection.kpis.map((x, i) => <em key={i}>• {x}</em>)}</details>
           <details><summary>Prompt engine</summary>{osSection.prompts.map((x, i) => <em key={i}>“{x}”</em>)}</details>
+          {osTab === "viral" && (
+            <div className="gd-ideabank">
+              <b>🔥 100 Ide Ranked</b>
+              {creatorOS.ideaBank.slice(0, 12).map((it) => (
+                <button key={it.rank} onClick={() => copy(`${it.title}
+Hook: ${it.hook}
+Thumbnail: ${it.thumbnail}
+Opening: ${it.openingScene}`)}>
+                  <strong>#{it.rank} · {it.score}</strong><span>{it.title}</span><em>{it.hook}</em>
+                </button>
+              ))}
+              <div className="gd-textactions"><button onClick={copyIdeaBank}>📋 Salin 100 Ide</button><button className="muted" onClick={() => openCreatorStudio(creatorOS.ideaBank[0]?.title)}>🚀 Produksi Ide #1</button></div>
+            </div>
+          )}
+          {osTab === "production" && (
+            <div className="gd-prodboard">
+              <b>🏭 Production Board</b>
+              {creatorOS.productionBoard.map((st) => <div key={st.id}><strong>{st.label}</strong><small>{st.owner}</small>{st.checklist.map((c) => <em key={c}>□ {c}</em>)}</div>)}
+            </div>
+          )}
+          {osTab === "money" && (
+            <div className="gd-prodboard">
+              <b>💰 Monetization Ladder</b>
+              {creatorOS.monetizationLadder.map((m) => <div key={m.stage}><strong>{m.label}</strong><small>{m.when}</small>{m.actions.map((a) => <em key={a}>• {a}</em>)}</div>)}
+            </div>
+          )}
           <div className="gd-textactions"><button onClick={() => copy(creatorOS.fullText)}>📋 Salin Creator OS</button><button className="muted" onClick={() => copy(creatorOS.weeklyReviewTemplate)}>📊 Template Review</button></div>
         </div>
       </div>

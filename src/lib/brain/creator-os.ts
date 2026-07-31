@@ -29,6 +29,33 @@ export type CreatorOsSection = {
   prompts: string[];
 };
 
+export type CreatorVideoIdea = {
+  rank: number;
+  score: number;
+  pillar: string;
+  format: "long" | "shorts" | "series";
+  title: string;
+  hook: string;
+  thumbnail: string;
+  openingScene: string;
+  cta: string;
+  why: string;
+};
+
+export type CreatorProductionStep = {
+  id: string;
+  label: string;
+  owner: "VERVE" | "Creator" | "YouTube";
+  checklist: string[];
+};
+
+export type CreatorMonetizationStep = {
+  stage: CreatorStage;
+  label: string;
+  when: string;
+  actions: string[];
+};
+
 export type CreatorOsPlan = {
   title: string;
   summary: string;
@@ -37,6 +64,9 @@ export type CreatorOsPlan = {
   audience: string;
   next7Days: string[];
   sections: CreatorOsSection[];
+  ideaBank: CreatorVideoIdea[];
+  productionBoard: CreatorProductionStep[];
+  monetizationLadder: CreatorMonetizationStep[];
   weeklyReviewTemplate: string;
   fullText: string;
 };
@@ -89,6 +119,88 @@ function viralIdeas(niche: string, audience: string): string[] {
   return base;
 }
 
+const PILLARS = ["cerita emosional", "nasihat hidup", "kisah keluarga", "penyesalan terakhir", "pengorbanan", "twist moral", "doa dan harapan", "shorts momen puncak"];
+const FORMATS: CreatorVideoIdea["format"][] = ["long", "shorts", "series"];
+const HOOKS = [
+  "Kalimat terakhirnya baru dimengerti setelah semuanya terlambat.",
+  "Semua orang mengira dia kuat, padahal ia menyimpan rahasia ini.",
+  "Di detik pertama, tunjukkan akibat paling menyakitkan sebelum cerita dimulai.",
+  "Jangan mulai dari perkenalan; mulai dari konflik yang membuat penonton bertanya.",
+  "Tampilkan benda kunci yang membuat seluruh cerita berubah makna.",
+  "Buka dengan pertanyaan: kalau ini terjadi padamu, apa yang kamu lakukan?",
+];
+const THUMBS = [
+  "close-up wajah emosional + 3 kata kontras",
+  "tangan memegang foto lama + teks janji emosional",
+  "objek kunci di tengah + background gelap bersih",
+  "dua ekspresi sebelum/sesudah + panah kecil",
+  "silhouette di cahaya senja + teks pendek",
+  "mata berkaca-kaca + warna hangat/kontras tinggi",
+];
+
+function scoreIdea(i: number, format: CreatorVideoIdea["format"], input: CreatorOsInput): number {
+  const ctr = pct(input.ctrPct);
+  const ret = pct(input.retention30Pct);
+  let s = 72 + ((i * 7) % 19);
+  if (format === "shorts") s += 4;
+  if (ctr != null && ctr < 5) s += 3;
+  if (ret != null && ret < 45) s += 3;
+  return Math.max(1, Math.min(100, s));
+}
+
+export function buildCreatorIdeaBank(input: CreatorOsInput = {}, count = 100): CreatorVideoIdea[] {
+  const niche = baseNiche(input);
+  const audience = baseAudience(input);
+  const out: CreatorVideoIdea[] = [];
+  for (let i = 0; i < count; i++) {
+    const pillar = PILLARS[i % PILLARS.length];
+    const format = FORMATS[i % FORMATS.length];
+    const subject = i % 4 === 0 ? "Ibu" : i % 4 === 1 ? "Ayah" : i % 4 === 2 ? "Anak" : "Keluarga";
+    const twist = ["surat terakhir", "panggilan yang terlewat", "foto lama", "janji yang dilupakan", "doa sebelum pergi", "hadiah sederhana"][i % 6];
+    const title = format === "shorts"
+      ? `${subject} dan ${twist}: ${pillar} dalam 45 detik`
+      : format === "series"
+        ? `Episode ${Math.floor(i / 3) + 1}: ${subject}, ${twist}, dan rahasia ${niche}`
+        : `${subject} Menyimpan ${twist} yang Membuat Semua Orang Terdiam`;
+    const hook = HOOKS[i % HOOKS.length];
+    const thumbnail = THUMBS[i % THUMBS.length];
+    const score = scoreIdea(i, format, input);
+    out.push({
+      rank: i + 1,
+      score,
+      pillar,
+      format,
+      title,
+      hook,
+      thumbnail,
+      openingScene: `Mulai dengan ${subject.toLowerCase()} memegang ${twist}; tampilkan akibat dulu, lalu mundur ke awal konflik.`,
+      cta: `Pinned comment: "Kalau kamu jadi tokoh di cerita ini, apa yang akan kamu ucapkan?"`,
+      why: `${audience} mudah tertarik karena topiknya spesifik, emosional, dan punya pertanyaan terbuka untuk komentar.`,
+    });
+  }
+  return out.sort((a, b) => b.score - a.score || a.rank - b.rank).map((x, i) => ({ ...x, rank: i + 1 }));
+}
+
+function buildProductionBoard(): CreatorProductionStep[] {
+  return [
+    { id: "research", label: "Riset topik", owner: "VERVE", checklist: ["cek demand", "lihat kompetitor", "pilih angle", "tentukan janji video"] },
+    { id: "script", label: "Script + hook", owner: "VERVE", checklist: ["hook 0-5 detik", "struktur konflik", "beat retention", "CTA komentar"] },
+    { id: "visual", label: "Visual + B-roll", owner: "VERVE", checklist: ["gambar/video AI", "stock legal", "keyframe cinematic", "caption jelas"] },
+    { id: "audio", label: "Musik/voice", owner: "VERVE", checklist: ["lagu AI/orisinal", "narasi/voice", "mix volume", "cek hak cipta"] },
+    { id: "publish", label: "Upload kit", owner: "Creator", checklist: ["judul", "deskripsi", "tag", "thumbnail", "pinned comment"] },
+    { id: "review", label: "Review 48–72 jam", owner: "YouTube", checklist: ["CTR", "AVD", "traffic", "engagement", "eksperimen berikutnya"] },
+  ];
+}
+
+function buildMonetizationLadder(): CreatorMonetizationStep[] {
+  return [
+    { stage: "zero", label: "Fondasi trust", when: "0–100 subs", actions: ["validasi niche", "seri konten", "lead magnet ringan", "hindari hard selling"] },
+    { stage: "traction", label: "Affiliate awal", when: "100–1.000 subs", actions: ["affiliate relevan", "komunitas kecil", "media kit sederhana", "kumpulkan email/WA"] },
+    { stage: "monetizing", label: "YPP + sponsor", when: "1.000+ subs / syarat YPP", actions: ["AdSense", "sponsor deck", "paket brand", "produk digital kecil"] },
+    { stage: "scaling", label: "Produk & membership", when: "audience loyal", actions: ["membership", "course/template", "newsletter", "community premium"] },
+  ];
+}
+
 function section(id: CreatorOsSectionId, title: string, subtitle: string, why: string[], system: string[], checklist: string[], kpis: string[], prompts: string[]): CreatorOsSection {
   return { id, title, subtitle, why, system, checklist, kpis, prompts };
 }
@@ -102,6 +214,9 @@ export function buildCreatorOS(input: CreatorOsInput = {}, dx?: GrowthDiagnosis)
   const resources = clip(input.resources || "HP, VERVE Studio, YouTube Studio, waktu produksi terbatas", 140);
   const signals = metricSignals(input, dx);
   const ideas = viralIdeas(niche, audience);
+  const ideaBank = buildCreatorIdeaBank(input, 100);
+  const productionBoard = buildProductionBoard();
+  const monetizationLadder = buildMonetizationLadder();
   const ctr = pct(input.ctrPct);
   const ret = pct(input.retention30Pct);
   const weakPackaging = ctr != null && ctr < 5;
@@ -237,6 +352,8 @@ export function buildCreatorOS(input: CreatorOsInput = {}, dx?: GrowthDiagnosis)
     "",
     "NEXT 7 DAYS:", ...next7Days.map((x) => `- ${x}`),
     "",
+    "TOP 20 IDEAS:", ...ideaBank.slice(0, 20).map((x) => `#${x.rank} [${x.score}] ${x.title} — Hook: ${x.hook}`),
+    "",
     ...sections.flatMap((s) => [
       s.title,
       s.subtitle,
@@ -256,6 +373,9 @@ export function buildCreatorOS(input: CreatorOsInput = {}, dx?: GrowthDiagnosis)
     audience,
     next7Days,
     sections,
+    ideaBank,
+    productionBoard,
+    monetizationLadder,
     weeklyReviewTemplate,
     fullText,
   };

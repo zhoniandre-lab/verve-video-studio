@@ -353,7 +353,7 @@ export default function Page() {
         {screen === "editor" && <EditorScreen onExit={() => { setScreen("home"); }} openDraftId={openDraft} cmd={editorCmd} onSaved={refreshDrafts} />}
         {screen === "spectrum" && <SpectrumStudio onExit={() => setScreen("home")} />}
         {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
-        {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} />}
+        {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
         {screen === "transkrip" && <TranskripPage onExit={() => setScreen("home")} />}
         {!inSub && (
