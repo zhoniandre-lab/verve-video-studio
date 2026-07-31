@@ -1023,6 +1023,7 @@ const MAIN_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "sesuaikan", icon: "🎚️", label: "Sesuaikan" },
   { id: "rasio",   icon: "⬜",  label: "Rasio" },
   { id: "latar",   icon: "▱",   label: "Latar" },
+  { id: "more",    icon: "⋯",   label: "Lainnya" },
   { id: "avatar",  icon: "👤",  label: "Avatar AI", bdg: "PRO", bdgCls: "pro", disabled: true },
 ];
 const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCls?: string }[] = [
@@ -1041,6 +1042,7 @@ const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "stiker",  icon: "😀",  label: "Stiker" },
   { id: "speed",   icon: "⚡",  label: "Speed" },
   { id: "transisi", icon: "🔀", label: "Transisi" },
+  { id: "more", icon: "⋯", label: "Lainnya" },
   { id: "geserkir", icon: "◀", label: "Kiri" },
   { id: "geserkan", icon: "▶", label: "Kanan" },
 ];
@@ -2189,6 +2191,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (t === "avatar") return;
     if (t === "sesuaikan") { setTool("filter"); setSheetTab("sesuaikan"); return; }
     if (t === "overlay") { setTool("stiker"); setSheetTab("overlayimg"); return; }
+    if (t === "more") { setTool("more"); setSheetTab(""); return; }
     setTool(cur => cur === t ? null : t); setSheetTab("");
     if (t === "teks" && !slides.length) setTool("media");
   }
@@ -2202,6 +2205,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "videoai": setModal("videoai"); break;
       case "cinematic": addKeyMotion(); break;
       case "keyframe": setTool("keyframe"); break;
+      case "more": setTool("clipmore"); break;
       case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
@@ -4473,7 +4477,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","efek","gambarai","videoai","cinematic","keyframe","transisi","hapus"].includes(t.id)) : CLIP_TOOLS).map(t => (
+            {(cleanMode ? CLIP_TOOLS.filter(t => ["split","animasi","gambarai","videoai","cinematic","keyframe","hapus","more"].includes(t.id)) : CLIP_TOOLS).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
@@ -4481,7 +4485,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           </div>
         ) : (
           <div className="v6e-tools">
-            {(cleanMode ? MAIN_TOOLS.filter(t => ["edit","media","audio","teks","filter","efek","sihir_film","rasio"].includes(t.id)) : MAIN_TOOLS).map(t => (
+            {(cleanMode ? MAIN_TOOLS.filter(t => ["edit","media","audio","teks","filter","rasio","more"].includes(t.id)) : MAIN_TOOLS).map(t => (
               <button key={t.id} className={`v6e-tlbtn ${tool === t.id ? "on" : ""}`} disabled={t.disabled}
                 onClick={() => {
                   if (t.disabled) { flash("👤 Avatar AI segera hadir di versi berikutnya 🙏"); return; }
@@ -4576,7 +4580,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <EditorSheets
           tool={tool} setTool={setTool} sheetTab={sheetTab} setSheetTab={setSheetTab}
           api={{
-            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt, timeline, curT, keySel, setKeySel, addKeyframeAtPlayhead, selTextSid, getTextOf, setTextObj2,
+            slides, selId, selOpt, selIndex, setOpt, pushHist, setSlides, moveSlide, removeSlideAt, timeline, curT, keySel, setKeySel, addKeyframeAtPlayhead, selTextSid, getTextOf, setTextObj2, onClipTool,
             filterPreset, setFilterPreset, adj, setAdj, qualitySharp, setQualitySharp,
             presets, setPresets,
             ratio, setRatio, bgMode, setBgMode, bgColor, setBgColor,
@@ -5940,6 +5944,49 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
 
   /* ---------------- SIHIR FILM ---------------- */
   if (tool === "sihir_film") return <SihirFilmSheet api={A} onClose={close} />;
+
+  /* ---------------- MENU LAINNYA (clean mode) ---------------- */
+  if (tool === "more") return (
+    <SheetShell title="Lainnya" onClose={close}>
+      <div className="v6-sheet-body v6-moregrid">
+        {([
+          ["keterangan", "💬", "Keterangan", "Auto caption/karaoke"],
+          ["stiker", "😀", "Stiker", "Emoji, CTA, overlay"],
+          ["overlay", "🖼️", "Overlay", "Foto PiP / layer"],
+          ["sesuaikan", "🎚️", "Sesuaikan", "Exposure, vignette, grain"],
+          ["sihir_film", "🎬", "Cinematic", "Sihir film & preset"],
+          ["latar", "▱", "Latar", "Cover/blur/color"],
+          ["ekspor", "📦", "Ekspor", "Video, GIF, backup"],
+        ] as any[]).map(([id, ic, title, desc]) => (
+          <button key={id} className="v6-cardrow" onClick={() => { setTool(id); if (id === "overlay") setSheetTab("overlayimg"); else if (id === "sesuaikan") setSheetTab("sesuaikan"); else setSheetTab(""); }}>
+            <span style={{ fontSize: 20 }}>{ic}</span><div className="tt">{title}<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{desc}</div></div><span className="arr">›</span>
+          </button>
+        ))}
+      </div>
+    </SheetShell>
+  );
+  if (tool === "clipmore") return (
+    <SheetShell title="Alat Klip Lainnya" onClose={close}>
+      <div className="v6-sheet-body v6-moregrid">
+        {([
+          ["pangkas", "▭", "Pangkas", "Atur durasi klip"],
+          ["transisi", "🔀", "Transisi", "Sambungan antar klip"],
+          ["efek", "☆", "Efek", "Leak, hujan, glitch"],
+          ["teks", "🔤", "Teks", "Tambah teks di klip"],
+          ["stiker", "😀", "Stiker", "Tambah elemen"],
+          ["speed", "⚡", "Speed", "Kecepatan klip"],
+          ["ganti", "⇄", "Ganti", "Ganti media"],
+          ["dup", "⧉", "Duplikat", "Salin klip"],
+          ["geserkir", "◀", "Kiri", "Geser urutan"],
+          ["geserkan", "▶", "Kanan", "Geser urutan"],
+        ] as any[]).map(([id, ic, title, desc]) => (
+          <button key={id} className="v6-cardrow" onClick={() => { A.onClipTool?.(id); if (!["dup","geserkir","geserkan"].includes(id)) close(); }}>
+            <span style={{ fontSize: 20 }}>{ic}</span><div className="tt">{title}<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{desc}</div></div><span className="arr">›</span>
+          </button>
+        ))}
+      </div>
+    </SheetShell>
+  );
 
   /* ---------------- AUDIO ---------------- */
   if (tool === "audio") return (

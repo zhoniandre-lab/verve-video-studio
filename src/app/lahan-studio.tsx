@@ -1389,6 +1389,26 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     (k === 8 && naskah.trim().length >= 10) ||
     (k === 9 && doneScenes.length > 0 && !!song);
 
+  function actionPanel() {
+    const title = step <= 2 ? "Tangkap arah konten" : step <= 4 ? "Validasi pasar & packaging" : step <= 6 ? "Bangun cerita" : step === 7 ? "Produksi visual" : step === 8 ? "Buat audio" : "Kirim ke Studio";
+    const desc = step <= 2 ? "Mulai dari ide, pilih sudut yang dicari penonton." : step <= 4 ? "Riset demand, pilih judul dan hook paling kuat." : step <= 6 ? "Kunci visual dan naskah agar siap dipotong jadi adegan." : step === 7 ? "Generate gambar/video adegan; boleh stok video atau gambar AI." : step === 8 ? "Buat lagu/narasi dan cek durasi." : "Gabungkan semua ke Studio untuk edit final.";
+    const cta = step <= 1 ? "Cari Sudut" : step === 2 ? "Riset Sudut" : step === 3 ? "Mulai Riset" : step === 4 ? "Kunci Judul" : step === 5 ? "Lanjut Naskah" : step === 6 ? "Buat Naskah" : step === 7 ? "Generate Visual" : step === 8 ? "Buat Lagu" : "Masuk Studio";
+    const run = () => {
+      if (step <= 1) { void fetchSuggest().then(() => setStep(2)); return; }
+      if (step === 2 && selKeyword) { setStep(3); return; }
+      if (step === 3) { if (angle) setStep(4); else void runResearch(); return; }
+      if (step === 4) { if (selTitle) setStep(5); return; }
+      if (step === 5) { setStep(6); return; }
+      if (step === 6) { if (naskah.trim()) setStep(7); else void writeNaskah(); return; }
+      if (step === 7) { if (!board) void buildBoard(); else void genAllScenes(); return; }
+      if (step === 8) { if (!lyrics.trim()) void genLyrics(); else void launchSong(); return; }
+      void masukStudio();
+    };
+    const disabled = (step <= 1 && topic.trim().length < 3) || (step === 2 && !selKeyword) || (step === 4 && !selTitle) || busy !== "" || genAllBusy || polling;
+    return { title, desc, cta, run, disabled };
+  }
+  const act = actionPanel();
+
   /* ================= RENDER ================= */
   return (
     <div className="lh-wrap">
@@ -1431,6 +1451,11 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
           </button>
           <button className="ghost" onClick={() => setStep(7)}>Lompat Visual</button>
         </div>
+      </div>
+
+      <div className="lh-actionpanel">
+        <div><b>{act.title}</b><span>{act.desc}</span></div>
+        <button disabled={act.disabled} onClick={act.run}>{act.cta}</button>
       </div>
 
       {err && (
