@@ -105,7 +105,10 @@ export async function GET(req: Request) {
       if (imp.impressionClickThroughRate != null) main.impressionClickThroughRate = imp.impressionClickThroughRate;
       impressionWarn = "";
     } catch (e) {
-      impressionWarn = e instanceof Error ? `Impressions/CTR tidak tersedia: ${e.message}` : impressionWarn;
+      const msg = e instanceof Error ? e.message : "";
+      impressionWarn = /unknown identifier|impressions/i.test(msg)
+        ? "Impressions/CTR belum disediakan YouTube Analytics API untuk report ini. Pakai screenshot Studio/CSV untuk angka Impressions dan CTR."
+        : `Impressions/CTR tidak tersedia: ${msg || "report ditolak"}`;
     }
 
     let traffic: { key: string; rawKey: string; label: string; views: number; pct: number }[] = [];
@@ -125,8 +128,13 @@ export async function GET(req: Request) {
       }).filter((x) => x.views > 0);
     } catch { /* traffic opsional */ }
 
+    const publicViews = typeof video?.viewCount === "number" ? Number(video.viewCount) : null;
+    const analyticsViews = main.views ?? null;
+    const chosenViews = publicViews != null && analyticsViews != null && publicViews > analyticsViews ? publicViews : (analyticsViews ?? publicViews);
     const metrics = {
-      views: main.views ?? null,
+      views: chosenViews ?? null,
+      analyticsViews,
+      publicViews,
       estimatedMinutesWatched: main.estimatedMinutesWatched ?? null,
       avgViewSec: main.averageViewDuration ?? null,
       averageViewPercentage: main.averageViewPercentage ?? null,
@@ -144,7 +152,7 @@ export async function GET(req: Request) {
       metrics,
       traffic,
       warnings: [impressionWarn].filter(Boolean),
-      metricMeanings: { averageViewPercentage: "Rata-rata persentase ditonton / average viewed, bukan retention 30 detik spesifik." },
+      metricMeanings: { averageViewPercentage: "Rata-rata persentase ditonton / average viewed, bukan retention 30 detik spesifik.", views: "Jika public view YouTube lebih baru daripada Analytics finalized, VERVE memakai public view agar lebih dekat ke Studio/realtime." },
       honesty: "Data ini dibaca via YouTube Analytics API read-only. Tidak melakukan aksi apa pun ke channel.",
     };
     const res = NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });

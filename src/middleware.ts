@@ -14,7 +14,9 @@ export function middleware(req: NextRequest) {
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     });
   }
-  return NextResponse.next();
+  const res = NextResponse.next();
+  res.headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  return res;
 }
 
 // Blokir berlaku untuk halaman & API; aset statis diloloskan agar pintu keluar tampil rapi.

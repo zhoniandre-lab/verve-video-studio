@@ -98,7 +98,7 @@ function textCoverageText(r: YtStudioTextResult): string {
 
 type YtStatus = { configured: boolean; connected: boolean; missing?: string[]; error?: string; channel?: { id?: string; title?: string; thumbnail?: string } | null };
 type YtVideo = { id: string; title: string; publishedAt?: string; durationSec?: number; viewCount?: number; likeCount?: number; commentCount?: number; url?: string };
-type YtMetricPayload = { ok?: boolean; error?: string; video?: Partial<YtVideo>; metrics?: { views?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
+type YtMetricPayload = { ok?: boolean; error?: string; video?: Partial<YtVideo>; metrics?: { views?: number | null; analyticsViews?: number | null; publicViews?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
 
 export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
@@ -268,6 +268,9 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     const rangeLabel = ytRange === "lifetime" ? "sejak publish" : `${ytRange} hari`;
     setYtBusy(true); setYtMsg(`⏳ Membaca analytics ${rangeLabel}: ${v.title || v.id}`);
     try {
+      // Reset dulu supaya data video lama/placeholder tidak terlihat seperti hasil video baru.
+      setTitle(v.title || ""); setViews(""); setImpressions(""); setCtr(""); setDur(""); setAvd(""); setRet30(""); setLikes(""); setComments(""); setSubs(""); setAge("");
+      setTrafficFacts([]); setAudienceFacts([]);
       if (v.title) setTitle(v.title);
       if (v.durationSec) setDur(secToClock(v.durationSec));
       if (v.likeCount != null) setLikes(String(v.likeCount));
@@ -292,8 +295,8 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       if (m.views != null) setViews(String(m.views));
       else if (typeof meta.viewCount === "number") setViews(String(meta.viewCount));
       else if (v.viewCount != null) setViews(String(v.viewCount));
-      if (m.impressions != null) setImpressions(String(m.impressions));
-      if (m.ctrPct != null) setCtr(String(m.ctrPct));
+      if (m.impressions != null) setImpressions(String(m.impressions)); else setImpressions("");
+      if (m.ctrPct != null) setCtr(String(m.ctrPct)); else setCtr("");
       if (m.avgViewSec != null) setAvd(secToClock(m.avgViewSec));
       if (m.averageViewPercentage != null) setRet30(String(m.averageViewPercentage));
       if (m.likes != null) setLikes(String(m.likes));
@@ -301,7 +304,9 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       if (m.subscribersGained != null) setSubs(String(m.subscribersGained));
       if (Array.isArray(j.traffic) && j.traffic.length) setTrafficFacts(j.traffic);
       setRan(true);
-      setYtMsg(`✅ Data analytics masuk. ${j.warnings?.length ? j.warnings[0] : "Read-only, aman."}`);
+      const viewNote = m.analyticsViews != null && m.publicViews != null && m.publicViews > m.analyticsViews ? ` Views pakai public terbaru ${m.publicViews} (Analytics finalized ${m.analyticsViews}).` : "";
+      const warn = j.warnings?.length ? j.warnings[0] : "Read-only, aman.";
+      setYtMsg(`✅ Data analytics masuk.${viewNote} ${warn}`);
     } catch (e) { setYtMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal membaca analytics"}`); }
     finally { setYtBusy(false); }
   };
@@ -510,15 +515,15 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         <label className="gd-field wide"><span>Judul video</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="contoh: Doa Ibu, Warisan Terindah" /></label>
         <div className="gd-grid">
           {metric("Views", views, setViews, "120")}
-          {metric("Impressions", impressions, setImpressions, "8000")}
-          {metric("CTR %", ctr, setCtr, "1.2")}
-          {metric("Durasi", dur, setDur, "04:30", "text")}
-          {metric("Avg View", avd, setAvd, "00:27", "text")}
-          {metric("Retention/Avg %", ret30, setRet30, "40.1")}
-          {metric("Likes", likes, setLikes, "20")}
-          {metric("Comments", comments, setComments, "3")}
-          {metric("Subs +", subs, setSubs, "1")}
-          {metric("Umur upload (jam)", age, setAge, "24")}
+          {metric("Impressions", impressions, setImpressions, "—")}
+          {metric("CTR %", ctr, setCtr, "—")}
+          {metric("Durasi", dur, setDur, "—", "text")}
+          {metric("Avg View", avd, setAvd, "—", "text")}
+          {metric("Retention/Avg %", ret30, setRet30, "—")}
+          {metric("Likes", likes, setLikes, "—")}
+          {metric("Comments", comments, setComments, "—")}
+          {metric("Subs +", subs, setSubs, "—")}
+          {metric("Umur upload (jam)", age, setAge, "—")}
         </div>
         {!!(trafficFacts.length || audienceFacts.length) && (
           <div className="gd-extra-facts">

@@ -27,30 +27,54 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
         <script dangerouslySetInnerHTML={{ __html: `
-          if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-              navigator.serviceWorker.register('/sw.js').then(function(reg) {
-                reg.addEventListener('updatefound', function() {
-                  var newWorker = reg.installing;
-                  if (newWorker) {
-                    newWorker.addEventListener('statechange', function() {
-                      if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                        window.location.reload();
-                      }
-                    });
-                  }
+          (function(){
+            var VERSION_KEY = 'verve_app_version_v1';
+            var RELOAD_KEY = 'verve_app_reloaded_for_version_v1';
+            function checkVersion(){
+              try {
+                fetch('/api/version?t=' + Date.now(), { cache: 'no-store' })
+                  .then(function(r){ return r.ok ? r.json() : null; })
+                  .then(function(j){
+                    if (!j || !j.version) return;
+                    var old = localStorage.getItem(VERSION_KEY);
+                    if (old && old !== j.version && sessionStorage.getItem(RELOAD_KEY) !== j.version) {
+                      sessionStorage.setItem(RELOAD_KEY, j.version);
+                      if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.getRegistrations().then(function(regs){
+                          return Promise.all(regs.map(function(reg){ return reg.update().catch(function(){}); }));
+                        }).finally(function(){ location.reload(); });
+                      } else location.reload();
+                    }
+                    localStorage.setItem(VERSION_KEY, j.version);
+                  }).catch(function(){});
+              } catch(e) {}
+            }
+            window.addEventListener('load', function(){ setTimeout(checkVersion, 1200); });
+            document.addEventListener('visibilitychange', function(){ if (!document.hidden) checkVersion(); });
+            setInterval(checkVersion, 60000);
+
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(function(reg) {
+                  try { reg.update(); } catch(e) {}
+                  reg.addEventListener('updatefound', function() {
+                    var newWorker = reg.installing;
+                    if (newWorker) {
+                      newWorker.addEventListener('statechange', function() {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                          window.location.reload();
+                        }
+                      });
+                    }
+                  });
+                }).catch(function() {});
+                var refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                  if (!refreshing) { refreshing = true; window.location.reload(); }
                 });
-              }).catch(function() {});
-              
-              var refreshing = false;
-              navigator.serviceWorker.addEventListener('controllerchange', function() {
-                if (!refreshing) {
-                  refreshing = true;
-                  window.location.reload();
-                }
               });
-            });
-          }
+            }
+          })();
         ` }} />
       </head>
       <body className="antialiased">
