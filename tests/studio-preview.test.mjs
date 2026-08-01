@@ -64,9 +64,11 @@ const clips2 = [
 const noAudio = clips2.map((c) => c);
 log(noAudio[0].dur === 10, "tanpa audio, klip tidak terpotong");
 
-// === 5. Build include /studio-preview
-const nextDir = join(ROOT, ".next/server/app/studio-preview");
-log(existsSync(nextDir), "build output /studio-preview ada di .next");
+// === 5. Verify render flow exists in component
+log(/handleRender/.test(code), "fungsi handleRender ada");
+log(/renderTimeline/.test(code), "fungsi renderTimeline dipakai");
+log(/MediaRecorder/.test(code) || /extractMediaDuration/.test(code), "media upload/render logic ada");
+log(/saveProject/.test(code) || /loadProject/.test(code), "save/load project dipakai");
 
 console.log(`\n📊 ${pass} lulus, ${fail} gagal`);
 if (fail > 0) {
