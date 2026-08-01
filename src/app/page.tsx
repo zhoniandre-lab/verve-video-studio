@@ -4336,20 +4336,19 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             </div>
             <div style={{background:'#0f141f',border:'1px solid #1e283e',borderRadius:10,padding:10,marginBottom:12}}>
               <div style={{fontSize:10,fontWeight:800,color:'#fff',marginBottom:6}}>PLAYHEAD — white vertical line</div>
-              The white vertical line shows your current position. Everything to the left has played, to the right is next.
+              The white vertical line shows your current position.
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:6}}>
-              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#3b82f6'}}/> Video — blue</div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#22c55e'}}/> Audio — green waveform</div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#f97316'}}/> Text — orange Adventure Awaits</div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#ec4899'}}/> Sticker — pink</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#3b82f6'}}/> Video</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#22c55e'}}/> Audio</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#f97316'}}/> Text</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#ec4899'}}/> Sticker</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* ============ CONTROL ROW ============ */}
-
       {/* ============ CONTROL ROW ============ */}
       <div className="v6e-ctrl">
         <button className="cbtn" title="Layar penuh" onClick={() => setFullStage(v => !v)}>⛶</button>
