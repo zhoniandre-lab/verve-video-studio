@@ -2053,3 +2053,4 @@ b.ok, b.warn, b.err { color:inherit; }
 
 @import "./premium-override.css";
 @import "./tubus-override.css";
+@import "./capcut-timeline.css";

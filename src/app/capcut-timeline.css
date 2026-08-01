@@ -1,0 +1,380 @@
+/* ==================================================================
+   CAPCUT-EXACT TIMELINE — Persis seperti referensi anatomi
+   Preview 60%, Playhead fixed center, Trim handles, Color coding
+   ================================================================== */
+
+.capcut-timeline {
+  background: #121a2b !important;
+  border-top: 1px solid #1e283e !important;
+  display: flex;
+  flex-direction: column;
+}
+.capcut-tips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #151d2e;
+  border-bottom: 1px solid #1e283e;
+  font-size: 10px;
+  color: #5a6a88;
+}
+.capcut-tips .tip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.capcut-tips b { color: #8b5cf6; }
+
+.capcut-inner {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.capcut-rail {
+  width: 56px !important;
+  background: #151d2e !important;
+  border-right: 1px solid #1e283e !important;
+  padding: 8px 4px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 6px !important;
+}
+.capcut-scroll {
+  background: #0f141f !important;
+  flex: 1;
+}
+.capcut-ruler {
+  height: 20px;
+  position: relative;
+  background: #121a2b;
+  border-bottom: 1px solid #1e283e;
+  margin-bottom: 8px;
+  touch-action: none;
+}
+.capcut-ruler .tick {
+  position: absolute;
+  top: 0;
+  font-size: 9px;
+  color: #4b5a77;
+  font-weight: 600;
+  transform: translateX(-4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.capcut-ruler .tick i.line {
+  width: 1px;
+  height: 6px;
+  background: #2a3a52;
+  display: block;
+}
+.capcut-ruler .tick b {
+  color: #5a6a88;
+}
+
+.capcut-track-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.capcut-track-row .track-label {
+  width: 72px;
+  min-width: 72px;
+  height: 100%;
+  background: #151d2e;
+  border: 1px solid #1e283e;
+  border-right: 2px solid #232e45;
+  border-radius: 8px 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #7a8aab;
+  flex-shrink: 0;
+}
+.capcut-track-row.video .track-label { border-left: 3px solid #60a5fa; }
+.capcut-track-row.audio .track-label { border-left: 3px solid #14b8a6; }
+.capcut-track-row.text .track-label { border-left: 3px solid #f97316; }
+.capcut-track-row.sticker .track-label { border-left: 3px solid #ec4899; }
+
+.track-clips {
+  flex: 1;
+  position: relative;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* Video clip — CapCut style blue border + thumbnail + duration badge */
+.capcut-clip {
+  position: relative;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1f2a3d;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  min-width: 80px;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: border-color .15s, transform .1s;
+}
+.capcut-clip.sel {
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 2px rgba(96,165,250,0.35), 0 4px 12px rgba(0,0,0,0.3) !important;
+  transform: scale(1.02);
+  z-index: 5;
+}
+.capcut-clip .dur-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 3px;
+  background: rgba(0,0,0,0.72);
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  z-index: 2;
+}
+.capcut-clip .video-badge {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  background: rgba(0,0,0,0.6);
+  border-radius: 4px;
+  padding: 1px 3px;
+  font-size: 8px;
+}
+.capcut-clip .hdl {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  z-index: 3;
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.capcut-clip.sel .hdl { opacity: 1; }
+.capcut-clip .hdl.l { left: 0; border-radius: 8px 0 0 8px; }
+.capcut-clip .hdl.r { right: 0; border-radius: 0 8px 8px 0; }
+
+/* Add button */
+.capcut-add {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 10px;
+  background: #1a2336;
+  border: 1.5px dashed #2a3a52;
+  color: #5a6a88;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.capcut-add.small {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  font-size: 14px;
+}
+.capcut-add:hover { border-color: #3b82f6; color: #60a5fa; background: #1e2e4a; }
+
+/* Audio clip — green with waveform */
+.capcut-audio-clip {
+  position: absolute;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  overflow: hidden;
+  cursor: grab;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.capcut-audio-clip .wv {
+  display: flex;
+  align-items: center;
+  gap: 1.5px;
+  height: 18px;
+  flex: 1;
+}
+.capcut-audio-clip .wv i {
+  width: 2px;
+  background: rgba(255,255,255,0.7);
+  border-radius: 1px;
+}
+
+/* Text clip — orange */
+.capcut-text-clip {
+  position: absolute;
+  height: 28px;
+  border-radius: 6px;
+  background: #f97316;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 8px;
+  gap: 6px;
+  cursor: grab;
+  border: 1px solid rgba(249,115,22,0.4);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.capcut-text-clip.lyr {
+  background: linear-gradient(90deg,#16a34a,#22c55e);
+  border-color: rgba(34,197,94,0.4);
+}
+.capcut-text-clip.sel {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.35);
+}
+.capcut-text-clip .txtdur {
+  margin-left: auto;
+  width: 14px;
+  background: rgba(0,0,0,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+}
+
+/* Sticker clip — pink */
+.capcut-sticker-clip {
+  position: absolute;
+  height: 28px;
+  border-radius: 6px;
+  background: #ec4899;
+  color: #fff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  cursor: grab;
+  border: 1px solid rgba(236,72,153,0.4);
+}
+.capcut-sticker-clip.sel {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.35);
+}
+
+/* Waveform row bottom */
+.capcut-waveform-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 0;
+  border-top: 1px solid #1e283e;
+}
+.capcut-waveform-row .track-label { height: 42px; }
+
+/* Playhead fixed center — white 2px + triangle */
+.capcut-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  z-index: 30;
+  pointer-events: none;
+  box-shadow: 0 0 10px rgba(255,255,255,0.5);
+}
+.capcut-playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #fff;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+/* Bottom tips like anatomy image */
+.capcut-bottom-tips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #0f141f;
+  border-top: 1px solid #1e283e;
+  font-size: 10px;
+  color: #5a6a88;
+}
+.capcut-bottom-tips .tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.capcut-bottom-tips .tip span:first-child {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+/* Make timeline scroll auto center */
+.v6e-tl-scrollwrap {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3a52 transparent;
+}
+.v6e-tl-scrollwrap::-webkit-scrollbar { height: 6px; }
+.v6e-tl-scrollwrap::-webkit-scrollbar-thumb { background: #2a3a52; border-radius: 99px; }
+
+/* Tubus wrapper improvements */
+.tubus-stage-wrap {
+  display: flex !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: #0f141f !important;
+  align-items: stretch !important;
+}
+.v6e-stage {
+  flex: 1 !important;
+  max-width: none !important;
+  border-radius: 0 !important;
+  border: none !important;
+  border-right: 1px solid #1e283e !important;
+}
+
+/* Ensure stage canvas fills */
+.v6e-stage canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
