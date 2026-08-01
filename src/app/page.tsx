@@ -4283,7 +4283,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <button className="v6e-export" onClick={() => { setTool("ekspor"); setSheetTab(""); setExTab("video"); }} disabled={!slides.length}>Ekspor</button>
       </header>
 
-      {/* ============ STAGE — CAPCUT EXACT FIX (logic stabil v19, skin CapCut) ============ */}
+      {/* ============ STAGE — CAPCUT ANATOMY EXACT (logic stabil v19, skin CapCut) ============ */}
       <div style={{display:'flex',flex:'1 1 auto',minHeight:0,background:'#0f141f',overflow:'hidden'}}>
         <div className="tubus-icon-col" style={{width:48,minWidth:48,background:'#151d2e',borderRight:'1px solid #1e283e',display:'flex',flexDirection:'column',alignItems:'center',gap:6,padding:'10px 0'}}>
           <button className="tubus-icon-btn on" title="Select" onClick={()=>{ setSelId(''); setClipBar(false); }}>↖️</button>
@@ -4328,18 +4328,28 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         </div>
 
         <div className="tubus-right-panel" style={{width:272,minWidth:272,background:'#1a2336',borderLeft:'1px solid #232e45',display:'flex',flexDirection:'column',overflowY:'auto'}}>
-          <div style={{padding:'12px 14px',fontSize:12,fontWeight:800,color:'#e2e8f0',borderBottom:'1px solid #232e45',display:'flex',justifyContent:'space-between'}}><span>Properties</span><span style={{opacity:0.5}}>⋯</span></div>
-          <div style={{padding:12,fontSize:11,color:'#6b7a94',textAlign:'center',lineHeight:1.5}}>Pilih klip / teks / stiker untuk edit<br/>drag tepi = trim • tengah = move<br/>cubit = zoom timeline</div>
-          <div style={{padding:'0 12px 12px',display:'flex',flexDirection:'column',gap:8}}>
-            <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('media')}>＋ Media</button>
-            <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('audio')}>🎵 Audio</button>
-            <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('teks')}>🔤 Teks</button>
-            <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('filter')}>🎨 Filter</button>
+          <div style={{padding:'12px 14px',fontSize:12,fontWeight:800,color:'#e2e8f0',borderBottom:'1px solid #232e45',display:'flex',justifyContent:'space-between'}}><span>Properties — CapCut Anatomy</span><span style={{opacity:0.5}}>⋯</span></div>
+          <div style={{padding:12,fontSize:11,color:'#6b7a94',lineHeight:1.6}}>
+            <div style={{background:'#0f141f',border:'1px solid #1e283e',borderRadius:10,padding:10,marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:800,color:'#8b5cf6',marginBottom:6}}>PREVIEW 60%</div>
+              Preview area shows your video as it plays. It takes up the top 60% of the screen.
+            </div>
+            <div style={{background:'#0f141f',border:'1px solid #1e283e',borderRadius:10,padding:10,marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:800,color:'#fff',marginBottom:6}}>PLAYHEAD — white vertical line</div>
+              The white vertical line shows your current position. Everything to the left has played, to the right is next.
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#3b82f6'}}/> Video — blue</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#22c55e'}}/> Audio — green waveform</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#f97316'}}/> Text — orange Adventure Awaits</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:12,height:12,borderRadius:3,background:'#ec4899'}}/> Sticker — pink</div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* ============ CONTROL ROW ============ */}
+
       {/* ============ CONTROL ROW ============ */}
       <div className="v6e-ctrl">
         <button className="cbtn" title="Layar penuh" onClick={() => setFullStage(v => !v)}>⛶</button>
