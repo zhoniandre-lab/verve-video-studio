@@ -4283,16 +4283,28 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <button className="v6e-export" onClick={() => { setTool("ekspor"); setSheetTab(""); setExTab("video"); }} disabled={!slides.length}>Ekspor</button>
       </header>
 
-      {/* ============ STAGE ============ */}
-      <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
+      {/* ============ STAGE — TUBUS STYLE (Preview besar + icon col kiri + Properties kanan) ============ */}
+      <div className={`v6e-stage-wrap tubus-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
            style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
            onClick={fullStage ? () => setFullStage(false) : undefined}>
+        {/* Left icon column — mirip Tubus vertical toolbar */}
+        <div className="tubus-icon-col" onClick={(e)=>e.stopPropagation()}>
+          <button className="tubus-icon-btn on" title="Select">↖️</button>
+          <button className="tubus-icon-btn" title="Text" onClick={()=>{ onMainTool("teks"); }}>🔤</button>
+          <button className="tubus-icon-btn" title="Image" onClick={()=>{ setTool("media"); }}>🖼️</button>
+          <button className="tubus-icon-btn" title="Audio" onClick={()=>{ setTool("audio"); }}>🎵</button>
+          <button className="tubus-icon-btn" title="Stiker" onClick={()=>{ setTool("stiker"); }}>😀</button>
+          <button className="tubus-icon-btn" title="Efek" onClick={()=>{ setTool("efek"); }}>✨</button>
+          <div style={{flex:1}}/>
+          <button className="tubus-icon-btn" title="Undo" onClick={undo} disabled={!canUndo}>↶</button>
+          <button className="tubus-icon-btn" title="Redo" onClick={redo} disabled={!canRedo}>↷</button>
+        </div>
+
         <div className="v6e-stage">
           <canvas ref={canvasRef}
             onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
             style={{ touchAction: "none" }} />
           <div className={`selbox ${selId ? "on" : ""}`} />
-          {/* v8.3: tombol hapus CEPAT di panggung saat objek (teks/stiker) terpilih */}
           {(selTextSid || selStik) && !tool && (
             <button className="v6e-stagedel" title="Hapus objek terpilih" onClick={(e) => { e.stopPropagation(); delSelObj(); }}>🗑</button>
           )}
@@ -4303,16 +4315,123 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
               <button onClick={() => setTool("media")}>＋ Tambah media</button>
             </div>
           )}
+          {(() => {
+            const o = selOpt as any;
+            const hasTr = o && ((o.tx ?? 0) !== 0 || (o.ty ?? 0) !== 0 || (o.tz ?? 1) !== 1);
+            return hasTr ? (
+              <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetClipTransform(selId); }} title="Kembalikan posisi & ukuran">
+                ⟲ {Math.round((o.tz ?? 1) * 100)}%
+              </button>
+            ) : null;
+          })()}
         </div>
-        {(() => {
-          const o = selOpt as any;
-          const hasTr = o && ((o.tx ?? 0) !== 0 || (o.ty ?? 0) !== 0 || (o.tz ?? 1) !== 1);
-          return hasTr ? (
-            <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetClipTransform(selId); }} title="Kembalikan posisi & ukuran gambar (atau ketuk 2×)">
-              ⟲ {Math.round((o.tz ?? 1) * 100)}%
-            </button>
-          ) : null;
-        })()}
+
+        {/* Right Properties Panel — Tubus Style */}
+        <div className="tubus-right-panel" onClick={(e)=>e.stopPropagation()}>
+          <div className="tubus-right-header">
+            <span>Properties</span>
+            <span style={{fontSize:14,opacity:0.5}}>⋯</span>
+          </div>
+
+          {/* Jika teks terpilih */}
+          {selTextSid ? (() => {
+            const enc = selTextSid;
+            const ci = enc.indexOf("::");
+            const ssid = ci < 0 ? enc : enc.slice(0, ci);
+            const tid = ci < 0 ? "" : enc.slice(ci+2);
+            const o = slideOptsById[ssid] as any;
+            const t = tid ? (o?.texts||[]).find((x:any)=>x.id===tid) : o?.text;
+            if (!t) return <div style={{padding:14,fontSize:11,color:'#6b7a94'}}>Pilih teks di canvas</div>;
+            const sizePct = Math.round((t.size||0.055)*1000);
+            return (
+              <>
+                <div className="tubus-prop-section">
+                  <div className="tubus-prop-label"><span>Size</span><span style={{color:'#60a5fa'}}>{sizePct} Px</span></div>
+                  <div className="tubus-slider-row">
+                    <div className="tubus-slider"><div className="tubus-slider-fill" style={{width:`${Math.min(100, (sizePct-25)/0.65)}%`}}/><div className="tubus-slider-thumb" style={{left:`${Math.min(100, (sizePct-25)/0.65)}%`}}/></div>
+                    <input type="range" min={25} max={90} value={sizePct} onChange={e=>{
+                      const nv = Number(e.target.value)/1000;
+                      if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,size:nv}:x); setOpt(ssid,{texts} as any); }
+                      else setOpt(ssid,{text:{...t,size:nv}} as any);
+                    }} style={{position:'absolute',opacity:0,width:'100%'}}/>
+                  </div>
+                </div>
+                <div className="tubus-prop-section">
+                  <div className="tubus-prop-label">Position</div>
+                  <div style={{display:'flex',gap:8}}>
+                    <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>X: {Math.round((t.x??0.5)*100)}%</div>
+                    <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>Y: {Math.round((t.y??0.82)*100)}%</div>
+                  </div>
+                  <div style={{display:'flex',gap:6,marginTop:8}}>
+                    {[['#ffffff','putih'],['#ef4444','merah'],['#22c55e','hijau'],['#3b82f6','biru'],['#f59e0b','kuning']].map(([col,lbl])=>(
+                      <button key={col} className={`tubus-color-dot ${t.color===col?'on':''}`} style={{background:col}} onClick={()=>{
+                        if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,color:col}:x); setOpt(ssid,{texts} as any); }
+                        else setOpt(ssid,{text:{...t,color:col}} as any);
+                      }} title={lbl}/>
+                    ))}
+                  </div>
+                </div>
+                <div className="tubus-prop-section">
+                  <div className="tubus-prop-label">Effect Settings</div>
+                  <div className="tubus-slider-row"><span style={{fontSize:10,color:'#7a8aab'}}>Bold</span><button className={`v6-toggle ${t.bold?'on':''}`} style={{marginLeft:'auto',scale:'0.85'}} onClick={()=>{
+                    if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,bold:!x.bold}:x); setOpt(ssid,{texts} as any); }
+                    else setOpt(ssid,{text:{...t,bold:!t.bold}} as any);
+                  }}/></div>
+                  <div className="tubus-slider-row"><span style={{fontSize:10,color:'#7a8aab'}}>Shadow</span><button className={`v6-toggle ${t.shadow?'on':''}`} style={{marginLeft:'auto',scale:'0.85'}} onClick={()=>{
+                    if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,shadow:!x.shadow}:x); setOpt(ssid,{texts} as any); }
+                    else setOpt(ssid,{text:{...t,shadow:!t.shadow}} as any);
+                  }}/></div>
+                </div>
+              </>
+            );
+          })() : selId ? (
+            <>
+              <div className="tubus-prop-section">
+                <div className="tubus-prop-label"><span>Size</span><span style={{color:'#60a5fa'}}>{Math.round((selOpt as any)?.tz ? (selOpt as any).tz*100 : 100)}%</span></div>
+                <div className="tubus-slider-row">
+                  <div className="tubus-slider">
+                    <div className="tubus-slider-fill" style={{width:`${Math.min(100, (((selOpt as any)?.tz||1)*50))}%`}}/>
+                    <div className="tubus-slider-thumb" style={{left:`${Math.min(100, (((selOpt as any)?.tz||1)*50))}%`}}/>
+                  </div>
+                  <input type="range" min={0.5} max={2} step={0.05} value={(selOpt as any)?.tz||1} onChange={e=>setOpt(selId,{tz:Number(e.target.value)} as any)} style={{position:'absolute',opacity:0,width:'100%'}}/>
+                </div>
+              </div>
+              <div className="tubus-prop-section">
+                <div className="tubus-prop-label">Position</div>
+                <div style={{display:'flex',gap:8}}>
+                  <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>X: {Math.round(((selOpt as any)?.tx||0)*100)}</div>
+                  <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>Y: {Math.round(((selOpt as any)?.ty||0)*100)}</div>
+                </div>
+              </div>
+              <div className="tubus-prop-section">
+                <div className="tubus-prop-label">Rotation & Filter</div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}}>
+                  {['none','vivid','sinematik','bw'].map(f=>(
+                    <button key={f} onClick={()=>setFilterPreset(f)} style={{padding:'6px 10px',borderRadius:8,fontSize:10,fontWeight:700,background: filterPreset===f? '#1e2e4a':'#0f141f',border: filterPreset===f?'1px solid #2a4a7a':'1px solid #232e45',color: filterPreset===f?'#60a5fa':'#7a8aab'}}>{f}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="tubus-prop-section">
+                <div className="tubus-prop-label">Effect Settings</div>
+                <div className="tubus-slider-row"><span style={{fontSize:10,color:'#7a8aab'}}>Sharp</span><button className={`v6-toggle ${qualitySharp?'on':''}`} style={{marginLeft:'auto',scale:'0.85'}} onClick={()=>setQualitySharp(!qualitySharp)}/></div>
+                <div className="tubus-slider-row"><span style={{fontSize:10,color:'#7a8aab'}}>Cinebars</span><button className={`v6-toggle ${cineBars?'on':''}`} style={{marginLeft:'auto',scale:'0.85'}} onClick={()=>setCineBars(!cineBars)}/></div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="tubus-prop-section"><div style={{fontSize:11,color:'#6b7a94',textAlign:'center',padding:'20px 0'}}>Pilih klip / teks / stiker<br/>untuk edit properties<br/>ala Tubus Studio</div></div>
+              <div className="tubus-prop-section">
+                <div className="tubus-prop-label">Quick Actions</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('media')}>＋ Media</button>
+                  <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('audio')}>🎵 Audio</button>
+                  <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('teks')}>🔤 Teks</button>
+                  <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('filter')}>🎨 Filter</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ============ CONTROL ROW ============ */}

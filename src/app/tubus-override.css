@@ -1,0 +1,359 @@
+/* ==================================================================
+   TUBUS-STYLE EDITOR OVERRIDE — Referensi dari user image
+   Dark studio: background #121a2b, preview #1e2738, export blue #3b82f6
+   Timeline merah/hijau + waveform, properties kanan
+   ================================================================== */
+
+.v6e-root {
+  background: #121a2b !important;
+  color: #cbd5e1 !important;
+}
+
+/* Topbar ala Tubus */
+.v6e-top {
+  background: #1a2336 !important;
+  border-bottom: 1px solid #232e45 !important;
+  height: 48px !important;
+  padding: 0 14px !important;
+}
+.v6e-top .v6e-tbtn {
+  color: #8b95ad !important;
+  font-size: 16px !important;
+}
+.v6e-top .v6e-tbtn:hover { color: #fff !important; background: rgba(255,255,255,0.06) !important; }
+.v6e-top .spacer { flex: 1; }
+.v6e-export {
+  background: #3b82f6 !important;
+  color: #fff !important;
+  border-radius: 10px !important;
+  padding: 8px 18px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 2px 10px rgba(59,130,246,0.35) !important;
+  letter-spacing: 0.3px;
+  text-transform: none !important;
+}
+.v6e-uhd {
+  background: #1e2a3f !important;
+  border: 1px solid #2a3a52 !important;
+  color: #8b9db8 !important;
+  border-radius: 8px !important;
+  font-size: 11px !important;
+}
+
+/* Stage wrap — Tubus style: dark canvas area with right tools */
+.v6e-stage-wrap {
+  background: #151d2e !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  padding: 12px !important;
+  gap: 12px !important;
+  position: relative;
+}
+.v6e-stage {
+  background: #0f141f !important;
+  border: 1px solid #232e45 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+  flex: 1 !important;
+  max-width: calc(100% - 280px) !important;
+  overflow: hidden !important;
+}
+
+/* Right vertical toolbar ala Tubus (icons di samping preview) */
+.v6e-stage-wrap::after {
+  content: "";
+  position: relative;
+  display: none;
+}
+
+/* Custom Properties Panel — kita akan inject via JSX, tapi style di sini */
+.tubus-right-panel {
+  width: 272px;
+  min-width: 272px;
+  background: #1a2336;
+  border: 1px solid #232e45;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 100%;
+}
+.tubus-right-header {
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #e2e8f0;
+  border-bottom: 1px solid #232e45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tubus-icon-col {
+  width: 48px;
+  background: #151d2e;
+  border-right: 1px solid #232e45;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+}
+.tubus-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #5a6a88;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all .18s;
+}
+.tubus-icon-btn:hover { background: rgba(255,255,255,0.06); color: #cbd5e1; }
+.tubus-icon-btn.on { background: #1e2e4a; border-color: #2a4a7a; color: #60a5fa; box-shadow: 0 0 0 1px rgba(96,165,250,0.2) inset; }
+
+.tubus-prop-section {
+  padding: 12px 14px;
+  border-bottom: 1px solid #1e283e;
+}
+.tubus-prop-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #7a8aab;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tubus-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.tubus-slider-row span:first-child { font-size: 11px; color: #94a3b8; flex: 0 0 56px; }
+.tubus-slider {
+  flex: 1;
+  height: 4px;
+  background: #232e45;
+  border-radius: 99px;
+  position: relative;
+  overflow: visible;
+}
+.tubus-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg,#60a5fa,#3b82f6);
+  border-radius: 99px;
+}
+.tubus-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: #60a5fa;
+  border: 2px solid #1a2336;
+  border-radius: 50%;
+  transform: translate(-50%,-50%);
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.25);
+}
+.tubus-color-dots {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.tubus-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.12);
+  cursor: pointer;
+  position: relative;
+}
+.tubus-color-dot.on::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+/* Control row — Tubus style minimal */
+.v6e-ctrl {
+  background: #151d2e !important;
+  border-top: 1px solid #1e283e !important;
+  border-bottom: 1px solid #1e283e !important;
+  padding: 6px 14px !important;
+  height: 44px !important;
+}
+.v6e-ctrl .cbtn {
+  width: 32px !important;
+  height: 32px !important;
+  font-size: 14px !important;
+  color: #6b7a94 !important;
+  background: transparent !important;
+}
+.v6e-ctrl .cbtn.play {
+  width: 36px !important;
+  height: 36px !important;
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-radius: 50% !important;
+  font-size: 16px !important;
+}
+
+/* Timerow — mimik Tubus punya small dots */
+.v6e-timerow {
+  background: #151d2e !important;
+  padding: 6px 14px !important;
+  font-size: 10px !important;
+  color: #5a6a88 !important;
+  gap: 12px !important;
+}
+.v6e-timerow b { color: #cbd5e1 !important; }
+
+/* Timeline — Tubus red/green tracks + waveform */
+.v6e-tl {
+  background: #151d2e !important;
+  border-top: 1px solid #1e283e !important;
+  padding-bottom: 0 !important;
+}
+.v6e-tl-scrollwrap {
+  background: #121a2b !important;
+}
+.v6e-tl-rail {
+  background: #151d2e !important;
+  border-right: 1px solid #1e283e !important;
+  width: 140px !important;
+}
+.v6e-rail-tile {
+  background: #1a2336 !important;
+  border: 1px solid #232e45 !important;
+  color: #7a8aab !important;
+  height: 36px !important;
+  border-radius: 8px !important;
+  font-size: 11px !important;
+}
+.v6e-trackwrap {
+  background: #121a2b !important;
+}
+.v6e-clip {
+  border-radius: 6px !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important;
+  height: 36px !important;
+}
+.v6e-clip.sel {
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 2px rgba(96,165,250,0.25) !important;
+}
+.v6e-clip .dur {
+  font-size: 8px !important;
+  background: rgba(0,0,0,0.55) !important;
+  border-radius: 4px !important;
+}
+
+/* Audio clips — Tubus red for video, green for text */
+.v6e-audioclip {
+  height: 36px !important;
+  border-radius: 6px !important;
+  font-size: 10px !important;
+  background: linear-gradient(90deg,#b91c1c,#ef4444) !important; /* red ala reference */
+  color: #fff !important;
+  border: 1px solid rgba(239,68,68,0.3) !important;
+}
+.v6e-textchip {
+  height: 28px !important;
+  border-radius: 5px !important;
+  font-size: 10px !important;
+  background: #22c55e !important; /* green ala reference */
+  color: #fff !important;
+  border: 1px solid rgba(34,197,94,0.3) !important;
+}
+.v6e-textchip.lyr {
+  background: linear-gradient(90deg,#16a34a,#22c55e) !important;
+}
+
+/* Toolbar bottom — Tubus style icon only, no labels clutter */
+.v6e-toolbar {
+  background: #151d2e !important;
+  border-top: 1px solid #1e283e !important;
+  padding: 4px 8px !important;
+}
+.v6e-tools {
+  gap: 2px !important;
+  padding: 6px 8px !important;
+}
+.v6e-tlbtn {
+  min-width: 48px !important;
+  height: 48px !important;
+  border-radius: 10px !important;
+  color: #6b7a94 !important;
+  background: transparent !important;
+  font-size: 16px !important;
+  gap: 2px !important;
+}
+.v6e-tlbtn span {
+  font-size: 8px !important;
+  color: #5a6a88 !important;
+}
+.v6e-tlbtn.on {
+  background: #1e2e4a !important;
+  color: #60a5fa !important;
+  border: 1px solid #2a4a7a !important;
+}
+.v6e-tlbtn.on span { color: #60a5fa !important; }
+
+/* Sheets — Tubus right panel look on desktop, bottom sheet mobile */
+.v6-sheet {
+  background: #1a2336 !important;
+  border: 1px solid #232e45 !important;
+  border-radius: 14px 14px 0 0 !important;
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.4) !important;
+}
+@media (min-width: 900px) {
+  .v6-sheet {
+    position: absolute !important;
+    right: 12px !important;
+    left: auto !important;
+    top: 60px !important;
+    bottom: 12px !important;
+    width: 300px !important;
+    max-height: none !important;
+    border-radius: 12px !important;
+    z-index: 30 !important;
+  }
+  .v6-sheet-back {
+    background: transparent !important;
+    pointer-events: none !important;
+  }
+}
+
+/* Add waveform visualization area like reference bottom */
+.v6e-tl::after {
+  content: "";
+  display: block;
+  height: 42px;
+  background: #0f141f;
+  border-top: 1px solid #1e283e;
+  background-image: repeating-linear-gradient(90deg, transparent 0 3px, rgba(96,165,250,0.25) 3px 4px);
+  opacity: 0.3;
+  margin-top: 6px;
+}
+
+/* Scrollbar tubus */
+.v6e-tl-scrollwrap::-webkit-scrollbar { height: 6px; width: 6px; }
+.v6e-tl-scrollwrap::-webkit-scrollbar-thumb { background: #2a3a52; border-radius: 99px; }
