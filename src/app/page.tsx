@@ -378,91 +378,124 @@ export default function Page() {
    DASHBOARD / HOME
    ================================================================== */
 function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: ScreenId) => void; gotoEditor: (id?: string, cmd?: any) => void }) {
-  const tools: { ic: string; lb: string; bb?: string; act: () => void }[] = [
-    { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
-    { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
-    { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
-    { ic: "🩺", lb: "Dokter", bb: "NEW", act: () => go("growth") },
-    { ic: "🖼️", lb: "Alat foto", act: () => go("editfoto") },
-    { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
-    { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
-    { ic: "💬", lb: "Keterangan", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
-    { ic: "🫥", lb: "Hapus Latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
-    { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
+  const tools: { ic: string; lb: string; bb?: string; desc?: string; act: () => void }[] = [
+    { ic: "⚡", lb: "AutoCut", desc:"Potong pintar", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
+    { ic: "🪄", lb: "Retouch", desc:"Warna pro", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
+    { ic: "🧠", lb: "Pembuat AI", bb:"AI", desc:"Cerita>Video", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
+    { ic: "🩺", lb: "Dokter", bb:"NEW", desc:"Analisa", act: () => go("growth") },
+    { ic: "🖼️", lb: "Foto AI", desc:"Edit pro", act: () => go("editfoto") },
+    { ic: "📷", lb: "Kamera", desc:"Jepret", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
+    { ic: "✨", lb: "Sempurna", desc:"Auto fix", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
+    { ic: "💬", lb: "Keterangan", desc:"Lirik nyala", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
+    { ic: "🎬", lb: "Animasi", desc:"Video AI", act: () => gotoEditor(undefined, { tool: "videoai", newProject: Date.now() }) },
+    { ic: "📝", lb: "Transkrip", desc:"Suara>Teks", act: () => go("transkrip") },
   ];
 
-  // We alternate between Lahan Awalan & Spectrum Studio in a single compact hero banner
   const [heroIndex, setHeroIndex] = useState(0);
   useEffect(() => {
-    const itv = setInterval(() => setHeroIndex(i => (i + 1) % 2), 7000);
+    const itv = setInterval(() => setHeroIndex(i => (i + 1) % 2), 5500);
     return () => clearInterval(itv);
   }, []);
 
   return (
     <div className="v6-body">
-      {/* 🔮 SLICK PROFESSIONAL HEADER */}
+      {/* 🔮 PREMIUM HEADER */}
       <div className="v6-header">
-        <span className="logo">V E R V E<b className="tag">STUDIO AI</b></span>
-        <button className="v6-search-btn" onClick={() => go("lab")} title="Cari di Lab AI">🔍</button>
+        <span className="logo">V E R V E<b className="tag">STUDIO AI v19</b></span>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{fontSize:9,fontWeight:800,color:'#9a9ab0',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',padding:'4px 8px',borderRadius:99}}>🇮🇩 Premium</span>
+          <button className="v6-search-btn" onClick={() => go("lab")} title="Cari di Lab AI">🔍</button>
+        </div>
       </div>
 
-      {/* 💎 COMPACT UNIFIED HERO BANNER (ROTATING GLASSMORPHIC) */}
-      <div className="v6-hero-slider">
+      {/* 💎 HERO BANNER PREMIUM */}
+      <div className="v6-hero-slider" onClick={() => heroIndex===0 ? go("spectrum") : go("lahan")}>
         {heroIndex === 0 ? (
           <div className="v6-hero-card is-ai">
             <div className="glow-orb" />
-            <span className="badge">💎 SPECTRUM STUDIO</span>
-            <h2 className="title">Video Musik Spectrum + Auto Lirik</h2>
-            <p className="sub">Overlay suasana, lirik karaoke menyala, audio mastering ringan di HP.</p>
-            <button className="action" onClick={() => go("spectrum")}>Coba ›</button>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <span className="badge">💎 SPECTRUM STUDIO • Baru!</span>
+              <span style={{fontSize:9,color:'rgba(255,255,255,0.45)'}}>01 / 02</span>
+            </div>
+            <h2 className="title">Video Musik Spectrum + Auto Lirik Karaoke</h2>
+            <p className="sub">Visualizer premium, lirik menyala kata-per-kata, mastering audio ringan — semua di HP.</p>
+            <div style={{display:'flex',gap:8,alignItems:'center',marginTop:6}}>
+              <button className="action" onClick={(e)=>{e.stopPropagation();go("spectrum")}}>Coba Gratis ›</button>
+              <span style={{fontSize:10,color:'#8ff0e4',fontWeight:800}}>⚡ Tanpa watermark</span>
+            </div>
           </div>
         ) : (
           <div className="v6-hero-card is-lahan">
-            <div className="glow-orb" style={{ background: "radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)" }} />
-            <span className="badge" style={{ background: "rgba(25, 194, 184, 0.16)", borderColor: "rgba(25, 194, 184, 0.3)", color: "#8ff0e4" }}>🌱 LAHAN AWALAN</span>
-            <h2 className="title">Cerita Jadi Lagu: Riset & Judul AI</h2>
-            <p className="sub">Riset YouTube nyata, skor judul juara, visual karakter AI konsisten.</p>
-            <button className="action" style={{ background: "var(--v6-teal)" }} onClick={() => go("lahan")}>Mulai ›</button>
+            <div className="glow-orb" style={{ background: "radial-gradient(circle, rgba(139, 92, 246, 0.28) 0%, rgba(25,194,184,0.18) 35%, transparent 72%)" }} />
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <span className="badge" style={{ background: "rgba(25, 194, 184, 0.16)", borderColor: "rgba(25, 194, 184, 0.32)", color: "#8ff0e4" }}>🌱 LAHAN AWALAN • AI Story→Song</span>
+              <span style={{fontSize:9,color:'rgba(255,255,255,0.45)'}}>02 / 02</span>
+            </div>
+            <h2 className="title">Cerita Jadi Lagu: Riset YouTube + Visual Karakter Konsisten</h2>
+            <p className="sub">Riset kompetitor nyata, skor judul CTR tinggi, image-to-video konsisten karakter.</p>
+            <div style={{display:'flex',gap:8,alignItems:'center',marginTop:6}}>
+              <button className="action" style={{ background: "var(--v6-teal)" }} onClick={(e)=>{e.stopPropagation();go("lahan")}}>Mulai Karya ›</button>
+              <span style={{fontSize:10,color:'#c7b9ff',fontWeight:800}}>🧠 AI Sutradara</span>
+            </div>
           </div>
         )}
+        {/* Dots indicator */}
+        <div style={{position:'absolute',bottom:10,left:'50%',transform:'translateX(-50%)',display:'flex',gap:5,zIndex:5}}>
+          {[0,1].map(i=> <div key={i} onClick={(e)=>{e.stopPropagation();setHeroIndex(i)}} style={{width: heroIndex===i?18:6,height:6,borderRadius:99,background: heroIndex===i?'#fff':'rgba(255,255,255,0.32)',transition:'all .25s',cursor:'pointer',boxShadow: heroIndex===i?'0 0 8px rgba(255,255,255,0.5)':''}}/>)}
+        </div>
       </div>
 
-      {/* 🚀 STUDIO HUB ACTION TILES */}
+      {/* 🚀 STUDIO HUB PREMIUM */}
       <div className="v6-studio-hub">
         <button className="v6-btn-main" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
           <span className="glow-back" />
           <span className="ic">＋</span>
           <div className="text-group">
-            <span className="title">Video Baru</span>
-            <span className="desc">Editor studio profesional</span>
+            <span className="title">Video Baru • Studio Pro</span>
+            <span className="desc">Timeline multi-track • Export 4K • Tanpa watermark</span>
           </div>
+          <span style={{position:'absolute',top:12,right:12,fontSize:9,fontWeight:900,background:'rgba(255,255,255,0.18)',border:'1px solid rgba(255,255,255,0.18)',padding:'3px 7px',borderRadius:99,color:'#fff',zIndex:3}}>⚡ INSTAN</span>
         </button>
         <div className="v6-hub-col">
           <button className="v6-btn-sub is-violet" onClick={() => go("lahan")}>
             <span className="ic">🌱</span>
             <div className="text-group">
               <span className="title">Lahan Awalan</span>
-              <span className="desc">Ide jadi lagu</span>
+              <span className="desc">Ide → Judul juara → Lagu</span>
             </div>
           </button>
-          <button className="v6-btn-sub" onClick={() => go("editfoto")}>
-            <span className="ic">🖼️</span>
+          <button className="v6-btn-sub" onClick={() => go("editfoto")} style={{background:'linear-gradient(135deg, rgba(22,22,36,0.92) 0%, rgba(14,116,144,0.18) 100%)',borderColor:'rgba(14,165,233,0.24)'}}>
+            <span className="ic" style={{background:'rgba(14,165,233,0.14)',borderColor:'rgba(14,165,233,0.22)'}}>✨</span>
             <div className="text-group">
-              <span className="title">Edit Foto</span>
-              <span className="desc">Retouch instan</span>
+              <span className="title">Edit Foto AI</span>
+              <span className="desc">Retouch • Upscale</span>
             </div>
           </button>
         </div>
       </div>
 
-      {/* 📁 COMPACT RECENT PROJECTS SLIDER */}
+      {/* 📊 STAT PREMIUM */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+        {[
+          {k:'12+', v:'Fitur Pro', c:'#5eead4'},
+          {k:'4K', v:'Export', c:'#c4b5fd'},
+          {k:'∞', v:'Kreatif', c:'#f9a8d4'},
+        ].map(s=>(
+          <div key={s.v} style={{background:'rgba(20,20,34,0.7)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'10px 8px',textAlign:'center',backdropFilter:'blur(12px)'}}>
+            <b style={{fontSize:16,color:s.c,display:'block'}}>{s.k}</b>
+            <span style={{fontSize:9.5,color:'#8a8a9e',fontWeight:700}}>{s.v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 📁 RECENT PROJECTS PREMIUM */}
       <div className="v6-recent-section">
         <div className="v6-sec-title">
-          <h3>Proyek Terakhir</h3>
-          {!!drafts.length && <button className="v6-sec-more" onClick={() => go("proyek")}>Semua ›</button>}
+          <h3>Proyek Terakhir • Lanjutkan karya</h3>
+          {!!drafts.length && <button className="v6-sec-more" onClick={() => go("proyek")}>Lihat semua ›</button>}
         </div>
         <div className="v6-recents-compact">
-          {drafts.slice(0, 4).map(d => (
+          {drafts.slice(0, 6).map(d => (
             <div className="v6-recent-card" key={d.id} onClick={() => gotoEditor(d.id)}>
               <div className="th">
                 {d.thumb ? <img src={d.thumb} alt="" /> : <span className="ph">🎬</span>}
@@ -470,32 +503,36 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
               </div>
               <div className="info">
                 <span className="nm">{d.title}</span>
-                <span className="dt">🗂 {dateLabel(d.updatedAt)}</span>
+                <span className="dt">🗂 {dateLabel(d.updatedAt)} • 🎞 {d.slides} klip</span>
               </div>
             </div>
           ))}
           {!drafts.length && (
             <div className="v6-recent-empty" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
-              <span>＋ Buat proyek pertamamu</span>
+              <span>＋ Buat proyek pertamamu — gratis selamanya</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* ⚡ HORIZONTAL SCROLLING QUICK AI TOOLS */}
+      {/* ⚡ QUICK AI TOOLS PREMIUM */}
       <div className="v6-tools-section">
         <div className="v6-sec-title">
-          <h3>Asisten AI Cepat</h3>
+          <h3>Asisten AI Cepat • 1-tap magic</h3>
+          <span style={{fontSize:9.5,color:'#8a8a9e',fontWeight:700,background:'rgba(255,255,255,0.06)',padding:'3px 8px',borderRadius:99}}>10 tools</span>
         </div>
         <div className="v6-tools-row">
           {tools.map(t => (
-            <button className="v6-tool-mini" key={t.lb} onClick={t.act}>
-              <span className="ic">{t.ic}</span>
+            <button className="v6-tool-mini" key={t.lb} onClick={t.act} title={t.desc}>
+              <span className="ic">{t.ic}{t.bb && <i style={{position:'absolute',top:-4,right:-6,fontSize:7,fontWeight:900,background:t.bb==='AI'?'#a855f7':'#ef4444',color:'#fff',padding:'1px 4px',borderRadius:99,fontStyle:'normal'}}>{t.bb}</i>}</span>
               <span className="lb">{t.lb}</span>
+              {t.desc && <span style={{fontSize:7.5,color:'#7a7a8e',fontWeight:700,marginTop:-2}}>{t.desc}</span>}
             </button>
           ))}
         </div>
       </div>
+
+      <div style={{textAlign:'center',padding:'8px 0 4px',fontSize:9.5,color:'rgba(255,255,255,0.28)',fontWeight:700,letterSpacing:'0.5px'}}>VERVE STUDIO • Build v19 Premium • Made with ♥ in Indonesia 🇮🇩</div>
     </div>
   );
 }
