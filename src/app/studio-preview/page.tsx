@@ -224,10 +224,24 @@ export default function StudioPreview() {
         <div className="vp-topbar-right">
           <button
             className={`vp-pill ${autoTerminateOn ? "on" : ""}`}
-            onClick={() => setAutoTerminateOn((v) => !v)}
+            onClick={() => {
+              setAutoTerminateOn((v) => {
+                const nv = !v;
+                if (nv) {
+                  // langsung jalankan saat diaktifkan
+                  setTimeout(() => {
+                    setClips((prev) => applyAutoTerminate(tracks, prev));
+                    showToast("✂️ Auto-Cut ON — klip terpotong di awal audio");
+                  }, 50);
+                } else {
+                  showToast("⏸ Auto-Cut OFF");
+                }
+                return nv;
+              });
+            }}
             title="Auto-terminate klip video saat audio masuk"
           >
-            🎵 Auto-Cut
+            <span style={{ marginRight: 4 }}>🎵</span>Auto-Cut
           </button>
           <button
             className="vp-pill ghost"
@@ -490,6 +504,10 @@ export default function StudioPreview() {
           font-size: 12px;
           font-weight: 600;
           cursor: pointer;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
         }
         .vp-pill.on { background: #1d4ed8; border-color: #3b82f6; }
         .vp-pill.ghost { background: transparent; }
