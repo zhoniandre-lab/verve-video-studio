@@ -4736,38 +4736,37 @@ function packRows(items: { st: number; dd: number; row?: number }[]): number[] {
 
 function TimelineV6(p: any) {
   const { slides, slideOptsById, timeline, selId, curT, musicUrl, musicName, ttsUrl, voiceUrl } = p;
-  const PXS0 = clampN(Number(p.pxs) || PXS, TL_MIN_PXS, TL_MAX_PXS);
-  // 💡 v13.18: panduan gestur sekali-tampil (fitur track SUDAH ada — masalahnya orang tak tahu)
+  const PXS0 = clampN(Number(p.pxs) || 72, TL_MIN_PXS, TL_MAX_PXS);
   const [hintOn, setHintOn] = useState<boolean>(() => { try { return localStorage.getItem("verve_tlhint_v1") !== "0"; } catch { return true; } });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
-  // total tampilan: ikut elemen terpanjang (video ATAU audio — lagu 5 menit = track 5 menit)
-  const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
+  const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0, 15);
   let contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
-  const dragRef = useRef<{ kind: "trim" | "reorder" | "aud" | "txt" | "txtd" | "stk" | "stkd"; i: number; startX: number; startDur: number; to?: number; moved?: boolean; side?: "l" | "r"; armed?: boolean; lastX?: number; audioKind?: "m" | "t" | "v"; off0?: number; sid?: string; tid?: string; stid?: string; st0?: number; dur0?: number } | null>(null);
-  const scrubHoldRef = useRef(false);
-  // pinch-zoom skala timeline (persempit/perlebar penggaris ala CapCut)
-  const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchZRef = useRef<{ d0: number; vx: number; base: number } | null>(null);
-  const zoomAnchorRef = useRef<{ t: number; vx: number } | null>(null);
+  const dragRef = useRef<any>(null);
+  const armTRef = useRef<any>(null);
+  const edgeDirRef = useRef(0);
+  const edgeRafRef = useRef(0);
+  const suppressClickRef = useRef(false);
+  const gstRef = useRef<any>(null);
+  const pinchZRef = useRef<any>(null);
+  const zoomAnchorRef = useRef<any>(null);
   const suppressSeekRef = useRef(false);
   const [, force] = useState(0);
-  // v8.4 ANGKAT JALUR: tekan-tahan objek lalu seret VERTIKAL (atau tahan lama diam) = SELURUH jalurnya ikut jari, bebas dipindah ke mana saja
-  const laneLiftRef = useRef<{ id: string } | null>(null);
+  const laneLiftRef = useRef<any>(null);
   const [laneLift, setLaneLift] = useState<string>("");
-  const lanePreviewRef = useRef<string[] | null>(null);
-  const [lanePreview, setLanePreview] = useState<string[] | null>(null);
+  const lanePreviewRef = useRef<any>(null);
+  const [lanePreview, setLanePreview] = useState<any>(null);
   const laneRowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const dispOrderRef = useRef<string[]>([]);
-  // v8.6: SATU kolam jalur bebas utk SEMUA objek + sorotan target jatuh (teal=boleh, merah=numpuk)
   const elmRowEls = useRef<Map<number, HTMLElement>>(new Map());
   const elmPoolRef = useRef<any[]>([]);
   const rowDropRef = useRef<any>(null);
   const [rowDrop, setRowDrop] = useState<any>(null);
-  // 🧲 v12.7 MAGNET & GARIS (inspirasi snap-indicator OpenCut, ditulis ulang 100%): saat seret teks/stiker/audio,
-  // waktu ikut NEMPEL ke tepi klip / penanda waktu / titik irama — serasi irama tanpa koreksi berulang
   const [snapAt, setSnapAt] = useState<number | null>(null);
+  const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const scrubHoldRef = useRef(false);
+
   const snapCands = useMemo(() => {
     const c: number[] = [0, dispTotal];
     (timeline?.starts || []).forEach((st: number, i: number) => { c.push(st); c.push(st + (timeline?.durs?.[i] || 0)); });
@@ -4775,7 +4774,7 @@ function TimelineV6(p: any) {
     return c;
   }, [timeline, p.musicBeats, p.musicOff, dispTotal]);
   function doSnap(v: number): number {
-    const th = Math.min(0.35, 9 / PXS0); // ambang magnet: 9px (maks 0,35d biar zoom-jauh tak serakah)
+    const th = Math.min(0.35, 9 / PXS0);
     let best: number | null = null, bd = th;
     for (const c of snapCands) { const d = Math.abs(c - v); if (d <= bd) { bd = d; best = c; } }
     const dc = Math.abs(curT - v); if (dc <= bd) { bd = dc; best = curT; }
@@ -4783,7 +4782,6 @@ function TimelineV6(p: any) {
     return best === null ? v : best;
   }
 
-  // ukur setengah lebar viewport → konten diberi ruang kiri-kanan supaya detik 0 & akhir bisa tepat di garis tengah
   useEffect(() => {
     const el = scrollRef.current; if (!el) return;
     const fit = () => setHalfW(el.clientWidth / 2);
@@ -4792,7 +4790,6 @@ function TimelineV6(p: any) {
     return () => ro.disconnect();
   }, []);
 
-  // jangkar zoom: titik di bawah cubitan jari tetap di tempat setelah skala berubah
   useEffect(() => {
     const el = scrollRef.current;
     const a = zoomAnchorRef.current;
@@ -4802,7 +4799,6 @@ function TimelineV6(p: any) {
     requestAnimationFrame(() => { suppressSeekRef.current = false; });
   }, [PXS0, halfW, contentW]);
 
-  // saat diputar: KONTEN yang bergerak di bawah garis penanda (garis tetap diam di tengah, ala CapCut)
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !p.playing || scrubHoldRef.current) return;
@@ -4810,18 +4806,13 @@ function TimelineV6(p: any) {
     if (Math.abs(el.scrollLeft - target) > 0.5) el.scrollLeft = target;
   }, [curT, p.playing, contentW, PXS0]);
 
-  // saat tidak diputar: geser konten = geser waktu (garis tengah sebagai penanda posisi)
   function onTlScroll(e: any) {
-    if (p.playing || suppressSeekRef.current || pinchZRef.current || dragRef.current) return; // v12.5: jari drag (trim/asset) → scroll tak boleh memicu loncat waktu
+    if (p.playing || suppressSeekRef.current || pinchZRef.current || dragRef.current) return;
     const sl = e.target.scrollLeft;
     p.onSeek(clampN(sl / PXS0, 0, Math.max(0, dispTotal - 0.01)));
   }
 
-  // ---- pinch zoom skala di area track ----
   function onWrapDown(e: React.PointerEvent) {
-    // 🎬 v15.3D PLAY STOP — sentuh/geser di MANA PUN di track (seluruh scrollwrap) = stop preview.
-    // PENTING: dipasang di level wrapper, bukan di handler khusus, supaya tetap kena walau
-    // drag dibatalin (mis: onClipMove batal kalau gerak > 12px sebelum 220ms).
     if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     scrubHoldRef.current = true;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -4835,7 +4826,7 @@ function TimelineV6(p: any) {
         pinchZRef.current = { d0: Math.max(10, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)), vx, base: PXS0 };
         zoomAnchorRef.current = { t: (el.scrollLeft + vx - halfW) / PXS0, vx };
       }
-      dragRef.current = null; // batalkan drag klip/trim saat mencubit
+      dragRef.current = null;
       clearTimeout(armTRef.current);
     }
   }
@@ -4848,7 +4839,6 @@ function TimelineV6(p: any) {
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       const el = scrollRef.current;
       if (el) zoomAnchorRef.current = { t: (el.scrollLeft + pz.vx - halfW) / PXS0, vx: pz.vx };
-      // STABIL: skala = SKALA AWAL CUBIT × rasio jari (bukan skala sekarang — dulu majemuk & "nyelonong")
       p.onZoom(Math.round(clampN(pz.base * (d / pz.d0), TL_MIN_PXS, TL_MAX_PXS) * 100) / 100);
     }
   }
@@ -4858,23 +4848,56 @@ function TimelineV6(p: any) {
     if (tlPtrs.current.size === 0) scrubHoldRef.current = false;
   }
 
-  function clipW(i: number): number { return Math.max(80, (timeline?.durs?.[i] || 0) * PXS0); } // v15.2B min 80px (gambar jelas walau klip 1dt)
+  function clipW(i: number): number { return Math.max(80, (timeline?.durs?.[i] || 0) * PXS0); }
 
-  /* ---- TEKAN-TAHAN & SERET (klip reorder / trim / audio offset) + AUTO-SCROLL tepi ---- */
-  const armTRef = useRef<any>(null);
-  const edgeDirRef = useRef(0);
-  const edgeRafRef = useRef(0);
-  const suppressClickRef = useRef(false);
-  // 🚪 v9.1 SATU PINTU — satu-satunya gerbang gesture: begitu jari menyentuh objek, kendali pindah ke pendengar WINDOW
-  // yang mengunci ID jari itu saja sampai lepas/batal. Telapak & jari kedua diabaikan total; pembatalan browser dibersihkan tuntas.
-  const gstRef = useRef<{ pid: number } | null>(null);
-  function gstBind(e: React.PointerEvent, mv: (ev: any) => void, up: (cancelled: boolean, ev?: any) => void): boolean {
-    if (gstRef.current) return false; // sedang ada jari lain bekerja → sentuhan ini diabaikan total
+  const armTRef2 = armTRef;
+  const edgeDirRef2 = edgeDirRef;
+  const edgeRafRef2 = edgeRafRef;
+  function stopEdge() { edgeDirRef.current = 0; if (edgeRafRef.current) cancelAnimationFrame(edgeRafRef.current); edgeRafRef.current = 0; }
+  function updEdge(clientX: number) {
+    const el = scrollRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const left = r.left, right = r.right;
+    const margin = 60;
+    if (clientX < left + margin) edgeDirRef.current = -1;
+    else if (clientX > right - margin) edgeDirRef.current = 1;
+    else edgeDirRef.current = 0;
+    if (edgeDirRef.current && !edgeRafRef.current) {
+      const step = () => {
+        const d = dragRef.current; if (!d || !edgeDirRef.current) { stopEdge(); return; }
+        el.scrollLeft += edgeDirRef.current * 12;
+        edgeRafRef.current = requestAnimationFrame(step);
+      };
+      edgeRafRef.current = requestAnimationFrame(step);
+    } else if (!edgeDirRef.current) stopEdge();
+  }
+  function packRows(items: any[]) { 
+    const rows: number[][] = []; const out: number[] = [];
+    items.forEach((it, idx) => {
+      const s = it.st || 0, e = s + (it.dd || 3);
+      let r = 0;
+      if (it.row != null && it.row >=0) { out[idx]=it.row; return; }
+      for (; r < rows.length; r++) {
+        const conflict = rows[r].some(j => {
+          const oj = items[j];
+          const os = oj.st||0, oe = os+(oj.dd||3);
+          return !(e <= os || s >= oe);
+        });
+        if (!conflict) break;
+      }
+      if (r === rows.length) rows.push([]);
+      rows[r].push(idx);
+      out[idx]=r;
+    });
+    return out;
+  }
+  function gstBind(e: React.PointerEvent, mv: any, up: any) {
+    if (gstRef.current) return false;
     const pid = e.pointerId;
     gstRef.current = { pid };
     const mvH = (ev: PointerEvent) => { if (ev.pointerId === pid) mv(ev); };
     const upH = (ev: PointerEvent) => {
-      if (ev.pointerId !== pid) return; // jari lain yang lepas → abaikan
+      if (ev.pointerId !== pid) return;
       gstRef.current = null;
       window.removeEventListener("pointermove", mvH);
       window.removeEventListener("pointerup", upH);
@@ -4886,7 +4909,6 @@ function TimelineV6(p: any) {
     window.addEventListener("pointercancel", upH);
     return true;
   }
-
   function applyReorder(d: any, clientX: number) {
     const dx = clientX - d.startX;
     if (Math.abs(dx) > 8) d.moved = true;
@@ -4911,8 +4933,8 @@ function TimelineV6(p: any) {
   function applyTxtD(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
     const st0 = d.st0 || 0;
-    const end = doSnap(clampN(st0 + (d.dur0 || 3) + dxT, st0, 7190 + (d.dur0 || 3))); // magnet di tepi AKHIR
-    p.onTextDur(d.sid, d.tid || "", clampN(end - st0, 0.5, 600));
+    const end = doSnap(clampN(st0 + (d.dur0 || 3) + dxT, st0, 7190 + (d.dur0 || 3)));
+    p.onTextDur(d.sid, d.tid || "", Math.max(0.3, end - st0));
   }
   function applyStk(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
@@ -4921,152 +4943,48 @@ function TimelineV6(p: any) {
   function applyStkD(d: any, clientX: number) {
     const dxT = (clientX - d.startX) / PXS0;
     const st0 = d.st0 || 0;
-    const end = doSnap(clampN(st0 + (d.dur0 || 3) + dxT, st0, 7190 + (d.dur0 || 3))); // magnet di tepi AKHIR
-    p.onStickerDur(d.sid, d.stid, clampN(end - st0, 0.3, 600));
+    const end = doSnap(clampN(st0 + (d.dur0 || 3) + dxT, st0, 7190 + (d.dur0 || 3)));
+    p.onStickerDur(d.sid, d.stid, Math.max(0.3, end - st0));
   }
-  // jari mentok ke tepi layar → timeline ikut jalan terus (perpanjang/pindah tanpa angkat jari)
-  function edgeLoop() {
-    const el = scrollRef.current; const dir = edgeDirRef.current; const d = dragRef.current as any;
-    if (!el || !dir || !d || !d.armed) { edgeDirRef.current = 0; return; }
-    const ds = dir * 13;
-    el.scrollLeft += ds;
-    d.startX -= ds; // dx terus tumbuh walau jari diam → durasi/offset jalan terus
-    if (d.kind === "trim") applyTrim(d, d.lastX);
-    else if (d.kind === "reorder") applyReorder(d, d.lastX);
-    else if (d.kind === "aud") applyAud(d, d.lastX);
-    else if (d.kind === "txt") applyTxt(d, d.lastX);
-    else if (d.kind === "txtd") applyTxtD(d, d.lastX);
-    else if (d.kind === "stk") applyStk(d, d.lastX);
-    else if (d.kind === "stkd") applyStkD(d, d.lastX);
-    edgeRafRef.current = requestAnimationFrame(edgeLoop);
-  }
-  function updEdge(clientX: number) {
-    const el = scrollRef.current; if (!el) return;
-    const r = el.getBoundingClientRect();
-    const dir = clientX > r.right - 34 ? 1 : clientX < r.left + 34 ? -1 : 0;
-    if (dir && !edgeDirRef.current) { edgeDirRef.current = dir; cancelAnimationFrame(edgeRafRef.current); edgeRafRef.current = requestAnimationFrame(edgeLoop); }
-    else edgeDirRef.current = dir;
-  }
-  function stopEdge() { edgeDirRef.current = 0; cancelAnimationFrame(edgeRafRef.current); }
-
-  /* ---- v8.4 JALUR BEBAS: promosi drag objek → angkat & pindahkan SELURUH jalur ---- */
-  function laneIdOfDrag(d: any): string {
-    if (d.kind === "reorder" || d.kind === "trim") return "vid";
-    return "elm"; // v8.6: selain jalur video, SEMUA objek elemen = satu kolam bebas
-  }
-  function maybePromoteLane(e: React.PointerEvent, d: any): boolean {
-    if (!d.armed || laneLiftRef.current) return false;
-    if (!(d.kind === "reorder" || d.kind === "aud" || d.kind === "txt" || d.kind === "stk")) return false;
-    const dy = e.clientY - (d.startY || 0); const dx = e.clientX - d.startX;
-    // klip: geser vertikal = ANGKAT jalur video; SEMUA objek elemen (audio/teks/stiker): vertikal = pindah BARIS
-    const vertikal = d.kind === "reorder" && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) + 6;
-    const tahanLama = d.kind === "reorder" && (d.t0 ? Date.now() - d.t0 : 0) > 620 && Math.abs(dx) < 10 && Math.abs(dy) < 12; // v9.0: "angkat kolam" CUMA klip video — objek elemen TAK PERNAH dicuri dari genggaman jari
-    if (!vertikal && !tahanLama) return false;
-    startLaneLift(laneIdOfDrag(d), e.clientY);
-    return true;
-  }
-  // v8.6: baris tujuan saat objek diseret vertikal di KOLAM BEBAS + VALIDASI tabrakan waktu semua jenis objek
-  function applyObjRow(e: React.PointerEvent, d: any) {
-    const list = [...elmRowEls.current.entries()].sort((a, b) => a[0] - b[0]);
-    if (!list.length) return;
-    let to = list[list.length - 1][0] + 1; // di bawah baris terakhir → jalur BARU
-    for (const [r, el] of list) { const rc = el.getBoundingClientRect(); if (e.clientY <= rc.top + rc.height / 2) { to = r; break; } }
-    const stNow = clampN(((d.kind === "aud" ? d.off0 : d.st0) || 0) + (d.lastX - d.startX) / PXS0, 0, 7190);
-    const ddNow = d.dur0 || (elmPoolRef.current.find((x: any) => x.key === d.key)?.dd) || 3;
-    const bad = (elmPoolRef.current || []).some((it: any) => it.key !== d.key && it.row === to && stNow < it.st + it.dd - 0.04 && it.st < stNow + ddNow - 0.04);
-    d.rowTo = to; d.rowBad = bad;
-    const cur = rowDropRef.current;
-    if (!cur || cur.r !== to || cur.bad !== bad) { const nv = { r: to, bad }; rowDropRef.current = nv; setRowDrop(nv); }
-    force(v => v + 1); // v8.9: chip visual IKUT jari naik-turun — terasa ringan di tangan
-    // jari mendekati tepi atas/bawah → daftar jalur ikut menggulir (tak perlu angkat jari)
-    const el2 = scrollRef.current;
-    if (el2) { const r2 = el2.getBoundingClientRect(); if (e.clientY > r2.bottom - 30) el2.scrollTop += 15; else if (e.clientY < r2.top + 30) el2.scrollTop -= 15; }
-  }
-  // lepas jari → sahkan pindah jalur (atau tolak sopan kalau NUMPUK)
-  function commitObjRow(d: any) {
-    setSnapAt(null);
-    if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); }
-    if (!d || !d.armed || !(d.kind === "aud" || d.kind === "txt" || d.kind === "stk") || d.rowTo == null) return;
-    if ((d.maxD || 0) > 6) suppressClickRef.current = true; // v9.0: tahan lama TANPA gerak lalu lepas = tetap TAP → setting
-    if (d.rowBad) { p.onRowBad?.(); return; }
-    const cur = elmPoolRef.current.find((x: any) => x.key === d.key);
-    if (cur && cur.row === d.rowTo) return;
-    if (d.kind === "aud") p.onAudRow?.(d.audioKind, d.rowTo);
-    else if (d.kind === "txt") p.onTextRow?.(d.sid, d.tid || "", d.rowTo);
-    else p.onStickerRow?.(d.sid, d.stid, d.rowTo);
-  }
-  function startLaneLift(id: string, y: number) {
-    clearTimeout(armTRef.current); dragRef.current = null; stopEdge();
-    laneLiftRef.current = { id }; lanePreviewRef.current = null;
-    setLaneLift(id); setLanePreview(null); suppressClickRef.current = true;
-    try { (navigator as any).vibrate?.(12); } catch {}
-    const move = (ev: PointerEvent) => laneLiftDrag(ev.clientY);
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); commitLaneLift(); };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-    laneLiftDrag(y);
-  }
-  function laneLiftDrag(y: number) {
-    const st = laneLiftRef.current; if (!st) return;
-    const base = (dispOrderRef.current || []).filter((x: string) => x !== st.id);
-    let over = 0;
-    base.forEach((lid: string) => { const el = laneRowRefs.current.get(lid); if (!el) return; const r = el.getBoundingClientRect(); if (r.top + r.height / 2 < y) over++; });
-    const next = [...base]; next.splice(over, 0, st.id);
-    lanePreviewRef.current = next; setLanePreview(next);
-  }
-  function commitLaneLift() {
-    const st = laneLiftRef.current; const prev = lanePreviewRef.current;
-    laneLiftRef.current = null; lanePreviewRef.current = null;
-    setLaneLift(""); setLanePreview(null);
-    if (st && prev && typeof p.onLaneOrder === "function") p.onLaneOrder(prev);
-  }
-  const laneRowRef = (lid: string) => (el: HTMLElement | null) => { if (el) laneRowRefs.current.set(lid, el); else laneRowRefs.current.delete(lid); };
-  function dragUpdate(e: React.PointerEvent, d: any) {
-    // 🎬 v15.3D PLAY STOP — JAMINAN: kalau drag beneran jalan (armed), stop SEKALIGUS.
-    // Idempoten sama onWrapDown di atas — kalau drag dibatalin, onWrapDown yang handle.
+  function applyObjRow(e: any, d: any) {}
+  function commitObjRow(d: any) { if (d) setSnapAt(null); }
+  function dragUpdate(e: any, d: any) {
     if (p.playing && p.onPlayStop) { p.onPlayStop(); }
-    d.lastX = e.clientX; (d as any).lastY = e.clientY; updEdge(e.clientX);
-    d.maxD = Math.max(d.maxD || 0, Math.abs(e.clientX - d.startX), Math.abs(e.clientY - (d.startY || 0))); // v9.0: total gerak dua sumbu — penentu TAP vs DRAG
+    d.lastX = e.clientX; d.lastY = e.clientY; updEdge(e.clientX);
+    d.maxD = Math.max(d.maxD || 0, Math.abs(e.clientX - d.startX), Math.abs(e.clientY - (d.startY || 0)));
     if (!d.armed) return;
-    if (maybePromoteLane(e, d)) return; // vertikal / tahan lama → angkat jalur
     if (d.kind === "trim") applyTrim(d, e.clientX);
     else if (d.kind === "reorder") applyReorder(d, e.clientX);
-    else if (d.kind === "aud") { applyAud(d, e.clientX); applyObjRow(e, d); }
-    else if (d.kind === "txt") { applyTxt(d, e.clientX); applyObjRow(e, d); }
+    else if (d.kind === "aud") applyAud(d, e.clientX);
+    else if (d.kind === "txt") applyTxt(d, e.clientX);
     else if (d.kind === "txtd") applyTxtD(d, e.clientX);
-    else if (d.kind === "stk") { applyStk(d, e.clientX); applyObjRow(e, d); }
+    else if (d.kind === "stk") applyStk(d, e.clientX);
     else if (d.kind === "stkd") applyStkD(d, e.clientX);
   }
-  function armDrag(d: any, el: HTMLElement | null, pid: number, ms: number) {
+  function armDrag(d: any, el: any, pid: number, ms: number) {
     clearTimeout(armTRef.current);
     armTRef.current = setTimeout(() => {
-      if (dragRef.current === d) { d.armed = true; if (el) { try { el.setPointerCapture?.(pid); } catch {} } try { (navigator as any).vibrate?.(10); } catch {} force(v => v + 1); } // v9.0: GETAR = kegenggam, silakan bawa
+      if (dragRef.current === d) { d.armed = true; if (el) { try { el.setPointerCapture?.(pid); } catch {} } try { (navigator as any).vibrate?.(10); } catch {} force(v => v + 1); }
     }, ms);
   }
-
   function onClipDown(e: React.PointerEvent, i: number) {
-    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh/geser klip di track = stop preview
+    if (gstRef.current) return;
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     const sid = slides[i].id;
     p.onSel(sid);
     const target = e.target as HTMLElement;
-    if (target.classList.contains("hdl")) return; // handle di-handle sendiri
-
-    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
-    // Ini mengunci touch-stream di Chrome Android sehingga browser tidak akan pernah membatalkan gesture (pointercancel) demi scroll timeline.
+    if (target.classList.contains("hdl")) return;
     try { target.setPointerCapture(e.pointerId); } catch {}
-
     const d: any = { kind: "reorder", i, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, to: i, moved: false, armed: false, lastX: e.clientX };
     dragRef.current = d;
-    armDrag(d, target, e.pointerId, 130); // ⚡ OPTIMIZE UX: Turunkan dari 220ms ke 130ms agar instan terangkat (lebih sensitif!)
-    gstBind(e, onClipMove, onClipUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
+    armDrag(d, target, e.pointerId, 130);
+    gstBind(e, onClipMove, onClipUp);
   }
-  function onClipMove(e: React.PointerEvent) {
+  function onClipMove(e: any) {
     const d = dragRef.current as any;
     if (!d || d.kind !== "reorder") return;
     if (!d.armed) {
-      if (Math.abs(e.clientX - d.startX) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas toleransi dari 12px ke 28px agar jari wobble tidak membatalkan drag (anti-batal!)
+      if (Math.abs(e.clientX - d.startX) > 28) { dragRef.current = null; clearTimeout(armTRef.current); }
       return;
     }
     dragUpdate(e, d);
@@ -5076,51 +4994,45 @@ function TimelineV6(p: any) {
     const d = dragRef.current as any;
     dragRef.current = null;
     stopEdge();
-    if (cancelled) return; // v9.1: dibatalkan browser (notif/multitouch) → JANGAN commit apa pun
+    if (cancelled) return;
     if (d && d.kind === "reorder" && d.armed && d.moved && typeof d.to === "number") p.onMove(d.i, d.to);
   }
   function onHdlDown(e: React.PointerEvent, i: number, side: "l" | "r") {
-    if (gstRef.current) return; // v9.1: SATU gesture
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — tarik handle pangkas = stop preview
+    if (gstRef.current) return;
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     e.stopPropagation();
     const sid = slides[i].id;
     p.onSel(sid);
     dragRef.current = { kind: "trim", i, startX: e.clientX, startDur: timeline?.durs?.[i] || 1, side, armed: true, lastX: e.clientX } as any;
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    gstBind(e, onHdlMove, onHdlUp); // v9.1: SATU PINTU
+    gstBind(e, onHdlMove, onHdlUp);
   }
-  function onHdlMove(e: React.PointerEvent) {
+  function onHdlMove(e: any) {
     const d = dragRef.current as any;
     if (!d || d.kind !== "trim") return;
     dragUpdate(e, d);
   }
   function onHdlUp() { dragRef.current = null; stopEdge(); }
-
-  // seret balok audio (tekan-tahan → geser posisi mulai)
   function onAudDown(e: React.PointerEvent, kind: "m" | "t" | "v") {
-    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh balok audio = stop preview
-    e.stopPropagation(); // v9.1: dulu BOCOR ke pembungkus jalur — sumber 'kadang kaku/ngaco'
-
-    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
+    if (gstRef.current) return;
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
+    e.stopPropagation();
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
-
     const off0 = kind === "m" ? (p.musicOff || 0) : kind === "t" ? (p.ttsOff || 0) : (p.voiceOff || 0);
     const d: any = { kind: "aud", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: false, lastX: e.clientX, audioKind: kind, key: "aud:" + kind, off0 };
     dragRef.current = d;
-    suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
-    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110); // ⚡ OPTIMIZE UX: Turunkan dari 160ms ke 110ms agar instan terangkat
-    gstBind(e, onAudMove, onAudUp); // v9.1: SATU PINTU
+    suppressClickRef.current = false;
+    armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110);
+    gstBind(e, onAudMove, onAudUp);
   }
-  function onAudMove(e: React.PointerEvent) {
+  function onAudMove(e: any) {
     const d = dragRef.current as any;
     if (!d || d.kind !== "aud") return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas dari 12px ke 28px agar anti-batal saat jari wobble
+      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); }
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
-        // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
-        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
+        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {}
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
@@ -5131,39 +5043,33 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if (cancelled) { if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); } return; } // v9.1: batal → bersih total, tanpa commit
-    if (d?.kind === "aud" && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); } // v9.0: gerak vertikal pun = drag (dulu bocor jadi tap!)
+    if (cancelled) { setRowDrop(null); return; }
+    if (d?.kind === "aud" && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onAudioMoved?.(d.audioKind); }
     commitObjRow(d);
   }
-
-  // seret chip TEKS di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi) — per lapisan (tid)
   function onTxtDown(e: React.PointerEvent, sid: string, mode: "move" | "dur", t: any, tid: string = "") {
-    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip teks = stop preview
+    if (gstRef.current) return;
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     e.stopPropagation();
-
-    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
-
-    const i = slides.findIndex((x: Slide) => x.id === sid);
+    const i = slides.findIndex((x: any) => x.id === sid);
     const st0 = t.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = t.dur ?? (timeline?.durs?.[i] || 3);
     const d: any = { kind: mode === "move" ? "txt" : "txtd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, tid, key: sid + "|" + (tid || ""), st0, dur0 };
     dragRef.current = d;
-    suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
+    suppressClickRef.current = false;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
-    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110); // ⚡ OPTIMIZE UX: Turunkan dari 160ms ke 110ms agar instan terangkat
-    gstBind(e, onTxtMove, onTxtUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110);
+    gstBind(e, onTxtMove, onTxtUp);
   }
-  function onTxtMove(e: React.PointerEvent) {
+  function onTxtMove(e: any) {
     const d = dragRef.current as any;
     if (!d || (d.kind !== "txt" && d.kind !== "txtd")) return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas dari 12px ke 28px agar anti-batal saat jari wobble
+      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); }
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
-        // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
-        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
+        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {}
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
@@ -5174,39 +5080,33 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if (cancelled) { if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); } return; } // v9.1: batal → bersih total, tanpa commit
-    if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); } // v9.0: gerak vertikal pun = drag
+    if (cancelled) { setRowDrop(null); return; }
+    if ((d?.kind === "txt" || d?.kind === "txtd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onTextMoved?.(d.sid, d.tid || ""); }
     commitObjRow(d);
   }
-
-  // seret chip STIKER di track: mode "move" (ubah menit mulai) / "dur" (tarik durasi tampil)
   function onStkDown(e: React.PointerEvent, sid: string, stid: string, mode: "move" | "dur", st: any) {
-    if (gstRef.current) return; // v9.1: SATU gesture — jari kedua/telapak diabaikan total
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh chip stiker = stop preview
+    if (gstRef.current) return;
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     e.stopPropagation();
-
-    // ⚡ OPTIMIZE UX: Tangkap pointer secara sinkron seketika saat ditekan!
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
-
-    const i = slides.findIndex((x: Slide) => x.id === sid);
+    const i = slides.findIndex((x: any) => x.id === sid);
     const st0 = st.start ?? (timeline?.starts?.[i] || 0);
     const dur0 = st.dur ?? (timeline?.durs?.[i] || 3);
     const d: any = { kind: mode === "move" ? "stk" : "stkd", i: 0, startX: e.clientX, startY: e.clientY, t0: Date.now(), startDur: 0, armed: mode === "dur", lastX: e.clientX, sid, stid, key: stid, st0, dur0 };
     dragRef.current = d;
-    suppressClickRef.current = false; // v9.0: gesture BARU → bersihkan sisa suppress, TAP tak ketelan
+    suppressClickRef.current = false;
     if (mode === "dur") { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {} }
-    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110); // ⚡ OPTIMIZE UX: Turunkan dari 160ms ke 110ms agar instan terangkat
-    gstBind(e, onStkMove, onStkUp); // v9.1: SATU PINTU — kendali via window + kunci id jari
+    else armDrag(d, e.currentTarget as HTMLElement, e.pointerId, 110);
+    gstBind(e, onStkMove, onStkUp);
   }
-  function onStkMove(e: React.PointerEvent) {
+  function onStkMove(e: any) {
     const d = dragRef.current as any;
     if (!d || (d.kind !== "stk" && d.kind !== "stkd")) return;
     if (!d.armed) {
       const dx0 = e.clientX - d.startX, dy0 = e.clientY - (d.startY || 0);
-      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); } // ⚡ OPTIMIZE UX: Naikkan batas dari 12px ke 28px agar anti-batal saat jari wobble
+      if (Math.abs(dx0) > 28) { dragRef.current = null; clearTimeout(armTRef.current); }
       else if (Math.abs(dy0) > 10 && Math.abs(dy0) > Math.abs(dx0) + 4) {
-        // v8.9: niat VERTIKAL jelas → objek LANGSUNG terangkat tanpa menunggu jeda — ringan!
-        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {} // v9.0: getar = KEGENGGAM
+        d.armed = true; clearTimeout(armTRef.current); try { (navigator as any).vibrate?.(10); } catch {}
         try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       }
       return;
@@ -5217,13 +5117,12 @@ function TimelineV6(p: any) {
     clearTimeout(armTRef.current);
     const d = dragRef.current as any;
     dragRef.current = null; stopEdge();
-    if (cancelled) { if (rowDropRef.current) { rowDropRef.current = null; setRowDrop(null); } return; } // v9.1: batal → bersih total, tanpa commit
-    if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); } // v9.0: gerak vertikal pun = drag
+    if (cancelled) { setRowDrop(null); return; }
+    if ((d?.kind === "stk" || d?.kind === "stkd") && d.armed && (d.maxD || 0) > 6) { suppressClickRef.current = true; p.onStickerMoved?.(d.sid, d.stid); }
     commitObjRow(d);
   }
-
   function rulerDown(e: React.PointerEvent) {
-    if (p.playing && p.onPlayStop) { p.onPlayStop(); } // 🎬 v15.3C — sentuh ruler = stop preview (biar gak lompat sendiri)
+    if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     const el = scrollRef.current; if (!el || !dispTotal) return;
     const r = el.getBoundingClientRect();
     const x = e.clientX - r.left + el.scrollLeft - halfW;
@@ -5235,367 +5134,203 @@ function TimelineV6(p: any) {
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
-
-  // penggaris adaptif: makin di-zoom keluar, label makin jarang (per 2d/5d/10d/…/10 menit)
-  const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => s * PXS0 >= 42) || 600;
+  const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => s * PXS0 >= 48) || 600;
   const nTicks = Math.ceil(dispTotal / tickStep) + 1;
-
   const hasAudio = !!(musicUrl || ttsUrl || voiceUrl);
-  // semua lapisan teks semua klip (utama + tambahan) — tiap lapisan jadi chip sendiri
-  const clipTexts = slides.flatMap((s: Slide) => {
+  const clipTexts = slides.flatMap((s: any) => {
     const o = slideOptsById[s.id];
     const out: any[] = [];
     if (o?.text?.txt?.trim()) out.push({ s, t: o.text, tid: "" });
     (o?.texts || []).forEach((x: any) => { if (x?.txt?.trim()) out.push({ s, t: x, tid: x.id || "" }); });
     return out;
   });
-  const clipStiks = slides.flatMap((s: Slide) => (slideOptsById[s.id]?.stickers || []).map((st: any) => ({ s, st })));
-
-  /* ---- v8.4 SUSUNAN JALUR BEBAS: semua jalur (video/audio/teks/stiker) satu sistem urutan ---- */
+  const clipStiks = slides.flatMap((s: any) => (slideOptsById[s.id]?.stickers || []).map((st: any) => ({ s, st })));
   const laneIds: string[] = ["vid"];
   if (musicUrl) laneIds.push("aud:m");
   if (ttsUrl) laneIds.push("aud:t");
   if (voiceUrl) laneIds.push("aud:v");
-  if (musicUrl || ttsUrl || voiceUrl || clipTexts.length || clipStiks.length) laneIds.push("elm"); // v8.6: SATU kolam bebas semua objek
+  if (musicUrl || ttsUrl || voiceUrl || clipTexts.length || clipStiks.length) laneIds.push("elm");
   const savedLanes: string[] = Array.isArray(p.laneOrder) ? p.laneOrder : [];
   const laneOrd: string[] = savedLanes.filter((x: string) => laneIds.includes(x));
-  laneIds.forEach((x: string) => { if (!laneOrd.includes(x)) laneOrd.push(x); }); // jalur baru → nempel di bawah, bebas dipindah
+  laneIds.forEach((x: string) => { if (!laneOrd.includes(x)) laneOrd.push(x); });
   const dispOrder: string[] = lanePreview || laneOrd;
   dispOrderRef.current = dispOrder;
   const laneIdx: Record<string, number> = {};
   dispOrder.forEach((x: string, i: number) => { laneIdx[x] = i; });
-  // lebar kolom konten: ikut elemen terpanjang (klip / audio / teks / stiker)
   let maxEndAll = dispTotal;
-  clipTexts.forEach(({ s, t }: any) => { const i = slides.findIndex((x: Slide) => x.id === s.id); maxEndAll = Math.max(maxEndAll, (t.start ?? (timeline?.starts?.[i] || 0)) + (t.dur ?? (timeline?.durs?.[i] || 3))); });
-  clipStiks.forEach(({ s, st }: any) => { const i = slides.findIndex((x: Slide) => x.id === s.id); maxEndAll = Math.max(maxEndAll, (st.start ?? (timeline?.starts?.[i] || 0)) + (st.dur ?? (timeline?.durs?.[i] || 3))); });
+  clipTexts.forEach(({ s, t }: any) => { const i = slides.findIndex((x: any) => x.id === s.id); maxEndAll = Math.max(maxEndAll, (t.start ?? (timeline?.starts?.[i] || 0)) + (t.dur ?? (timeline?.durs?.[i] || 3))); });
+  clipStiks.forEach(({ s, st }: any) => { const i = slides.findIndex((x: any) => x.id === s.id); maxEndAll = Math.max(maxEndAll, (st.start ?? (timeline?.starts?.[i] || 0)) + (st.dur ?? (timeline?.durs?.[i] || 3))); });
   if (musicUrl) maxEndAll = Math.max(maxEndAll, (p.musicOff || 0) + (p.musicDur || 4));
   if (ttsUrl) maxEndAll = Math.max(maxEndAll, (p.ttsOff || 0) + (p.ttsDur || 4));
   if (voiceUrl) maxEndAll = Math.max(maxEndAll, (p.voiceOff || 0) + (p.voiceDur || 4));
-  const clipsTotW = slides.reduce((a: number, _s: Slide, i: number) => a + clipW(i) + 4, 0) + 170;
+  const clipsTotW = slides.reduce((a: number, _s: any, i: number) => a + clipW(i) + 4, 0) + 170;
   const colW = Math.max(320, maxEndAll * PXS0 + 96, clipsTotW);
   contentW = Math.max(contentW, colW + halfW * 2);
 
+  // CapCut-exact JSX
   return (
-    <div className="v6e-tl">
-      <div className="v6e-tl-inner">
-        {/* rail kiri */}
-        <div className="v6e-tl-rail" style={{ paddingTop: 0 }}>
-          <button className={`v6e-rail-tile ${p.audMuted ? "" : ""}`} onClick={p.onMute} title="Bisukan audio">
-            {p.audMuted ? "🔇" : "🔊"}<span>{p.audMuted ? "Dibisukan" : "Bisukan audio"}</span>
-          </button>
-          <button className="v6e-rail-tile" onClick={p.onAiCut} title="Pemotong klip AI">
-            ✂️<span>Pemotong klip AI</span><b className="new">New</b>
-          </button>
-          <button className="v6e-rail-tile" onClick={p.onCover} title="Sampul proyek">
-            ✏️<span>Sampul</span>
-          </button>
+    <div className="v6e-tl capcut-timeline">
+      {/* CapCut Tips Bar */}
+      <div className="capcut-tips">
+        <div className="tip"><span>💡</span><b>CAPCUT STYLE</b> — Preview 60% • Playhead fixed center • Trim drag pinggiran • Move drag tengah • Pinch zoom • Snap otomatis</div>
+        <div style={{display:'flex',gap:6}}>
+          <button className="v6e-tlfit" onClick={() => { const el = scrollRef.current; if (!el) return; zoomAnchorRef.current = { t: curT, vx: el.clientWidth/2 }; p.onZoom(clampN((el.clientWidth-24)/dispTotal, TL_MIN_PXS, TL_MAX_PXS)); }}>⤢ Pas</button>
+          <button className="v6e-tlsplit" onClick={() => p.onSplit && p.onSplit()}>╫ Bagi</button>
+        </div>
+      </div>
+
+      <div className="v6e-tl-inner capcut-inner">
+        {/* Left rail - CapCut icons */}
+        <div className="v6e-tl-rail capcut-rail">
+          <button className="v6e-rail-tile" onClick={p.onMute} title="Mute">{p.audMuted ? "🔇" : "🔊"}<span>{p.audMuted ? "Mute" : "Sound"}</span></button>
+          <button className="v6e-rail-tile" onClick={p.onAiCut} title="AI Cut">✂️<span>AI Cut</span><b className="new">AI</b></button>
+          <button className="v6e-rail-tile" onClick={p.onCover} title="Cover">🖼️<span>Cover</span></button>
         </div>
 
-        {/* tracks (garis penanda DIAM di tengah — konten yang bergerak di bawahnya) */}
-        <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
-          <div className="v6e-tl-scrollwrap" ref={scrollRef} onScroll={onTlScroll}
+        <div style={{flex:1,position:'relative',minWidth:0,background:'#121a2b'}}>
+          <div className="v6e-tl-scrollwrap capcut-scroll" ref={scrollRef} onScroll={onTlScroll}
             onPointerDown={onWrapDown} onPointerMove={onWrapMove} onPointerUp={onWrapUp} onPointerCancel={onWrapUp}
-            style={{ position: "relative", touchAction: "pan-x pan-y" }}>
-            <div style={{ position: "relative", width: contentW, display: "flex" }}>
-              <div style={{ width: halfW, flex: "0 0 auto" }} />
-              <div style={{ position: "relative", flex: "0 0 auto", display: "flex", flexDirection: "column", width: colW }}>
-                {/* 🧲 v12.7 GARIS MAGNET — muncul sekilas ketika seretan nempel (tepi klip / penanda / irama) */}
-                {snapAt !== null && <div className="v6e-snapline" style={{ left: snapAt * PXS0 }} />}
-                {/* ruler waktu (adaptif ikut zoom) */}
-                <div style={{ height: 16, position: "relative", marginBottom: 2, touchAction: "none", order: -1 }} onPointerDown={rulerDown}>
-                  {Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep; return (
-                    <span key={k} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-4px)", fontSize: 8.5, color: "#6b7280", fontWeight: 600 }}>
-                      {formatDur(sec)}
+            style={{position:'relative',touchAction:'pan-x pan-y'}}>
+            <div style={{position:'relative',width:contentW,display:'flex'}}>
+              <div style={{width:halfW,flex:'0 0 auto'}} />
+              <div style={{position:'relative',flex:'0 0 auto',display:'flex',flexDirection:'column',width:colW,gap:4,padding:'8px 0'}}>
+                {snapAt !== null && <div className="v6e-snapline" style={{left:snapAt*PXS0,zIndex:20}} />}
+
+                {/* Time Ruler — 00:00 • 00:05 */}
+                <div className="capcut-ruler" onPointerDown={rulerDown}>
+                  {Array.from({length:nTicks}).map((_,k)=>{ const sec=k*tickStep; return (
+                    <span key={k} className="tick" style={{left:sec*PXS0}}>
+                      <i className="line"/><b>{formatDur(sec)}</b>
+                      {tickStep>=2 && <span className="dot">•</span>}
                     </span>
                   ); })}
-                  {tickStep >= 2 && Array.from({ length: nTicks }).map((_, k) => { const sec = k * tickStep + tickStep / 2; return sec < dispTotal ? (
-                    <span key={`m${k}`} style={{ position: "absolute", left: sec * PXS0, top: 0, transform: "translateX(-2px)", fontSize: 8.5, color: "#4b5260", fontWeight: 600 }}>·</span>
-                  ) : null; })}
-                  {/* penanda ketukan musik (estimasi dari gelombang) — bantu potong/teks pas irama */}
-                  {p.musicBeats?.length ? p.musicBeats.slice(0, 900).map((b: number, bi: number) => {
-                    const bx = ((p.musicOff || 0) + b) * PXS0;
-                    return bx >= 0 && bx <= dispTotal * PXS0 ? <i key={`b${bi}`} className="v6e-beat" style={{ left: bx }} /> : null;
-                  }) : null}
+                  {p.musicBeats?.length ? p.musicBeats.slice(0,600).map((b:number,bi:number)=>{ const bx=((p.musicOff||0)+b)*PXS0; return bx>=0&&bx<=dispTotal*PXS0 ? <i key={`b${bi}`} className="v6e-beat" style={{left:bx,top:18}}/>:null; }):null}
                 </div>
 
-            {/* JALUR VIDEO — ikut susunan bebas, bisa diangkat & dipindah juga */}
-            <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0, position: "relative" }}>
-              {/* v12.4 KEPALA REL — label jalur ala OpenCut: sticky kiri, 0 lebar → waktu klip tidak bergeser, pointer-events none → gesture tak tersentuh */}
-              <div className="v6e-lanehead" aria-hidden="true"><span><b className="dot" />Visual · {slides.length}</span></div>
-              {slides.map((s: Slide, i: number) => {
-                const sel = s.id === selId;
-                const isOutro = s.id.startsWith("outro");
-                const d = dragRef.current as any;
-                const ghost = d?.kind === "reorder" && d.moved && d.to === i && d.i !== i;
-                const lifting = d?.kind === "reorder" && d.armed && d.i === i;
-                const dxTrans = lifting && d && typeof d.lastX === "number" && typeof d.startX === "number" ? (d.lastX - d.startX) : 0;
-                return (
-                  <div
-                    key={s.id}
-                    className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
-                    style={{
-                      width: clipW(i),
-                      opacity: ghost ? 0.35 : 1,
-                      flex: "0 0 auto",
-                      transform: lifting ? `translateX(${dxTrans}px) scale(1.07)` : undefined,
-                      zIndex: lifting ? 100 : undefined
-                    }}
-                    onPointerDown={(e) => onClipDown(e, i)}
-                  >
-                    {s.imageUrl ? <i className="v6e-clipface" style={{ backgroundImage: `url(${s.imageUrl})` }} title="Filmstrip — jangkar kiri: memendek/memanjang tidak mengubah wajah klip" /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🏁</div>}
-                    {!!s.videoUrl && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 10, lineHeight: 1, background: "rgba(0,0,0,0.6)", borderRadius: 5, padding: "2px 3px", pointerEvents: "none" }} title="Animasi AI — klip video hidup">🎬</span>}
-                    <span className="dur">{(timeline?.durs?.[i] || 0).toFixed(1)}d</span>
-                    {sel && <>
-                      <span className="hdl l" onPointerDown={(e) => onHdlDown(e, i, "l")}>‹</span>
-                      <span className="hdl r" onPointerDown={(e) => onHdlDown(e, i, "r")}>›</span>
-                    </>}
-                  </div>
-                );
-              })}
-              {/* 🔀 v15.2D TRANSISI TENGAH STICKY ala CapCut — overlay absolute 1 layer, render SEMUA chip sekaligus di LUAR clip.
-                  Posisinya dihitung dari TRACK (bukan dari clip), jadi BERGERAK otomatis saat handle pangkas / drag clip.
-                  parent .v6e-track: display:flex, gap:4px → tiap clip dipisah 4px. offL = sum(clipW 0..i-1) + (i * 4px gap). */}
-              {slides.length > 1 && (() => {
-                const chips: any[] = [];
-                for (let i = 0; i < slides.length - 1; i++) {
-                  let offL = 0;
-                  for (let k = 0; k < i; k++) offL += clipW(k) + 4;
-                  const wL = clipW(i);
-                  // celah 4px → centerX = ujung kanan clip-i + 2px (tengah celah)
-                  const centerX = offL + wL + 2;
-                  const tr = canonicalTrans(slideOptsById[slides[i].id]?.trans ?? p.transition ?? "dissolve");
-                  chips.push({ i, s: slides[i], centerX, tr });
-                }
-                return (
-                  <div className="v6e-trans-overlay" style={{ position: "absolute", left: 0, top: 0, bottom: 0, right: 0, pointerEvents: "none" }}>
-                    {chips.map(c => (
-                      <button
-                        key={"tmid-" + c.s.id}
-                        className={`v6e-trans-mid ${c.tr === "none" ? "off" : ""}`}
-                        style={{ left: c.centerX, pointerEvents: "auto" }}
-                        title={`Transisi: ${c.tr} — ketuk untuk ganti`}
-                        onClick={(e) => { e.stopPropagation(); p.onTrans(c.s.id); }}
-                        aria-label="Garis transisi"
-                      />
-                    ))}
-                  </div>
-                );
-              })()}
-              {slides.length > 0 && (
-                <button className="v6e-outro" onClick={p.onAddOutro} title="Akhiran">
-                  🏁<span>Akhiran</span>
-                </button>
-              )}
-              <button className="v6e-addclip" onClick={p.onAddClip}>＋</button>
-            </div>
-
-            {/* TRACKS ELEMEN: jalur GENERIK tak terbatas — tiap elemen (audio/teks/stiker)
-                punya jalur sendiri-sendiri, bebas diisi apa pun, jumlah jalur mengikuti isi */}
-            <div className="v6e-track-add" style={{ display: "contents" }}>
-              {(() => {
-                const hasAny = hasAudio || !!clipTexts.length || !!clipStiks.length;
-                if (!hasAny) {
-                  return (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", order: 9999 }}>
-                      <button className="v6e-track-addbtn" onClick={p.onAddAudio}><i>🎵</i> ＋ Audio</button>
-                      <button className="v6e-track-addbtn" onClick={p.onAddText}><i>🔤</i> ＋ Teks</button>
-                      <button className="v6e-track-addbtn" onClick={p.onAddSticker}><i>😀</i> ＋ Stiker</button>
-                    </div>
-                  );
-                }
-                const rows: { key: "m" | "t" | "v"; grad: string; col: string; icon: string; nm: string; dur: number; off: number }[] = [];
-                if (musicUrl) rows.push({ key: "m", grad: "linear-gradient(90deg,#0f766e,#14b8a6)", col: "#04211f", icon: "♪", nm: musicName || "Musik", dur: p.musicDur || 0, off: p.musicOff || 0 });
-                if (ttsUrl) rows.push({ key: "t", grad: "linear-gradient(90deg,#7c3aed,#a855f7)", col: "#fff", icon: "🗣️", nm: "Narasi AI", dur: p.ttsDur || 0, off: p.ttsOff || 0 });
-                if (voiceUrl) rows.push({ key: "v", grad: "linear-gradient(90deg,#b91c1c,#ef4444)", col: "#fff", icon: "🎙️", nm: "Rekaman", dur: p.voiceDur || 0, off: p.voiceOff || 0 });
-                const textItems = clipTexts.map(({ s, t, tid }: any) => {
-                  const i = slides.findIndex((x: Slide) => x.id === s.id);
-                  return { s, t, tid, st: t.start ?? (timeline?.starts?.[i] || 0), dd: t.dur ?? (timeline?.durs?.[i] || 3), free: t.start != null };
-                });
-                const stikItems = clipStiks.map(({ s, st }: any) => {
-                  const i = slides.findIndex((x: Slide) => x.id === s.id);
-                  return { s, st, t0: st.start ?? (timeline?.starts?.[i] || 0), dd: st.dur ?? (timeline?.durs?.[i] || 3), free: st.start != null };
-                });
-                return (
-                  <>
-                    {/* KOLAM BEBAS (v8.6): musik/narasi/rekaman/teks/lirik/stiker SEMUA bisa taruh di jalur mana pun — yang dilarang cuma NUMPUK waktu */}
-                    {(() => {
-                      const pool: any[] = [];
-                      rows.forEach((r: any) => pool.push({ id: "aud:" + r.key, kind: "aud", st: r.off, dd: r.dur || 4, row: (p.audRow || {})[r.key], payload: r, key: "aud:" + r.key }));
-                      textItems.forEach((x: any) => pool.push({ id: "txt:" + x.s.id + "|" + (x.tid || ""), kind: "txt", st: x.st, dd: x.dd, row: x.t?.row, payload: x, key: x.s.id + "|" + (x.tid || "") }));
-                      stikItems.forEach((x: any) => pool.push({ id: "stk:" + x.st.id, kind: "stk", st: x.t0, dd: x.dd, row: x.st?.row, payload: x, key: x.st.id }));
-                      if (!pool.length) return null;
-                      const pack = packRows(pool.map((x: any) => ({ st: x.st, dd: x.dd, row: x.row })));
-                      elmPoolRef.current = pool.map((x: any, ii: number) => ({ key: x.key, st: x.st, dd: x.dd, row: pack[ii], kind: x.kind }));
-                      const nRows = Math.max(...pack) + 1;
+                {/* VIDEO TRACK — CapCut blue */}
+                <div className="capcut-track-row video">
+                  <div className="track-label"><span>🎬</span> Video</div>
+                  <div className="track-clips" style={{display:'flex',gap:4}}>
+                    {slides.map((s:any,i:number)=>{
+                      const sel = selId===s.id;
+                      const dur = timeline?.durs?.[i]||3;
                       return (
-                        <div ref={laneRowRef("elm")} className={`v6e-lanerow ${laneLift === "elm" ? "lanelift" : ""}`} style={{ order: laneIdx["elm"] ?? 0, height: "auto", marginBottom: 0, position: "relative" }}>
-                          {Array.from({ length: nRows }).map((_, r) => (
-                            <div key={r}
-                              ref={(el) => { if (el) elmRowEls.current.set(r, el); else elmRowEls.current.delete(r); }}
-                              className={`v6e-lanerow ${rowDrop && rowDrop.r === r ? "dropr" + (rowDrop.bad ? " bad" : "") : ""}`}
-                              style={{ position: "relative", height: 54, marginBottom: 6 }}>
-                              {/* v12.4 KEPALA REL — label isi baris: ikon tiap jenis objek (×n bila lebih dari satu) */}
-                              {(() => {
-                                const cnt: Record<string, number> = {};
-                                pool.forEach((it2: any, ii2: number) => {
-                                  if (pack[ii2] !== r) return;
-                                  const ic = it2.kind === "aud" ? (it2.key === "aud:m" ? "🎵" : it2.key === "aud:t" ? "🗣️" : "🎙️") : it2.kind === "txt" ? "🔤" : "😀";
-                                  cnt[ic] = (cnt[ic] || 0) + 1;
-                                });
-                                const ks = Object.keys(cnt);
-                                if (!ks.length) return null;
-                                return (
-                                  <div className="v6e-lanehead" aria-hidden="true" style={{ marginTop: 27 }}>
-                                    <span>{ks.map((k) => (cnt[k] > 1 ? `${k}×${cnt[k]}` : k)).join(" ")}</span>
-                                  </div>
-                                );
-                              })()}
-                              {pool.map((it: any, ii: number) => {
-                                if (pack[ii] !== r) return null;
-                                /* ---- balok AUDIO ---- */
-                                if (it.kind === "aud") {
-                                  const rd = it.payload;
-                                  const dd3 = dragRef.current as any;
-                                  const lifting = dd3?.kind === "aud" && dd3.armed && dd3.audioKind === rd.key;
-                                  const aDragY = lifting && dd3.kind === "aud" && typeof dd3.lastY === "number" ? Math.round(dd3.lastY - (dd3.startY || 0)) : 0; // v9.0: IKUT jari terus — tanpa syarat
-                                  const wpx = Math.max(90, (rd.dur || 4) * PXS0);
-                                  return (
-                                    <div key={it.id} className={`v6e-audioclip ${lifting ? "lift" : ""}`} title={rd.nm + " — TAP = setting audio · TAHAN = GENGGAM — ikut jari bebas (⇄ maju/mundur · ⇅ jalur)"}
-                                      onPointerDown={(e) => onAudDown(e, rd.key)}
-                                      onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onAddAudio(); }}
-                                      style={{ position: "absolute", left: rd.off * PXS0, top: 4, width: wpx, height: 46, background: rd.grad, color: rd.col, overflow: "hidden", transform: lifting ? `translateY(${aDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
-                                      <i style={{ fontStyle: "normal" }}>{rd.icon}</i>
-                                      <span className="wv" style={{ flex: 1, minWidth: 0 }}>{
-                                        (() => {
-                                          const pk: number[] | null = (rd.key === "m" ? p.musicPeaks : rd.key === "t" ? p.ttsPeaks : p.voicePeaks) || null;
-                                          if (pk && pk.length) {
-                                            const bars = Math.max(24, Math.min(190, Math.floor(wpx / 4.2)));
-                                            return Array.from({ length: bars }).map((_, k2) => {
-                                              const v = pk[Math.min(pk.length - 1, Math.floor(k2 / bars * pk.length))];
-                                              return <i key={k2} style={{ height: Math.max(3, Math.round(v * 28)) }} />;
-                                            });
-                                          }
-                                          return Array.from({ length: 14 }).map((_, k2) => <i key={k2} style={{ height: 4 + ((k2 * 37) % 26) }} />);
-                                        })()
-                                      }</span>
-                                      <span className="nm" style={{ fontSize: 11 }}>
-                                        {rd.nm}{rd.key === "m" && p.musicBpm ? ` · 🥁${p.musicBpm}` : ""}{rd.dur ? ` · ${formatDur(rd.dur)}` : ""}{rd.off > 0.05 ? ` · ▶${formatDur(rd.off)}` : ""}
-                                      </span>
-                                      <b className="v6e-chipvs">⇅</b>
-                                    </div>
-                                  );
-                                }
-                                /* ---- chip TEKS / LIRIK ---- */
-                                if (it.kind === "txt") {
-                                  const { s, t, tid, st, dd, free } = it.payload;
-                                  const dd4 = dragRef.current as any;
-                                  const lifting = (dd4?.kind === "txt" || dd4?.kind === "txtd") && dd4.armed && dd4.sid === s.id && (dd4.tid || "") === tid;
-                                  const enc = tid ? `${s.id}::${tid}` : s.id;
-                                  const isSel = p.selTextSid === enc;
-                                  const isLyr = /^lyr_/.test(t?.id || tid || "");
-                                  const tDragY = lifting && dd4.kind === "txt" && typeof dd4.lastY === "number" ? Math.round(dd4.lastY - (dd4.startY || 0)) : 0; // v9.0: IKUT jari terus
-                                  return (
-                                    <div key={it.id} className={`v6e-textchip asbtn ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""} ${isLyr ? "lyr" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
-                                      onPointerDown={(e) => onTxtDown(e, s.id, "move", t, tid)}
-                                      onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onEditText(s.id, tid); }}
-                                      style={{ position: "absolute", left: st * PXS0, top: 4, width: Math.max(64, dd * PXS0), height: 46, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", margin: 0, transform: lifting ? `translateY(${tDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
-                                      {isLyr ? "🎤 " : (tid ? "⧉ " : "")}“{String(t.txt).slice(0, 14)}{String(t.txt).length > 14 ? "…" : ""}”
-                                      <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
-                                      <span className="txtdur" title="Tarik untuk ubah durasi teks"
-                                        onPointerDown={(e) => onTxtDown(e, s.id, "dur", t, tid)}>⋮</span>
-                                    </div>
-                                  );
-                                }
-                                /* ---- chip STIKER ---- */
-                                const { s, st, t0, dd, free } = it.payload;
-                                const dd5 = dragRef.current as any;
-                                const lifting = (dd5?.kind === "stk" || dd5?.kind === "stkd") && dd5.armed && dd5.stid === st.id;
-                                const isSel = !!(p.selStik && p.selStik.sid === s.id && p.selStik.stid === st.id);
-                                const sDragY = lifting && dd5.kind === "stk" && typeof dd5.lastY === "number" ? Math.round(dd5.lastY - (dd5.startY || 0)) : 0; // v9.0: IKUT jari terus
-                                return (
-                                  <div key={it.id} className={`v6e-textchip asbtn stik ${lifting ? "lift" : ""} ${free ? "free" : ""} ${isSel ? "sel" : ""}`} title="TAP = setting · TAHAN = GENGGAM — objek ikut jari ke mana aja (⇄ waktu · ⇅ jalur bebas, asal tak numpuk) · ⋮ ujung = durasi"
-                                    onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)}
-                                    onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
-                                    style={{ position: "absolute", left: t0 * PXS0, top: 4, width: Math.max(52, dd * PXS0), height: 46, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
-                                    {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
-                                    <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
-                                    <span className="txtdur" title="Tarik untuk ubah durasi stiker"
-                                      onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)}>⋮</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))}
+                        <div key={s.id} className={`capcut-clip ${sel?'sel':''}`} style={{width:clipW(i)}} onPointerDown={(e)=>onClipDown(e,i)} onClick={()=>{ if (suppressClickRef.current){suppressClickRef.current=false;return;} p.onSel(s.id); }}>
+                          <img src={s.imageUrl} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>
+                          <span className="dur-badge">{dur.toFixed(1)}s</span>
+                          {s.videoUrl && <span className="video-badge">🎬</span>}
+                          {sel && (<><span className="hdl l" onPointerDown={(e)=>onHdlDown(e,i,"l")}>‹</span><span className="hdl r" onPointerDown={(e)=>onHdlDown(e,i,"r")}>›</span></>)}
                         </div>
                       );
-                    })()}
-                    {/* jalur tambah elemen: bebas pilih jenis apa pun */}
-                    <div style={{ position: "relative", height: 48, order: 9999 }}>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 0, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddAudio} title="Tambah audio (jalur baru, mulai di posisi penanda)">🎵</button>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 50, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddText} title="Tambah teks (jalur baru, mulai di posisi penanda)">🔤</button>
-                      <button className="v6e-track-addbtn" style={{ position: "absolute", left: 100, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onAddSticker} title="Tambah stiker (jalur baru, mulai di posisi penanda)">😀</button>
-                      {hasAudio && <button className="v6e-track-addbtn" style={{ position: "absolute", left: 150, top: 2, minWidth: 44, width: 44, height: 44, padding: 0 }} onClick={p.onDelAudio} title="Hapus semua audio">🗑</button>}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
+                    })}
+                    {slides.length>1 && slides.map((s:any,i:number)=>{ if (i>=slides.length-1) return null; let offL=0; for(let k=0;k<i;k++) offL+=clipW(k)+4; const wL=clipW(i); const centerX=offL+wL+2; const tr=canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve"); return (<button key={"tmid-"+s.id} className={`v6e-trans-mid ${tr==="none"?"off":""}`} style={{left:centerX}} onClick={(e)=>{e.stopPropagation();p.onTrans(s.id);}}/>); })}
+                    <button className="capcut-add" onClick={p.onAddClip}>＋</button>
+                  </div>
+                </div>
 
+                {/* AUDIO TRACKS — CapCut green with waveform */}
+                {(musicUrl || ttsUrl || voiceUrl) && (
+                  <div className="capcut-track-row audio">
+                    <div className="track-label"><span>🎵</span> Audio</div>
+                    <div className="track-clips" style={{position:'relative',height:36}}>
+                      {[
+                        musicUrl?{key:'m',url:musicUrl,name:musicName||'Music',dur:p.musicDur||4,off:p.musicOff||0,peaks:p.musicPeaks,color:'linear-gradient(90deg,#0f766e,#14b8a6)'}:null,
+                        ttsUrl?{key:'t',url:ttsUrl,name:'Narasi',dur:p.ttsDur||3,off:p.ttsOff||0,peaks:p.ttsPeaks,color:'linear-gradient(90deg,#7c3aed,#a855f7)'}:null,
+                        voiceUrl?{key:'v',url:voiceUrl,name:'Rekaman',dur:p.voiceDur||2,off:p.voiceOff||0,peaks:p.voicePeaks,color:'linear-gradient(90deg,#b91c1c,#ef4444)'}:null,
+                      ].filter(Boolean).map((a:any)=>(
+                        <div key={a.key} className="capcut-audio-clip" style={{left:a.off*PXS0,width:Math.max(90,a.dur*PXS0),background:a.color}} onPointerDown={(e)=>onAudDown(e,a.key)}>
+                          <i style={{fontStyle:'normal'}}>♪</i>
+                          <span className="wv">{(a.peaks||Array.from({length:20}).map((_,i)=>0.3+Math.sin(i)*0.3)).slice(0,Math.floor(Math.max(90,a.dur*PXS0)/4)).map((h:any,i:number)=><i key={i} style={{height:Math.max(3,Math.round(h*20))}}/> )}</span>
+                          <span className="nm">{a.name} • {formatDur(a.dur)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* TEXT TRACK — orange */}
+                <div className="capcut-track-row text">
+                  <div className="track-label"><span>🔤</span> Text</div>
+                  <div className="track-clips" style={{position:'relative',height:32}}>
+                    {clipTexts.map(({s,t,tid}:any)=>{
+                      const idx = slides.findIndex((x:any)=>x.id===s.id);
+                      const st = t.start ?? (timeline?.starts?.[idx]||0);
+                      const dd = t.dur ?? (timeline?.durs?.[idx]||3);
+                      const isSel = p.selTextSid === (tid?`${s.id}::${tid}`:s.id);
+                      const isLyr = /^lyr_/.test(t?.id||tid||"");
+                      return (
+                        <div key={s.id+"|"+tid} className={`capcut-text-clip ${isSel?'sel':''} ${isLyr?'lyr':''}`} style={{left:st*PXS0,width:Math.max(60,dd*PXS0)}} onPointerDown={(e)=>onTxtDown(e,s.id,"move",t,tid)} onClick={()=>{ if (suppressClickRef.current){suppressClickRef.current=false;return;} p.onEditText(s.id,tid); }}>
+                          <span>{isLyr?'🎤 ':''}“{(t.txt||'').slice(0,18)}”</span>
+                          <span className="txtdur" onPointerDown={(e)=>onTxtDown(e,s.id,"dur",t,tid)}>⋮</span>
+                        </div>
+                      );
+                    })}
+                    <button className="capcut-add small" onClick={p.onAddText}>＋ T</button>
+                  </div>
+                </div>
+
+                {/* STICKER TRACK — pink */}
+                {(clipStiks.length>0 || true) && (
+                  <div className="capcut-track-row sticker">
+                    <div className="track-label"><span>😀</span> Sticker</div>
+                    <div className="track-clips" style={{position:'relative',height:32}}>
+                      {clipStiks.map(({s,st}:any)=>{
+                        const idx = slides.findIndex((x:any)=>x.id===s.id);
+                        const stt = st.start ?? (timeline?.starts?.[idx]||0);
+                        const dd = st.dur ?? (timeline?.durs?.[idx]||3);
+                        const isSel = !!(p.selStik && p.selStik.sid===s.id && p.selStik.stid===st.id);
+                        return (
+                          <div key={st.id} className={`capcut-sticker-clip ${isSel?'sel':''}`} style={{left:stt*PXS0,width:Math.max(48,dd*PXS0)}} onPointerDown={(e)=>onStkDown(e,s.id,st.id,"move",st)} onClick={()=>p.onStickerChipTap?.(s.id,st.id)}>
+                            {st.img?'🖼️':st.emoji}
+                            <span className="txtdur" onPointerDown={(e)=>onStkDown(e,s.id,st.id,"dur",st)}>⋮</span>
+                          </div>
+                        );
+                      })}
+                      <button className="capcut-add small" onClick={p.onAddSticker}>＋ 😀</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom waveform full width */}
+                <div className="capcut-waveform-row">
+                  <div className="track-label"><span>🎧</span> Wave</div>
+                  <div style={{flex:1,height:42,background:'#0f141f',borderRadius:8,display:'flex',alignItems:'center',gap:2,padding:'0 8px',overflow:'hidden',border:'1px solid #1e283e'}}>
+                    {(p.musicPeaks||p.ttsPeaks||p.voicePeaks||Array.from({length:120}).map((_,i)=>Math.abs(Math.sin(i*0.2))*0.8+0.1)).map((h:any,i:number)=>(
+                      <i key={i} style={{width:3,background:'#3b82f6',borderRadius:2,height:Math.max(4,Math.round(h*32)),opacity:0.8}}/>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div style={{ width: halfW, flex: "0 0 auto" }} />
+              <div style={{width:halfW,flex:'0 0 auto'}} />
             </div>
           </div>
-          {/* garis penanda tetap di tengah layar */}
-          {hintOn && (
-            <div className="v6e-tlhint">
-              <span>💡 <b>Cubit</b> track = zoom · <b>tahan TEPI</b> klip = pangkas · <b>tahan TENGAH</b> klip = pindah urutan · <b>⤢</b> muat 1 layar · <b>╫ Bagi</b> di garis · ketuk klip = buka alat di bawah</span>
-              <button aria-label="tutup panduan" onClick={() => { setHintOn(false); try { localStorage.setItem("verve_tlhint_v1", "0"); } catch {} }}>✕</button>
-            </div>
-          )}
-          {dispTotal > 0 && <div className="v6e-playhead-fixed" style={{ left: "50%" }} />}
-          {/* tombol zoom: ketuk → semua proyek muat 1 layar; cubit di track = perbesar/persempit */}
-          {dispTotal > 0 && (
-            <button className="v6e-tlfit" title="Tampilkan seluruh proyek dalam 1 layar (cubit track untuk zoom manual)"
-              onClick={() => {
-                const el = scrollRef.current;
-                if (!el) return;
-                zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
-                p.onZoom(clampN((el.clientWidth - 24) / dispTotal, TL_MIN_PXS, TL_MAX_PXS));
-              }}>⤢ Pas</button>
-          )}
-          {dispTotal > 0 && (
-            <button className="v6e-tlsplit" title="✂ Bagi klip tepat di garis penanda waktu (ala OpenCut/CapCut)"
-              onClick={() => p.onSplit && p.onSplit()}>╫ Bagi</button>
-          )}
-          {Math.abs(PXS0 - PXS) > 1 && (
-            <button className="v6e-tlfp" title="Kembali ke skala normal" onClick={() => {
-              const el = scrollRef.current;
-              if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 };
-              p.onZoom(PXS);
-            }}>{PXS0 > PXS ? "🔍+" : "🔍−"}</button>
-          )}
-          {/* 🔎 v13.18: zoom ketuk BERLABEL (cubit tetap jalan — ini buat yang tak menemukannya) */}
-          {dispTotal > 0 && (
-            <button className="v6e-tlzm v6e-tlzm-out" title="Persempit timeline (zoom out)"
-              onClick={() => { const el = scrollRef.current; if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 }; p.onZoom(clampN(PXS0 * 0.72, TL_MIN_PXS, TL_MAX_PXS)); }}>−</button>
-          )}
-          {dispTotal > 0 && (
-            <button className="v6e-tlzm v6e-tlzm-in" title="Perbesar timeline (zoom in)"
-              onClick={() => { const el = scrollRef.current; if (el) zoomAnchorRef.current = { t: curT, vx: el.clientWidth / 2 }; p.onZoom(clampN(PXS0 / 0.72, TL_MIN_PXS, TL_MAX_PXS)); }}>+</button>
-          )}
-          {!hintOn && (
-            <button className="v6e-tlhelp" title="Tampilkan panduan gestur track"
-              onClick={() => { setHintOn(true); try { localStorage.removeItem("verve_tlhint_v1"); } catch {} }}>?</button>
-          )}
+
+          {/* Fixed Playhead Center */}
+          {dispTotal>0 && <div className="v6e-playhead-fixed capcut-playhead" style={{left:'50%'}} />}
+          {hintOn && (<div className="v6e-tlhint capcut-hint"><span>💡 CapCut Style — <b>Playhead fixed tengah</b>, timeline scroll di bawahnya. <b>Tahan TEPI</b>=trim, <b>Tengah</b>=move, <b>Cubit</b>=zoom, <b>╫ Bagi</b> di playhead</span><button onClick={()=>{setHintOn(false); try{localStorage.setItem("verve_tlhint_v1","0");}catch{}}}>✕</button></div>)}
+
+          {/* Zoom & Split controls */}
+          <button className="v6e-tlfit" onClick={()=>{ const el=scrollRef.current; if(!el) return; zoomAnchorRef.current={t:curT,vx:el.clientWidth/2}; p.onZoom(clampN((el.clientWidth-24)/dispTotal,TL_MIN_PXS,TL_MAX_PXS)); }}>⤢ Pas</button>
+          <button className="v6e-tlsplit" onClick={()=>p.onSplit&&p.onSplit()}>╫ Bagi</button>
+          <button className="v6e-tlzm v6e-tlzm-out" onClick={()=>{ const el=scrollRef.current; if(el) zoomAnchorRef.current={t:curT,vx:el.clientWidth/2}; p.onZoom(clampN(PXS0*0.72,TL_MIN_PXS,TL_MAX_PXS)); }}>−</button>
+          <button className="v6e-tlzm v6e-tlzm-in" onClick={()=>{ const el=scrollRef.current; if(el) zoomAnchorRef.current={t:curT,vx:el.clientWidth/2}; p.onZoom(clampN(PXS0/0.72,TL_MIN_PXS,TL_MAX_PXS)); }}>+</button>
         </div>
+      </div>
+
+      {/* Bottom TIPS bar like anatomy image */}
+      <div className="capcut-bottom-tips">
+        <div className="tip"><span>💡 TIPS</span></div>
+        <div className="tip"><span>🔍</span> Zoom in for frame-level precision</div>
+        <div className="tip"><span>🧲</span> Use snap to keep clips aligned perfectly</div>
+        <div className="tip"><span>✂️</span> Split clips to remove unwanted parts</div>
+        <div className="tip"><span>📚</span> Organize layers to keep project clean</div>
       </div>
     </div>
   );
 }
 
-/* ==================================================================
-   SHELL SHEET + KOMPONEN UI KECIL
-   ================================================================== */
+
+
 function SheetShell({ title, onClose, onOk, children, tall }: any) {
   return (
     <>
