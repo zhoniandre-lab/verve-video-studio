@@ -1,101 +1,179 @@
 /* ==================================================================
-   CAPCUT ANATOMY EXACT FINAL — v25
-   Hapus yang lama, ganti 100% persis gambar referensi anatomi
-   Preview 60% top, Playhead white fixed center, Trim Handle, 
-   Clip Duration 5.0s, Color Coding, Pinch Zoom, Split, Tips
+   CAPCUT ANATOMY EXACT FINAL — v26 FROM SCRATCH
+   Preview 60%, Playhead fixed center white, Trim Handle, Clip Duration 5.0s
+   Color Coding Video blue Audio green Text orange Sticker pink
+   Pinch Zoom, Split, Snap, Tips — 100% persis referensi
    ================================================================== */
 
-/* Hide old side panels and rails that are not in anatomy */
-.tubus-icon-col,
-.tubus-right-panel {
-  display: none !important;
-}
-.v6e-tl-rail {
-  display: none !important;
-}
-
-/* Root timeline */
-.v6e-tl {
+/* Timeline root */
+.capcut-timeline {
   background: #0a0e18 !important;
-  border-top: 1px solid #1e283e !important;
+  border-top: 1px solid #1e293b !important;
   display: flex !important;
   flex-direction: column !important;
   padding-bottom: 0 !important;
 }
-.v6e-tl-inner {
+
+.capcut-tips {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  padding: 8px 12px !important;
+  background: #111827 !important;
+  border-bottom: 1px solid #1e293b !important;
+  font-size: 10px !important;
+  color: #64748b !important;
+}
+.capcut-tips .tip {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  white-space: nowrap !important;
+}
+.capcut-tips b { color: #8b5cf6 !important; }
+
+.capcut-inner {
+  display: flex !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+.capcut-rail {
+  width: 56px !important;
+  min-width: 56px !important;
+  background: #0f172a !important;
+  border-right: 1px solid #1e293b !important;
   display: flex !important;
   flex-direction: column !important;
+  gap: 8px !important;
+  padding: 8px 4px !important;
 }
-.v6e-tl-scrollwrap {
+.capcut-rail .v6e-rail-tile {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 10px !important;
+  height: 44px !important;
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+}
+
+.capcut-scroll {
   background: #0a0e18 !important;
   flex: 1 !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
+  position: relative !important;
 }
 
 /* Ruler — 00:00 • 00:05 */
-.v6e-tl-scrollwrap > div > div > div:first-child,
 .capcut-ruler {
-  height: 22px !important;
+  height: 24px !important;
   background: #0a0e18 !important;
-  border-bottom: 1px solid #1e283e !important;
+  border-bottom: 1px solid #1e293b !important;
   position: relative !important;
   margin-bottom: 8px !important;
+  touch-action: none !important;
 }
+.capcut-ruler .tick {
+  position: absolute !important;
+  top: 0 !important;
+  font-size: 9px !important;
+  color: #475569 !important;
+  font-weight: 600 !important;
+  transform: translateX(-4px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+.capcut-ruler .tick i.line {
+  width: 1px !important;
+  height: 6px !important;
+  background: #334155 !important;
+  display: block !important;
+}
+.capcut-ruler .tick b { color: #64748b !important; }
+.capcut-ruler .tick .dot { color: #334155 !important; }
 
-/* Track rows — Video, Audio, Text, Sticker */
-.v6e-track,
-.v6e-lanerow {
-  min-height: 44px !important;
-  height: auto !important;
-  margin-bottom: 8px !important;
-  background: transparent !important;
+/* Track rows */
+.capcut-track-row {
+  position: relative !important;
   display: flex !important;
   align-items: center !important;
+  min-height: 48px !important;
+  margin-bottom: 8px !important;
   gap: 8px !important;
   padding: 0 12px !important;
+}
+.capcut-track-row .track-label {
+  width: 64px !important;
+  min-width: 64px !important;
+  height: 100% !important;
+  background: #111827 !important;
+  border: 1px solid #1e293b !important;
+  border-left: 3px solid #334155 !important;
+  border-radius: 8px 0 0 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #94a3b8 !important;
+  flex-shrink: 0 !important;
+}
+.capcut-track-row.video .track-label { border-left-color: #3b82f6 !important; }
+.capcut-track-row.audio .track-label { border-left-color: #22c55e !important; }
+.capcut-track-row.text .track-label { border-left-color: #f97316 !important; }
+.capcut-track-row.sticker .track-label { border-left-color: #ec4899 !important; }
+
+.track-clips {
+  flex: 1 !important;
   position: relative !important;
+  display: flex !important;
+  gap: 4px !important;
+  align-items: center !important;
+  min-height: 44px !important;
 }
 
-/* Label for each track — add via pseudo before track? Use first child */
-.v6e-track::before,
-.v6e-lanerow::before {
-  content: "";
-  width: 0;
-}
-
-/* Video clip — blue border selected, thumbnail, 5.0s badge, trim handles */
-.v6e-clip {
+/* Video clip — blue selected, thumbnail, 5.0s badge */
+.capcut-clip {
+  position: relative !important;
   height: 48px !important;
   border-radius: 10px !important;
   background: #1e293b !important;
   border: 2px solid rgba(255,255,255,0.08) !important;
-  overflow: hidden !important;
   min-width: 90px !important;
-  position: relative !important;
   flex-shrink: 0 !important;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important;
+  overflow: hidden !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3) !important;
+  transition: border-color .15s, transform .12s !important;
 }
-.v6e-clip.sel {
+.capcut-clip.sel {
   border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 2px rgba(59,130,246,0.45), 0 6px 20px rgba(0,0,0,0.4) !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.5), 0 8px 24px rgba(0,0,0,0.4) !important;
   z-index: 10 !important;
+  transform: scale(1.02) !important;
 }
-.v6e-clip img,
-.v6e-clipface {
+.capcut-clip img {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;
 }
-.v6e-clip .dur {
+.capcut-clip .dur-badge {
   position: absolute !important;
   left: 50% !important;
   top: 50% !important;
-  bottom: auto !important;
   transform: translate(-50%,-50%) !important;
-  background: rgba(0,0,0,0.82) !important;
+  background: rgba(0,0,0,0.85) !important;
   color: #fff !important;
   font-size: 11px !important;
   font-weight: 800 !important;
@@ -104,117 +182,38 @@
   border: 1px solid rgba(255,255,255,0.15) !important;
   z-index: 3 !important;
 }
-.v6e-clip .hdl {
+.capcut-clip .video-badge {
+  position: absolute !important;
+  left: 4px !important;
+  top: 4px !important;
+  background: rgba(0,0,0,0.6) !important;
+  border-radius: 5px !important;
+  padding: 1px 4px !important;
+  font-size: 9px !important;
+  z-index: 2 !important;
+}
+.capcut-clip .hdl {
   position: absolute !important;
   top: 0 !important;
   bottom: 0 !important;
-  width: 18px !important;
+  width: 16px !important;
   background: #fff !important;
   color: #0f172a !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 14px !important;
+  font-size: 13px !important;
   font-weight: 900 !important;
   z-index: 4 !important;
   cursor: ew-resize !important;
   opacity: 0 !important;
   transition: opacity .15s !important;
 }
-.v6e-clip.sel .hdl { opacity: 1 !important; }
-.v6e-clip .hdl.l { left: 0 !important; border-radius: 10px 0 0 10px !important; }
-.v6e-clip .hdl.r { right: 0 !important; border-radius: 0 10px 10px 0 !important; }
-.v6e-clip .hdl::before {
-  content: "" !important;
-  position: absolute !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  width: 24px !important;
-}
-.v6e-clip .hdl.l::before { right: 100% !important; }
-.v6e-clip .hdl.r::before { left: 100% !important; }
+.capcut-clip.sel .hdl { opacity: 1 !important; }
+.capcut-clip .hdl.l { left: 0 !important; border-radius: 10px 0 0 10px !important; }
+.capcut-clip .hdl.r { right: 0 !important; border-radius: 0 10px 10px 0 !important; }
 
-/* Audio clip — green with waveform */
-.v6e-audioclip {
-  height: 40px !important;
-  border-radius: 10px !important;
-  background: linear-gradient(90deg,#15803d,#22c55e) !important;
-  border: 1px solid rgba(34,197,94,0.35) !important;
-  color: #fff !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  padding: 0 12px !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
-  overflow: hidden !important;
-  flex-shrink: 0 !important;
-  min-width: 120px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
-}
-.v6e-audioclip .wv {
-  display: flex !important;
-  align-items: center !important;
-  gap: 2px !important;
-  height: 20px !important;
-  flex: 1 !important;
-}
-.v6e-audioclip .wv i {
-  width: 2.5px !important;
-  background: rgba(255,255,255,0.85) !important;
-  border-radius: 2px !important;
-}
-
-/* Text chip — orange Adventure Awaits */
-.v6e-textchip {
-  height: 36px !important;
-  border-radius: 10px !important;
-  background: #f97316 !important;
-  color: #fff !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  border: 1px solid rgba(249,115,22,0.4) !important;
-  padding: 0 14px !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
-  flex-shrink: 0 !important;
-  min-width: 100px !important;
-  white-space: nowrap !important;
-  cursor: grab !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
-}
-.v6e-textchip.lyr {
-  background: linear-gradient(90deg,#16a34a,#22c55e) !important;
-}
-.v6e-textchip.sel {
-  border-color: #fff !important;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.4) !important;
-}
-.v6e-textchip .txtdur {
-  width: 20px !important;
-  height: 100% !important;
-  background: rgba(0,0,0,0.15) !important;
-  border-radius: 0 10px 10px 0 !important;
-  margin-left: auto !important;
-  margin-right: -14px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: ew-resize !important;
-}
-
-/* Sticker — pink */
-.v6e-textchip.stik {
-  background: #ec4899 !important;
-  border-color: rgba(236,72,153,0.45) !important;
-  font-size: 16px !important;
-  min-width: 60px !important;
-}
-
-/* Add buttons */
-.v6e-addclip,
-.v6e-track-addbtn,
+/* Add button */
 .capcut-add {
   width: 44px !important;
   height: 44px !important;
@@ -230,19 +229,120 @@
   cursor: pointer !important;
   flex-shrink: 0 !important;
 }
-.v6e-addclip:hover,
-.v6e-track-addbtn:hover,
+.capcut-add.small {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  font-size: 16px !important;
+}
 .capcut-add:hover {
   border-color: #3b82f6 !important;
   color: #60a5fa !important;
   background: #1e293b !important;
 }
 
+/* Audio clip — green */
+.capcut-audio-clip {
+  position: absolute !important;
+  height: 40px !important;
+  border-radius: 10px !important;
+  background: linear-gradient(90deg,#15803d,#22c55e) !important;
+  border: 1px solid rgba(34,197,94,0.4) !important;
+  color: #fff !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 12px !important;
+  overflow: hidden !important;
+  cursor: grab !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.22) !important;
+}
+.capcut-audio-clip .wv {
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  height: 18px !important;
+  flex: 1 !important;
+}
+.capcut-audio-clip .wv i {
+  width: 2.5px !important;
+  background: rgba(255,255,255,0.85) !important;
+  border-radius: 2px !important;
+}
+
+/* Text clip — orange */
+.capcut-text-clip {
+  position: absolute !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  background: #f97316 !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border: 1px solid rgba(249,115,22,0.4) !important;
+  padding: 0 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  white-space: nowrap !important;
+  cursor: grab !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+}
+.capcut-text-clip.lyr {
+  background: linear-gradient(90deg,#16a34a,#22c55e) !important;
+}
+.capcut-text-clip.sel {
+  border-color: #fff !important;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.4) !important;
+}
+.capcut-text-clip .txtdur {
+  margin-left: auto !important;
+  width: 20px !important;
+  background: rgba(0,0,0,0.15) !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: ew-resize !important;
+  border-radius: 0 10px 10px 0 !important;
+  margin-right: -14px !important;
+}
+
+/* Sticker — pink */
+.capcut-sticker-clip {
+  position: absolute !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  background: #ec4899 !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 12px !important;
+  border: 1px solid rgba(236,72,153,0.45) !important;
+  cursor: grab !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+}
+
+/* Waveform row bottom */
+.capcut-waveform-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
+  padding: 8px 12px !important;
+  border-top: 1px solid #1e293b !important;
+}
+
 /* Playhead fixed center */
+.capcut-playhead,
 .v6e-playhead-fixed {
   width: 2px !important;
   background: #fff !important;
-  box-shadow: 0 0 12px rgba(255,255,255,0.7), 0 0 0 1px rgba(0,0,0,0.4) !important;
+  box-shadow: 0 0 14px rgba(255,255,255,0.7), 0 0 0 1px rgba(0,0,0,0.4) !important;
   z-index: 50 !important;
   position: absolute !important;
   top: 0 !important;
@@ -251,10 +351,11 @@
   transform: translateX(-50%) !important;
   pointer-events: none !important;
 }
+.capcut-playhead::before,
 .v6e-playhead-fixed::before {
   content: "" !important;
   position: absolute !important;
-  top: -2px !important;
+  top: -3px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   width: 0 !important;
@@ -265,43 +366,67 @@
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)) !important;
 }
 
-/* Snap line */
-.v6e-snapline {
-  background: #22d3ee !important;
-  box-shadow: 0 0 12px rgba(34,211,238,0.7) !important;
-  width: 2px !important;
-  z-index: 40 !important;
+/* Bottom tips like anatomy */
+.capcut-bottom-tips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 16px !important;
+  padding: 12px 16px !important;
+  background: #0f172a !important;
+  border-top: 1px solid #1e293b !important;
+  font-size: 11px !important;
+  color: #64748b !important;
+}
+.capcut-bottom-tips .tip {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+.capcut-bottom-tips .tip span:first-child {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: 8px !important;
+  background: rgba(255,255,255,0.06) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 13px !important;
 }
 
-/* Trans mid */
-.v6e-trans-mid {
-  width: 2px !important;
-  background: #fff !important;
-  border-radius: 2px !important;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 0 8px rgba(255,255,255,0.4) !important;
-  position: absolute !important;
-  top: 6px !important;
-  bottom: 6px !important;
+/* Stage — preview 60% */
+.v6e-stage-wrap {
+  background: #0f172a !important;
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  min-height: 58vh !important;
+  max-height: 62vh !important;
 }
-.v6e-trans-mid:hover { background: #60a5fa !important; width: 4px !important; }
+.v6e-stage {
+  background: #000 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6) !important;
+  overflow: hidden !important;
+}
 
-/* Bottom toolbar — 7 icons */
+/* Toolbar bottom 7 icons */
 .v6e-toolbar {
   background: #0a0e18 !important;
-  border-top: 1px solid #1e283e !important;
-  padding: 6px 8px calc(8px + env(safe-area-inset-bottom)) !important;
+  border-top: 1px solid #1e293b !important;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) !important;
 }
 .v6e-tools {
   display: flex !important;
   gap: 4px !important;
-  overflow-x: auto !important;
-  scrollbar-width: none !important;
   justify-content: space-around !important;
+  overflow-x: auto !important;
 }
-.v6e-tools::-webkit-scrollbar { display: none !important; }
 .v6e-tlbtn {
   min-width: 56px !important;
-  height: 52px !important;
+  height: 56px !important;
   border-radius: 14px !important;
   background: transparent !important;
   color: #64748b !important;
@@ -314,74 +439,16 @@
   flex: 1 !important;
   border: 1px solid transparent !important;
 }
-.v6e-tlbtn span {
-  font-size: 10px !important;
-  font-weight: 600 !important;
-  color: #64748b !important;
-}
+.v6e-tlbtn span { font-size: 10px !important; font-weight: 600 !important; }
 .v6e-tlbtn.on {
   background: #1e293b !important;
   color: #f8fafc !important;
   border-color: #334155 !important;
 }
-.v6e-tlbtn.on span { color: #f8fafc !important; }
 
-/* Top tips bar — CapCut style */
-.v6e-tlhint {
-  background: #1e293b !important;
-  border: 1px solid #334155 !important;
-  color: #94a3b8 !important;
-  font-size: 11px !important;
-  border-radius: 12px !important;
-  padding: 10px 14px !important;
-  bottom: 80px !important;
-  top: auto !important;
-  left: 12px !important;
-  right: 12px !important;
-}
-
-/* Zoom buttons */
-.v6e-tlfit,
-.v6e-tlsplit,
-.v6e-tlzm,
-.v6e-tlfp,
-.v6e-tlhelp {
-  background: #1e293b !important;
-  border: 1px solid #334155 !important;
-  color: #cbd5e1 !important;
-  border-radius: 10px !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
-}
-
-/* Stage */
-.v6e-stage-wrap {
-  background: #0f141f !important;
-  flex: 1 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 16px !important;
-}
-.v6e-stage {
-  background: #000 !important;
-  border: 1px solid #1e293e !important;
-  border-radius: 16px !important;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important;
-  overflow: hidden !important;
-}
-
-/* Hide old premium bento right panel for pure CapCut anatomy */
-.tubus-right-panel {
+/* Hide old side panels for pure anatomy */
+.tubus-icon-col,
+.tubus-right-panel,
+.v6e-tl-rail {
   display: none !important;
-}
-.tubus-icon-col {
-  display: none !important;
-}
-
-/* Make preview 60% top */
-.v6e-stage-wrap {
-  min-height: 58vh !important;
-  max-height: 62vh !important;
 }
