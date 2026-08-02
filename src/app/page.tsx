@@ -1351,7 +1351,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [mVocal, setMVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
   const [mTask, setMTask] = useState("");
   const [mStatus, setMStatus] = useState("");
-  /* ---------- SUNO MULTI-KEY POOL (same as Lahan) ---------- */
+  /* ---------- tts modal ---------- */
+  const [ttsVoice, setTtsVoice] = useState("alloy");
+  /* ---------- draft ---------- */
+  const [draftId, setDraftId] = useState("");
+  /* ---------- SUNO MULTI-KEY POOL (same as Lahan) + GambarAI replaceId — placed at end to avoid hooks order crash ---------- */
   const [keyPool, setKeyPool] = useState<SunoKey[]>([]);
   const [keyDraft, setKeyDraft] = useState("");
   const [keyPanel, setKeyPanel] = useState(false);
@@ -1361,7 +1365,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const pollTimerRef = useRef<any>(null);
   const tickRef = useRef<any>(null);
   const [gambaraiReplaceId, setGambaraiReplaceId] = useState<string | undefined>(undefined);
-
+  /* ---------- refs ---------- */
   /* ---------- SUNO POOL HELPERS ---------- */
   function savePool(next: SunoKey[]) {
     setKeyPool(next);
@@ -1431,11 +1435,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
-  /* ---------- tts modal ---------- */
-  const [ttsVoice, setTtsVoice] = useState("alloy");
-  /* ---------- draft ---------- */
-  const [draftId, setDraftId] = useState("");
-  /* ---------- refs ---------- */
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -2209,8 +2208,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     try {
       setSunoKey(localStorage.getItem("verve_suno_key") || "");
       setSunoProv(localStorage.getItem("verve_suno_provider") || "kie");
-      const rawPool = localStorage.getItem(SUNO_KEYS_KEY);
-      if (rawPool) setKeyPool(JSON.parse(rawPool));
+      try { const rawPool = localStorage.getItem(SUNO_KEYS_KEY); if (rawPool) setKeyPool(JSON.parse(rawPool)); } catch {}
       setPresets(JSON.parse(localStorage.getItem("verve_filter_presets") || "[]"));
       const tk = JSON.parse(localStorage.getItem(SUNO_TASK_KEY) || "null");
       if (tk?.id && Date.now() - tk.ts < 30 * 60 * 1000) { setMTask(tk.id); setMStatus("pending"); }
@@ -2862,7 +2860,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = () => rej(new Error("gagal memuat")); im.src = durl; });
       const cropped = fitMax(img, 2048);
       pushHist();
-      // ✅ FIX BUG v27.1: gambar kedua TAMBAH track baru, bukan ganti pertama — pakai functional update biar anti crash closure
       setSlides(c => {
         if (replaceId && c.some(s => s.id === replaceId)) {
           return c.map(s => s.id === replaceId ? { ...s, imageUrl: cropped } : s);
@@ -2973,7 +2970,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     setLoading("suno"); setMStatus("memulai..."); setPollUi({ attempt: 0, elapsed: 0, last: "antre" }); setError("");
     try {
-      // vocal mapping: auto/male/female/instrumental -> payload
       const vocalGender = vocalIsInstrumental ? undefined : (mVocal === "auto" ? undefined : mVocal);
       const payload: any = {
         title: title.slice(0, 80), prompt: style, lyrics: vocalIsInstrumental ? undefined : lyr,
@@ -2982,7 +2978,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         vocalGender,
         _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
       };
-      // ROTASI OTOMATIS: kunci habis/ditolak → pindah kunci berikutnya
       const tries = Math.max(1, keys.length);
       let lastErr: any = null;
       for (let ki = 0; ki < tries; ki++) {
@@ -7066,24 +7061,26 @@ function TtsModal({ initial, onClose, onGen, loading, voice, setVoice }: any) {
   );
 }
 
-/* ---------- MUSIK AI (SUNO) — FULL REPRO LAHAN AWALAN ---------- */
+/* ---------- MUSIK AI (SUNO) — FULL MIRROR LAHAN AWALAN SAFE ---------- */
 function MusikModal(p: any) {
-  // local pool mirror if props not provided (fallback)
-  const [showKey, setShowKey] = useState(!!p.keyPanelDefault);
-  const keyPool = p.keyPool || [];
-  const creditInfo = p.creditInfo || {};
-  const checkingCredit = p.checkingCredit || false;
-  const pollUi = p.pollUi || { attempt: 0, elapsed: 0, last: "antre" };
+  const [showKey, setShowKey] = useState(false);
+  const poolList: SunoKey[] = (p.keyPool as SunoKey[]) || [];
+  const creditMap: Record<string, string> = p.creditInfo || {};
+  const checking = !!p.checkingCredit;
+  const poll = p.pollUi || { attempt: 0, elapsed: 0, last: "antre" };
   const providerLink = ((typeof PROVIDER_KEY_LINK !== "undefined" ? PROVIDER_KEY_LINK : { kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate" } }) as any)[p.sunoProv] || { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate" };
-  const providerLabelFull = (SUNO_PROVIDERS_FULL.find((x:any)=>x.id===p.sunoProv)?.label) || p.sunoProv;
+  const providerLabelFull = (typeof SUNO_PROVIDERS_FULL !== "undefined" ? SUNO_PROVIDERS_FULL.find((x:any)=>x.id===p.sunoProv)?.label : p.sunoProv) || p.sunoProv;
   const totalCredit = (() => {
     let tot = 0; let has = false;
-    Object.values(creditInfo as Record<string,string>).forEach((v:any)=>{
-      const m = String(v).match(/([0-9]+)/);
-      if (m) { const n = parseInt(m[1]); if (!isNaN(n)) { tot+=n; has=true; } }
-    });
+    try {
+      Object.values(creditMap).forEach((v:any)=>{
+        const m = String(v).match(/([0-9]+)/);
+        if (m) { const n = parseInt(m[1]); if (!isNaN(n)) { tot+=n; has=true; } }
+      });
+    } catch {}
     return has ? tot : null;
   })();
+  const masked = (k:string)=>{ try{ return maskKey(k); } catch { return k.slice(0,7)+'…'+k.slice(-3); } };
   return (
     <div className="v6-full">
       <div className="fh">
@@ -7092,22 +7089,20 @@ function MusikModal(p: any) {
         <button className="v6-btn" style={{ padding: "8px 16px" }} onClick={p.onGen} disabled={p.loading === "suno"}>{p.loading === "suno" ? "⏳" : "🎵 Buat lagu"}</button>
       </div>
       <div className="fb">
-        {/* PROVIDER + KEY POOL - mirror Lahan Awalan exactly */}
         <div className="v6-lbl">PROVIDER</div>
-        <select className="v6-inp" value={p.sunoProv}
-          onChange={e => { p.setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch {} }}>
-          {SUNO_PROVIDERS_FULL.map((pr:any)=><option key={pr.id} value={pr.id}>{pr.label}</option>)}
+        <select className="v6-inp" value={p.sunoProv} onChange={e => { p.setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch {} }}>
+          {(typeof SUNO_PROVIDERS_FULL !== "undefined" ? SUNO_PROVIDERS_FULL : [{id:"kie",label:"Kie.ai"},{id:"apiframe",label:"apiframe.ai"},{id:"sunor",label:"Sunor.cc"},{id:"aimusic",label:"aimusic.so"}]).map((pr:any)=><option key={pr.id} value={pr.id}>{pr.label}</option>)}
         </select>
 
         <button className="v6-chip" style={{ marginTop: 8 }} onClick={() => setShowKey(!showKey)}>
-          🔑 Setelan API Key — {Array.isArray(keyPool) ? (keyPool.filter((k:any)=>k.provider===p.sunoProv).length || (p.sunoKey?1:0)) : (p.sunoKey?1:0)} kunci tersimpan {showKey ? "▴" : "▾"}
+          🔑 Setelan API Key — {(poolList.filter((k:any)=>k.provider===p.sunoProv).length) || (p.sunoKey?1:0)} kunci tersimpan {showKey ? "▴" : "▾"}
         </button>
 
         {showKey && (
           <div style={{ marginTop: 8, border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: 10, background: "rgba(0,0,0,.25)" }}>
             {providerLink.url ? (
               <a className="v6-chip" style={{ display: "inline-block", marginBottom: 8, background: "rgba(25,194,184,.15)", borderColor: "rgba(25,194,184,.35)" }} href={providerLink.url} target="_blank" rel="noreferrer">
-                🔑 Ambil API key di {providerLabelFull.replace(/^🥇 /,"")} ↗
+                🔑 Ambil API key di {String(providerLabelFull).replace(/^🥇 /,"")} ↗
               </a>
             ) : (
               <div className="v6-note">aimusic.so = mode gratis tanpa key (sering penuh). Mau lancar: pakai Kie.ai.</div>
@@ -7116,55 +7111,41 @@ function MusikModal(p: any) {
               1. Tap link di atas → login → {providerLink.hint}.<br/>
               2. Tempel <b>satu kunci per baris</b> di bawah → <b>+ Tambah</b>. Bisa BANYAK kunci: kalau satu habis/ditolak, mesin <b>otomatis pindah kunci berikutnya</b>.
             </div>
-            <textarea
-              className="v6-inp v6-ta"
-              rows={3}
-              placeholder={p.sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : p.sunoProv === "apiframe" ? "afk_xxx\nafk_yyy" : "kunci_baris_1\nkunci_baris_2"}
-              value={p.keyDraft || ""}
-              onChange={e => p.setKeyDraft && p.setKeyDraft(e.target.value)}
-            />
+            <textarea className="v6-inp v6-ta" rows={3} placeholder={p.sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "afk_xxx\nafk_yyy"} value={p.keyDraft || ""} onChange={e => p.setKeyDraft && p.setKeyDraft(e.target.value)} />
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button className="v6-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!p.keyDraft?.trim()} onClick={p.onAddKeys}>＋ Tambah</button>
-              <button className="v6-btn" style={{ flex: 1, marginTop: 0, background: "rgba(255,255,255,.06)" }} disabled={checkingCredit || !((keyPool.filter((k:any)=>k.provider===p.sunoProv).length) || p.sunoKey)} onClick={p.onCekKredit}>{checkingCredit ? "⏳ Mengecek…" : "🔄 Cek Kredit"}</button>
-              <button className="v6-btn" style={{ flex: 1, marginTop: 0, background: "rgba(239,68,68,.12)", borderColor: "rgba(239,68,68,.3)" }} disabled={!((keyPool.filter((k:any)=>k.provider===p.sunoProv).length))} onClick={p.onClearKeys}>🗑 Hapus</button>
+              <button className="v6-btn" style={{ flex: 1, marginTop: 0, background: "rgba(255,255,255,.06)" }} disabled={checking || !((poolList.filter((k:any)=>k.provider===p.sunoProv).length) || p.sunoKey)} onClick={p.onCekKredit}>{checking ? "⏳ Mengecek…" : "🔄 Cek Kredit"}</button>
+              <button className="v6-btn" style={{ flex: 1, marginTop: 0, background: "rgba(239,68,68,.12)", borderColor: "rgba(239,68,68,.3)" }} disabled={!poolList.filter((k:any)=>k.provider===p.sunoProv).length} onClick={p.onClearKeys}>🗑 Hapus</button>
             </div>
-
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 10, fontWeight: 800, opacity: .7 }}>
               <span>KUNCI TERSIMPAN ({p.sunoProv})</span>
-              <span>{keyPool.filter((k:any)=>k.provider===p.sunoProv).length || (p.sunoKey?1:0)} kunci {totalCredit!==null ? `· total ~${totalCredit} kredit` : ""}</span>
+              <span>{poolList.filter((k:any)=>k.provider===p.sunoProv).length || (p.sunoKey?1:0)} kunci {totalCredit!==null ? `· total ~${totalCredit} kredit` : ""}</span>
             </div>
-
-            {(!keyPool.filter((k:any)=>k.provider===p.sunoProv).length && !p.sunoKey) && <div className="v6-note" style={{ textAlign: "center" }}><i>Belum ada kunci.</i></div>}
-
-            {/* single legacy key */}
-            {p.sunoKey && keyPool.filter((k:any)=>k.provider===p.sunoProv).length===0 && (
+            {(!poolList.filter((k:any)=>k.provider===p.sunoProv).length && !p.sunoKey) && <div className="v6-note" style={{ textAlign: "center" }}><i>Belum ada kunci.</i></div>}
+            {p.sunoKey && poolList.filter((k:any)=>k.provider===p.sunoProv).length===0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
-                <span style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}>{maskKey(p.sunoKey)}</span>
-                <span style={{ fontSize: 11, opacity: .8 }}>{creditInfo[p.sunoKey] || ""}</span>
+                <span style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}>{masked(p.sunoKey)}</span>
+                <span style={{ fontSize: 11, opacity: .8 }}>{creditMap[p.sunoKey] || ""}</span>
                 <span style={{ fontSize: 10, background: "rgba(25,194,184,.2)", padding: "2px 6px", borderRadius: 6 }}>legacy</span>
               </div>
             )}
-
-            {keyPool.filter((k:any)=>k.provider===p.sunoProv).map((k:any)=>(
+            {poolList.filter((k:any)=>k.provider===p.sunoProv).map((k:any)=>(
               <div key={k.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
-                <span style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}>{maskKey(k.key)}</span>
-                <span style={{ fontSize: 11, opacity: .85, minWidth: 70, textAlign: "right" }}>{creditInfo[k.key] || ""}</span>
+                <span style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}>{masked(k.key)}</span>
+                <span style={{ fontSize: 11, opacity: .85, minWidth: 70, textAlign: "right" }}>{creditMap[k.key] || ""}</span>
                 <button style={{ fontSize: 11, background: "none", border: "1px solid rgba(255,255,255,.15)", borderRadius: 6, padding: "3px 6px", color: "#fca5a5" }} onClick={()=>p.onRemoveKey && p.onRemoveKey(k.key)}>🗑</button>
               </div>
             ))}
-
             <div className="v6-note" style={{ marginTop: 8 }}>
-              💳 <b>Kredit jujur</b>: nominal cuma tampil kalau provider mengeksposnya via API — kalau tidak, kami bilang jujur & kunci tetap bisa dipakai. 1 lagu = 1 panggilan API. Kunci disimpan DI HP-mu saja (localStorage), dipakai bareng Lahan & Studio.
-              {totalCredit!==null && <><br/>🧮 Total kredit terdeteksi: <b>{totalCredit}</b> (dari provider yang mengekspos)</>}
+              💳 Kredit jujur: nominal cuma tampil kalau provider mengekspos via API. 1 lagu = 1 panggilan API. Kunci disimpan DI HP-mu saja.
+              {totalCredit!==null && <><br/>🧮 Total kredit: <b>{totalCredit}</b></>}
             </div>
           </div>
         )}
 
-        {/* LEGACY single key quick input kalau belum pakai pool */}
         {!showKey && (
           <div style={{ marginTop: 6 }}>
-            <input className="v6-inp" placeholder="API key (kosongkan = mode gratis) — atau buka Setelan API Key di atas untuk multi-key" value={p.sunoKey}
-              onChange={e => { p.setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch {} }} />
+            <input className="v6-inp" placeholder="API key (kosongkan = mode gratis) — atau buka Setelan API Key di atas untuk multi-key" value={p.sunoKey} onChange={e => { p.setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch {} }} />
           </div>
         )}
 
@@ -7179,7 +7160,7 @@ function MusikModal(p: any) {
         </div>
         {(p.mVocal !== "instrumental") && <>
           <div className="v6-lbl">LIRIK (orisinal — aman hak cipta ✅)</div>
-          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini… contoh: Ibu aku lelah... tempat di mana kasih sayang adalah satu-satunya bahasa" value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
+          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini… contoh: Ibu aku lelah..." value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
           <div className="v6-note">💡 Pilih 👨 laki / 👩 perempuan biar suara sesuai — auto = biarkan AI pilih vokal terbaik</div>
         </>}
         <div className="v6-lbl">GENRE</div>
@@ -7195,23 +7176,22 @@ function MusikModal(p: any) {
           {["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"].map(m => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎 terbaik" : m === "suno-v3.5" ? " ⚡ tercepat" : ""}</option>)}
         </select>
 
-        {/* PROCESSING STATUS - detail */}
         {p.mStatus && (
           <div className={p.mStatus === "selesai" ? "v6-okbox" : p.mStatus === "gagal" ? "v6-risk" : "v6-okbox"} style={{ borderColor: p.mStatus==="selesai" ? "rgba(34,197,94,.4)" : p.mStatus==="gagal" ? "rgba(239,68,68,.4)" : "rgba(251,191,36,.35)", background: p.mStatus==="selesai" ? "rgba(34,197,94,.1)" : p.mStatus==="gagal" ? "rgba(239,68,68,.12)" : "rgba(251,191,36,.1)" }}>
             <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>
               {p.mStatus === "selesai" ? "✅ Lagu selesai & sudah masuk track audio! (berhasil)" :
                p.mStatus === "gagal" ? "❌ Gagal — coba lagi atau ganti model/provider. (tidak berhasil)" :
                p.mStatus === "memulai..." ? "⏳ Memulai… (sedang diproses)" :
-               `⏳ ${pollUi.last === "berhasil ✅" ? "Berhasil ✅" : pollUi.last.includes("gagal") ? `Tidak berhasil — ${pollUi.last}` : `Sedang diproses — ${pollUi.last}`} — ${pollUi.elapsed}s`}
+               `⏳ ${poll.last === "berhasil ✅" ? "Berhasil ✅" : poll.last.includes("gagal") ? `Tidak berhasil — ${poll.last}` : `Sedang diproses — ${poll.last}`} — ${poll.elapsed}s`}
             </div>
             {p.mStatus !== "selesai" && p.mStatus !== "gagal" && p.mStatus !== "memulai..." && (
               <>
                 <div style={{ fontSize: 11, opacity: .85, lineHeight: 1.4 }}>
-                  Cek #{pollUi.attempt} · {pollUi.elapsed > 0 ? `jalan ${pollUi.elapsed} detik` : "baru mulai"} · status: <b>{pollUi.last}</b> · task: {p.mTask ? maskKey(p.mTask) : "-"}<br/>
-                  Polling anti-beku (tiap cek 40 dtk, sabar dijaga timer, HP bangun langsung dicek) · sabar maks 9 mnt. Menit 2–5 itu antrean PENYEDIA — di luar kendali aplikasi.
+                  Cek #{poll.attempt} · {poll.elapsed > 0 ? `jalan ${poll.elapsed} detik` : "baru mulai"} · status: <b>{poll.last}</b> · task: {p.mTask ? masked(p.mTask) : "-"}<br/>
+                  Polling anti-beku (tiap cek 40 dtk, sabar dijaga timer, HP bangun langsung dicek) · sabar maks 9 mnt.
                 </div>
                 <div style={{ height: 6, background: "rgba(255,255,255,.12)", borderRadius: 99, marginTop: 8, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(100, (pollUi.elapsed/540)*100)}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#22d3ee)", transition: "width .5s" }} />
+                  <div style={{ width: `${Math.min(100, (poll.elapsed/540)*100)}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#22d3ee)", transition: "width .5s" }} />
                 </div>
               </>
             )}
@@ -7221,11 +7201,11 @@ function MusikModal(p: any) {
         {p.mTask && (
           <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
             <button className="v6-btn ghost" style={{ flex: 1 }} onClick={p.onCek}>🔄 Cek status lagu (gratis) — polling</button>
-            <button className="v6-btn ghost" style={{ flex: 1, borderColor: "rgba(239,68,68,.3)" }} onClick={()=>{ p.setMStatus && p.setMStatus(""); p.setMTask && p.setMTask(""); try{ localStorage.removeItem(SUNO_TASK_KEY); }catch{} }}>🗑 Lepas task</button>
+            <button className="v6-btn ghost" style={{ flex: 1, borderColor: "rgba(239,68,68,.3)" }} onClick={()=>{ p.setMStatus && p.setMStatus(""); p.setMTask && p.setMTask(""); try{ localStorage.removeItem("verve_suno_task_v1"); }catch{} }}>🗑 Lepas task</button>
           </div>
         )}
         {p.musicUrl && <div className="v6-okbox" style={{ marginTop: 8 }}>🎵 Musik aktif di track audio ✅ — {p.musicName || "Lagu AI"}</div>}
-        <div className="v6-note">🛡️ Lagu yang dibuat AI di sini adalah <b>orisinal</b> — bebas kamu pakai di YouTube/TikTok tanpa klaim (versi gratis & berbayar sama-sama aman dipakai komersial sesuai ketentuan provider).<br/>💡 Kunci yang kamu simpan di <b>Lahan Awalan</b> otomatis kebaca di sini juga (satu gudang: {SUNO_KEYS_KEY}).</div>
+        <div className="v6-note">🛡️ Lagu orisinal — aman pakai YouTube/TikTok. Kunci Lahan & Studio satu gudang: verve_suno_keys_v1.</div>
       </div>
     </div>
   );
