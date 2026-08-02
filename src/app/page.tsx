@@ -1358,6 +1358,45 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "antre" });
   const pollTimerRef = useRef<any>(null);
   const tickRef = useRef<any>(null);
+  const [lastMusicBackup, setLastMusicBackup] = useState<{ url: string; name: string; dur: number } | null>(null);
+  function restoreLastMusic() {
+    try {
+      let bak = lastMusicBackup;
+      if (!bak) {
+        const raw = localStorage.getItem("verve_last_music_v1");
+        if (raw) bak = JSON.parse(raw);
+      }
+      if (!bak || !bak.url) { flash("⚠️ Tidak ada backup lagu terakhir"); return; }
+      setMusicUrl(bak.url);
+      setMusicName(bak.name || "Lagu AI (backup)");
+      if (bak.dur) setMusicDur(bak.dur);
+      flash(`↩️ Lagu dipulihkan: ${bak.name || "Lagu AI"}`);
+    } catch (e: any) { setErr(e); }
+  }
+  async function downloadCurrentMusic() {
+    if (!musicUrl) { flash("⚠️ Belum ada musik di track"); return; }
+    try {
+      setStageText("⬇️ Menyiapkan download lagu...");
+      const src = proxifyAudioUrl(musicUrl);
+      const r = await fetch(src);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      const name = `${(musicName || "verve_lagu").replace(/[^a-z0-9\-_ ]/gi,"_")}.mp3`;
+      downloadBlob(blob, name);
+      flash(`⬇️ Lagu terdownload: ${name}`);
+    } catch (e: any) {
+      try {
+        const a = document.createElement("a");
+        a.href = musicUrl;
+        a.download = `${(musicName || "verve_lagu")}.mp3`;
+        a.target = "_blank";
+        a.click();
+        flash("⬇️ Mencoba download langsung...");
+      } catch {
+        setErr(e);
+      }
+    } finally { setTimeout(()=>setStageText(""), 1500); }
+  }
   /* ---------- refs ---------- */
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -4605,7 +4644,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
             ambientUrl, setAmbientUrl, ambientName, setAmbientName, ambientVol, setAmbientVol,
             autoDucking, setAutoDucking,
-            delAudio: () => { pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan"); },
+            delAudio: () => { 
+              if (musicUrl) { setLastMusicBackup({ url: musicUrl, name: musicName || "Lagu AI", dur: musicDur }); try { localStorage.setItem("verve_last_music_v1", JSON.stringify({ url: musicUrl, name: musicName, dur: musicDur, at: Date.now() })); } catch {} }
+              pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan — tap ↩ Pulihkan di Musik AI kalau salah hapus"); 
+            },
+            restoreLastMusic, downloadCurrentMusic, lastMusicBackup,
             startTextEdit, doSplitAtPlayhead, trimSlide,
             slideDuration, setSlideDuration, transition, setTransition, transitionDur, setTransitionDur,
             cineBars, setCineBars, musicDur, musicBeats: musicBeats?.beats || null, applyStylePreset, seekPreview,
@@ -4637,7 +4680,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         mTitle={mTitle} setMTitle={setMTitle} mLyrics={mLyrics} setMLyrics={setMLyrics} mStyle={mStyle} setMStyle={setMStyle}
         mGenre={mGenre} setMGenre={setMGenre} mMood={mMood} setMMood={setMMood} mModel={mModel} setMModel={setMModel}
         mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} setMTask={setMTask} mStatus={mStatus} setMStatus={setMStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
-        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} niche={niche} projTitle={projTitle} />}
+        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} niche={niche} projTitle={projTitle} delAudio={()=>{ if (musicUrl) { setLastMusicBackup({ url: musicUrl, name: musicName || "Lagu AI", dur: musicDur }); try { localStorage.setItem("verve_last_music_v1", JSON.stringify({ url: musicUrl, name: musicName, dur: musicDur, at: Date.now() })); } catch {} } setMusicUrl(""); setMusicName(""); setMusicDur(0); }} restoreLastMusic={restoreLastMusic} downloadCurrentMusic={downloadCurrentMusic} lastMusicBackup={lastMusicBackup} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
       {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
       {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
@@ -7109,7 +7152,26 @@ function MusikModal(p: any) {
             <button className="v6-btn ghost" style={{ flex: 1, borderColor: "rgba(239,68,68,.3)" }} onClick={()=>{ try{ p.setMStatus && p.setMStatus(""); }catch{} try{ p.setMTask && p.setMTask(""); }catch{} try{ localStorage.removeItem("verve_suno_task_v1"); }catch{} }}>🗑 Lepas task</button>
           </div>
         )}
-        {p.musicUrl && <div className="v6-okbox">🎵 Musik aktif di track audio ✅</div>}
+        {p.musicUrl && (
+          <>
+            <div className="v6-okbox" style={{ marginTop: 8 }}>🎵 Musik aktif di track audio ✅ — {p.musicName || "Lagu AI"}</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button className="v6-btn" style={{ flex: 1, background: "rgba(34,197,94,.15)", borderColor: "rgba(34,197,94,.35)" }} onClick={p.downloadCurrentMusic}>⬇️ Download lagu (backup)</button>
+              <button className="v6-btn" style={{ flex: 1, background: "rgba(239,68,68,.12)", borderColor: "rgba(239,68,68,.25)" }} onClick={()=>{ if (confirm("Hapus lagu dari track? Backup otomatis disimpan, bisa dipulihkan.")) { p.delAudio && p.delAudio(); } }}>🗑 Hapus</button>
+            </div>
+          </>
+        )}
+        {!p.musicUrl && p.lastMusicBackup && (
+          <div className="v6-okbox" style={{ marginTop: 8, background: "rgba(251,191,36,.1)", borderColor: "rgba(251,191,36,.3)" }}>
+            <div style={{ fontWeight: 800, fontSize: 12 }}>🗂️ Backup lagu terakhir</div>
+            <div style={{ fontSize: 11, opacity: .85, marginTop: 4 }}>{p.lastMusicBackup.name} · {p.lastMusicBackup.dur ? `${Math.round(p.lastMusicBackup.dur)} detik` : ""} · tersimpan otomatis pas kamu hapus</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button className="v6-btn" style={{ flex: 1 }} onClick={p.restoreLastMusic}>↩️ Pulihkan lagu</button>
+              <button className="v6-btn" style={{ flex: 1, background: "rgba(255,255,255,.06)" }} onClick={()=>{ try{ const a=document.createElement("a"); a.href=p.lastMusicBackup.url; a.download=`${(p.lastMusicBackup.name||"verve_lagu")}.mp3`; a.click(); }catch{} }}>⬇️ Download backup</button>
+            </div>
+          </div>
+        )}
+        {!p.musicUrl && !p.lastMusicBackup && (()=>{ try{ const raw=localStorage.getItem("verve_last_music_v1"); if(raw){ const j=JSON.parse(raw); return (<div className="v6-note" style={{ marginTop: 8 }}>🗂️ Ada backup lagu di HP: <b>{j.name||"Lagu AI"}</b> · <button className="v6-chip" onClick={p.restoreLastMusic}>↩️ Pulihkan</button></div>); } }catch{} return null; })()}
         <div className="v6-note">🛡️ Lagu yang dibuat AI di sini adalah <b>orisinal</b> — bebas kamu pakai di YouTube/TikTok tanpa klaim (versi gratis & berbayar sama-sama aman dipakai komersial sesuai ketentuan provider).</div>
       </div>
     </div>
