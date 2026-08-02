@@ -1327,6 +1327,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [ttsVoice, setTtsVoice] = useState("alloy");
   /* ---------- draft ---------- */
   const [draftId, setDraftId] = useState("");
+  const [gambaraiReplaceId, setGambaraiReplaceId] = useState<string | undefined>(undefined);
   /* ---------- refs ---------- */
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2205,7 +2206,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "split": doSplitAtPlayhead(); break;
       case "animasi": setTool("animasi"); setSheetTab("masuk"); break;
       case "efek": setTool("efek"); break;
-      case "gambarai": setModal("gambarai"); break;
+      case "gambarai": setGambaraiReplaceId(undefined); setModal("gambarai"); break;
       case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
@@ -2752,10 +2753,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = () => rej(new Error("gagal memuat")); im.src = durl; });
       const cropped = fitMax(img, 2048);
       pushHist();
-      if (replaceId) setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: cropped } : s));
-      else setSlides(c => [...c, { id: uid("ai"), imageUrl: cropped }]);
-      flash("✨ Gambar AI siap");
+      setSlides(c => {
+        if (replaceId && c.some(s => s.id === replaceId)) {
+          return c.map(s => s.id === replaceId ? { ...s, imageUrl: cropped } : s);
+        } else {
+          return [...c, { id: uid("ai"), imageUrl: cropped }];
+        }
+      });
+      if (replaceId) flash("⇄ Gambar diganti");
+      else flash("✨ Gambar AI siap — tambah track baru");
       setModal(null);
+      setGambaraiReplaceId(undefined);
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
@@ -4509,7 +4517,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
             estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText, guardJob,
-            openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
+            openModal: (m:string)=>{ setGambaraiReplaceId(undefined); setModal(m); }, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
+            setGambaraiReplaceId,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             voiceUrl, setVoiceUrl,
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
@@ -4557,10 +4566,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             📥 Pilih foto dari galeri
             <input type="file" accept="image/*" hidden onChange={e => { addImageFiles(e.target.files, selId); setModal(null); }} />
           </label>
-          <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} onClick={() => setModal("gambarai")}>✨ Generate dengan AI</button>
+          <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} onClick={() => { setGambaraiReplaceId(selId || undefined); setModal("gambarai"); }}>✨ Generate dengan AI (ganti klip ini)</button>
         </MiniModal>
       )}
-      {modal === "gambarai" && <GambarAiModal onClose={() => setModal(null)} onGen={(pr: string, st: string) => genImageForClip(pr, st, selId || undefined)} loading={loading} />}
+      {modal === "gambarai" && <GambarAiModal onClose={() => { setModal(null); setGambaraiReplaceId(undefined); }} onGen={(pr: string, st: string) => genImageForClip(pr, st, gambaraiReplaceId)} loading={loading} />}
       {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} />}
       {modal === "hakcipta" && <HakCiptaModal musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl} onClose={() => setModal(null)} />}
 
