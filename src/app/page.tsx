@@ -1917,11 +1917,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       clockRef.current = { audio: null, t0: performance.now(), base: aud0.duration || 0, running: true };
     }
     const t = getClockT();
-    const tl = timelineRef.current;
+    // Fix: pakai timelineRef + fallback ke timeline state biar tidak null saat ref stale → cegah 00:12/00:00 desync
+    const tl = timelineRef.current || timeline;
     const total = tl?.total || 0;
     const aud = clockRef.current.audio;
     const audioDur = aud && isFinite(aud.duration) ? aud.duration : 0;
-    // kelola elemen audio ber-offset: hidup saat masuk jendelanya, diam di luar
     let offsetEnd = 0;
     for (const e of tlAudRef.current) {
       const ed = isFinite(e.a.duration) ? e.a.duration : e.dur;
@@ -1934,12 +1934,21 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       } catch {}
     }
     const totalAll = Math.max(total, audioDur, offsetEnd);
+    // Fix: totalAll 0 → jangan bikin curT lari ke 12 detik, reset ke 0 biar sinkron
+    if (totalAll <= 0.01) {
+      setDurT(0);
+      if (t > 0.5) { stopPreview(true); setCurT(0); drawFrame(0); return; }
+      setCurT(0);
+      drawFrame(0);
+      rafRef.current = requestAnimationFrame(tick);
+      return;
+    }
     setDurT(totalAll);
-    if (totalAll > 0 && t >= totalAll - 0.02) { stopPreview(true); setCurT(0); drawFrame(0); return; }
+    if (t >= totalAll - 0.02) { stopPreview(true); setCurT(0); drawFrame(0); return; }
     setCurT(t);
     drawFrame(t);
     rafRef.current = requestAnimationFrame(tick);
-  }, [getClockT, drawFrame]); // eslint-disable-line — stopPreview stabil ([]), dipanggil saat runtime
+  }, [getClockT, drawFrame, timeline]); // eslint-disable-line — include timeline fallback
 
   const stopPreview = useCallback((ended = false) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null;
@@ -2216,7 +2225,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     pushHist();
   }, []); // eslint-disable-line
 
-  // auto-AKHIRAN: saat media pertama ditambahkan pada proyek kosong (ala CapCut)
+  // auto-AKHIRAN: saat media pertama ditambahkan pada proyek kosong (ala CapCut) + sync fix
   const prevLenRef = useRef<number | null>(null);
   useEffect(() => {
     const w = window as any;
@@ -2227,6 +2236,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       setSlides(c => c.some(x => x.id.startsWith("outro")) ? c : [...c, o]);
       setSlideOptsById(c => ({ ...c, [o.id]: { dur: 2.2, trans: "fadeblack" } }));
       flash("🏁 Akhiran otomatis ditambahkan (tap untuk ganti/hapus)");
+    }
+    // Fix sync: kalau sebelumnya 0 klip terus jadi >0, reset playhead ke 0 biar tidak 00:12/00:00 desync
+    if ((prevLenRef.current === 0 || prevLenRef.current === null) && n > 0) {
+      setCurT(0);
+      try { drawFrameRefCb.current(0); } catch {}
     }
     prevLenRef.current = n;
   }, [slides]); // eslint-disable-line
