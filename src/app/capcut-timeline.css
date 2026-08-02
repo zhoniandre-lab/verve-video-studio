@@ -1,372 +1,387 @@
 /* ==================================================================
-   CAPCUT-EXACT TIMELINE FIX — v21.1 CORRECTED
-   Balikin logic stabil v19/v20 (drag trim/move 100% jalan) + skin CapCut anatomi
+   CAPCUT ANATOMY EXACT FINAL — v25
+   Hapus yang lama, ganti 100% persis gambar referensi anatomi
+   Preview 60% top, Playhead white fixed center, Trim Handle, 
+   Clip Duration 5.0s, Color Coding, Pinch Zoom, Split, Tips
    ================================================================== */
 
-/* ---- Stage wrapper fix ---- */
-.tubus-editor-main {
-  display: flex !important;
-  flex: 1 1 auto !important;
-  min-height: 0 !important;
-  background: #0f141f !important;
-  overflow: hidden !important;
-}
-.tubus-icon-col {
-  width: 48px !important;
-  min-width: 48px !important;
-  background: #151d2e !important;
-  border-right: 1px solid #1e283e !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 6px !important;
-  padding: 10px 0 !important;
-}
-.tubus-icon-btn {
-  width: 36px !important;
-  height: 36px !important;
-  border-radius: 9px !important;
-  background: transparent !important;
-  border: 1px solid transparent !important;
-  color: #5a6a88 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  font-size: 16px !important;
-  cursor: pointer !important;
-  transition: all .18s !important;
-}
-.tubus-icon-btn:hover { background: rgba(255,255,255,0.06) !important; color: #cbd5e1 !important; }
-.tubus-icon-btn.on { background: #1e2e4a !important; border-color: #2a4a7a !important; color: #60a5fa !important; box-shadow: 0 0 0 1px rgba(96,165,250,0.2) inset !important; }
-.tubus-icon-btn:disabled { opacity: 0.35 !important; cursor: default !important; }
-
-/* Stage wrap must be flex:1 and ref only on middle */
-.v6e-stage-wrap {
-  flex: 1 !important;
-  min-width: 0 !important;
-  background: #151d2e !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 12px !important;
-  position: relative !important;
-}
-.v6e-stage {
-  background: #0f141f !important;
-  border: 1px solid #232e45 !important;
-  border-radius: 12px !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
-  overflow: hidden !important;
-  flex: 0 1 auto !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-}
-
-/* Right panel */
+/* Hide old side panels and rails that are not in anatomy */
+.tubus-icon-col,
 .tubus-right-panel {
-  width: 272px !important;
-  min-width: 272px !important;
-  background: #1a2336 !important;
-  border-left: 1px solid #232e45 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow-y: auto !important;
-  max-height: 100% !important;
-}
-.tubus-right-header {
-  padding: 12px 14px !important;
-  font-size: 12px !important;
-  font-weight: 800 !important;
-  color: #e2e8f0 !important;
-  border-bottom: 1px solid #232e45 !important;
-  display: flex !important;
-  justify-content: space-between !important;
-}
-
-/* ---- Timeline CapCut Exact — old classes v6e-* ---- */
-.v6e-tl {
-  background: #121a2b !important;
-  border-top: 1px solid #1e283e !important;
-}
-.v6e-tl-scrollwrap {
-  background: #0f141f !important;
+  display: none !important;
 }
 .v6e-tl-rail {
-  background: #151d2e !important;
-  border-right: 1px solid #1e283e !important;
-  width: 56px !important;
-  min-width: 56px !important;
+  display: none !important;
 }
-.v6e-rail-tile {
-  background: #1a2336 !important;
-  border: 1px solid #232e45 !important;
-  color: #7a8aab !important;
-  height: 40px !important;
-  border-radius: 10px !important;
-  font-size: 10px !important;
-  margin-bottom: 6px !important;
-}
-.v6e-rail-tile span { font-size: 8px !important; }
 
-.v6e-track, .v6e-lanerow {
+/* Root timeline */
+.v6e-tl {
+  background: #0a0e18 !important;
+  border-top: 1px solid #1e283e !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding-bottom: 0 !important;
+}
+.v6e-tl-inner {
+  display: flex !important;
+  flex-direction: column !important;
+}
+.v6e-tl-scrollwrap {
+  background: #0a0e18 !important;
+  flex: 1 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+/* Ruler — 00:00 • 00:05 */
+.v6e-tl-scrollwrap > div > div > div:first-child,
+.capcut-ruler {
+  height: 22px !important;
+  background: #0a0e18 !important;
+  border-bottom: 1px solid #1e283e !important;
+  position: relative !important;
+  margin-bottom: 8px !important;
+}
+
+/* Track rows — Video, Audio, Text, Sticker */
+.v6e-track,
+.v6e-lanerow {
   min-height: 44px !important;
-  margin-bottom: 6px !important;
+  height: auto !important;
+  margin-bottom: 8px !important;
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 12px !important;
   position: relative !important;
 }
 
-/* Video clip — CapCut blue, thumbnail, duration badge, trim handles */
+/* Label for each track — add via pseudo before track? Use first child */
+.v6e-track::before,
+.v6e-lanerow::before {
+  content: "";
+  width: 0;
+}
+
+/* Video clip — blue border selected, thumbnail, 5.0s badge, trim handles */
 .v6e-clip {
-  height: 44px !important;
-  border-radius: 8px !important;
-  background: #1f2a3d !important;
-  border: 1.5px solid rgba(255,255,255,0.08) !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important;
+  height: 48px !important;
+  border-radius: 10px !important;
+  background: #1e293b !important;
+  border: 2px solid rgba(255,255,255,0.08) !important;
   overflow: hidden !important;
-  transition: transform .12s, border-color .12s, box-shadow .12s !important;
+  min-width: 90px !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important;
 }
 .v6e-clip.sel {
-  border-color: #60a5fa !important;
-  box-shadow: 0 0 0 2px rgba(96,165,250,0.4), 0 4px 16px rgba(0,0,0,0.35) !important;
-  transform: scale(1.015) !important;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.45), 0 6px 20px rgba(0,0,0,0.4) !important;
   z-index: 10 !important;
+}
+.v6e-clip img,
+.v6e-clipface {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
 }
 .v6e-clip .dur {
   position: absolute !important;
-  left: 4px !important;
-  bottom: 3px !important;
-  background: rgba(0,0,0,0.72) !important;
+  left: 50% !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%,-50%) !important;
+  background: rgba(0,0,0,0.82) !important;
   color: #fff !important;
-  font-size: 8.5px !important;
+  font-size: 11px !important;
   font-weight: 800 !important;
-  padding: 1px 5px !important;
-  border-radius: 4px !important;
+  padding: 3px 8px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
   z-index: 3 !important;
 }
 .v6e-clip .hdl {
   position: absolute !important;
   top: 0 !important;
   bottom: 0 !important;
-  width: 16px !important;
+  width: 18px !important;
+  background: #fff !important;
+  color: #0f172a !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: #fff !important;
-  color: #0f172a !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   font-weight: 900 !important;
   z-index: 4 !important;
   cursor: ew-resize !important;
   opacity: 0 !important;
-  transition: opacity .15s, background .15s !important;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.2) !important;
+  transition: opacity .15s !important;
 }
 .v6e-clip.sel .hdl { opacity: 1 !important; }
-.v6e-clip .hdl.l { left: 0 !important; border-radius: 8px 0 0 8px !important; }
-.v6e-clip .hdl.r { right: 0 !important; border-radius: 0 8px 8px 0 !important; }
-.v6e-clip .hdl:active { background: #60a5fa !important; color: #fff !important; }
+.v6e-clip .hdl.l { left: 0 !important; border-radius: 10px 0 0 10px !important; }
+.v6e-clip .hdl.r { right: 0 !important; border-radius: 0 10px 10px 0 !important; }
 .v6e-clip .hdl::before {
-  /* extra catch zone 20px outside */
   content: "" !important;
   position: absolute !important;
   top: 0 !important;
   bottom: 0 !important;
-  width: 20px !important;
+  width: 24px !important;
 }
 .v6e-clip .hdl.l::before { right: 100% !important; }
 .v6e-clip .hdl.r::before { left: 100% !important; }
 
-/* Audio clip — green/teal with waveform */
+/* Audio clip — green with waveform */
 .v6e-audioclip {
-  height: 36px !important;
-  border-radius: 8px !important;
-  background: linear-gradient(90deg,#0f766e,#14b8a6) !important;
+  height: 40px !important;
+  border-radius: 10px !important;
+  background: linear-gradient(90deg,#15803d,#22c55e) !important;
+  border: 1px solid rgba(34,197,94,0.35) !important;
   color: #fff !important;
-  border: 1px solid rgba(20,184,166,0.3) !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
-  padding: 0 8px !important;
+  padding: 0 12px !important;
   display: flex !important;
   align-items: center !important;
-  gap: 6px !important;
+  gap: 8px !important;
   overflow: hidden !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
+  flex-shrink: 0 !important;
+  min-width: 120px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
 }
 .v6e-audioclip .wv {
   display: flex !important;
   align-items: center !important;
-  gap: 1.5px !important;
-  height: 18px !important;
+  gap: 2px !important;
+  height: 20px !important;
   flex: 1 !important;
 }
 .v6e-audioclip .wv i {
-  width: 2px !important;
-  background: rgba(255,255,255,0.75) !important;
-  border-radius: 1px !important;
-}
-.v6e-audioclip.lift {
-  transform: scale(1.05) !important;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.4), 0 0 0 2px rgba(96,165,250,0.4) !important;
-  z-index: 20 !important;
+  width: 2.5px !important;
+  background: rgba(255,255,255,0.85) !important;
+  border-radius: 2px !important;
 }
 
-/* Text chip — orange */
+/* Text chip — orange Adventure Awaits */
 .v6e-textchip {
-  height: 32px !important;
-  border-radius: 8px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
   background: #f97316 !important;
   color: #fff !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 700 !important;
-  border: 1px solid rgba(249,115,22,0.35) !important;
-  padding: 0 10px 0 10px !important;
+  border: 1px solid rgba(249,115,22,0.4) !important;
+  padding: 0 14px !important;
   display: flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  overflow: hidden !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+  min-width: 100px !important;
   white-space: nowrap !important;
   cursor: grab !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
 }
 .v6e-textchip.lyr {
   background: linear-gradient(90deg,#16a34a,#22c55e) !important;
-  border-color: rgba(34,197,94,0.4) !important;
 }
 .v6e-textchip.sel {
   border-color: #fff !important;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.4), 0 4px 12px rgba(0,0,0,0.25) !important;
-  transform: scale(1.02) !important;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.4) !important;
 }
 .v6e-textchip .txtdur {
-  width: 18px !important;
-  background: rgba(0,0,0,0.18) !important;
-  border-radius: 0 8px 8px 0 !important;
-  margin-left: auto !important;
-  margin-right: -10px !important;
+  width: 20px !important;
   height: 100% !important;
+  background: rgba(0,0,0,0.15) !important;
+  border-radius: 0 10px 10px 0 !important;
+  margin-left: auto !important;
+  margin-right: -14px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   cursor: ew-resize !important;
 }
 
-/* Sticker chip — pink */
+/* Sticker — pink */
 .v6e-textchip.stik {
   background: #ec4899 !important;
-  border-color: rgba(236,72,153,0.4) !important;
+  border-color: rgba(236,72,153,0.45) !important;
   font-size: 16px !important;
+  min-width: 60px !important;
 }
 
 /* Add buttons */
-.v6e-addclip, .v6e-track-addbtn {
-  background: #1a2336 !important;
-  border: 1.5px dashed #2a3a52 !important;
-  color: #5a6a88 !important;
-  border-radius: 10px !important;
+.v6e-addclip,
+.v6e-track-addbtn,
+.capcut-add {
   width: 44px !important;
-  min-width: 44px !important;
   height: 44px !important;
+  min-width: 44px !important;
+  border-radius: 12px !important;
+  background: #1e293b !important;
+  border: 1.5px dashed #334155 !important;
+  color: #64748b !important;
+  font-size: 20px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 18px !important;
   cursor: pointer !important;
   flex-shrink: 0 !important;
 }
-.v6e-addclip:hover, .v6e-track-addbtn:hover {
+.v6e-addclip:hover,
+.v6e-track-addbtn:hover,
+.capcut-add:hover {
   border-color: #3b82f6 !important;
   color: #60a5fa !important;
-  background: #1e2e4a !important;
+  background: #1e293b !important;
 }
 
-/* Playhead fixed center — white 2px + triangle */
+/* Playhead fixed center */
 .v6e-playhead-fixed {
   width: 2px !important;
   background: #fff !important;
-  box-shadow: 0 0 12px rgba(255,255,255,0.6), 0 0 0 1px rgba(0,0,0,0.3) !important;
-  z-index: 30 !important;
+  box-shadow: 0 0 12px rgba(255,255,255,0.7), 0 0 0 1px rgba(0,0,0,0.4) !important;
+  z-index: 50 !important;
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  pointer-events: none !important;
 }
 .v6e-playhead-fixed::before {
   content: "" !important;
   position: absolute !important;
-  top: -6px !important;
+  top: -2px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   width: 0 !important;
   height: 0 !important;
-  border-left: 7px solid transparent !important;
-  border-right: 7px solid transparent !important;
-  border-top: 9px solid #fff !important;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)) !important;
+  border-left: 8px solid transparent !important;
+  border-right: 8px solid transparent !important;
+  border-top: 10px solid #fff !important;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)) !important;
 }
 
-/* Snap line teal */
+/* Snap line */
 .v6e-snapline {
-  background: #14b8a6 !important;
-  box-shadow: 0 0 10px rgba(20,184,166,0.6) !important;
+  background: #22d3ee !important;
+  box-shadow: 0 0 12px rgba(34,211,238,0.7) !important;
   width: 2px !important;
-  z-index: 25 !important;
+  z-index: 40 !important;
 }
 
-/* Trans mid chip white */
+/* Trans mid */
 .v6e-trans-mid {
   width: 2px !important;
   background: #fff !important;
-  border-radius: 1px !important;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 0 6px rgba(255,255,255,0.3) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 0 8px rgba(255,255,255,0.4) !important;
+  position: absolute !important;
+  top: 6px !important;
+  bottom: 6px !important;
 }
 .v6e-trans-mid:hover { background: #60a5fa !important; width: 4px !important; }
 
-/* Bottom tips */
-.v6e-tlhint {
-  background: #151d2e !important;
-  border: 1px solid #1e283e !important;
-  color: #7a8aab !important;
-  font-size: 11px !important;
-  border-radius: 10px !important;
-  padding: 8px 12px !important;
-  bottom: 8px !important;
-  top: auto !important;
-}
-
-/* Control row minimal */
-.v6e-ctrl {
-  background: #0f141f !important;
-  border-top: 1px solid #1e283e !important;
-  border-bottom: 1px solid #1e283e !important;
-  height: 48px !important;
-  padding: 0 12px !important;
-}
-
-/* Toolbar bottom 7 icons */
+/* Bottom toolbar — 7 icons */
 .v6e-toolbar {
-  background: #0f141f !important;
+  background: #0a0e18 !important;
   border-top: 1px solid #1e283e !important;
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom)) !important;
 }
 .v6e-tools {
-  gap: 2px !important;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) !important;
+  display: flex !important;
+  gap: 4px !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+  justify-content: space-around !important;
 }
+.v6e-tools::-webkit-scrollbar { display: none !important; }
 .v6e-tlbtn {
-  min-width: 52px !important;
-  height: 48px !important;
-  border-radius: 12px !important;
+  min-width: 56px !important;
+  height: 52px !important;
+  border-radius: 14px !important;
   background: transparent !important;
-  color: #5a6a88 !important;
-  font-size: 18px !important;
-  gap: 2px !important;
+  color: #64748b !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  font-size: 20px !important;
+  flex: 1 !important;
+  border: 1px solid transparent !important;
 }
-.v6e-tlbtn span { font-size: 9px !important; color: #5a6a88 !important; }
+.v6e-tlbtn span {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+}
 .v6e-tlbtn.on {
-  background: #1e2e4a !important;
-  color: #60a5fa !important;
-  border: 1px solid #2a4a7a !important;
-  box-shadow: 0 0 0 1px rgba(96,165,250,0.15) inset !important;
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
 }
-.v6e-tlbtn.on span { color: #60a5fa !important; }
+.v6e-tlbtn.on span { color: #f8fafc !important; }
 
-/* Ensure canvas visible */
-.v6e-stage canvas {
-  display: block !important;
-  width: 100% !important;
-  height: 100% !important;
+/* Top tips bar — CapCut style */
+.v6e-tlhint {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+  border-radius: 12px !important;
+  padding: 10px 14px !important;
+  bottom: 80px !important;
+  top: auto !important;
+  left: 12px !important;
+  right: 12px !important;
+}
+
+/* Zoom buttons */
+.v6e-tlfit,
+.v6e-tlsplit,
+.v6e-tlzm,
+.v6e-tlfp,
+.v6e-tlhelp {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  color: #cbd5e1 !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+}
+
+/* Stage */
+.v6e-stage-wrap {
+  background: #0f141f !important;
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+}
+.v6e-stage {
+  background: #000 !important;
+  border: 1px solid #1e293e !important;
+  border-radius: 16px !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important;
+  overflow: hidden !important;
+}
+
+/* Hide old premium bento right panel for pure CapCut anatomy */
+.tubus-right-panel {
+  display: none !important;
+}
+.tubus-icon-col {
+  display: none !important;
+}
+
+/* Make preview 60% top */
+.v6e-stage-wrap {
+  min-height: 58vh !important;
+  max-height: 62vh !important;
 }

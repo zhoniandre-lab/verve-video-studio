@@ -4283,157 +4283,39 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         <button className="v6e-export" onClick={() => { setTool("ekspor"); setSheetTab(""); setExTab("video"); }} disabled={!slides.length}>Ekspor</button>
       </header>
 
-      {/* ============ STAGE — CAPCUT ANATOMY EXACT (logic stabil v19, skin CapCut) ============ */}
-      <div style={{display:'flex',flex:'1 1 auto',minHeight:0,background:'#0f141f',overflow:'hidden'}}>
-        <div className="tubus-icon-col" style={{width:48,minWidth:48,background:'#151d2e',borderRight:'1px solid #1e283e',display:'flex',flexDirection:'column',alignItems:'center',gap:6,padding:'10px 0'}}>
-          <button className="tubus-icon-btn on" title="Select" onClick={()=>{ setSelId(''); setClipBar(false); }}>↖️</button>
-          <button className="tubus-icon-btn" title="Text" onClick={()=>onMainTool('teks')}>🔤</button>
-          <button className="tubus-icon-btn" title="Image" onClick={()=>setTool('media')}>🖼️</button>
-          <button className="tubus-icon-btn" title="Audio" onClick={()=>onMainTool('audio')}>🎵</button>
-          <button className="tubus-icon-btn" title="Stiker" onClick={()=>onMainTool('stiker')}>😀</button>
-          <button className="tubus-icon-btn" title="Efek" onClick={()=>onMainTool('efek')}>✨</button>
-          <div style={{flex:1}}/>
-          <button className="tubus-icon-btn" title="Undo" onClick={undo} disabled={!canUndo}>↶</button>
-          <button className="tubus-icon-btn" title="Redo" onClick={redo} disabled={!canRedo}>↷</button>
-        </div>
-
-        <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
-             style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : {flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:12,background:'#151d2e',position:'relative'}}
-             onClick={fullStage ? () => setFullStage(false) : undefined}>
-          <div className="v6e-stage">
-            <canvas ref={canvasRef}
-              onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
-              style={{ touchAction: "none" }} />
-            <div className={`selbox ${selId ? "on" : ""}`} />
-            {(selTextSid || selStik) && !tool && (
-              <button className="v6e-stagedel" title="Hapus objek terpilih" onClick={(e) => { e.stopPropagation(); delSelObj(); }}>🗑</button>
-            )}
-            {!slides.length && (
-              <div className="v6e-stage-empty">
-                <div style={{ fontSize: 40 }}>🎬</div>
-                <div style={{ fontSize: 12 }}>Tambahkan media untuk mulai mengedit</div>
-                <button onClick={() => setTool("media")}>＋ Tambah media</button>
-              </div>
-            )}
-          </div>
-          {(() => {
-            const o = selOpt as any;
-            const hasTr = o && ((o.tx ?? 0) !== 0 || (o.ty ?? 0) !== 0 || (o.tz ?? 1) !== 1);
-            return hasTr ? (
-              <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetClipTransform(selId); }} title="Kembalikan posisi & ukuran gambar">
-                ⟲ {Math.round((o.tz ?? 1) * 100)}%
-              </button>
-            ) : null;
-          })()}
-        </div>
-
-                <div className="tubus-right-panel" style={{width:300,minWidth:300,background:'#1a2336',borderLeft:'1px solid #232e45',display:'flex',flexDirection:'column',overflowY:'auto'}}>
-          <div style={{padding:'12px 14px',fontSize:12,fontWeight:800,color:'#e2e8f0',borderBottom:'1px solid #232e45',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>Properties — CapCut Anatomy</span><span style={{fontSize:10,background:'#1e2e4a',border:'1px solid #2a4a7a',padding:'2px 6px',borderRadius:99,color:'#60a5fa'}}>ON</span></div>
-          
-          {selTextSid ? (() => {
-            const enc = selTextSid;
-            const ci = enc.indexOf("::");
-            const ssid = ci < 0 ? enc : enc.slice(0, ci);
-            const tid = ci < 0 ? "" : enc.slice(ci+2);
-            const o = slideOptsById[ssid] as any;
-            const t = tid ? (o?.texts||[]).find((x:any)=>x.id===tid) : o?.text;
-            if (!t) return <div style={{padding:14,fontSize:11,color:'#6b7a94'}}>Pilih teks di canvas<br/>drag tepi = trim</div>;
-            const sizePct = Math.round((t.size||0.055)*1000);
-            return (
-              <>
-                <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8,display:'flex',justifyContent:'space-between'}}><span>Size</span><span style={{color:'#60a5fa'}}>{sizePct} Px</span></div>
-                  <input type="range" min={25} max={90} value={sizePct} onChange={e=>{
-                    const nv = Number(e.target.value)/1000;
-                    if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,size:nv}:x); setOpt(ssid,{texts} as any); }
-                    else setOpt(ssid,{text:{...t,size:nv}} as any);
-                  }} style={{width:'100%',accentColor:'#3b82f6'}}/>
-                </div>
-                <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8}}>Position</div>
-                  <div style={{display:'flex',gap:8}}>
-                    <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>X: {Math.round((t.x??0.5)*100)}%</div>
-                    <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>Y: {Math.round((t.y??0.82)*100)}%</div>
-                  </div>
-                  <div style={{display:'flex',gap:6,marginTop:10}}>
-                    {['#ffffff','#000000','#ef4444','#3b82f6','#22c55e','#f59e0b'].map(col=>(
-                      <button key={col} onClick={()=>{
-                        if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,color:col}:x); setOpt(ssid,{texts} as any); }
-                        else setOpt(ssid,{text:{...t,color:col}} as any);
-                      }} style={{width:22,height:22,borderRadius:6,background:col,border: t.color===col?'2px solid #60a5fa':'1px solid rgba(255,255,255,0.15)'}}/>
-                    ))}
-                  </div>
-                </div>
-                <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8}}>Effect Settings</div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:4}}><span>Bold</span><button className={`v6-toggle ${t.bold?'on':''}`} style={{scale:'0.8'}} onClick={()=>{
-                    if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,bold:!x.bold}:x); setOpt(ssid,{texts} as any); }
-                    else setOpt(ssid,{text:{...t,bold:!t.bold}} as any);
-                  }}/></div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11}}><span>Shadow</span><button className={`v6-toggle ${t.shadow?'on':''}`} style={{scale:'0.8'}} onClick={()=>{
-                    if (tid) { const texts = (o?.texts||[]).map((x:any)=> x.id===tid? {...x,shadow:!x.shadow}:x); setOpt(ssid,{texts} as any); }
-                    else setOpt(ssid,{text:{...t,shadow:!t.shadow}} as any);
-                  }}/></div>
-                </div>
-                <div style={{padding:'12px 14px'}}>
-                  <button className="v6-btn ghost" style={{width:'100%',fontSize:10}} onClick={()=>{ const enc2 = selTextSid; const ci2 = enc2.indexOf("::"); const ssid2 = ci2<0?enc2:enc2.slice(0,ci2); const tid2 = ci2<0?"":enc2.slice(ci2+2); if(tid2){ const o2=slideOptsById[ssid2] as any; const texts=(o2?.texts||[]).filter((x:any)=>x.id!==tid2); setOpt(ssid2,{texts} as any); setSelTextSid(""); } else { setOpt(ssid,{text:{...DEFAULT_TEXT,txt:""}} as any); } }}>🗑 Hapus Teks</button>
-                </div>
-              </>
-            );
-          })() : selId ? (
-            <>
-              <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8,display:'flex',justifyContent:'space-between'}}><span>Size</span><span style={{color:'#60a5fa'}}>{Math.round(((selOpt as any)?.tz||1)*100)}%</span></div>
-                <input type="range" min={0.5} max={2} step={0.05} value={(selOpt as any)?.tz||1} onChange={e=>setOpt(selId,{tz:Number(e.target.value)} as any)} style={{width:'100%',accentColor:'#3b82f6'}}/>
-              </div>
-              <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8}}>Position</div>
-                <div style={{display:'flex',gap:8}}>
-                  <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>X: {Math.round(((selOpt as any)?.tx||0)*100)}</div>
-                  <div style={{flex:1,background:'#0f141f',border:'1px solid #232e45',borderRadius:8,padding:'8px 10px',fontSize:11,color:'#cbd5e1'}}>Y: {Math.round(((selOpt as any)?.ty||0)*100)}</div>
-                </div>
-              </div>
-              <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8}}>Rotation</div>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11}}><span>0 deg</span><span style={{color:'#5a6a88'}}>Drag di canvas untuk rotate</span></div>
-              </div>
-              <div style={{padding:'12px 14px',borderBottom:'1px solid #1e283e'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8}}>Filter</div>
-                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                  {['none','vivid','sinematik','bw'].map(f=>(
-                    <button key={f} onClick={()=>setFilterPreset(f)} style={{padding:'6px 10px',borderRadius:8,fontSize:10,fontWeight:700,background: filterPreset===f? '#1e2e4a':'#0f141f',border: filterPreset===f?'1px solid #2a4a7a':'1px solid #232e45',color: filterPreset===f?'#60a5fa':'#7a8aab'}}>{f}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{padding:'12px 14px'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#7a8aab',letterSpacing:0.6,marginBottom:8}}>Effect Settings</div>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:8}}><span>Opacity 100%</span><span style={{color:'#5a6aab'}}>Drag di canvas</span></div>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:8}}><span>Sharp</span><button className={`v6-toggle ${qualitySharp?'on':''}`} style={{scale:'0.8'}} onClick={()=>setQualitySharp(!qualitySharp)}/></div>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11}}><span>Cinebars</span><button className={`v6-toggle ${cineBars?'on':''}`} style={{scale:'0.8'}} onClick={()=>setCineBars(!cineBars)}/></div>
-                <button className="v6-btn ghost" style={{width:'100%',marginTop:12,fontSize:10}} onClick={()=>resetClipTransform(selId)}>⟲ Reset 100%</button>
-                <button className="v6-btn ghost" style={{width:'100%',marginTop:8,fontSize:10,borderColor:'#3b82f6',color:'#60a5fa'}} onClick={()=>{ setTool('filter'); }}>🎨 Buka Filter Lengkap</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{padding:12,fontSize:11,color:'#6b7a94',textAlign:'center',lineHeight:1.6}}>Pilih klip / teks / stiker untuk edit<br/>drag tepi = trim • tengah = move<br/>cubit = zoom timeline<br/><br/>CAPCUT ANATOMY:<br/>Preview 60% top<br/>Playhead white vertical fixed<br/>Trim Handle I white<br/>Clip Duration 5.0s<br/>Color Coding blue/green/orange/pink<br/>Pinch Zoom + Split</div>
-              <div style={{padding:'0 12px 12px',display:'flex',flexDirection:'column',gap:8}}>
-                <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('media')}>＋ Media (Video)</button>
-                <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('audio')}>🎵 Audio (hijau waveform)</button>
-                <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('teks')}>🔤 Teks (oranye Adventure Awaits)</button>
-                <button className="v6-btn ghost" style={{fontSize:10}} onClick={()=>setTool('stiker')}>😀 Sticker (pink)</button>
-              </div>
-              <div style={{padding:12,borderTop:'1px solid #1e283e'}}>
-                <div style={{fontSize:10,fontWeight:800,color:'#5a7aab',letterSpacing:0.6,textTransform:'uppercase',marginBottom:8}}>Tips — CapCut Exact</div>
-                <div style={{fontSize:10,color:'#7a8aab',lineHeight:1.6,background:'#0f141f',borderRadius:8,padding:10,border:'1px solid #1e283e'}}>
-                  Zoom in for frame-level precision.<br/>Use snap to keep clips aligned.<br/>Split clips to remove unwanted parts.<br/>Organize layers to keep project clean.
-                </div>
-              </div>
-            </>
+      {/* ============ STAGE ============ */}
+      <div className={`v6e-stage-wrap ${fullStage ? "" : ""}`} ref={stageWrapRef}
+           style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
+           onClick={fullStage ? () => setFullStage(false) : undefined}>
+        <div className="v6e-stage">
+          <canvas ref={canvasRef}
+            onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
+            style={{ touchAction: "none" }} />
+          <div className={`selbox ${selId ? "on" : ""}`} />
+          {/* v8.3: tombol hapus CEPAT di panggung saat objek (teks/stiker) terpilih */}
+          {(selTextSid || selStik) && !tool && (
+            <button className="v6e-stagedel" title="Hapus objek terpilih" onClick={(e) => { e.stopPropagation(); delSelObj(); }}>🗑</button>
+          )}
+          {!slides.length && (
+            <div className="v6e-stage-empty">
+              <div style={{ fontSize: 40 }}>🎬</div>
+              <div style={{ fontSize: 12 }}>Tambahkan media untuk mulai mengedit</div>
+              <button onClick={() => setTool("media")}>＋ Tambah media</button>
+            </div>
           )}
         </div>
-
+        {(() => {
+          const o = selOpt as any;
+          const hasTr = o && ((o.tx ?? 0) !== 0 || (o.ty ?? 0) !== 0 || (o.tz ?? 1) !== 1);
+          return hasTr ? (
+            <button className="v6e-zoomreset" onClick={(e) => { e.stopPropagation(); resetClipTransform(selId); }} title="Kembalikan posisi & ukuran gambar (atau ketuk 2×)">
+              ⟲ {Math.round((o.tz ?? 1) * 100)}%
+            </button>
+          ) : null;
+        })()}
       </div>
+
+
 
             {/* ============ CONTROL ROW ============ */}
       {/* ============ CONTROL ROW ============ */}
