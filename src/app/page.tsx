@@ -2960,7 +2960,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
   }
   async function cekSuno() { try { if (mTask) pollSuno(mTask); } catch {} }
- { if (mTask) pollSuno(mTask); }
 
   /* ---------- KETERANGAN OTOMATIS ---------- */
   /** Sisipkan teks lepas (start/dur absolut) ke slide yang menaungi waktunya. */
