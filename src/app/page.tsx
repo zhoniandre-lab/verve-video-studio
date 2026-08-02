@@ -42,6 +42,33 @@ const SESSION_KEY = "verve_session_v6";
 const SUNO_TASK_KEY = "verve_suno_task_v1";
 const MAX_DRAFTS = 12;
 
+const SUNO_KEYS_KEY = "verve_suno_keys_v1";
+type SunoKey = { key: string; provider: string };
+const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
+  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate" },
+  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
+  sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
+  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
+};
+function detectProvClient(k: string, fallback: string): string {
+  const s = k.toLowerCase().trim();
+  if (s.startsWith("kie") || s.startsWith("sk-kie")) return "kie";
+  if (s.startsWith("afk_") || s.startsWith("af_")) return "apiframe";
+  if (s.startsWith("snr_") || s.startsWith("sunor_")) return "sunor";
+  if (/^[a-f0-9]{24,}$/i.test(k.trim())) return "kie";
+  return fallback;
+}
+function maskKey(k: string): string {
+  try { return k && k.length > 10 ? `${k.slice(0, 7)}…${k.slice(-3)}` : "••••"; } catch { return "••••"; }
+}
+const SUNO_PROVIDERS_FULL = [
+  { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
+  { id: "apiframe", label: "apiframe.ai" },
+  { id: "sunor", label: "Sunor.cc" },
+  { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
+];
+
+
 /* ---------------- helpers ---------------- */
 function uid(p = "s"): string { return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 function formatDur(s: number): string { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s / 60), sec = Math.floor(s % 60); return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; }
@@ -4610,7 +4637,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         mTitle={mTitle} setMTitle={setMTitle} mLyrics={mLyrics} setMLyrics={setMLyrics} mStyle={mStyle} setMStyle={setMStyle}
         mGenre={mGenre} setMGenre={setMGenre} mMood={mMood} setMMood={setMMood} mModel={mModel} setMModel={setMModel}
         mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} setMTask={setMTask} mStatus={mStatus} setMStatus={setMStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
-        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} />}
+        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} niche={niche} projTitle={projTitle} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
       {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
       {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
@@ -6935,6 +6962,57 @@ function TtsModal({ initial, onClose, onGen, loading, voice, setVoice }: any) {
 /* ---------- MUSIK AI (SUNO) ---------- */
 function MusikModal(p: any) {
   const [showKey, setShowKey] = useState(false);
+  const [keyPool, setKeyPool] = useState<SunoKey[]>(() => {
+    try { const raw = localStorage.getItem(SUNO_KEYS_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  });
+  const [keyDraft, setKeyDraft] = useState("");
+  const [creditInfo, setCreditInfo] = useState<Record<string, string>>({});
+  const [checkingCredit, setCheckingCredit] = useState(false);
+  const [lyricTab, setLyricTab] = useState<"manual" | "auto">("manual");
+  const [nicheExtra, setNicheExtra] = useState("");
+  const [lyricLoading, setLyricLoading] = useState(false);
+
+  const providerLink = ((typeof PROVIDER_KEY_LINK !== "undefined" ? PROVIDER_KEY_LINK : { kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai" } }) as any)[p.sunoProv] || { url: "https://kie.ai/api-key", hint: "Login kie.ai" };
+  const providerLabelFull = (typeof SUNO_PROVIDERS_FULL !== "undefined" ? SUNO_PROVIDERS_FULL.find((x:any)=>x.id===p.sunoProv)?.label : p.sunoProv) || p.sunoProv;
+  const poolFiltered = keyPool.filter((k:any)=>k.provider===p.sunoProv);
+  const totalCredit = (() => { let tot=0,has=false; try{ Object.values(creditInfo).forEach((v:any)=>{ const m=String(v).match(/([0-9]+)/); if(m){ const n=parseInt(m[1]); if(!isNaN(n)){ tot+=n; has=true; } } }); }catch{} return has?tot:null; })();
+
+  function savePool(next: SunoKey[]) { setKeyPool(next); try { localStorage.setItem(SUNO_KEYS_KEY, JSON.stringify(next)); } catch {} }
+  function addKeysFromDraft() {
+    const lines = keyDraft.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    const next = [...keyPool]; let added=0;
+    lines.forEach(k=>{ if (next.some(x=>x.key===k)) return; next.push({ key: k, provider: detectProvClient(k, p.sunoProv) }); added++; });
+    savePool(next); setKeyDraft(""); const first = next.filter(x=>x.provider===p.sunoProv)[0]; if (first) { try { p.setSunoKey(first.key); localStorage.setItem("verve_suno_key", first.key); } catch {} }
+  }
+  function removeKey(key: string) { savePool(keyPool.filter(k=>k.key!==key)); }
+  function clearKeysCurrentProv() { savePool(keyPool.filter(k=>k.provider!==p.sunoProv)); setCreditInfo({}); }
+  async function cekKredit() {
+    const keys = (poolFiltered.length ? poolFiltered : (p.sunoKey ? [{key:p.sunoKey,provider:p.sunoProv}] : [])).map((k:any)=>k.key||k);
+    if (!keys.length) { alert("Belum ada kunci"); return; }
+    setCheckingCredit(true);
+    try {
+      const r = await fetch("/api/hcnsec/music-credit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: p.sunoProv, keys }) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const map: Record<string,string> = {}; (j.results||[]).forEach((res:any)=>{ map[res.key] = res.status==="ok" ? `💳 ${res.credit}` : (res.msg||"tidak terekspos"); }); setCreditInfo(map);
+    } catch (e:any) { alert("Cek kredit gagal: "+(e?.message||e)); } finally { setCheckingCredit(false); }
+  }
+  async function genLyricsFromNiche() {
+    const title = (p.mTitle || p.projTitle || "").trim() || "Lagu tentang rindu";
+    const nicheBase = (p.niche || "").trim() || "Cerita jadi lagu";
+    const extra = nicheExtra.trim();
+    const keyword = extra ? `${nicheBase} | ${extra}` : nicheBase;
+    if (!title) { alert("Isi judul dulu"); return; }
+    setLyricLoading(true);
+    try {
+      const r = await fetch("/api/hcnsec/lyrics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, keyword, niche: nicheBase, genre: p.mGenre || "pop ballad", mood: p.mMood || "emotional" }) });
+      const j = await r.json().catch(()=>({})); if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (j.lyrics) { p.setMLyrics(j.lyrics); if (j.style_prompt_suno) p.setMStyle(j.style_prompt_suno); setLyricTab("manual"); }
+      else throw new Error("AI tidak kasih lirik");
+    } catch (e:any) { alert("Gagal: "+(e?.message||e)); } finally { setLyricLoading(false); }
+  }
+
+
   return (
     <div className="v6-full">
       <div className="fh">
@@ -6964,9 +7042,33 @@ function MusikModal(p: any) {
           <button className={`v6-chip ${p.mVocal === "instrumental" ? "on" : ""}`} onClick={() => p.setMVocal("instrumental")}>🎹 Instrumen saja</button>
         </div>
         {(p.mVocal !== "instrumental") && <>
-          <div className="v6-lbl">LIRIK (orisinal — aman hak cipta ✅)</div>
-          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini… contoh: Ibu aku lelah..." value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
-          <div className="v6-note">💡 Pilih 👨 laki / 👩 perempuan biar suara sesuai — auto = biarkan AI pilih vokal terbaik</div>
+          <div className="v6-lbl">LIRIK — 2 PILIHAN (orisinal — aman hak cipta ✅)</div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <button className={`v6-chip ${lyricTab === "manual" ? "on" : ""}`} style={{ flex: 1 }} onClick={()=>setLyricTab("manual")}>✍️ Tulis sendiri</button>
+            <button className={`v6-chip ${lyricTab === "auto" ? "on" : ""}`} style={{ flex: 1 }} onClick={()=>setLyricTab("auto")}>✨ Generate dari niche/judul</button>
+          </div>
+          {lyricTab === "manual" && (
+            <>
+              <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini… contoh: Ibu aku lelah..." value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
+              <div className="v6-note">💡 Pilih 👨 laki / 👩 perempuan biar suara sesuai. Lirik manual = 100% milikmu, aman hak cipta.</div>
+            </>
+          )}
+          {lyricTab === "auto" && (
+            <div style={{ border: "1px solid rgba(25,194,184,.25)", borderRadius: 12, padding: 10, background: "rgba(25,194,184,.06)" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 6 }}>✨ AI BIKIN LIRIK DARI NICHE/JUDUL</div>
+              <div className="v6-note" style={{ marginBottom: 6 }}>
+                Judul: <b>{p.mTitle || p.projTitle || "Tanpa judul"}</b><br/>
+                Niche: <b>{p.niche || "Cerita jadi lagu"}</b><br/>
+                Genre: {p.mGenre} · Suasana: {p.mMood}<br/>
+                AI bikin lirik orisinal sesuai niche & judul — aman hak cipta ✅
+              </div>
+              <textarea className="v6-inp" style={{ minHeight: 50 }} placeholder="Niche tambahan (opsional) — cth: rindu ibu, perjuangan ayah" value={nicheExtra} onChange={e=>setNicheExtra(e.target.value)} />
+              <button className="v6-btn" style={{ width: "100%", marginTop: 8, background: "linear-gradient(135deg,#0d9488,#14b8a6)" }} disabled={lyricLoading} onClick={genLyricsFromNiche}>
+                {lyricLoading ? "⏳ AI lagi nulis lirik..." : "✨ Generate lirik dari niche/judul"}
+              </button>
+              {p.mLyrics && <div className="v6-note" style={{ marginTop: 6 }}>✅ Lirik terisi — cek & edit di tab Tulis sendiri</div>}
+            </div>
+          )}
         </>}
         <div className="v6-lbl">GENRE</div>
         <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
