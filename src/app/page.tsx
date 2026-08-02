@@ -42,34 +42,6 @@ const SESSION_KEY = "verve_session_v6";
 const SUNO_TASK_KEY = "verve_suno_task_v1";
 const MAX_DRAFTS = 12;
 
-/* ---------- SUNO MULTI-KEY (studio edit same as Lahan Awalan) ---------- */
-const SUNO_KEYS_KEY = "verve_suno_keys_v1";
-type SunoKey = { key: string; provider: string };
-const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
-  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key)" },
-  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
-  sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
-  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
-};
-function detectProvClient(k: string, fallback: string): string {
-  const s = k.toLowerCase().trim();
-  if (s.startsWith("kie") || s.startsWith("sk-kie")) return "kie";
-  if (s.startsWith("afk_") || s.startsWith("af_")) return "apiframe";
-  if (s.startsWith("snr_") || s.startsWith("sunor_")) return "sunor";
-  if (/^[a-f0-9]{24,}$/i.test(k.trim())) return "kie";
-  return fallback;
-}
-function maskKey(k: string): string {
-  return k.length > 10 ? `${k.slice(0, 7)}…${k.slice(-3)}` : "••••";
-}
-const SUNO_PROVIDERS_FULL = [
-  { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
-  { id: "apiframe", label: "apiframe.ai" },
-  { id: "sunor", label: "Sunor.cc" },
-  { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
-];
-
-
 /* ---------------- helpers ---------------- */
 function uid(p = "s"): string { return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 function formatDur(s: number): string { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s / 60), sec = Math.floor(s % 60); return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; }
@@ -1348,93 +1320,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [mGenre, setMGenre] = useState("pop ballad");
   const [mMood, setMMood] = useState("emotional, menyentuh");
   const [mModel, setMModel] = useState("suno-v5");
-  const [mVocal, setMVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
+  const [mVocal, setMVocal] = useState<"vocal" | "instrumental">("vocal");
   const [mTask, setMTask] = useState("");
   const [mStatus, setMStatus] = useState("");
   /* ---------- tts modal ---------- */
   const [ttsVoice, setTtsVoice] = useState("alloy");
   /* ---------- draft ---------- */
   const [draftId, setDraftId] = useState("");
-  /* ---------- SUNO MULTI-KEY POOL (same as Lahan) + GambarAI replaceId — placed at end to avoid hooks order crash ---------- */
-  const [keyPool, setKeyPool] = useState<SunoKey[]>([]);
-  const [keyDraft, setKeyDraft] = useState("");
-  const [keyPanel, setKeyPanel] = useState(false);
-  const [creditInfo, setCreditInfo] = useState<Record<string, string>>({});
-  const [checkingCredit, setCheckingCredit] = useState(false);
-  const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "antre" });
-  const pollTimerRef = useRef<any>(null);
-  const tickRef = useRef<any>(null);
-  const [gambaraiReplaceId, setGambaraiReplaceId] = useState<string | undefined>(undefined);
   /* ---------- refs ---------- */
-  /* ---------- SUNO POOL HELPERS ---------- */
-  function savePool(next: SunoKey[]) {
-    setKeyPool(next);
-    try { localStorage.setItem(SUNO_KEYS_KEY, JSON.stringify(next)); } catch {}
-  }
-  function keysForProvider(): SunoKey[] {
-    const pooled = keyPool.filter((k) => k.provider === sunoProv);
-    if (pooled.length) return pooled;
-    if (sunoKey.trim()) return [{ key: sunoKey.trim(), provider: sunoProv }];
-    return [];
-  }
-  function addKeysFromDraft() {
-    const lines = keyDraft.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-    if (!lines.length) return;
-    const next = [...keyPool];
-    let added = 0;
-    lines.forEach((k) => {
-      if (next.some((x) => x.key === k)) return;
-      next.push({ key: k, provider: detectProvClient(k, sunoProv) });
-      added++;
-    });
-    savePool(next);
-    setKeyDraft("");
-    const first = next.filter((x) => x.provider === sunoProv)[0];
-    if (first) {
-      setSunoKey(first.key);
-      try { localStorage.setItem("verve_suno_key", first.key); } catch {}
-    }
-    flash(added ? `🔑 ${added} kunci ditambah` : "Semua kunci sudah ada di daftar");
-  }
-  function removeKey(key: string) { savePool(keyPool.filter((k) => k.key !== key)); }
-  function clearKeysCurrentProv() {
-    savePool(keyPool.filter((k) => k.provider !== sunoProv));
-    setCreditInfo({});
-    flash("🗑 Kunci provider ini dihapus semua");
-  }
-  async function cekKredit() {
-    const keys = keysForProvider().map((k) => k.key);
-    if (!keys.length) { setError("Belum ada kunci tersimpan — tambah dulu lewat kolom atas."); return; }
-    setCheckingCredit(true);
-    setError("");
-    try {
-      const r = await fetch("/api/hcnsec/music-credit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: sunoProv, keys }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      const map: Record<string, string> = {};
-      (j.results || []).forEach((res: { key: string; status: string; credit?: number; msg?: string }) => {
-        map[res.key] = res.status === "ok" ? `💳 ${res.credit}` : (res.msg || "tidak terekspos");
-      });
-      setCreditInfo(map);
-      let total = 0; let hasNum = false;
-      (j.results || []).forEach((res: any) => { if (typeof res.credit === "number") { total += res.credit; hasNum = true; } });
-      if (hasNum) flash(`💳 Cek kredit selesai — total ${total} kredit`);
-      else flash("💳 Cek kredit selesai — angka cuma tampil kalau provider mengekspos");
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally {
-      setCheckingCredit(false);
-    }
-  }
-  function fmtClock(sec: number): string {
-    const m = Math.floor(sec / 60), s = sec % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  }
-
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -2208,7 +2101,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     try {
       setSunoKey(localStorage.getItem("verve_suno_key") || "");
       setSunoProv(localStorage.getItem("verve_suno_provider") || "kie");
-      try { const rawPool = localStorage.getItem(SUNO_KEYS_KEY); if (rawPool) setKeyPool(JSON.parse(rawPool)); } catch {}
       setPresets(JSON.parse(localStorage.getItem("verve_filter_presets") || "[]"));
       const tk = JSON.parse(localStorage.getItem(SUNO_TASK_KEY) || "null");
       if (tk?.id && Date.now() - tk.ts < 30 * 60 * 1000) { setMTask(tk.id); setMStatus("pending"); }
@@ -2313,7 +2205,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "split": doSplitAtPlayhead(); break;
       case "animasi": setTool("animasi"); setSheetTab("masuk"); break;
       case "efek": setTool("efek"); break;
-      case "gambarai": setGambaraiReplaceId(undefined); setModal("gambarai"); break;
+      case "gambarai": setModal("gambarai"); break;
       case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
@@ -2860,17 +2752,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const img = await new Promise<HTMLImageElement>((res2, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res2(im); im.onerror = () => rej(new Error("gagal memuat")); im.src = durl; });
       const cropped = fitMax(img, 2048);
       pushHist();
-      setSlides(c => {
-        if (replaceId && c.some(s => s.id === replaceId)) {
-          return c.map(s => s.id === replaceId ? { ...s, imageUrl: cropped } : s);
-        } else {
-          return [...c, { id: uid("ai"), imageUrl: cropped }];
-        }
-      });
-      if (replaceId) flash("⇄ Gambar diganti (mode ganti)");
-      else flash("✨ Gambar AI siap — tambah track baru");
+      if (replaceId) setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: cropped } : s));
+      else setSlides(c => [...c, { id: uid("ai"), imageUrl: cropped }]);
+      flash("✨ Gambar AI siap");
       setModal(null);
-      setGambaraiReplaceId(undefined);
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
@@ -2960,132 +2845,59 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const title = mTitle.trim() || projTitle;
     const style = mStyle.trim() || [mGenre, mMood, "indonesian, high quality"].join(", ");
     const lyr = mLyrics.trim();
-    const vocalIsInstrumental = mVocal === "instrumental";
     if (!title) return setErr({ message: "Judul lagu kosong" });
-    if (!vocalIsInstrumental && lyr.length < 20) return setErr({ message: "Lirik terlalu pendek (min ~20 karakter) atau pilih instrumen" });
-    const keys = keysForProvider();
-    if (sunoProv !== "aimusic" && !keys.length) {
-      setKeyPanel(true);
-      return setErr({ message: "Belum ada API key. Di panel 🔑 Setelan API Key di atas: tap link provider untuk ambil key → tempel satu per baris → Tambah." });
-    }
-    setLoading("suno"); setMStatus("memulai..."); setPollUi({ attempt: 0, elapsed: 0, last: "antre" }); setError("");
+    if (mVocal !== "instrumental" && lyr.length < 20) return setErr({ message: "Lirik terlalu pendek (min ~20 karakter) atau pilih instrumen" });
+    setLoading("suno"); setMStatus("memulai..."); setError("");
     try {
-      const vocalGender = vocalIsInstrumental ? undefined : (mVocal === "auto" ? undefined : mVocal);
-      const payload: any = {
-        title: title.slice(0, 80), prompt: style, lyrics: vocalIsInstrumental ? undefined : lyr,
+      const payload = {
+        title: title.slice(0, 80), prompt: style, lyrics: mVocal === "instrumental" ? undefined : lyr,
         genre: mGenre, tags: style, custom: lyr.length > 30, model: mModel,
-        instrumental: vocalIsInstrumental,
-        vocalGender,
+        instrumental: mVocal === "instrumental",
         _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
       };
-      const tries = Math.max(1, keys.length);
-      let lastErr: any = null;
-      for (let ki = 0; ki < tries; ki++) {
-        try {
-          const headers: Record<string, string> = { "Content-Type": "application/json" };
-          const k = keys[ki]?.key || sunoKey;
-          const prov = keys[ki]?.provider || sunoProv;
-          if (k) { headers["X-Suno-Key"] = k; headers["X-Suno-Provider"] = prov; }
-          let r: Response | null = null; let data: any = {};
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-              r = await fetch("/api/hcnsec/music", { method: "POST", headers, body: JSON.stringify(payload) });
-              data = await r.json().catch(() => ({}));
-            } catch (e) {
-              if (attempt === 2) throw e;
-              await new Promise(res => setTimeout(res, 2500));
-              continue;
-            }
-            if (r.ok || r.status === 401 || r.status === 402) break;
-            if (attempt < 2) await new Promise(res => setTimeout(res, 2000));
-          }
-          if (!r || !r.ok || data.error) throw Object.assign(new Error(data.error || data.message || `Error ${r ? r.status : "?"}`), { code: data.status });
-          const id = data.taskId || data.task_id || data.id;
-          if (data.audio_url || data.audioUrl || data.url) {
-            setMusicUrl(data.audio_url || data.audioUrl || data.url);
-            setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100);
-            setMusicName(mTitle || "Lagu AI");
-            getAudioDuration(data.audio_url || data.audioUrl || data.url).then(setMusicDur);
-            setMStatus("selesai"); setMTask("");
-            try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
-            flash("✅ Lagu AI selesai langsung — masuk track audio");
-            setLoading(null);
-            return;
-          }
-          if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
-          setMTask(id);
-          try { localStorage.setItem(SUNO_TASK_KEY, JSON.stringify({ id, title, ts: Date.now() })); } catch {}
-          setMStatus("pending");
-          flash(tries > 1 ? `⏳ Lagu diolah pakai kunci ${ki + 1}/${tries} — polling sabar jalan` : "⏳ Lagu diolah server (1–6 mnt) — polling otomatis jalan");
-          pollSuno(id, headers, Date.now());
-          setLoading(null);
-          return;
-        } catch (e: any) {
-          lastErr = e;
-          const keyProblem = e.code === "quota_error" || e.code === "auth_error" || e.code === "need_key" || /401|402|kredit|habis|invalid|credit|insufficient|balance/i.test(e.message);
-          if (keyProblem && ki < tries - 1) { flash(`🔑 Kunci ${ki + 1} ditolak — pindah kunci ${ki + 2}/${tries}…`); continue; }
-          break;
-        }
-      }
-      setMStatus("gagal");
-      setErr(lastErr || { message: "Gagal generate lagu" });
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (sunoKey) { headers["X-Suno-Key"] = sunoKey; headers["X-Suno-Provider"] = sunoProv; }
+      const r = await fetch("/api/hcnsec/music", { method: "POST", headers, body: JSON.stringify(payload) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.error) throw new Error(data.error || data.message || `Error ${r.status}`);
+      const id = data.taskId || data.task_id || data.id;
+      if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
+      setMTask(id);
+      try { localStorage.setItem(SUNO_TASK_KEY, JSON.stringify({ id, title, ts: Date.now() })); } catch {}
+      setMStatus("pending");
+      flash("⏳ Lagu diolah server (1–6 mnt) — polling otomatis jalan");
+      pollSuno(id, headers);
     } catch (e: any) { setErr(e); setMStatus("gagal"); }
     setLoading(null);
   }
-  async function pollSuno(id: string, headers?: Record<string, string>, startTs?: number) {
+  async function pollSuno(id: string, headers?: Record<string, string>) {
     const hdrs = headers || (sunoKey ? { "X-Suno-Key": sunoKey, "X-Suno-Provider": sunoProv } : {});
-    const ts = startTs || Date.now();
     setMStatus("pending");
-    setPollUi({ attempt: 0, elapsed: 0, last: "antre" });
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    if (tickRef.current) clearInterval(tickRef.current);
     let tries = 0;
-    const tickElapsed = setInterval(() => {
-      setPollUi(p => ({ ...p, elapsed: Math.round((Date.now() - ts) / 1000) }));
-    }, 1000);
-    tickRef.current = tickElapsed;
     const itv = setInterval(async () => {
       tries++;
-      setPollUi(p => ({ ...p, attempt: tries, last: p.last === "antre" ? "menghubungi server" : p.last }));
       try {
-        const ac = new AbortController();
-        const wd = setTimeout(() => ac.abort(), 40000);
-        const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers: hdrs, cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
+        const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers: hdrs, cache: "no-store" });
         const pd = await pr.json().catch(() => ({}));
         const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
         if (url) {
-          clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
-          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          clearInterval(itv);
           setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(mTitle || "Lagu AI");
           getAudioDuration(url).then(setMusicDur);
           setMStatus("selesai"); setMTask("");
-          setPollUi(p => ({ ...p, last: "berhasil ✅" }));
           try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
           flash("✅ Lagu AI selesai — masuk track audio");
         } else if (pd.status === "error" || pd.error) {
-          clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
-          setMStatus("gagal");
-          setPollUi(p => ({ ...p, last: `gagal: ${pd.error || "provider error"}` }));
-          setErr({ message: pd.error || "Gagal generate" });
-        } else {
-          setPollUi(p => ({ ...p, last: pd.status || "pending" }));
-          if (tries > 50) {
-            clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
-            setMStatus("pending");
-            setPollUi(p => ({ ...p, last: "masih pending — task tersimpan" }));
-            setStageText("⏳ Masih diolah server — task tersimpan, buka lagi Musik AI utk cek status");
-            setTimeout(() => setStageText(""), 3000);
-          }
+          clearInterval(itv); setMStatus("gagal"); setErr({ message: pd.error || "Gagal generate" });
+        } else if (tries > 40) { // ~2 menit
+          clearInterval(itv); setMStatus("pending");
+          setStageText("⏳ Masih diolah server — task tersimpan, buka lagi Musik AI utk cek status");
+          setTimeout(() => setStageText(""), 3000);
         }
-      } catch (e: any) {
-        setPollUi(p => ({ ...p, last: `cek gagal (${e?.message?.slice(0,30) || "jaringan"}) — tetap dipantau` }));
-        if (tries > 50) { clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current); }
-      }
+      } catch { if (tries > 40) clearInterval(itv); }
     }, 8000);
-    pollTimerRef.current = itv as any;
   }
   async function cekSuno() { if (mTask) pollSuno(mTask); }
- { if (mTask) pollSuno(mTask); }
 
   /* ---------- KETERANGAN OTOMATIS ---------- */
   /** Sisipkan teks lepas (start/dur absolut) ke slide yang menaungi waktunya. */
@@ -4697,8 +4509,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
             estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText, guardJob,
-            openModal: (m:string)=>{ setGambaraiReplaceId(undefined); setModal(m); }, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
-            setGambaraiReplaceId,
+            openModal: setModal, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             voiceUrl, setVoiceUrl,
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
@@ -4733,13 +4544,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       {modal === "tts" && <TtsModal initial={ttsText} onClose={() => setModal(null)} onGen={doTTS} loading={loading} voice={ttsVoice} setVoice={setTtsVoice} />}
       {modal === "musik" && <MusikModal
         onClose={() => setModal(null)} sunoKey={sunoKey} setSunoKey={setSunoKey} sunoProv={sunoProv} setSunoProv={setSunoProv}
-          keyPool={keyPool} setKeyPool={setKeyPool} keyDraft={keyDraft} setKeyDraft={setKeyDraft}
-          creditInfo={creditInfo} checkingCredit={checkingCredit} pollUi={pollUi}
-          onAddKeys={addKeysFromDraft} onRemoveKey={removeKey} onClearKeys={clearKeysCurrentProv} onCekKredit={cekKredit}
         mTitle={mTitle} setMTitle={setMTitle} mLyrics={mLyrics} setMLyrics={setMLyrics} mStyle={mStyle} setMStyle={setMStyle}
         mGenre={mGenre} setMGenre={setMGenre} mMood={mMood} setMMood={setMMood} mModel={mModel} setMModel={setMModel}
-        mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} setMTask={setMTask} mStatus={mStatus} setMStatus={setMStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
-        musicUrl={musicUrl} musicName={musicName} />}
+        mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} mStatus={mStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
+        musicUrl={musicUrl} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
       {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
       {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
@@ -4749,10 +4557,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             📥 Pilih foto dari galeri
             <input type="file" accept="image/*" hidden onChange={e => { addImageFiles(e.target.files, selId); setModal(null); }} />
           </label>
-          <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} onClick={() => { setGambaraiReplaceId(selId || undefined); setModal("gambarai"); }}>✨ Generate dengan AI (ganti klip ini)</button>
+          <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} onClick={() => setModal("gambarai")}>✨ Generate dengan AI</button>
         </MiniModal>
       )}
-      {modal === "gambarai" && <GambarAiModal onClose={() => { setModal(null); setGambaraiReplaceId(undefined); }} onGen={(pr: string, st: string) => genImageForClip(pr, st, gambaraiReplaceId)} loading={loading} />}
+      {modal === "gambarai" && <GambarAiModal onClose={() => setModal(null)} onGen={(pr: string, st: string) => genImageForClip(pr, st, selId || undefined)} loading={loading} />}
       {modal === "videoai" && <VideoAiModal onClose={() => setModal(null)} />}
       {modal === "hakcipta" && <HakCiptaModal musicUrl={musicUrl} musicName={musicName} ttsUrl={ttsUrl} voiceUrl={voiceUrl} onClose={() => setModal(null)} />}
 
@@ -7061,26 +6869,9 @@ function TtsModal({ initial, onClose, onGen, loading, voice, setVoice }: any) {
   );
 }
 
-/* ---------- MUSIK AI (SUNO) — FULL MIRROR LAHAN AWALAN SAFE ---------- */
+/* ---------- MUSIK AI (SUNO) ---------- */
 function MusikModal(p: any) {
   const [showKey, setShowKey] = useState(false);
-  const poolList: SunoKey[] = (p.keyPool as SunoKey[]) || [];
-  const creditMap: Record<string, string> = p.creditInfo || {};
-  const checking = !!p.checkingCredit;
-  const poll = p.pollUi || { attempt: 0, elapsed: 0, last: "antre" };
-  const providerLink = ((typeof PROVIDER_KEY_LINK !== "undefined" ? PROVIDER_KEY_LINK : { kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate" } }) as any)[p.sunoProv] || { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate" };
-  const providerLabelFull = (typeof SUNO_PROVIDERS_FULL !== "undefined" ? SUNO_PROVIDERS_FULL.find((x:any)=>x.id===p.sunoProv)?.label : p.sunoProv) || p.sunoProv;
-  const totalCredit = (() => {
-    let tot = 0; let has = false;
-    try {
-      Object.values(creditMap).forEach((v:any)=>{
-        const m = String(v).match(/([0-9]+)/);
-        if (m) { const n = parseInt(m[1]); if (!isNaN(n)) { tot+=n; has=true; } }
-      });
-    } catch {}
-    return has ? tot : null;
-  })();
-  const masked = (k:string)=>{ try{ return maskKey(k); } catch { return k.slice(0,7)+'…'+k.slice(-3); } };
   return (
     <div className="v6-full">
       <div className="fh">
@@ -7089,123 +6880,48 @@ function MusikModal(p: any) {
         <button className="v6-btn" style={{ padding: "8px 16px" }} onClick={p.onGen} disabled={p.loading === "suno"}>{p.loading === "suno" ? "⏳" : "🎵 Buat lagu"}</button>
       </div>
       <div className="fb">
-        <div className="v6-lbl">PROVIDER</div>
-        <select className="v6-inp" value={p.sunoProv} onChange={e => { p.setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch {} }}>
-          {(typeof SUNO_PROVIDERS_FULL !== "undefined" ? SUNO_PROVIDERS_FULL : [{id:"kie",label:"Kie.ai"},{id:"apiframe",label:"apiframe.ai"},{id:"sunor",label:"Sunor.cc"},{id:"aimusic",label:"aimusic.so"}]).map((pr:any)=><option key={pr.id} value={pr.id}>{pr.label}</option>)}
-        </select>
-
-        <button className="v6-chip" style={{ marginTop: 8 }} onClick={() => setShowKey(!showKey)}>
-          🔑 Setelan API Key — {(poolList.filter((k:any)=>k.provider===p.sunoProv).length) || (p.sunoKey?1:0)} kunci tersimpan {showKey ? "▴" : "▾"}
-        </button>
-
+        <button className="v6-chip" onClick={() => setShowKey(!showKey)}>🔑 API Key Suno {p.sunoKey ? "✅" : "(mode gratis)"} {showKey ? "▴" : "▾"}</button>
         {showKey && (
-          <div style={{ marginTop: 8, border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: 10, background: "rgba(0,0,0,.25)" }}>
-            {providerLink.url ? (
-              <a className="v6-chip" style={{ display: "inline-block", marginBottom: 8, background: "rgba(25,194,184,.15)", borderColor: "rgba(25,194,184,.35)" }} href={providerLink.url} target="_blank" rel="noreferrer">
-                🔑 Ambil API key di {String(providerLabelFull).replace(/^🥇 /,"")} ↗
-              </a>
-            ) : (
-              <div className="v6-note">aimusic.so = mode gratis tanpa key (sering penuh). Mau lancar: pakai Kie.ai.</div>
-            )}
-            <div className="v6-note" style={{ marginBottom: 6 }}>
-              1. Tap link di atas → login → {providerLink.hint}.<br/>
-              2. Tempel <b>satu kunci per baris</b> di bawah → <b>+ Tambah</b>. Bisa BANYAK kunci: kalau satu habis/ditolak, mesin <b>otomatis pindah kunci berikutnya</b>.
-            </div>
-            <textarea className="v6-inp v6-ta" rows={3} placeholder={p.sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "afk_xxx\nafk_yyy"} value={p.keyDraft || ""} onChange={e => p.setKeyDraft && p.setKeyDraft(e.target.value)} />
-            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <button className="v6-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!p.keyDraft?.trim()} onClick={p.onAddKeys}>＋ Tambah</button>
-              <button className="v6-btn" style={{ flex: 1, marginTop: 0, background: "rgba(255,255,255,.06)" }} disabled={checking || !((poolList.filter((k:any)=>k.provider===p.sunoProv).length) || p.sunoKey)} onClick={p.onCekKredit}>{checking ? "⏳ Mengecek…" : "🔄 Cek Kredit"}</button>
-              <button className="v6-btn" style={{ flex: 1, marginTop: 0, background: "rgba(239,68,68,.12)", borderColor: "rgba(239,68,68,.3)" }} disabled={!poolList.filter((k:any)=>k.provider===p.sunoProv).length} onClick={p.onClearKeys}>🗑 Hapus</button>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 10, fontWeight: 800, opacity: .7 }}>
-              <span>KUNCI TERSIMPAN ({p.sunoProv})</span>
-              <span>{poolList.filter((k:any)=>k.provider===p.sunoProv).length || (p.sunoKey?1:0)} kunci {totalCredit!==null ? `· total ~${totalCredit} kredit` : ""}</span>
-            </div>
-            {(!poolList.filter((k:any)=>k.provider===p.sunoProv).length && !p.sunoKey) && <div className="v6-note" style={{ textAlign: "center" }}><i>Belum ada kunci.</i></div>}
-            {p.sunoKey && poolList.filter((k:any)=>k.provider===p.sunoProv).length===0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
-                <span style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}>{masked(p.sunoKey)}</span>
-                <span style={{ fontSize: 11, opacity: .8 }}>{creditMap[p.sunoKey] || ""}</span>
-                <span style={{ fontSize: 10, background: "rgba(25,194,184,.2)", padding: "2px 6px", borderRadius: 6 }}>legacy</span>
-              </div>
-            )}
-            {poolList.filter((k:any)=>k.provider===p.sunoProv).map((k:any)=>(
-              <div key={k.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
-                <span style={{ flex: 1, fontFamily: "monospace", fontSize: 12 }}>{masked(k.key)}</span>
-                <span style={{ fontSize: 11, opacity: .85, minWidth: 70, textAlign: "right" }}>{creditMap[k.key] || ""}</span>
-                <button style={{ fontSize: 11, background: "none", border: "1px solid rgba(255,255,255,.15)", borderRadius: 6, padding: "3px 6px", color: "#fca5a5" }} onClick={()=>p.onRemoveKey && p.onRemoveKey(k.key)}>🗑</button>
-              </div>
-            ))}
-            <div className="v6-note" style={{ marginTop: 8 }}>
-              💳 Kredit jujur: nominal cuma tampil kalau provider mengekspos via API. 1 lagu = 1 panggilan API. Kunci disimpan DI HP-mu saja.
-              {totalCredit!==null && <><br/>🧮 Total kredit: <b>{totalCredit}</b></>}
-            </div>
+          <div style={{ marginTop: 8 }}>
+            <input className="v6-inp" placeholder="API key (kosongkan = mode gratis)" value={p.sunoKey}
+              onChange={e => { p.setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch {} }} />
+            <select className="v6-inp" style={{ marginTop: 6 }} value={p.sunoProv}
+              onChange={e => { p.setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch {} }}>
+              <option value="kie">🥇 Kie.ai (rekomendasi)</option><option value="apiframe">Apiframe.ai</option><option value="sunor">Sunor.cc</option>
+            </select>
           </div>
         )}
-
-        {!showKey && (
-          <div style={{ marginTop: 6 }}>
-            <input className="v6-inp" placeholder="API key (kosongkan = mode gratis) — atau buka Setelan API Key di atas untuk multi-key" value={p.sunoKey} onChange={e => { p.setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch {} }} />
-          </div>
-        )}
-
         <div className="v6-lbl">JUDUL LAGU</div>
-        <input className="v6-inp" placeholder="cth: Ibu aku lelah | Cerita Jadi Lagu" value={p.mTitle} onChange={e => p.setMTitle(e.target.value)} />
-        <div className="v6-lbl">MODE VOKAL</div>
+        <input className="v6-inp" placeholder="cth: Rindu Ibu di Ujung Doa" value={p.mTitle} onChange={e => p.setMTitle(e.target.value)} />
+        <div className="v6-lbl">MODE</div>
         <div className="v6-chips" style={{ padding: 0 }}>
-          <button className={`v6-chip ${p.mVocal === "auto" || p.mVocal === "vocal" ? "on" : ""}`} onClick={() => p.setMVocal("auto")}>🎤 Auto</button>
-          <button className={`v6-chip ${p.mVocal === "male" ? "on" : ""}`} onClick={() => p.setMVocal("male")}>👨 Laki-laki</button>
-          <button className={`v6-chip ${p.mVocal === "female" ? "on" : ""}`} onClick={() => p.setMVocal("female")}>👩 Perempuan</button>
+          <button className={`v6-chip ${p.mVocal === "vocal" ? "on" : ""}`} onClick={() => p.setMVocal("vocal")}>🎤 Vokal + Lirik</button>
           <button className={`v6-chip ${p.mVocal === "instrumental" ? "on" : ""}`} onClick={() => p.setMVocal("instrumental")}>🎹 Instrumen saja</button>
         </div>
-        {(p.mVocal !== "instrumental") && <>
+        {p.mVocal === "vocal" && <>
           <div className="v6-lbl">LIRIK (orisinal — aman hak cipta ✅)</div>
-          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini… contoh: Ibu aku lelah..." value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
-          <div className="v6-note">💡 Pilih 👨 laki / 👩 perempuan biar suara sesuai — auto = biarkan AI pilih vokal terbaik</div>
+          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini…" value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
         </>}
         <div className="v6-lbl">GENRE</div>
         <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
           {MUSIC_GENRES.map(g => <button key={g} className={`v6-chip ${p.mGenre === g ? "on" : ""}`} onClick={() => p.setMGenre(g)}>{g}</button>)}
         </div>
         <div className="v6-lbl">SUASANA</div>
-        <input className="v6-inp" placeholder="cth: emotional, menyentuh" value={p.mMood} onChange={e => p.setMMood(e.target.value)} />
+        <input className="v6-inp" placeholder="cth: melankolis, menyentuh, epik" value={p.mMood} onChange={e => p.setMMood(e.target.value)} />
         <div className="v6-lbl">STYLE PROMPT (otomatis — boleh diedit)</div>
-        <textarea className="v6-inp" style={{ minHeight: 60 }} value={p.mStyle} placeholder={"90s Malaysian emotional ballad..."} onChange={e => p.setMStyle(e.target.value)} />
+        <textarea className="v6-inp" style={{ minHeight: 60 }} value={p.mStyle} placeholder={""} onChange={e => p.setMStyle(e.target.value)} />
         <div className="v6-lbl">MODEL</div>
         <select className="v6-inp" value={p.mModel} onChange={e => p.setMModel(e.target.value)}>
           {["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"].map(m => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎 terbaik" : m === "suno-v3.5" ? " ⚡ tercepat" : ""}</option>)}
         </select>
-
         {p.mStatus && (
-          <div className={p.mStatus === "selesai" ? "v6-okbox" : p.mStatus === "gagal" ? "v6-risk" : "v6-okbox"} style={{ borderColor: p.mStatus==="selesai" ? "rgba(34,197,94,.4)" : p.mStatus==="gagal" ? "rgba(239,68,68,.4)" : "rgba(251,191,36,.35)", background: p.mStatus==="selesai" ? "rgba(34,197,94,.1)" : p.mStatus==="gagal" ? "rgba(239,68,68,.12)" : "rgba(251,191,36,.1)" }}>
-            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>
-              {p.mStatus === "selesai" ? "✅ Lagu selesai & sudah masuk track audio! (berhasil)" :
-               p.mStatus === "gagal" ? "❌ Gagal — coba lagi atau ganti model/provider. (tidak berhasil)" :
-               p.mStatus === "memulai..." ? "⏳ Memulai… (sedang diproses)" :
-               `⏳ ${poll.last === "berhasil ✅" ? "Berhasil ✅" : poll.last.includes("gagal") ? `Tidak berhasil — ${poll.last}` : `Sedang diproses — ${poll.last}`} — ${poll.elapsed}s`}
-            </div>
-            {p.mStatus !== "selesai" && p.mStatus !== "gagal" && p.mStatus !== "memulai..." && (
-              <>
-                <div style={{ fontSize: 11, opacity: .85, lineHeight: 1.4 }}>
-                  Cek #{poll.attempt} · {poll.elapsed > 0 ? `jalan ${poll.elapsed} detik` : "baru mulai"} · status: <b>{poll.last}</b> · task: {p.mTask ? masked(p.mTask) : "-"}<br/>
-                  Polling anti-beku (tiap cek 40 dtk, sabar dijaga timer, HP bangun langsung dicek) · sabar maks 9 mnt.
-                </div>
-                <div style={{ height: 6, background: "rgba(255,255,255,.12)", borderRadius: 99, marginTop: 8, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(100, (poll.elapsed/540)*100)}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#22d3ee)", transition: "width .5s" }} />
-                </div>
-              </>
-            )}
+          <div className={p.mStatus === "selesai" ? "v6-okbox" : "v6-risk"}>
+            {p.mStatus === "selesai" ? "✅ Lagu selesai & sudah masuk track audio!" : p.mStatus === "gagal" ? "❌ Gagal — coba lagi atau ganti model/provider." : p.mStatus === "memulai..." ? "⏳ Memulai…" : "⏳ Lagu sedang diolah server (1–6 menit). Polling jalan otomatis — silakan lanjut edit yang lain."}
           </div>
         )}
-
-        {p.mTask && (
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <button className="v6-btn ghost" style={{ flex: 1 }} onClick={p.onCek}>🔄 Cek status lagu (gratis) — polling</button>
-            <button className="v6-btn ghost" style={{ flex: 1, borderColor: "rgba(239,68,68,.3)" }} onClick={()=>{ p.setMStatus && p.setMStatus(""); p.setMTask && p.setMTask(""); try{ localStorage.removeItem("verve_suno_task_v1"); }catch{} }}>🗑 Lepas task</button>
-          </div>
-        )}
-        {p.musicUrl && <div className="v6-okbox" style={{ marginTop: 8 }}>🎵 Musik aktif di track audio ✅ — {p.musicName || "Lagu AI"}</div>}
-        <div className="v6-note">🛡️ Lagu orisinal — aman pakai YouTube/TikTok. Kunci Lahan & Studio satu gudang: verve_suno_keys_v1.</div>
+        {p.mTask && <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} onClick={p.onCek}>🔄 Cek status lagu (gratis)</button>}
+        {p.musicUrl && <div className="v6-okbox">🎵 Musik aktif di track audio ✅</div>}
+        <div className="v6-note">🛡️ Lagu yang dibuat AI di sini adalah <b>orisinal</b> — bebas kamu pakai di YouTube/TikTok tanpa klaim (versi gratis & berbayar sama-sama aman dipakai komersial sesuai ketentuan provider).</div>
       </div>
     </div>
   );
