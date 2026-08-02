@@ -1320,7 +1320,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [mGenre, setMGenre] = useState("pop ballad");
   const [mMood, setMMood] = useState("emotional, menyentuh");
   const [mModel, setMModel] = useState("suno-v5");
-  const [mVocal, setMVocal] = useState<"vocal" | "instrumental">("vocal");
+  const [mVocal, setMVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
   const [mTask, setMTask] = useState("");
   const [mStatus, setMStatus] = useState("");
   /* ---------- tts modal ---------- */
@@ -1328,6 +1328,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ---------- draft ---------- */
   const [draftId, setDraftId] = useState("");
   const [gambaraiReplaceId, setGambaraiReplaceId] = useState<string | undefined>(undefined);
+  const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "antre" });
+  const pollTimerRef = useRef<any>(null);
+  const tickRef = useRef<any>(null);
   /* ---------- refs ---------- */
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2045,7 +2048,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setProjTitle(d.title || "Proyek Tanpa Judul"); setDraftId(d.id || "");
     setMTitle(d.mTitle || ""); setMLyrics(d.mLyrics || ""); setMStyle(d.mStyle || "");
     setMGenre(d.mGenre || "pop ballad"); setMMood(d.mMood || "emotional, menyentuh");
-    setMModel(d.mModel || "suno-v5"); setMVocal(d.mVocal || "vocal");
+    setMModel(d.mModel || "suno-v5"); setMVocal((d.mVocal === "vocal" ? "auto" : d.mVocal) || "auto");
     audioSyncedRef.current = d.audioSynced ? 1 : 0; // ⏱ v13.7: draf yang sudah disetarakan tidak diusik lagi
     setSelId(""); setClipBar(false); setCurT(0);
     (window as any).__v6prevlen = fromArrayLen((d.slides || []));
@@ -2850,62 +2853,114 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
   /* ---------- SUNO ---------- */
   async function doSuno() {
-    const title = mTitle.trim() || projTitle;
-    const style = mStyle.trim() || [mGenre, mMood, "indonesian, high quality"].join(", ");
-    const lyr = mLyrics.trim();
-    if (!title) return setErr({ message: "Judul lagu kosong" });
-    if (mVocal !== "instrumental" && lyr.length < 20) return setErr({ message: "Lirik terlalu pendek (min ~20 karakter) atau pilih instrumen" });
-    setLoading("suno"); setMStatus("memulai..."); setError("");
     try {
-      const payload = {
-        title: title.slice(0, 80), prompt: style, lyrics: mVocal === "instrumental" ? undefined : lyr,
-        genre: mGenre, tags: style, custom: lyr.length > 30, model: mModel,
-        instrumental: mVocal === "instrumental",
-        _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
-      };
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (sunoKey) { headers["X-Suno-Key"] = sunoKey; headers["X-Suno-Provider"] = sunoProv; }
-      const r = await fetch("/api/hcnsec/music", { method: "POST", headers, body: JSON.stringify(payload) });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || data.error) throw new Error(data.error || data.message || `Error ${r.status}`);
-      const id = data.taskId || data.task_id || data.id;
-      if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
-      setMTask(id);
-      try { localStorage.setItem(SUNO_TASK_KEY, JSON.stringify({ id, title, ts: Date.now() })); } catch {}
-      setMStatus("pending");
-      flash("⏳ Lagu diolah server (1–6 mnt) — polling otomatis jalan");
-      pollSuno(id, headers);
-    } catch (e: any) { setErr(e); setMStatus("gagal"); }
-    setLoading(null);
-  }
-  async function pollSuno(id: string, headers?: Record<string, string>) {
-    const hdrs = headers || (sunoKey ? { "X-Suno-Key": sunoKey, "X-Suno-Provider": sunoProv } : {});
-    setMStatus("pending");
-    let tries = 0;
-    const itv = setInterval(async () => {
-      tries++;
+      const title = (mTitle || "").trim() || (projTitle || "").trim();
+      const style = (mStyle || "").trim() || [mGenre, mMood, "indonesian, high quality"].join(", ");
+      const lyr = (mLyrics || "").trim();
+      const vocalIsInstrumental = mVocal === "instrumental";
+      if (!title) return setErr({ message: "Judul lagu kosong" });
+      if (!vocalIsInstrumental && lyr.length < 20) return setErr({ message: "Lirik terlalu pendek (min ~20 karakter) atau pilih instrumen" });
+      setLoading("suno"); setMStatus("memulai..."); setPollUi({ attempt: 0, elapsed: 0, last: "antre" }); setError("");
       try {
-        const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers: hdrs, cache: "no-store" });
-        const pd = await pr.json().catch(() => ({}));
-        const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
-        if (url) {
-          clearInterval(itv);
+        const vocalGender = vocalIsInstrumental ? undefined : (mVocal === "auto" ? undefined : mVocal);
+        const payload: any = {
+          title: title.slice(0, 80), prompt: style, lyrics: vocalIsInstrumental ? undefined : lyr,
+          genre: mGenre, tags: style, custom: lyr.length > 30, model: mModel,
+          instrumental: vocalIsInstrumental,
+          vocalGender,
+          _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
+        };
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        try { const kk = localStorage.getItem("verve_suno_key") || sunoKey; const pp = localStorage.getItem("verve_suno_provider") || sunoProv; if (kk) { headers["X-Suno-Key"] = kk; headers["X-Suno-Provider"] = pp; } } catch {}
+        if (sunoKey) { headers["X-Suno-Key"] = sunoKey; headers["X-Suno-Provider"] = sunoProv; }
+        const r = await fetch("/api/hcnsec/music", { method: "POST", headers, body: JSON.stringify(payload) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) throw new Error(data.error || data.message || `Error ${r.status}`);
+        const id = data.taskId || data.task_id || data.id;
+        if (data.audio_url || data.audioUrl || data.url) {
+          const url = data.audio_url || data.audioUrl || data.url;
           setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(mTitle || "Lagu AI");
-          getAudioDuration(url).then(setMusicDur);
-          setMStatus("selesai"); setMTask("");
+          try { const d = await getAudioDuration(url); if (d>0.5) setMusicDur(d); } catch {}
+          setMStatus("selesai"); setMTask(""); setPollUi(p => ({ ...p, last: "berhasil ✅" }));
           try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
-          flash("✅ Lagu AI selesai — masuk track audio");
-        } else if (pd.status === "error" || pd.error) {
-          clearInterval(itv); setMStatus("gagal"); setErr({ message: pd.error || "Gagal generate" });
-        } else if (tries > 40) { // ~2 menit
-          clearInterval(itv); setMStatus("pending");
-          setStageText("⏳ Masih diolah server — task tersimpan, buka lagi Musik AI utk cek status");
-          setTimeout(() => setStageText(""), 3000);
+          flash("✅ Lagu AI selesai langsung — masuk track audio");
+          setLoading(null);
+          return;
         }
-      } catch { if (tries > 40) clearInterval(itv); }
-    }, 8000);
+        if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
+        setMTask(id);
+        try { localStorage.setItem(SUNO_TASK_KEY, JSON.stringify({ id, title, ts: Date.now() })); } catch {}
+        setMStatus("pending");
+        flash("⏳ Lagu diolah server (1–6 mnt) — polling otomatis jalan");
+        pollSuno(id, headers, Date.now());
+      } catch (e: any) {
+        setErr(e);
+        setMStatus("gagal");
+        setPollUi(p => ({ ...p, last: `gagal: ${e?.message?.slice(0,60) || "error"}` }));
+      }
+      setLoading(null);
+    } catch (e: any) {
+      try { setErr(e); setMStatus("gagal"); setLoading(null); } catch {}
+    }
   }
-  async function cekSuno() { if (mTask) pollSuno(mTask); }
+  async function pollSuno(id: string, headers?: Record<string, string>, startTs?: number) {
+    try {
+      const hdrs: any = headers || (()=>{ try{ const kk=localStorage.getItem("verve_suno_key")||sunoKey; const pp=localStorage.getItem("verve_suno_provider")||sunoProv; return kk ? { "X-Suno-Key": kk, "X-Suno-Provider": pp } : {}; }catch{ return sunoKey ? { "X-Suno-Key": sunoKey, "X-Suno-Provider": sunoProv } : {}; }})();
+      const ts = startTs || Date.now();
+      setMStatus("pending");
+      setPollUi({ attempt: 0, elapsed: 0, last: "antre" });
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (tickRef.current) clearInterval(tickRef.current);
+      let tries = 0;
+      const tickElapsed = setInterval(() => {
+        try { setPollUi(p => ({ ...p, elapsed: Math.round((Date.now() - ts) / 1000) })); } catch {}
+      }, 1000);
+      tickRef.current = tickElapsed;
+      const itv = setInterval(async () => {
+        tries++;
+        try { setPollUi(p => ({ ...p, attempt: tries, last: p.last === "antre" ? "menghubungi server" : p.last })); } catch {}
+        try {
+          const ac = new AbortController();
+          const wd = setTimeout(() => { try{ ac.abort(); }catch{} }, 40000);
+          const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers: hdrs, cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
+          const pd = await pr.json().catch(() => ({}));
+          const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
+          if (url) {
+            clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+            setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(mTitle || "Lagu AI");
+            try { const d = await getAudioDuration(url); if (d>0.5) setMusicDur(d); } catch {}
+            setMStatus("selesai"); setMTask("");
+            setPollUi(p => ({ ...p, last: "berhasil ✅" }));
+            try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
+            flash("✅ Lagu AI selesai — masuk track audio");
+          } else if (pd.status === "error" || pd.error) {
+            clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
+            setMStatus("gagal");
+            setPollUi(p => ({ ...p, last: `gagal: ${pd.error || "provider error"}` }));
+            setErr({ message: pd.error || "Gagal generate" });
+          } else {
+            try { setPollUi(p => ({ ...p, last: pd.status || "pending" })); } catch {}
+            if (tries > 50) {
+              clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
+              setMStatus("pending");
+              setPollUi(p => ({ ...p, last: "masih pending — task tersimpan" }));
+              setStageText("⏳ Masih diolah server — task tersimpan, buka lagi Musik AI utk cek status");
+              setTimeout(() => { try{ setStageText(""); }catch{} }, 3000);
+            }
+          }
+        } catch (e: any) {
+          try { setPollUi(p => ({ ...p, last: `cek gagal (${e?.message?.slice(0,30) || "jaringan"}) — tetap dipantau` })); } catch {}
+          if (tries > 50) { clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current); }
+        }
+      }, 8000);
+      pollTimerRef.current = itv as any;
+    } catch (e: any) {
+      try { setErr(e); setMStatus("gagal"); } catch {}
+    }
+  }
+  async function cekSuno() { try { if (mTask) pollSuno(mTask); } catch {} }
+ { if (mTask) pollSuno(mTask); }
 
   /* ---------- KETERANGAN OTOMATIS ---------- */
   /** Sisipkan teks lepas (start/dur absolut) ke slide yang menaungi waktunya. */
@@ -4555,8 +4610,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onClose={() => setModal(null)} sunoKey={sunoKey} setSunoKey={setSunoKey} sunoProv={sunoProv} setSunoProv={setSunoProv}
         mTitle={mTitle} setMTitle={setMTitle} mLyrics={mLyrics} setMLyrics={setMLyrics} mStyle={mStyle} setMStyle={setMStyle}
         mGenre={mGenre} setMGenre={setMGenre} mMood={mMood} setMMood={setMMood} mModel={mModel} setMModel={setMModel}
-        mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} mStatus={mStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
-        musicUrl={musicUrl} />}
+        mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} setMTask={setMTask} mStatus={mStatus} setMStatus={setMStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
+        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
       {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
       {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
@@ -6902,14 +6957,17 @@ function MusikModal(p: any) {
         )}
         <div className="v6-lbl">JUDUL LAGU</div>
         <input className="v6-inp" placeholder="cth: Rindu Ibu di Ujung Doa" value={p.mTitle} onChange={e => p.setMTitle(e.target.value)} />
-        <div className="v6-lbl">MODE</div>
+        <div className="v6-lbl">MODE VOKAL</div>
         <div className="v6-chips" style={{ padding: 0 }}>
-          <button className={`v6-chip ${p.mVocal === "vocal" ? "on" : ""}`} onClick={() => p.setMVocal("vocal")}>🎤 Vokal + Lirik</button>
+          <button className={`v6-chip ${p.mVocal === "auto" || p.mVocal === "vocal" ? "on" : ""}`} onClick={() => p.setMVocal("auto")}>🎤 Auto</button>
+          <button className={`v6-chip ${p.mVocal === "male" ? "on" : ""}`} onClick={() => p.setMVocal("male")}>👨 Laki-laki</button>
+          <button className={`v6-chip ${p.mVocal === "female" ? "on" : ""}`} onClick={() => p.setMVocal("female")}>👩 Perempuan</button>
           <button className={`v6-chip ${p.mVocal === "instrumental" ? "on" : ""}`} onClick={() => p.setMVocal("instrumental")}>🎹 Instrumen saja</button>
         </div>
-        {p.mVocal === "vocal" && <>
+        {(p.mVocal !== "instrumental") && <>
           <div className="v6-lbl">LIRIK (orisinal — aman hak cipta ✅)</div>
-          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini…" value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
+          <textarea className="v6-inp v6-ta" placeholder="Tulis lirik di sini… contoh: Ibu aku lelah..." value={p.mLyrics} onChange={e => p.setMLyrics(e.target.value)} />
+          <div className="v6-note">💡 Pilih 👨 laki / 👩 perempuan biar suara sesuai — auto = biarkan AI pilih vokal terbaik</div>
         </>}
         <div className="v6-lbl">GENRE</div>
         <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
@@ -6924,11 +6982,32 @@ function MusikModal(p: any) {
           {["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"].map(m => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎 terbaik" : m === "suno-v3.5" ? " ⚡ tercepat" : ""}</option>)}
         </select>
         {p.mStatus && (
-          <div className={p.mStatus === "selesai" ? "v6-okbox" : "v6-risk"}>
-            {p.mStatus === "selesai" ? "✅ Lagu selesai & sudah masuk track audio!" : p.mStatus === "gagal" ? "❌ Gagal — coba lagi atau ganti model/provider." : p.mStatus === "memulai..." ? "⏳ Memulai…" : "⏳ Lagu sedang diolah server (1–6 menit). Polling jalan otomatis — silakan lanjut edit yang lain."}
+          <div className={p.mStatus === "selesai" ? "v6-okbox" : p.mStatus === "gagal" ? "v6-risk" : "v6-okbox"} style={{ borderColor: p.mStatus==="selesai" ? "rgba(34,197,94,.4)" : p.mStatus==="gagal" ? "rgba(239,68,68,.4)" : "rgba(251,191,36,.35)", background: p.mStatus==="selesai" ? "rgba(34,197,94,.1)" : p.mStatus==="gagal" ? "rgba(239,68,68,.12)" : "rgba(251,191,36,.1)" }}>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>
+              {p.mStatus === "selesai" ? "✅ Lagu selesai & sudah masuk track audio! (berhasil)" :
+               p.mStatus === "gagal" ? "❌ Gagal — coba lagi atau ganti model/provider. (tidak berhasil)" :
+               p.mStatus === "memulai..." ? "⏳ Memulai… (sedang diproses)" :
+               `⏳ Sedang diproses — ${p.pollUi?.last || p.mStatus} — ${p.pollUi?.elapsed || 0}s`}
+            </div>
+            {p.mStatus !== "selesai" && p.mStatus !== "gagal" && p.mStatus !== "memulai..." && p.pollUi && (
+              <>
+                <div style={{ fontSize: 11, opacity: .85, lineHeight: 1.4 }}>
+                  Cek #{p.pollUi.attempt} · {p.pollUi.elapsed > 0 ? `jalan ${p.pollUi.elapsed} detik` : "baru mulai"} · status: <b>{p.pollUi.last}</b> · task: {p.mTask ? `${String(p.mTask).slice(0,7)}…${String(p.mTask).slice(-3)}` : "-"}<br/>
+                  Polling anti-beku (tiap cek 40 dtk, sabar dijaga timer). Menit 2-5 itu antrean PENYEDIA — di luar kendali aplikasi.
+                </div>
+                <div style={{ height: 6, background: "rgba(255,255,255,.12)", borderRadius: 99, marginTop: 8, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(100, ((p.pollUi?.elapsed||0)/540)*100)}%`, height: "100%", background: "linear-gradient(90deg,#f59e0b,#22d3ee)", transition: "width .5s" }} />
+                </div>
+              </>
+            )}
           </div>
         )}
-        {p.mTask && <button className="v6-btn ghost" style={{ width: "100%", marginTop: 8 }} onClick={p.onCek}>🔄 Cek status lagu (gratis)</button>}
+        {p.mTask && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <button className="v6-btn ghost" style={{ flex: 1 }} onClick={p.onCek}>🔄 Cek status lagu (gratis) — {p.pollUi?.attempt ? `Cek #${p.pollUi.attempt}` : "polling"}</button>
+            <button className="v6-btn ghost" style={{ flex: 1, borderColor: "rgba(239,68,68,.3)" }} onClick={()=>{ try{ p.setMStatus && p.setMStatus(""); }catch{} try{ p.setMTask && p.setMTask(""); }catch{} try{ localStorage.removeItem("verve_suno_task_v1"); }catch{} }}>🗑 Lepas task</button>
+          </div>
+        )}
         {p.musicUrl && <div className="v6-okbox">🎵 Musik aktif di track audio ✅</div>}
         <div className="v6-note">🛡️ Lagu yang dibuat AI di sini adalah <b>orisinal</b> — bebas kamu pakai di YouTube/TikTok tanpa klaim (versi gratis & berbayar sama-sama aman dipakai komersial sesuai ketentuan provider).</div>
       </div>
