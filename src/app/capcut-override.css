@@ -1,0 +1,243 @@
+/* 🎬 CAPCUT EXACT TIMELINE — SAFE OVERRIDE (tidak sentuh preview logic) */
+
+/* 1. Hapus tombol +- yang ganggu (sesuai request user) */
+.v6e-tlzm,
+.v6e-tlzm-out,
+.v6e-tlzm-in,
+.v6e-tlfp {
+  display: none !important;
+}
+
+/* 2. Playhead putih vertikal fixed center ala CapCut Anatomy */
+.v6e-playhead-fixed {
+  width: 2px !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 8px rgba(255,255,255,0.9), 0 0 16px rgba(255,255,255,0.4) !important;
+  z-index: 20 !important;
+  pointer-events: none;
+}
+
+/* 3. Timeline track — biar pas, tidak kepotong */
+.v6e-timeline {
+  background: #0a0a0e !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+}
+
+.v6e-track {
+  gap: 6px !important;
+  padding: 8px 4px !important;
+}
+
+/* 4. Video clip — biru CapCut, rounded, ada durasi badge */
+.v6e-clip {
+  background: linear-gradient(135deg, #1e3a8a, #3b82f6) !important;
+  border: 1.5px solid rgba(59, 130, 246, 0.5) !important;
+  border-radius: 8px !important;
+  height: 56px !important;
+  min-width: 80px !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25) !important;
+  overflow: hidden !important;
+}
+
+.v6e-clip img {
+  border-radius: 6px !important;
+  object-fit: cover !important;
+}
+
+.v6e-clip .dur {
+  background: rgba(0,0,0,0.75) !important;
+  color: #fff !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 2px 5px !important;
+  border-radius: 4px !important;
+  position: absolute !important;
+  bottom: 4px !important;
+  right: 4px !important;
+}
+
+/* Trim handle — putih, drag edges ala CapCut Anatomy */
+.v6e-clip .hdl {
+  width: 12px !important;
+  background: #ffffff !important;
+  border-radius: 2px !important;
+  opacity: 0.9 !important;
+}
+
+.v6e-clip .hdl.l {
+  left: -1px !important;
+  border-radius: 8px 0 0 8px !important;
+}
+
+.v6e-clip .hdl.r {
+  right: -1px !important;
+  border-radius: 0 8px 8px 0 !important;
+}
+
+/* 5. Audio clip — hijau CapCut */
+.v6e-audioclip {
+  background: linear-gradient(90deg, #065f46, #10b981) !important;
+  border: 1.5px solid rgba(16, 185, 129, 0.5) !important;
+  border-radius: 8px !important;
+  height: 44px !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25) !important;
+}
+
+.v6e-audioclip .wv {
+  opacity: 0.9 !important;
+}
+
+.v6e-audioclip .nm {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+
+/* 6. Text chip — orange CapCut */
+.v6e-textchip {
+  background: linear-gradient(135deg, #9a3412, #f59e0b) !important;
+  border: 1.5px solid rgba(245, 158, 11, 0.5) !important;
+  border-radius: 8px !important;
+  height: 40px !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25) !important;
+}
+
+.v6e-textchip.lyr {
+  background: linear-gradient(135deg, #0f766e, #14b8a6) !important;
+  border-color: rgba(20, 184, 166, 0.5) !important;
+}
+
+/* 7. Sticker chip — pink CapCut */
+.v6e-textchip.stik {
+  background: linear-gradient(135deg, #9d174d, #ec4899) !important;
+  border-color: rgba(236, 72, 153, 0.5) !important;
+}
+
+/* 8. Bagi (split) button — CapCut style, tetap ada tapi lebih clean */
+.v6e-tlsplit {
+  background: rgba(255,255,255,0.12) !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  padding: 6px 12px !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Pas (fit) button — lebih clean */
+.v6e-tlfit {
+  background: rgba(25, 194, 184, 0.15) !important;
+  border: 1px solid rgba(25, 194, 184, 0.3) !important;
+  border-radius: 8px !important;
+  color: #19c2b8 !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  padding: 6px 12px !important;
+}
+
+/* 9. Timeline lanes — CapCut color coding label */
+.v6e-lanehead {
+  background: rgba(255,255,255,0.06) !important;
+  border-radius: 6px !important;
+  padding: 4px 8px !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  color: rgba(255,255,255,0.7) !important;
+}
+
+.v6e-lanerow {
+  background: transparent !important;
+}
+
+/* 10. Transisi chip — ala CapCut */
+.v6e-trans-mid {
+  width: 20px !important;
+  height: 20px !important;
+  background: #fff !important;
+  border-radius: 50% !important;
+  border: 2px solid #0a0a0e !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+}
+
+.v6e-trans-mid.off {
+  background: rgba(255,255,255,0.2) !important;
+}
+
+/* 11. Tips bar — CapCut Anatomy TIPS */
+.v6e-tlhint {
+  background: rgba(25, 194, 184, 0.1) !important;
+  border: 1px solid rgba(25, 194, 184, 0.2) !important;
+  border-radius: 8px !important;
+  font-size: 10px !important;
+  color: rgba(255,255,255,0.8) !important;
+}
+
+/* 12. Track add buttons — lebih CapCut */
+.v6e-track-addbtn {
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px dashed rgba(255,255,255,0.15) !important;
+  border-radius: 8px !important;
+  color: rgba(255,255,255,0.6) !important;
+  font-size: 11px !important;
+  transition: all 0.2s !important;
+}
+
+.v6e-track-addbtn:hover {
+  background: rgba(255,255,255,0.1) !important;
+  border-color: rgba(255,255,255,0.25) !important;
+  color: #fff !important;
+}
+
+/* 13. Preview tetap 60% top — jangan ganggu */
+.v6e-stage-wrap {
+  flex: 1 !important;
+  min-height: 55% !important;
+  max-height: 62% !important;
+}
+
+/* 14. Outro button — CapCut style */
+.v6e-outro {
+  background: linear-gradient(135deg, #1f2937, #374151) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 8px !important;
+  color: rgba(255,255,255,0.7) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+
+/* 15. Add clip button — CapCut + */
+.v6e-addclip {
+  background: rgba(25, 194, 184, 0.15) !important;
+  border: 1px dashed rgba(25, 194, 184, 0.3) !important;
+  border-radius: 8px !important;
+  color: #19c2b8 !important;
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  width: 56px !important;
+  height: 56px !important;
+}
+
+/* 16. Hide help ? jika ganggu juga */
+.v6e-tlhelp {
+  opacity: 0.5 !important;
+  font-size: 10px !important;
+}
+
+/* 17. Snap indicator */
+.v6e-clip.sel {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 4px 12px rgba(59,130,246,0.4) !important;
+}
+
+/* 18. Make timeline scroll smooth ala CapCut */
+.v6e-timeline-scroll {
+  scroll-behavior: smooth !important;
+  scrollbar-width: none !important;
+}
+
+.v6e-timeline-scroll::-webkit-scrollbar {
+  display: none !important;
+}
