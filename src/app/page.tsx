@@ -4741,7 +4741,9 @@ function TimelineV6(p: any) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [halfW, setHalfW] = useState(160);
   const total = timeline?.total || 0;
-  const dispTotal = Math.max(total, Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0, 15);
+  // Fix: jangan pakai min 15 detik, bikin ruler jauh dari objek — pakai total + padding 2 detik aja, biar pas kayak CapCut
+  const maxAudio = Math.max(Number(p.musicDur) || 0, Number(p.ttsDur) || 0, Number(p.voiceDur) || 0);
+  const dispTotal = Math.max(total, maxAudio, total + 2, 5);
   let contentW = Math.max(320, dispTotal * PXS0 + halfW * 2 + 16);
   const dragRef = useRef<any>(null);
   const armTRef = useRef<any>(null);
@@ -5134,7 +5136,14 @@ function TimelineV6(p: any) {
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
-  const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => s * PXS0 >= 48) || 600;
+  // CapCut-like ruler: jangan banyak garis — major tiap 1-3 detik tergantung zoom, minor sebagai dot
+  let tickStep = 3;
+  if (PXS0 >= 140) tickStep = 1;
+  else if (PXS0 >= 80) tickStep = 2;
+  else if (PXS0 >= 50) tickStep = 3;
+  else tickStep = 5;
+  if (dispTotal > 60) tickStep = Math.max(tickStep, 5);
+  if (dispTotal > 180) tickStep = Math.max(tickStep, 10);
   const nTicks = Math.ceil(dispTotal / tickStep) + 1;
   const hasAudio = !!(musicUrl || ttsUrl || voiceUrl);
   const clipTexts = slides.flatMap((s: any) => {
@@ -5170,12 +5179,12 @@ function TimelineV6(p: any) {
   // CapCut-exact JSX
   return (
     <div className="v6e-tl capcut-timeline">
-      {/* CapCut Tips Bar */}
-      <div className="capcut-tips">
-        <div className="tip"><span>💡</span><b>CAPCUT STYLE</b> — Preview 60% • Playhead fixed center • Trim drag pinggiran • Move drag tengah • Pinch zoom • Snap otomatis</div>
-        <div style={{display:'flex',gap:6}}>
-          <button className="v6e-tlfit" onClick={() => { const el = scrollRef.current; if (!el) return; zoomAnchorRef.current = { t: curT, vx: el.clientWidth/2 }; p.onZoom(clampN((el.clientWidth-24)/dispTotal, TL_MIN_PXS, TL_MAX_PXS)); }}>⤢ Pas</button>
-          <button className="v6e-tlsplit" onClick={() => p.onSplit && p.onSplit()}>╫ Bagi</button>
+      {/* Tips bar kecil, tidak nutupin */}
+      <div className="capcut-tips" style={{ fontSize: 9, padding: '4px 8px', background: 'rgba(10,15,25,0.9)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ opacity: 0.6, fontSize: 9 }}>CapCut • Playhead tengah • Trim pinggir • Move tengah • Cubit zoom • Snap</span>
+        <div style={{display:'flex',gap:4}}>
+          <button className="v6e-tlfit" style={{ fontSize: 9, padding: '3px 8px' }} onClick={() => { const el = scrollRef.current; if (!el) return; zoomAnchorRef.current = { t: curT, vx: el.clientWidth/2 }; p.onZoom(clampN((el.clientWidth-24)/dispTotal, TL_MIN_PXS, TL_MAX_PXS)); }}>⤢</button>
+          <button className="v6e-tlsplit" style={{ fontSize: 9, padding: '3px 8px' }} onClick={() => p.onSplit && p.onSplit()}>✂</button>
         </div>
       </div>
 
@@ -5204,7 +5213,7 @@ function TimelineV6(p: any) {
                       {tickStep>=2 && <span className="dot">•</span>}
                     </span>
                   ); })}
-                  {p.musicBeats?.length ? p.musicBeats.slice(0,600).map((b:number,bi:number)=>{ const bx=((p.musicOff||0)+b)*PXS0; return bx>=0&&bx<=dispTotal*PXS0 ? <i key={`b${bi}`} className="v6e-beat" style={{left:bx,top:18}}/>:null; }):null}
+                  {/* Beat lines disembunyiin biar ruler bersih kayak CapCut — dulu bikin banyak garis */}
                 </div>
 
                 {/* VIDEO TRACK — CapCut blue */}
@@ -5317,14 +5326,7 @@ function TimelineV6(p: any) {
         </div>
       </div>
 
-      {/* Bottom TIPS bar like anatomy image */}
-      <div className="capcut-bottom-tips">
-        <div className="tip"><span>💡 TIPS</span></div>
-        <div className="tip"><span>🔍</span> Zoom in for frame-level precision</div>
-        <div className="tip"><span>🧲</span> Use snap to keep clips aligned perfectly</div>
-        <div className="tip"><span>✂️</span> Split clips to remove unwanted parts</div>
-        <div className="tip"><span>📚</span> Organize layers to keep project clean</div>
-      </div>
+      {/* Bottom tips disembunyiin biar bersih kayak CapCut */}
     </div>
   );
 }
