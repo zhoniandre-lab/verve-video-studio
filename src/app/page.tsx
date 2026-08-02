@@ -5219,7 +5219,7 @@ function TimelineV6(p: any) {
                 {/* VIDEO TRACK — CapCut blue */}
                 <div className="capcut-track-row video">
                   <div className="track-label"><span>🎬</span> Video</div>
-                  <div className="track-clips" style={{display:'flex',gap:4}}>
+                  <div className="track-clips" style={{display:'flex',gap:4,position:'relative'}}>
                     {slides.map((s:any,i:number)=>{
                       const sel = selId===s.id;
                       const dur = timeline?.durs?.[i]||3;
@@ -5228,11 +5228,11 @@ function TimelineV6(p: any) {
                           <img src={s.imageUrl} alt="" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>
                           <span className="dur-badge">{dur.toFixed(1)}s</span>
                           {s.videoUrl && <span className="video-badge">🎬</span>}
-                          {sel && (<><span className="hdl l" onPointerDown={(e)=>onHdlDown(e,i,"l")}>‹</span><span className="hdl r" onPointerDown={(e)=>onHdlDown(e,i,"r")}>›</span></>)}
+                          {sel && (<><span className="hdl l" onPointerDown={(e)=>onHdlDown(e,i,"l")} style={{ width:16, background:'#fff', color:'#000', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, fontSize:10, borderRadius:'4px 0 0 4px', border:'1px solid #000' }}>‹</span><span className="hdl r" onPointerDown={(e)=>onHdlDown(e,i,"r")} style={{ width:16, background:'#fff', color:'#000', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:900, fontSize:10, borderRadius:'0 4px 4px 0', border:'1px solid #000' }}>›</span></>)}
                         </div>
                       );
                     })}
-                    {slides.length>1 && slides.map((s:any,i:number)=>{ if (i>=slides.length-1) return null; let offL=0; for(let k=0;k<i;k++) offL+=clipW(k)+4; const wL=clipW(i); const centerX=offL+wL+2; const tr=canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve"); return (<button key={"tmid-"+s.id} className={`v6e-trans-mid ${tr==="none"?"off":""}`} style={{left:centerX}} onClick={(e)=>{e.stopPropagation();p.onTrans(s.id);}}/>); })}
+                    {slides.length>1 && slides.map((s:any,i:number)=>{ if (i>=slides.length-1) return null; let offL=0; for(let k=0;k<i;k++) offL+=clipW(k)+4; const wL=clipW(i); const centerX=offL+wL+2; const tr=canonicalTrans(slideOptsById[s.id]?.trans ?? p.transition ?? "dissolve"); return (<button key={"tmid-"+s.id} className={`v6e-trans-mid ${tr==="none"?"off":""}`} style={{left:centerX, position:'absolute', top:'50%', transform:'translate(-50%,-50%)', width:14, height:24, background:'#fff', borderRadius:3, border:'1.5px solid #000', zIndex:5, display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:900}} onClick={(e)=>{e.stopPropagation();p.onTrans(s.id);}} title="Transisi — klik untuk pilih">◧</button>); })}
                     <button className="capcut-add" onClick={p.onAddClip}>＋</button>
                   </div>
                 </div>
