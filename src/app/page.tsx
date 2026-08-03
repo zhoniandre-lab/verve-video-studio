@@ -1944,7 +1944,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       return;
     }
     setDurT(totalAll);
-    if (t >= totalAll - 0.02) { stopPreview(true); setCurT(0); drawFrame(0); return; }
+    if (totalAll > 0 && t >= totalAll + 0.08) { stopPreview(true); setCurT(0); drawFrame(0); return; }
     setCurT(t);
     drawFrame(t);
     rafRef.current = requestAnimationFrame(tick);
