@@ -11,6 +11,7 @@ import LahanStudio from "./lahan-studio";
 import GrowthDoctor from "./growth-doctor";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
+import { decideTick, manualAfterMasterEnd, resolveSeekTarget, totalAllOf } from "@/lib/studio/clock"; // ⏱ FASE-A JAM TUNGGAL — keputusan sync murni & teruji
 import { applyMoneyPrinterVariant, makeProductionReportText, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
 import { buildCinematicEditPrompt, buildVerveCinematicStudioSummary, VERVE_CINEMATIC_ADJUST } from "@/lib/guard/cinematic-prompt"; // 🎬 Cinematic Prompt Kit
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
@@ -1911,10 +1912,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, [slideOptsById, slides, filterPreset, adj, qualitySharp, ratio, bgMode, bgColor, capWords, capStyle, ccSize, ccY, playing, selTextSid, selStik]); // eslint-disable-line
 
   const tick = useCallback(() => {
-    // jika master audio selesai tapi klip masih panjang → lanjut jam manual
+    // jika master audio selesai tapi klip masih panjang → lanjut jam manual (monoton, tanpa lompat mundur)
     const aud0 = clockRef.current.audio;
     if (aud0 && aud0.ended) {
-      clockRef.current = { audio: null, t0: performance.now(), base: aud0.duration || 0, running: true };
+      const m = manualAfterMasterEnd(aud0.duration || 0, performance.now()); // ⏱ FASE-A
+      clockRef.current = { audio: m.audio, t0: m.t0, base: m.base, running: m.running };
     }
     const t = getClockT();
     // Fix: pakai timelineRef + fallback ke timeline state biar tidak null saat ref stale → cegah 00:12/00:00 desync
@@ -1933,18 +1935,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         else if (!inWin && !e.a.paused) { e.a.pause(); }
       } catch {}
     }
-    const totalAll = Math.max(total, audioDur, offsetEnd);
-    // Fix: totalAll 0 → jangan bikin curT lari ke 12 detik, reset ke 0 biar sinkron
-    if (totalAll <= 0.01) {
+    const totalAll = totalAllOf(total, audioDur, offsetEnd); // ⏱ FASE-A
+    const keputusan = decideTick(t, totalAll); // ⏱ FASE-A — 1 pintu keputusan
+    if (keputusan === "idle") {
+      // Fix: totalAll 0 → jangan bikin curT lari ke 12 detik, reset ke 0 biar sinkron
       setDurT(0);
-      if (t > 0.5) { stopPreview(true); setCurT(0); drawFrame(0); return; }
       setCurT(0);
       drawFrame(0);
       rafRef.current = requestAnimationFrame(tick);
       return;
     }
+    if (keputusan === "reset") {
+      setDurT(0);
+      stopPreview(true); setCurT(0); drawFrame(0); return;
+    }
     setDurT(totalAll);
-    if (totalAll > 0 && t >= totalAll + 0.08) { stopPreview(true); setCurT(0); drawFrame(0); return; }
+    if (keputusan === "end") { stopPreview(true); setCurT(0); drawFrame(0); return; }
     setCurT(t);
     drawFrame(t);
     rafRef.current = requestAnimationFrame(tick);
@@ -1986,8 +1992,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!slidesRef.current.length) return;
     if (playing) { stopPreview(); return; }
     // buat/reset sumber audio
-    let seekTo = curT;
-    if (durTRef.current > 0.3 && curT >= durTRef.current - 0.06) { seekTo = 0; setCurT(0); }
+    const seekTo = resolveSeekTarget(curT, durTRef.current); // ⏱ FASE-A — ujung → 0
+    if (seekTo === 0 && curT !== 0) setCurT(0);
     let master: HTMLAudioElement | null = null;
     voiceEls.current = [];
     try {
@@ -4165,6 +4171,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     return pts.length >= 2 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : null;
   }
   function onStageDown(e: React.PointerEvent) {
+    // 🎬 v15.3 PLAY STOP SAAT SENTUH PANGGUNG (RENCANA yang sudah di-ACC, kini dikirim):
+    // sentuh di mana pun di panggung saat lagi play = STOP (ala CapCut: 1 sentuh = berhenti;
+    // tahan sentuh & cubit tetap jalan setelah berhenti). stopPreview() idempoten — aman dipanggil berulang.
+    if (playingRef.current) {
+      stopPreview();
+    }
     ptrsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     if (ptrsRef.current.size >= 2) {
