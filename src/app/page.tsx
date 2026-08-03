@@ -4893,7 +4893,11 @@ function TimelineV6(p: any) {
     if (tlPtrs.current.size === 0) scrubHoldRef.current = false;
   }
 
-  function clipW(i: number): number { return Math.max(80, (timeline?.durs?.[i] || 0) * PXS0); } // v15.2B min 80px (gambar jelas walau klip 1dt)
+  // 📐 FASE-A.3 SATU PENGGARIS (bukti rekam layar 2026-08-04: panggung jalan 3,6d/objek, strip melabeli 3,0d):
+  // lebar klip = durasi + transisi miliknya (span MESIN buildTimeline). Semua geometri strip — lebar klip,
+  // ghost drag reorder, chip transisi, clipsTotW — turunan dari fungsi ini → garis rol PAS di pembatas objek,
+  // film berhenti PAS di ujung thumbnail terakhir, dan yang terlihat di strip = yang terekspor (exporter juga buildTimeline).
+  function clipW(i: number): number { return Math.max(80, ((timeline?.durs?.[i] || 0) + (timeline?.tdurs?.[i] || 0)) * PXS0); } // min 80px tetap
 
   /* ---- TEKAN-TAHAN & SERET (klip reorder / trim / audio offset) + AUTO-SCROLL tepi ---- */
   const armTRef = useRef<any>(null);
