@@ -258,3 +258,8 @@ Solusi v15.2D (RESET PENDEKATAN):
 Bukti: tsc 0, build 0, 6/6 suite hijau, smoke `v6e-trans-overlay + v6e-trans-mid{width:2px}` di chunk CSS ✓.
 Diff: page.tsx (1 blok) hapus wrapper per-klip + tambah overlay absolute di .v6e-track; globals.css tweak chip 3px→2px + .v6e-trans-overlay class.
 Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".
+
+## FASE-A + A.2 (2026-08-04, malam) — jam tunggal & berhenti di ujung
+- **FASE-A `6ba91fb` (tag `v15.3-jamtunggal-calon`)**: keputusan jam preview diekstrak ke modul murni `src/lib/studio/clock.ts` (totalAllOf / decideTick / resolveSeekTarget / manualAfterMasterEnd) — 1 pintu keputusan, tanpa ubah perilaku. v15.3 tap-panggung=stop dikirim (stopPreview di baris pertama onStageDown; idempoten). Penjaga: `tests/jamtunggal.test.mjs` (33 cek).
+- **FASE-A.2 (tag `v28.7-berhenti-ujung-calon`)**: BUKTI rekam layar user (frame-by-frame): saat PLAY sinkron SEHAT; saat film habis → garis melejit ke 00:00 & panggung melompat ke frame basi tengah klip-1. Keputusan user: ala CapCut. Bedah 3 stub: (1) cabang end tick() → setCurT(totalAll)+drawFrame(totalAll) (tetap di ujung; play lagi → resolveSeekTarget → 0); (2)+(3) repaint terjadwal 150ms di stopPreview & seekPreview (deck video parkir ASYNC → anti frame basi). Penjaga: `tests/berhentiujung.test.mjs`.
+- Pelajaran: rekaman layar via link Google Drive + bongkar frame (ffmpeg tile + md5) = cara pasti diagnosis bug sync tanpa nebak. Simpan metodenya.

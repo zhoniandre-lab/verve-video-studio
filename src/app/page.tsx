@@ -1950,7 +1950,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       stopPreview(true); setCurT(0); drawFrame(0); return;
     }
     setDurT(totalAll);
-    if (keputusan === "end") { stopPreview(true); setCurT(0); drawFrame(0); return; }
+    // 🎬 FASE-A.2 BERHENTI DI UJUNG ala CapCut (keputusan user 2026-08-04, bukti rekam layar):
+    // film habis = garis & panggung TETAP di frame terakhir (outro) — tidak melejit balik ke 0.
+    // Tekan play lagi → resolveSeekTarget (jam tunggal FASE-A) yang memutar ulang dari 0.
+    if (keputusan === "end") { stopPreview(true); setCurT(totalAll); drawFrame(totalAll); return; }
     setCurT(t);
     drawFrame(t);
     rafRef.current = requestAnimationFrame(tick);
@@ -1968,6 +1971,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     playingRef.current = false;
     setPlaying(false);
     if (!ended) {/* tetap di posisi */}
+    // 🩹 FASE-A.2 ANTI FRAME BASI — parkir/seek deck video itu ASYNC ('seeked' menyusul).
+    // Tanpa gambar ulang terjadwal, kanvas membekukan frame lama (terbukti di rekam layar:
+    // setelah film habis, panggung menampilkan frame TENGAH klip-1, bukan milik posisi garis).
+    setTimeout(() => { try { drawFrameRefCb.current(curTRef.current); } catch {} }, 150);
   }, []);
 
   const seekPreview = useCallback((t: number) => {
@@ -1986,6 +1993,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     });
     clockRef.current.base = tt; clockRef.current.t0 = performance.now();
     setCurT(tt); drawFrame(tt);
+    // 🩹 FASE-A.2: seek loncat saat pause → frame deck baru tiba async; gambar ulang setelah parkir
+    setTimeout(() => { try { drawFrameRefCb.current(curTRef.current); } catch {} }, 150);
   }, [drawFrame]);
 
   const togglePreview = useCallback(() => {
