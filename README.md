@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🧠 v19.0 — FEEDBACK LOOP: OTAK BELAJAR SENDIRI DARI YOUTUBE (read-only)
+* **Masalah:** Otak VERVE (`learningBoostV2` — skor judul Bayesian yang belajar dari performa) hanya pintar kalau `brain.results` diisi angka asli YouTube. Dulu harus input CTR manual / export CSV → jarang diisi → otak "kelaparan" dan belajar lambat.
+* **Solusi (Feedback Loop Otomatis):**
+  * Route baru `/api/youtube/sync-brain` menarik data performa video channel (views, AVD, likes, comments + impressions/CTR yang tersedia) langsung dari YouTube Analytics API — read-only, tanpa menulis apa pun ke channel.
+  * Tombol **"🔄 Sync & Belajar Sekarang"** di Lahan (langkah Pilih Judul Juara) + **auto-sync sekali sehari** saat app dibuka (kalau YouTube sudah terhubung di Dokter Channel).
+  * Data digabung ke BrainMemory dengan aturan "yang paling lengkap menang" — laporan manual yang lebih kaya tidak tertimpa, slot 200 judul tetap terkunci.
+  * Efek ke otak: judul yang terbukti CTR tinggi langsung naik prioritas; yang CTR <3% dalam 14 hari otomatis dihukum; data lama meluruh (half-life 30 hari).
+* **Bonus fix data:** `impressionClickThroughRate` dari YouTube Analytics API ternyata **rasio 0-1** (0.045 = 4.5%), bukan persen. Sebelumnya dipakai mentah di `/api/youtube/analytics/video` → Growth Doctor & otak bisa membaca CTR 0.045% padahal aslinya 4.5%. Sekarang dikonversi aman (×100 bila ≤1) di kedua route.
+
+
 Berikut adalah rangkuman seluruh masalah kritis yang berhasil kami pecahkan secara mutlak pada sesi ini untuk menjamin kinerja yang cepat, lancar tanpa patah-patah (*butter-smooth*), dan 100% bebas crash pada berbagai tipe HP Android/iOS:
 
 ### 1. Sinkronisasi Lirik & Alur Lagu Pas Sempurna

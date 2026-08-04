@@ -26,6 +26,7 @@ import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 
 const LAHAN_KEY = "verve_lahan_v1";
 const BRAIN_KEY = "verve_brain_v1";
+const SYNC_KEY = "verve_brain_yt_sync_v1"; // 🔄 v19.0: jam terakhir otak auto-sync dari YouTube
 
 /* ---------- util ---------- */
 function fmtNum(n: number): string {
@@ -305,6 +306,12 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [perfCtr, setPerfCtr] = useState("");
   const [perfImp, setPerfImp] = useState("");
   const [perfAvd, setPerfAvd] = useState("");
+  // 🔄 v19.0 FEEDBACK LOOP: otak belajar sendiri dari data YouTube (read-only)
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+  const [syncLast, setSyncLast] = useState<number | null>(() => {
+    try { const n = Number(localStorage.getItem(SYNC_KEY) || 0); return n > 0 ? n : null; } catch { return null; }
+  });
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
   function saveBrain(up: (b: BrainMemory) => BrainMemory) {
@@ -332,6 +339,20 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       });
     }).catch(() => { /* brankas tak ada -> pakai memori HP saja */ });
     return () => { live = false; };
+  }, []);
+
+  // 🔄 v19.0: AUTO-SYNC OTAK — sekali sehari otak menarik data performa dari YouTube
+  // (kalau sudah terhubung) tanpa diminta. Ini "murid yang baca buku sendiri tiap hari".
+  useEffect(() => {
+    try {
+      const last = Number(localStorage.getItem(SYNC_KEY) || 0) || 0;
+      if (Date.now() - last < 24 * 3600 * 1000) return; // sudah sync < 24 jam lalu
+    } catch { /* abaikan */ }
+    fetch("/api/youtube/status").then((r) => r.json()).then((st) => {
+      if (!st?.configured || !st?.connected) return; // belum bisa — nanti coba lagi besok
+      void syncBrainFromYT(true);
+    }).catch(() => { /* offline — nanti coba lagi */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function flash(t: string) {
@@ -551,6 +572,68 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       ),
     }));
     flash("📊 Tersimpan — otak makin paham pola judulmu!");
+  }
+
+  /* 🔄 v19.0 FEEDBACK LOOP OTOMATIS — otak "makan" data performa asli dari YouTube.
+     Skor kekayaan data: makin lengkap (CTR+Tayangan+AVD) makin menang saat digabung,
+     supaya hasil sync TIDAK menimpa laporan manual yang lebih lengkap. */
+  function hasilKeSkor(r: { ctr?: number | ""; impressions?: number | ""; avdSec?: number | "" }): number {
+    let s = 0;
+    if (r.ctr != null && r.ctr !== "") s += 2;
+    if (r.impressions != null && r.impressions !== "") s += 1;
+    if (r.avdSec != null && r.avdSec !== "") s += 1;
+    return s;
+  }
+  function mergeSyncResults(now: BrainResult[], rows: BrainResult[]): BrainResult[] {
+    const map = new Map<string, BrainResult>();
+    [...now, ...rows].forEach((r) => {
+      const k = normTitleKey(r.title || "");
+      if (!k) return;
+      const old = map.get(k);
+      if (!old) { map.set(k, r); return; }
+      const oldScore = hasilKeSkor(old), newScore = hasilKeSkor(r);
+      if (newScore > oldScore || (newScore === oldScore && (+r.time! || 0) >= (+old.time! || 0)))
+        map.set(k, { ...old, ...r });
+    });
+    return [...map.values()].sort((x, y) => (+y.time! || 0) - (+x.time! || 0)).slice(0, 200);
+  }
+  async function syncBrainFromYT(auto = false) {
+    if (syncBusy) return;
+    setSyncBusy(true);
+    setSyncMsg("");
+    try {
+      const st = await fetch("/api/youtube/status").then((r) => r.json()).catch(() => null);
+      if (!st?.configured) {
+        setSyncMsg(`⚠️ Koneksi YouTube resmi belum aktif di server (butuh ${(st?.missing || ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_OAUTH_COOKIE_SECRET"]).join(", ")}). Set di Vercel → Settings → Environment Variables, lalu redeploy.`);
+        return;
+      }
+      if (!st?.connected) {
+        setSyncMsg("🔗 YouTube belum terhubung. Hubungkan SEKALI di menu 🩺 Dokter Channel (read-only, berlaku 45 hari) — setelah itu otak sync sendiri.");
+        return;
+      }
+      const r = await fetch("/api/youtube/sync-brain?days=90&limit=50");
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      const rows: BrainResult[] = (j.rows || []).map((x: any) => ({
+        title: x.title, ctr: x.ctr ?? "", impressions: x.impressions ?? "", avdSec: x.avdSec ?? "",
+        time: x.time || Date.now(), ...x,
+      }));
+      if (!rows.length) {
+        setSyncMsg("Sync selesai: 0 video dalam 90 hari terakhir (channel masih kosong? Atur rentang?).");
+        return;
+      }
+      saveBrain((b) => ({ ...b, results: mergeSyncResults(b.results, rows) }));
+      try { localStorage.setItem(SYNC_KEY, String(Date.now())); } catch { /* abaikan */ }
+      setSyncLast(Date.now());
+      const ctrN = rows.filter((x) => x.ctr !== "" && x.ctr != null).length;
+      const top = [...rows].filter((x) => x.ctr !== "" && x.ctr != null).sort((a, b) => (+b.ctr! || 0) - (+a.ctr! || 0))[0];
+      setSyncMsg(`🧠 Otak sync ${rows.length} video asli dari channelmu${ctrN ? ` — ${ctrN} dapat CTR` : ""}${top ? `, terbaik: "${top.title}" (CTR ${top.ctr}%)` : ""}. Pola judul yang terbukti bagus langsung diprioritaskan.`);
+      if (!auto) flash(`🧠 Feedback loop ON — otak belajar dari ${rows.length} video asli!`);
+    } catch (e) {
+      setSyncMsg(`⚠️ Gagal sync: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSyncBusy(false);
+    }
   }
 
   function resetLahan() {
@@ -1704,6 +1787,22 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
               )}
             </div>
           )}
+          {/* 🔄 v19.0 FEEDBACK LOOP — otak belajar sendiri dari YouTube */}
+          <div className="lh-card" style={{ borderColor: "rgba(25,194,184,.35)" }}>
+            <div className="lh-h1">🧠 Otak belajar otomatis <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>v19.0 · FEEDBACK LOOP</span></div>
+            <p className="lh-sub">Otak VERVE menarik sendiri data performa video channelmu (views, AVD, likes, impressions/CTR yang tersedia) → langsung belajar pola judul yang tembus & yang gagal. <b>Tanpa isi manual, tanpa buka YouTube Studio.</b> Read-only, aman.</p>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="lh-mini ok" onClick={() => syncBrainFromYT(false)} disabled={syncBusy} style={{ padding: "7px 14px" }}>
+                {syncBusy ? "⏳ Menarik data & belajar..." : "🔄 Sync & Belajar Sekarang"}
+              </button>
+              {!!syncLast && (
+                <span className="lh-note" style={{ marginTop: 0 }}>Terakhir belajar: {new Date(syncLast).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+              )}
+              <span className="lh-note" style={{ marginTop: 0 }}>Otak punya {brain.results.length}/200 slot memori</span>
+            </div>
+            {!!syncMsg && <p className="lh-note" style={{ color: syncMsg.startsWith("⚠️") || syncMsg.startsWith("🔗") ? "#e8a15a" : "var(--v6-teal)", marginTop: 8 }}>{syncMsg}</p>}
+            <p className="lh-note">Otomatis sync sekali sehari saat app dibuka (kalau YouTube sudah dihubungkan di 🩺 Dokter Channel). Yang sync manual bisa kapan saja. Data lama bobotnya turun (half-life 30 hari) — otak selalu ikut tren terbaru.</p>
+          </div>
           {selTitle && (
             <button className="lh-btn" onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
           )}

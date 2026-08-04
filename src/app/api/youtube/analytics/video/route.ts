@@ -8,6 +8,19 @@ type AnalyticsRes = { columnHeaders?: { name: string }[]; rows?: (string | numbe
 type VideosRes = { items?: { id: string; snippet?: { title?: string; publishedAt?: string; thumbnails?: unknown }; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string }; contentDetails?: { duration?: string } }[] };
 
 function num(v: unknown): number | null { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 10) / 10 : null; }
+/**
+ * 🐛 FIX v19.0: YouTube Analytics API mengembalikan impressionClickThroughRate
+ * sebagai RASIO 0-1 (0.045 = 4.5%), bukan persen. Sebelumnya dipakai mentah →
+ * Growth Doctor & otak melihat "CTR 0.045%" padahal aslinya 4.5%.
+ * Konversi aman: nilai <= 1 dianggap rasio → ×100. (max 100, min 0)
+ */
+function ctrToPct(v: unknown): number | null {
+  const n = num(v);
+  if (n == null) return null;
+  let p = n <= 1 ? n * 100 : n;
+  p = Math.max(0, Math.min(100, p));
+  return Math.round(p * 100) / 100;
+}
 function trafficLabel(k: string): string {
   const m: Record<string, string> = {
     ADVERTISING: "Iklan",
@@ -142,7 +155,7 @@ export async function GET(req: Request) {
       comments: main.comments ?? null,
       subscribersGained: main.subscribersGained ?? null,
       impressions: main.impressions ?? null,
-      ctrPct: main.impressionClickThroughRate ?? null,
+      ctrPct: ctrToPct(main.impressionClickThroughRate),
     };
     const body = {
       ok: true,
