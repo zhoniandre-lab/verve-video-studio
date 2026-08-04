@@ -2184,3 +2184,17 @@ b.ok, b.warn, b.err { color:inherit; }
 .tub-tost{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b2133;border:1px solid #dc2626;
   color:#fff;padding:11px 18px;border-radius:12px;font:700 13px Poppins,sans-serif;z-index:10000;
   box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:92vw;text-align:center}
+
+/* ============ 🖼 STUDIO THUMBNAIL L5.2 — studio teks ============ */
+.tub-label-mini{color:#5b6478;font-weight:400;font-size:11px}
+.tub-seg{display:flex;gap:6px;margin:6px 0 10px}
+.tub-seg-item{flex:1;padding:9px 8px;border-radius:10px;border:1px solid #2c3550;background:#0e121c;
+  color:#8b93a7;font:700 12px Poppins,sans-serif;cursor:pointer}
+.tub-seg-on{background:linear-gradient(135deg,#b45309,#dc2626);border-color:transparent;color:#fff}
+.tub-fonts{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px}
+.tub-font{width:52px;height:52px;border-radius:12px;border:1px solid #2c3550;background:#0e121c;color:#e8ebf2;
+  font-size:20px;cursor:pointer;transition:transform .1s}
+.tub-font:active{transform:scale(.94)}
+.tub-font-on{border-color:#dc2626;box-shadow:0 0 0 2px #dc262655;color:#ffd166}
+.tub-duo-kontrol{display:flex;gap:14px;align-items:flex-start}
+.tub-slider{width:100%;accent-color:#dc2626;height:34px;margin-top:6px}

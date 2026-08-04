@@ -50,8 +50,9 @@ const THUMB_FONT_BIG = "'Anton',Impact,sans-serif";
 const THUMB_FONT_KICK = "'Bebas Neue',Impact,sans-serif";
 
 /** Gambar thumbnail ke context (panggil dengan canvas 1280×720). img boleh null → latar gradien gelap.
- *  preferSide (opsional, L5): paksa sisi teks ("left"/"right") — bila tidak diisi, otak luminansi tetap yang memutuskan (perilaku lama utuh). */
-export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0, preferSide?: "left" | "right") {
+ *  preferSide (opsional, L5): paksa sisi teks ("left"/"right") — bila tidak diisi, otak luminansi tetap yang memutuskan (perilaku lama utuh).
+ *  opsi (opsional, L5.2): teksKustom (baris manual), fontFam (font tampilan pilihan), skala (pengali besar huruf, bawaan 1). Tanpa opsi → perilaku lama 100% utuh. */
+export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0, preferSide?: "left" | "right", opsi?: { teksKustom?: string[]; fontFam?: string; skala?: number }) {
   // 1) Latar: foto adegan cover-fit
   if (img) {
     const iw = (img as any).naturalWidth || (img as any).width || W;
@@ -110,13 +111,15 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
   ctx.fillText(kick, kx + H * 0.035, H * 0.055 + H * 0.047);
 
   // 5) Kata-kata raksasa — ANTON (psikologi: huruf condensed tebal = terbaca sekejap di feed)
-  const words = pickPowerWords(title, salt);
+  const kustom = opsi?.teksKustom && opsi.teksKustom.length ? opsi.teksKustom.slice(0, 3) : null;
+  const words = kustom || pickPowerWords(title, salt);
+  const bigFam = opsi?.fontFam || THUMB_FONT_BIG;
   const maxW = W * 0.62;
-  let fs = Math.round(H * 0.17);
+  let fs = Math.round(H * 0.17 * (opsi?.skala || 1));
   ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round";
-  const fits = (size: number) => { ctx.font = `${size}px ${THUMB_FONT_BIG}`; return words.every((w) => ctx.measureText(w).width <= maxW); };
+  const fits = (size: number) => { ctx.font = `${size}px ${bigFam}`; return words.every((w) => ctx.measureText(w).width <= maxW); };
   while (fs > 30 && !fits(fs)) fs -= 4;
-  ctx.font = `${fs}px ${THUMB_FONT_BIG}`;
+  ctx.font = `${fs}px ${bigFam}`;
   const emoHit = words.some((w) => EMO.has(w.toLowerCase()));
   let y = H - H * 0.06 - (words.length - 1) * fs * 1.06;
   words.forEach((w, i) => {
@@ -129,7 +132,7 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
     ctx.fillText(w, tx, y);
     y += fs * 1.06;
   });
-  if (emoHit && !words[words.length - 1].includes("😭")) { ctx.font = `${Math.round(fs * 0.68)}px system-ui, sans-serif`; ctx.textAlign = align; ctx.fillText("😭", tx, y - fs * 0.28); }
+  if (!kustom && emoHit && !words[words.length - 1].includes("😭")) { ctx.font = `${Math.round(fs * 0.68)}px system-ui, sans-serif`; ctx.textAlign = align; ctx.fillText("😭", tx, y - fs * 0.28); }
 
   // 6) Vinyet fokus halus
   const rad = ctx.createRadialGradient(W / 2, H / 2, H * 0.42, W / 2, H / 2, H * 1.05);

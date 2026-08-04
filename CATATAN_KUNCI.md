@@ -305,3 +305,11 @@ Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".
 - TIDAK DISENTUH: perilaku bawaan drawAutoThumb untuk pemanggil lama, rute API, L3/L3.5.
 - PELAJARAN TEST: ambang "< 700" pecah karena prompt memang sengaja diperpanjang — ganti cek properti sesungguhnya (judul ≤90 char masuk prompt).
 - GERBANG: tsc 0 · 36/36 tes baru · 23/23 suite · build 0.
+
+---
+
+## FASE L5.2 — STUDIO TEKS THUMBNAIL (2026-08-04)
+- KRITIK BOS (screenshot 2): "belum puas, tidak ada juansa CTR & waw, bagusan ChatGPT; saya mau generate benar-benar mikir tidak terpaku satu sisi; tulisan bisa sesuai gaya; HARUS ada isi manual teks; font mantap & bisa pilih; bisa taruh kiri/kanan; besar kecil tulisan bisa diatur."
+- DISENTUH: thumbstudio.ts (VARIAN 3 konsep mikir: Wajah&Emosi 85mm / Adegan Sinematik 24mm / Simbol&Bukti still life tanpa manusia; FONT_THUMB 8 font yang SUDAH dimuat layout; bagiBarisTeks murni), thumb.ts (drawAutoThumb +opsi {teksKustom,fontFam,skala} — default utuh 0 regresi), thumb-studio.tsx (DITULIS ULANG: kartu 3 studio teks — segmented oto/manual + textarea 3 baris + isi-saran pickPowerWords, 8 chip font berhuruf aslinya, posisi ◀kiri/kanan▶, slider 70–140%; RE-KOMPOSISI INSTAN: kontrol berubah → gambar ulang dari latar tersimpan TANPA panggil AI, debounce 180ms + token anti-balapan; sesi kontrol ikut tersimpan), globals.css (+~20 baris .tub-seg/.tub-fonts/.tub-slider), tests/thumb-studio.test.mjs (+10 cek → 46).
+- TIDAK DISENTUH: pickPowerWords/drawAutoThumb perilaku bawaan, rute API, editor, L3/L3.5.
+- GERBANG: tsc 0 · 46/46 · 23/23 suite · build 0.

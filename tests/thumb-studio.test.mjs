@@ -34,6 +34,13 @@ const badgeCtr = new Function(ekstrak(lib, "badgeCtr", [
   ["function badgeCtr(niche: string): string", "function badgeCtr(niche)"],
 ]) + "; return badgeCtr;")();
 
+const bagiBarisTeks = new Function(ekstrak(lib, "bagiBarisTeks", [
+  ["function bagiBarisTeks(t: string): string[]", "function bagiBarisTeks(t)"],
+]) + "; return bagiBarisTeks;")();
+
+const FONT_THUMB = new Function(lib.match(/export const FONT_THUMB: FontThumb\[\] = \[[\s\S]*?\n\];/)[0]
+  .replace("export const FONT_THUMB: FontThumb[] =", "const FONT_THUMB =") + "; return FONT_THUMB;")();
+
 let gagal = 0, n = 0;
 const T = (nama, ok, info = "") => { n++; console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
 
@@ -47,11 +54,11 @@ T("keluarga → kehangatan rumah", gayaNiche("keluarga kecilku").includes("kelua
 T("niche asing → umum", gayaNiche("xyzqwe") === "subjek utama menonjol tajam, latar blur sinematik, kontras tinggi");
 T("kosong → umum, tak meledak", gayaNiche("").includes("kontras"));
 
-console.log("📦 B. promptLatarThumb ASLI — otak CTR");
+console.log("📦 B. promptLatarThumb ASLI — otak CTR (3 konsep mikir, bukan cetakan)");
 const p1 = promptLatarThumb("JANGAN PANIK! Rahasia Kakek", "horor", 1);
 const p2 = promptLatarThumb("JANGAN PANIK! Rahasia Kakek", "horor", 2);
 const p3 = promptLatarThumb("JANGAN PANIK! Rahasia Kakek", "horor", 3);
-T("3 varian BEDA arah komposisi", p1 !== p2 && p2 !== p3 && p1 !== p3);
+T("3 varian BEDA konsep beneran: 85mm close-up vs 24mm wide vs still life", p1.includes("85mm") && p2.includes("24mm") && p3.includes("STILL LIFE"));
 T("selalu 16:9 widescreen", p1.includes("16:9"));
 T("selalu minta ruang kosong KIRI buat teks", p1.includes("KOSONGKAN 40% area KIRI"));
 T("AI DILARANG menggambar teks (teks dari kanvas)", p1.includes("DILARANG") && p1.includes("teks"));
@@ -72,6 +79,18 @@ T("tak ada lagi setModal(\"sampul\")", !pg.includes('setModal("sampul")'));
 T("tak ada lagi render <SampulModal", !pg.includes("<SampulModal"));
 T("tak ada lagi tombol rel p.onCover (tile Sampul)", !pg.includes("p.onCover"));
 T("mesin kanvas thumb.ts TETAP UTUH (dipakai studio baru)", th.includes("export function drawAutoThumb") && th.includes("export function pickPowerWords"));
+
+console.log("📦 D2. Studio teks (permintaan bos: tulisan sendiri + font + posisi + besar)");
+T("bagiBarisTeks: pecah per baris, buang kosong, MAKS 3", (() => { const b = bagiBarisTeks("IBU\n\n AKU RINDU \nSELAMANYA\nKEEMPAT"); return b.length === 3 && b[1] === "AKU RINDU" && !b.includes("KEEMPAT"); })());
+T("bagiBarisTeks: kosong total → []", bagiBarisTeks(" \n\n").length === 0);
+T("FONT_THUMB: ≥8 font tampilan siap pilih", FONT_THUMB.length >= 8, FONT_THUMB.length + " font");
+T("FONT_THUMB: Anton (legenda CTR) ada", FONT_THUMB.some((f) => f.fam.includes("'Anton'")));
+T("thumb.ts: opsi teksKustom/fontFam/skala menancap", th.includes("opsi?.teksKustom") && th.includes("opsi?.fontFam") && th.includes("opsi?.skala"));
+T("thumb.ts: emoji 😭 hanya mode otomatis", th.includes("if (!kustom && emoHit"));
+T("studio: 8 chip font dirender dari FONT_THUMB", ts.includes("FONT_THUMB.map") && ts.includes("tub-fonts"));
+T("studio: segmented oto/manual + textarea tulis sendiri", ts.includes("Tulis sendiri") && ts.includes("teksManual") && ts.includes("bagiBarisTeks"));
+T("studio: posisi kiri/kanan + slider 70-140%", ts.includes('type="range"') && ts.includes("min={70}") && ts.includes("max={140}") && ts.includes('"kanan" ? "right"'));
+T("studio: RE-KOMPOSISI instan tanpa AI saat kontrol berubah", ts.includes("[teksMode, teksManual, fontId, posisi, skala, judul]") && ts.includes("window.setTimeout"));
 
 console.log("📦 E. Rumah baru NANCAP di mesin asli");
 T("page: import ThumbStudio", pg.includes('import ThumbStudio from "./thumb-studio"'));

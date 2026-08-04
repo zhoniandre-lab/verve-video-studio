@@ -7,10 +7,28 @@
 export interface VarianThumb { id: number; nama: string; arah: string; }
 
 export const VARIAN_THUMB: VarianThumb[] = [
-  { id: 1, nama: "Ledakan Kontras", arah: "pencahayaan dramatis rim-light, warna komplementer jingga-biru yang bertabrakan, subjek paling terang di frame" },
-  { id: 2, nama: "Detik Menegangkan", arah: "momen tepat SEBELUM kejadian puncak, ekspresi atau objek dibekukan di puncak aksi, motion blur tipis di latar" },
-  { id: 3, nama: "Bukti Besar", arah: "satu objek bukti/hasil utama diperbesar nyaris memenuhi setengah kanan frame, sisanya ruang kosong bersih" },
+  { id: 1, nama: "Wajah & Emosi", arah: "CLOSE-UP 85mm wajah penuh cerita, mata tajam menatap ke area kosong, air mata atau tekad tertahan, cahaya jendela dramatis memahat pipi, pori-pori terasa" },
+  { id: 2, nama: "Adegan Sinematik", arah: "WIDE SHOT 24mm epik golden hour, sosok kecil dalam ruang/lanskap besar, kabut tipis, cahaya masuk dramatis, skala megah seperti poster film" },
+  { id: 3, nama: "Simbol & Bukti", arah: "STILL LIFE simbolik satu objek penuh makna (foto berbingkai/surat lama/barang kenangan/sepatu usang) dibakar cahaya jendela, bayangan panjang, TANPA manusia" },
 ];
+
+/** Font tampilan untuk teks thumbnail — semua SUDAH dimuat aplikasi di layout (gratis, OFL). */
+export interface FontThumb { id: string; label: string; fam: string; }
+export const FONT_THUMB: FontThumb[] = [
+  { id: "anton", label: "Anton", fam: "'Anton',Impact,sans-serif" },
+  { id: "archivo", label: "Archivo", fam: "'Archivo Black',Impact,sans-serif" },
+  { id: "bebas", label: "Bebas", fam: "'Bebas Neue',Impact,sans-serif" },
+  { id: "oswald", label: "Oswald", fam: "'Oswald',Impact,sans-serif" },
+  { id: "montserrat", label: "Montserrat", fam: "'Montserrat',Arial,sans-serif" },
+  { id: "righteous", label: "Righteous", fam: "'Righteous',Impact,sans-serif" },
+  { id: "bangers", label: "Bangers", fam: "'Bangers',Impact,sans-serif" },
+  { id: "poppins", label: "Poppins", fam: "'Poppins',Arial,sans-serif" },
+];
+
+/** Pecah teks manual jadi baris (maks 3, kosong dibuang). Murni — diuji. */
+export function bagiBarisTeks(t: string): string[] {
+  return String(t || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+}
 
 /** Kamus arahan visual per niche (kunci lowercase). */
 export const NICHE_GAYA: Record<string, string> = {
