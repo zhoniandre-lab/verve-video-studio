@@ -12,7 +12,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let _cli: SupabaseClient | null | undefined;
 
-function klien(): SupabaseClient | null {
+export function klienLayanan(): SupabaseClient | null {
   if (_cli !== undefined) return _cli;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -59,7 +59,7 @@ export interface CatatanKredit {
 /** 🔥 Catat 1 panggilan AI berbayar. JANGAN di-await. TIDAK PERNAH throw. */
 export function catatKredit(c: CatatanKredit): void {
   try {
-    const s = klien();
+    const s = klienLayanan();
     if (!s) return;
     void Promise.resolve(
       s.from("credit_ledger").insert({
@@ -81,7 +81,7 @@ export function catatKredit(c: CatatanKredit): void {
 
 /** Ambil baris mentah N hari terakhir (dipakai rute /api/kredit-ringkas). */
 export async function tarikBarisKredit(hari = 14): Promise<{ siap: boolean; alasan?: string; baris?: any[] }> {
-  const s = klien();
+  const s = klienLayanan();
   if (!s) return { siap: false, alasan: "SUPABASE service belum di-set" };
   const sejak = new Date(Date.now() - hari * 86400_000).toISOString();
   const { data, error } = await s

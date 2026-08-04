@@ -7,6 +7,7 @@ import {
   DEFAULT_VIDEO_MODEL,
 } from "./types";
 import { catatKredit, fiturDariPath, potongErr } from "./ledger";
+import { gerbangFitur } from "./setelan";
 
 const API_KEY = process.env.HCNSEC_API_KEY;
 const BASE_URL = (process.env.HCNSEC_BASE_URL || "https://api.hcnsec.cn/v1").replace(/\/$/, "");
@@ -28,6 +29,12 @@ async function postJson(path: string, body: any, timeoutSec = 120): Promise<any>
   const c = new AbortController();
   const to = setTimeout(() => c.abort(), timeoutSec * 1000);
   const t0 = Date.now(); // 🧾 L3: timer pencatat kredit (fire-and-forget, tak mengganggu alur)
+  // 🎛 BOS (L3.5): kill switch + batas harian — dicek SEBELUM keluar duit AI.
+  // Panggilan yang diblokir TIDAK dicatat ledger (blokir bukan kegagalan gateway).
+  {
+    const g = await gerbangFitur(fiturDariPath(path));
+    if (g.blokir) { clearTimeout(to); throw new ApiError(g.alasan || "Fitur dimatikan sementara", 503, path); }
+  }
   try {
     const r = await fetch(`${BASE_URL}${path}`, {
       method: "POST", headers: h(), body: JSON.stringify(body), signal: c.signal,

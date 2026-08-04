@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import PengumumanBanner from "./pengumuman-banner";
 
 export const metadata: Metadata = {
   title: "VERVE — Studio Video & Musik AI",
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ` }} />
       </head>
       <body className="antialiased">
+        <PengumumanBanner />
         {children}
       </body>
     </html>

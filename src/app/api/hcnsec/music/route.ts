@@ -1,6 +1,7 @@
 
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
+import { gerbangFitur } from "../../../../lib/setelan";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -295,6 +296,12 @@ export async function POST(req: Request) {
     const body = buildBody(payload, provider);
     const headers = buildHeaders(key);
     const endpoints = getEndpoints(provider, base);
+
+    // 🎛 BOS (L3.5): kill switch + batas harian untuk fitur musik — sebelum keluar duit Suno
+    const _g = await gerbangFitur("musik");
+    if (_g.blokir) {
+      return NextResponse.json({ error: _g.alasan, status: "fitur_dimatikan", provider }, { status: 503 });
+    }
 
     let lastErr: any = null;
     for (const url of endpoints) {
