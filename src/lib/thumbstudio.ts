@@ -30,6 +30,23 @@ export function bagiBarisTeks(t: string): string[] {
   return String(t || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, 3);
 }
 
+/** Susun prompt thumbnail dari data Lahan (judul terpilih + gaya visual storyboard + kunci karakter). Murni — diuji. */
+export function bangunPromptDariLahan(l: any): string {
+  if (!l || typeof l !== "object") return "";
+  const bag: string[] = [];
+  const judulL = String(l.selTitle || "").trim();
+  const topik = String(l.topic || "").trim();
+  const tema = judulL || topik;
+  if (tema) bag.push(`tema thumbnail: "${tema.slice(0, 90)}"`);
+  const sv = String(l?.board?.style_visual || "").trim();
+  if (sv) bag.push(`gaya visual ${sv.slice(0, 90)}`);
+  const cg = String(l?.board?.color_grade || "").trim();
+  if (cg) bag.push(`color grading ${cg.slice(0, 60)}`);
+  const cl = String(l.charLock || "").trim();
+  if (cl) bag.push(`karakter subjek: ${cl.slice(0, 140)}`);
+  return bag.join(", ").slice(0, 340);
+}
+
 /** Kamus arahan visual per niche (kunci lowercase). */
 export const NICHE_GAYA: Record<string, string> = {
   ibu: "anak dewasa menatap foto ibu, cahaya golden hour lewat jendela kayu desa, debu di berkas cahaya, syahdu mengharukan",

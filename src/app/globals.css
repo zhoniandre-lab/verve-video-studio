@@ -2198,3 +2198,10 @@ b.ok, b.warn, b.err { color:inherit; }
 .tub-font-on{border-color:#dc2626;box-shadow:0 0 0 2px #dc262655;color:#ffd166}
 .tub-duo-kontrol{display:flex;gap:14px;align-items:flex-start}
 .tub-slider{width:100%;accent-color:#dc2626;height:34px;margin-top:6px}
+
+/* ============ 🖼 STUDIO THUMBNAIL L5.3 — geser bebas + prompt lahan ============ */
+.tub-slot-geser{touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.tub-slot-geser:active{cursor:grabbing}
+.tub-prompt-lahan{margin:2px 0 12px;padding:10px;background:#10141f;border:1px dashed #2c3550;border-radius:12px}
+.tub-cek{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:12px;color:#a8b3cf;cursor:pointer}
+.tub-cek input{accent-color:#dc2626;width:18px;height:18px}

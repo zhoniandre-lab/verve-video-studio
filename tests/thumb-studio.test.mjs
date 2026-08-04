@@ -38,6 +38,11 @@ const bagiBarisTeks = new Function(ekstrak(lib, "bagiBarisTeks", [
   ["function bagiBarisTeks(t: string): string[]", "function bagiBarisTeks(t)"],
 ]) + "; return bagiBarisTeks;")();
 
+const bangunPromptDariLahan = new Function(ekstrak(lib, "bangunPromptDariLahan", [
+  ["function bangunPromptDariLahan(l: any): string", "function bangunPromptDariLahan(l)"],
+  ["const bag: string[] = []", "const bag = []"],
+]) + "; return bangunPromptDariLahan;")();
+
 const FONT_THUMB = new Function(lib.match(/export const FONT_THUMB: FontThumb\[\] = \[[\s\S]*?\n\];/)[0]
   .replace("export const FONT_THUMB: FontThumb[] =", "const FONT_THUMB =") + "; return FONT_THUMB;")();
 
@@ -89,15 +94,28 @@ T("thumb.ts: opsi teksKustom/fontFam/skala menancap", th.includes("opsi?.teksKus
 T("thumb.ts: emoji 😭 hanya mode otomatis", th.includes("if (!kustom && emoHit"));
 T("studio: 8 chip font dirender dari FONT_THUMB", ts.includes("FONT_THUMB.map") && ts.includes("tub-fonts"));
 T("studio: segmented oto/manual + textarea tulis sendiri", ts.includes("Tulis sendiri") && ts.includes("teksManual") && ts.includes("bagiBarisTeks"));
-T("studio: posisi kiri/kanan + slider 70-140%", ts.includes('type="range"') && ts.includes("min={70}") && ts.includes("max={140}") && ts.includes('"kanan" ? "right"'));
-T("studio: RE-KOMPOSISI instan tanpa AI saat kontrol berubah", ts.includes("[teksMode, teksManual, fontId, posisi, skala, judul]") && ts.includes("window.setTimeout"));
+T("studio: posisi kiri/kanan + slider 70-140%", ts.includes('type="range"') && ts.includes("min={70}") && ts.includes("max={140}"));
+T("studio: RE-KOMPOSISI instan tanpa AI saat kontrol berubah", ts.includes("[teksMode, teksManual, fontId, pos.x, pos.y, skala, judul]") && ts.includes("window.setTimeout"));
+
+console.log("📦 D3. Geser bebas pakai jari + prompt dari Lahan + coba-ulang (kritik bos #3)");
+T("bangunPromptDariLahan: judul terpilih + gaya visual + karakter tersusun", (() => { const p = bangunPromptDariLahan({ topic: "ibu", selTitle: "Ibu Aku Rindu", board: { style_visual: "sinematik hangat", color_grade: "emas lembut" }, charLock: "nenek 70 tahun kerudung coklat" }); return p.includes('"Ibu Aku Rindu"') && p.includes("sinematik hangat") && p.includes("emas lembut") && p.includes("nenek 70 tahun"); })());
+T("bangunPromptDariLahan: data kosong → \"\"", bangunPromptDariLahan(null) === "" && bangunPromptDariLahan({}) === "");
+T("bangunPromptDariLahan: raksasa → dibatasi ≤340", bangunPromptDariLahan({ topic: "x".repeat(500), selTitle: "y".repeat(500) }).length <= 340);
+T("thumb.ts: jangkar bebas anchorX/anchorY menimpa sisi & posisi", th.includes("anchorX?: number; anchorY?: number") && th.includes("anchor ? anchor.x * W") && th.includes("anchor ? anchor.y * H") && th.includes("if (anchor) leftDark = anchor.x < 0.5"));
+T("studio: slot bisa digeser (pointer capture + rect → fraksi)", ts.includes("onPointerDown") && ts.includes("setPointerCapture") && ts.includes("getBoundingClientRect") && ts.includes("tub-slot-geser"));
+T("studio: geser dibatasi area aman 10-90% / 14-92%", ts.includes("Math.max(0.1") && ts.includes("Math.max(0.14"));
+T("studio: jangkar diteruskan ke mesin gambar", ts.includes("anchorX: p.x, anchorY: p.y"));
+T("studio: tombol Susun dari Lahan + kotak-centang pakai prompt", ts.includes("susunPromptLahan") && ts.includes("pakaiPrompt") && ts.includes("tub-prompt-lahan"));
+T("studio: generate pakai prompt khusus bila dicentang", ts.includes("pakaiPrompt && t ? t : judul"));
+T("studio: coba-ulang otomatis 2× varian gagal", ts.includes("coba <= 2") && ts.includes("mencoba ulang"));
+T("studio: font badge dimuat paksa sebelum diukur (anti pill jegeg)", ts.includes("fonts?.load"));
 
 console.log("📦 E. Rumah baru NANCAP di mesin asli");
 T("page: import ThumbStudio", pg.includes('import ThumbStudio from "./thumb-studio"'));
 T("page: ScreenId punya 'thumbnail'", pg.includes('| "thumbnail"'));
 T("page: cabang render thumbnail", pg.includes('screen === "thumbnail" && <ThumbStudio'));
 T("page: tombol hub di HomeDash menuju thumbnail", /go\("thumbnail"\)/.test(pg));
-T("studio: panggil rute image AI dengan prompt mentah", ts.includes('"/api/hcnsec/image"') && ts.includes("_rawPrompt: true") && ts.includes("promptLatarThumb(judul, niche"));
+T("studio: panggil rute image AI dengan prompt mentah", ts.includes('"/api/hcnsec/image"') && ts.includes("_rawPrompt: true") && ts.includes("promptLatarThumb(tema, niche, v.id)"));
 T("studio: komposisi kanvas drawAutoThumb 1280×720", ts.includes("drawAutoThumb(ctx, 1280, 720") && ts.includes('toDataURL("image/png")'));
 T("studio: teks DIPAKSA kiri sesuai janji prompt (preferSide) + font siap dulu", ts.includes('"left"') && ts.includes("fonts?.ready"));
 T("thumb.ts: preferSide opsional, bawaan lama utuh (luminansi tetap memutuskan)", th.includes('preferSide?: "left" | "right"') && th.includes('preferSide === "left" ? true : preferSide === "right" ? false : L <= R'));

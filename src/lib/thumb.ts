@@ -51,8 +51,9 @@ const THUMB_FONT_KICK = "'Bebas Neue',Impact,sans-serif";
 
 /** Gambar thumbnail ke context (panggil dengan canvas 1280×720). img boleh null → latar gradien gelap.
  *  preferSide (opsional, L5): paksa sisi teks ("left"/"right") — bila tidak diisi, otak luminansi tetap yang memutuskan (perilaku lama utuh).
- *  opsi (opsional, L5.2): teksKustom (baris manual), fontFam (font tampilan pilihan), skala (pengali besar huruf, bawaan 1). Tanpa opsi → perilaku lama 100% utuh. */
-export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0, preferSide?: "left" | "right", opsi?: { teksKustom?: string[]; fontFam?: string; skala?: number }) {
+ *  opsi (opsional, L5.2/L5.3): teksKustom (baris manual), fontFam, skala (pengali besar huruf),
+ *      anchorX/anchorY (0..1 — titik bebas hasil geser jari; bila diisi, sisi & posisi bawaan ditimpa). Tanpa opsi → perilaku lama 100% utuh. */
+export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0, preferSide?: "left" | "right", opsi?: { teksKustom?: string[]; fontFam?: string; skala?: number; anchorX?: number; anchorY?: number }) {
   // 1) Latar: foto adegan cover-fit
   if (img) {
     const iw = (img as any).naturalWidth || (img as any).width || W;
@@ -83,6 +84,12 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
     scrimA = Math.max(0.58, Math.min(0.95, 0.5 + (dl / 255) * 0.6)); // adegan makin terang → scrim makin pekat
   } catch { /* canvas tainted → pakai default aman */ }
 
+  // 2b) ⚓ JANGKAR BEBAS (L5.3) — hasil geser jari: jika ada, sisi teks & scrim mengikutinya
+  const anchor = (typeof opsi?.anchorX === "number" && typeof opsi?.anchorY === "number")
+    ? { x: Math.min(0.95, Math.max(0.05, opsi.anchorX)), y: Math.min(0.95, Math.max(0.12, opsi.anchorY)) }
+    : null;
+  if (anchor) leftDark = anchor.x < 0.5;
+
   // 3) Gradien gelap dari sisi gelap (arah mengikuti hasil hitungan)
   const gx0 = leftDark ? 0 : W, gx1 = leftDark ? W * 0.8 : W * 0.2;
   const g = ctx.createLinearGradient(gx0, 0, gx1, 0);
@@ -94,8 +101,8 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
   gb.addColorStop(0, "rgba(4,7,14,0)"); gb.addColorStop(1, "rgba(4,7,14,0.72)");
   ctx.fillStyle = gb; ctx.fillRect(0, 0, W, H);
 
-  const align: CanvasTextAlign = leftDark ? "left" : "right";
-  const tx = leftDark ? W * 0.045 : W * 0.955;
+  const align: CanvasTextAlign = anchor ? "center" : leftDark ? "left" : "right";
+  const tx = anchor ? anchor.x * W : leftDark ? W * 0.045 : W * 0.955;
   ctx.textAlign = align;
 
   // 4) Pil niche merah (branding ala kartu penting — kontras bikin berhenti scrolling)
@@ -121,7 +128,7 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
   while (fs > 30 && !fits(fs)) fs -= 4;
   ctx.font = `${fs}px ${bigFam}`;
   const emoHit = words.some((w) => EMO.has(w.toLowerCase()));
-  let y = H - H * 0.06 - (words.length - 1) * fs * 1.06;
+  let y = (anchor ? anchor.y * H : H - H * 0.06) - (words.length - 1) * fs * 1.06;
   words.forEach((w, i) => {
     ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = fs * 0.16; ctx.shadowOffsetY = fs * 0.045;
     ctx.strokeStyle = "#0b0f1a"; ctx.lineWidth = fs * 0.14;

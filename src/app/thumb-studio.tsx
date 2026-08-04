@@ -1,18 +1,20 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { drawAutoThumb, pickPowerWords } from "@/lib/thumb";
-import { VARIAN_THUMB, promptLatarThumb, badgeCtr, FONT_THUMB, bagiBarisTeks } from "@/lib/thumbstudio";
+import { VARIAN_THUMB, promptLatarThumb, badgeCtr, FONT_THUMB, bagiBarisTeks, bangunPromptDariLahan } from "@/lib/thumbstudio";
 
 /**
- * 🖼 STUDIO THUMBNAIL (L5.2) — dasbor paket upload high-CTR.
- * AI melukis 3 KONSEP BEDA (wajah emosi 85mm · adegan sinematik 24mm · simbol still life).
- * Teks power-words digambar kanvas → owner kontrol penuh: manual/auto, 8 font tampilan,
- * posisi kiri/kanan, besar-kecil slider — semua INSTAN tanpa memanggil AI lagi.
+ * 🖼 STUDIO THUMBNAIL (L5.3) — dasbor paket upload high-CTR.
+ * Teks bisa DIGESER PAKAI JARI ke mana saja di atas thumbnail (anchor bebas di kanvas).
+ * Tombol "Susun dari Lahan" merangkai prompt thumbnail dari judul+gaya visual+kunci karakter Lahan.
+ * Semua kontrol teks instan tanpa memanggil AI lagi; generate punya coba-ulang otomatis.
  */
 
 type VarState = { status: "kosong" | "muat" | "ok" | "gagal"; url?: string; final?: string; pesan?: string };
+type Pos = { x: number; y: number };
 const KUNCI_SIMPAN = "verve_thumb_paket_v1";
 const KUNCI_LAHAN = "verve_brain_v1";
+const PRESET: Record<string, Pos> = { kiri: { x: 0.27, y: 0.82 }, kanan: { x: 0.73, y: 0.82 } };
 
 export default function ThumbStudio({ onExit }: { onExit: () => void }) {
   const [judul, setJudul] = useState("");
@@ -21,21 +23,23 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
   const [varian, setVarian] = useState<VarState[]>([{ status: "kosong" }, { status: "kosong" }, { status: "kosong" }]);
   const [sibuk, setSibuk] = useState(false);
   const [progres, setProgres] = useState("");
-  // 🎛 studio teks (instan, gratis)
   const [teksMode, setTeksMode] = useState<"auto" | "manual">("auto");
   const [teksManual, setTeksManual] = useState("");
   const [fontId, setFontId] = useState("anton");
-  const [posisi, setPosisi] = useState<"kiri" | "kanan">("kiri");
+  const [pos, setPos] = useState<Pos>(PRESET.kiri);
   const [skala, setSkala] = useState(100);
+  const [promptTxt, setPromptTxt] = useState("");
+  const [pakaiPrompt, setPakaiPrompt] = useState(false);
   const [titles, setTitles] = useState<string[]>([]);
   const [deskripsi, setDeskripsi] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [sibukTeks, setSibukTeks] = useState(false);
   const [tost, setTost] = useState("");
   const tik = useRef(0);
+  const slotRefs = useRef<(HTMLDivElement | null)[]>([null, null, null]);
+  const geser = useRef(false);
   const kabar = (t: string) => { setTost(t); window.setTimeout(() => setTost(""), 2400); };
 
-  // pulihkan sesi terakhir
   useEffect(() => {
     try {
       const j = JSON.parse(localStorage.getItem(KUNCI_SIMPAN) || "null");
@@ -44,28 +48,42 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
         if (j.teksMode) setTeksMode(j.teksMode);
         if (typeof j.teksManual === "string") setTeksManual(j.teksManual);
         if (j.fontId) setFontId(j.fontId);
-        if (j.posisi) setPosisi(j.posisi);
+        if (j.pos && typeof j.pos.x === "number") setPos(j.pos);
         if (typeof j.skala === "number") setSkala(j.skala);
+        if (typeof j.promptTxt === "string") setPromptTxt(j.promptTxt);
+        if (typeof j.pakaiPrompt === "boolean") setPakaiPrompt(j.pakaiPrompt);
       }
     } catch {}
   }, []);
   function simpan(over: any = {}) {
     try {
       localStorage.setItem(KUNCI_SIMPAN, JSON.stringify({
-        judul, niche, keyword, teksMode, teksManual, fontId, posisi, skala, ...over,
+        judul, niche, keyword, teksMode, teksManual, fontId, pos, skala, promptTxt, pakaiPrompt, ...over,
       }));
     } catch {}
   }
 
+  function bacaLahan(): any | null {
+    try { return JSON.parse(localStorage.getItem(KUNCI_LAHAN) || "null"); } catch { return null; }
+  }
+
   function ambilDariLahan() {
-    try {
-      const j = JSON.parse(localStorage.getItem(KUNCI_LAHAN) || "null");
-      if (!j || (!j.topic && !j.selTitle)) { kabar("🌱 Lahan masih kosong — isi dulu di Lahan Awalan"); return; }
-      const jd = j.selTitle || j.topic || "";
-      setJudul(jd); setNiche(j.topic || ""); setKeyword(j.selKeyword || "");
-      simpan({ judul: jd, niche: j.topic || "", keyword: j.selKeyword || "" });
-      kabar("🌱 Ditarik dari Lahan: " + (jd ? jd.slice(0, 32) + "…" : "topik"));
-    } catch { kabar("🌱 Gagal membaca Lahan"); }
+    const j = bacaLahan();
+    if (!j || (!j.topic && !j.selTitle)) { kabar("🌱 Lahan masih kosong — isi dulu di Lahan Awalan"); return; }
+    const jd = j.selTitle || j.topic || "";
+    setJudul(jd); setNiche(j.topic || ""); setKeyword(j.selKeyword || "");
+    simpan({ judul: jd, niche: j.topic || "", keyword: j.selKeyword || "" });
+    kabar("🌱 Ditarik dari Lahan: " + (jd ? jd.slice(0, 32) + "…" : "topik"));
+  }
+
+  function susunPromptLahan() {
+    const j = bacaLahan();
+    if (!j) { kabar("🌱 Lahan masih kosong"); return; }
+    const p = bangunPromptDariLahan(j);
+    if (!p) { kabar("🌱 Belum ada judul/topik di Lahan"); return; }
+    setPromptTxt(p); setPakaiPrompt(true);
+    simpan({ promptTxt: p, pakaiPrompt: true });
+    kabar("🪄 Prompt tersusun dari Lahan — tinggal Buat 3 varian");
   }
 
   function muatGambar(src: string): Promise<HTMLImageElement> {
@@ -77,64 +95,79 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
     });
   }
 
-  /** Tempel teks (auto power-words / manual) + badge CTR → PNG 1280×720. Instan, tanpa AI. */
-  async function komposisi(dataUrl: string, vId: number, st?: { teksMode?: string; teksManual?: string; fontId?: string; posisi?: string; skala?: number }): Promise<string> {
+  /** Tempel teks + badge CTR → PNG 1280×720. Instan, tanpa AI. */
+  async function komposisi(dataUrl: string, vId: number, st?: Partial<{ teksMode: string; teksManual: string; fontId: string; pos: Pos; skala: number }>): Promise<string> {
     const im = await muatGambar(dataUrl);
     const cv = document.createElement("canvas");
     cv.width = 1280; cv.height = 720;
     const ctx = cv.getContext("2d")!;
-    try { await (document as any).fonts?.ready; } catch {}
+    try {
+      await (document as any).fonts?.load?.("800 26px Poppins");
+      await (document as any).fonts?.ready;
+    } catch {}
     const m = st?.teksMode || teksMode;
     const manual = m === "manual" ? bagiBarisTeks(st?.teksManual ?? teksManual) : null;
     const fam = FONT_THUMB.find((f) => f.id === (st?.fontId || fontId))?.fam;
-    const side = (st?.posisi || posisi) === "kanan" ? "right" as const : "left" as const;
+    const p = st?.pos || pos;
     const sk = ((st?.skala ?? skala) || 100) / 100;
-    drawAutoThumb(ctx, 1280, 720, im, judul, niche, vId - 1, side, {
+    drawAutoThumb(ctx, 1280, 720, im, judul, niche, vId - 1, p.x < 0.5 ? "left" : "right", {
       teksKustom: manual && manual.length ? manual : undefined,
       fontFam: fam,
       skala: sk,
+      anchorX: p.x, anchorY: p.y,
     });
     const badge = badgeCtr(niche);
-    ctx.save();
     ctx.font = "800 26px Poppins, sans-serif";
-    const w = ctx.measureText(badge).width + 36;
-    const bx = side === "left" ? 24 : 1280 - 24 - w;
+    const w = Math.min(ctx.measureText(badge).width + 36, 380);
+    const bx = p.x < 0.5 ? 24 : 1280 - 24 - w;
     ctx.fillStyle = "rgba(8,10,16,0.82)";
     (ctx as any).roundRect ? (ctx as any).roundRect(bx, 24, w, 48, 14) : ctx.rect(bx, 24, w, 48);
     ctx.fill();
     ctx.strokeStyle = "rgba(255,209,102,0.9)"; ctx.lineWidth = 3; ctx.stroke();
     ctx.fillStyle = "#ffd166"; ctx.fillText(badge, bx + 18, 57);
-    ctx.restore();
     return cv.toDataURL("image/png");
   }
 
+  function temaGenerate(): string {
+    const t = promptTxt.trim();
+    return pakaiPrompt && t ? t : judul;
+  }
+
   async function buatVarian() {
-    if (!judul.trim()) { kabar("✍️ Isi judul dulu ya"); return; }
+    if (!judul.trim() && !(pakaiPrompt && promptTxt.trim())) { kabar("✍️ Isi judul (atau susun prompt Lahan) dulu ya"); return; }
     if (sibuk) return;
     setSibuk(true); simpan();
+    const tema = temaGenerate() || judul;
     setVarian([{ status: "muat" }, { status: "kosong" }, { status: "kosong" }]);
     for (let i = 0; i < 3; i++) {
       const v = VARIAN_THUMB[i];
       setProgres(`🎨 Melukis konsep ${i + 1}/3 — ${v.nama}…`);
       setVarian((s) => s.map((x, xi) => (xi === i ? { status: "muat" } : x)));
-      try {
-        const r = await fetch("/api/hcnsec/image", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: judul, keyword, niche, _rawPrompt: true, prompt: promptLatarThumb(judul, niche, v.id) }),
-        });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
-        const final = await komposisi(j.url, v.id);
-        setVarian((s) => s.map((x, xi) => (xi === i ? { status: "ok", url: j.url, final } : x)));
-      } catch (e: any) {
-        setVarian((s) => s.map((x, xi) => (xi === i ? { status: "gagal", pesan: String(e?.message || e).slice(0, 80) } : x)));
+      let berhasil = false, errTerakhir = "";
+      for (let coba = 1; coba <= 2 && !berhasil; coba++) {
+        try {
+          if (coba === 2) {
+            setVarian((s) => s.map((x, xi) => (xi === i ? { status: "muat", pesan: "mencoba ulang…" } : x)));
+            await new Promise((r) => setTimeout(r, 2200));
+          }
+          const r = await fetch("/api/hcnsec/image", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: judul || "thumbnail", keyword, niche, _rawPrompt: true, prompt: promptLatarThumb(tema, niche, v.id) }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+          const final = await komposisi(j.url, v.id);
+          setVarian((s) => s.map((x, xi) => (xi === i ? { status: "ok", url: j.url, final } : x)));
+          berhasil = true;
+        } catch (e: any) { errTerakhir = String(e?.message || e).slice(0, 80); }
       }
+      if (!berhasil) setVarian((s) => s.map((x, xi) => (xi === i ? { status: "gagal", pesan: errTerakhir } : x)));
     }
     setProgres(""); setSibuk(false);
-    kabar("✅ Selesai — atur teks/font/posisi sesukamu di bawah, GRATIS");
+    kabar("✅ Selesai — geser teksnya pakai jari sesukamu, GRATIS");
   }
 
-  // ♻️ RE-KOMPOSISI INSTAN: ganti teks/font/posisi/skala → gambar ulang dari latar yang sama (tanpa AI)
+  // ♻️ RE-KOMPOSISI INSTAN saat kontrol berubah (termasuk posisi hasil geser)
   useEffect(() => {
     const ada = varian.some((v) => v.status === "ok" && v.url);
     if (!ada) return;
@@ -149,10 +182,33 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
           } catch {}
         }
       }
-    }, 180);
+    }, 140);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teksMode, teksManual, fontId, posisi, skala, judul]);
+  }, [teksMode, teksManual, fontId, pos.x, pos.y, skala, judul]);
+
+  // ✋ GESER TEKS PAKAI JARI — tekan & seret di atas thumbnail mana pun
+  function arahkan(i: number, ev: any) {
+    const el = slotRefs.current[i];
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cx = (ev.clientX ?? ev.touches?.[0]?.clientX) as number;
+    const cy = (ev.clientY ?? ev.touches?.[0]?.clientY) as number;
+    if (typeof cx !== "number" || typeof cy !== "number") return;
+    const p = {
+      x: Math.min(0.9, Math.max(0.1, (cx - r.left) / r.width)),
+      y: Math.min(0.92, Math.max(0.14, (cy - r.top) / r.height)),
+    };
+    setPos(p); simpan({ pos: p });
+  }
+  function dragMulai(i: number, ev: any) {
+    if (varian[i]?.status !== "ok") return;
+    geser.current = true;
+    try { ev.currentTarget.setPointerCapture?.(ev.pointerId); } catch {}
+    arahkan(i, ev);
+  }
+  function dragGerak(i: number, ev: any) { if (geser.current) arahkan(i, ev); }
+  function dragSelesai() { geser.current = false; }
 
   async function buatPaketTeks() {
     if (!judul.trim()) { kabar("✍️ Isi judul dulu ya"); return; }
@@ -196,7 +252,7 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
         <button type="button" className="tub-balik" onClick={onExit} aria-label="Kembali">‹</button>
         <div>
           <h1>🖼 Studio Thumbnail</h1>
-          <p>Paket upload high-CTR: 3 konsep AI + teks/font/posisi kendali penuh.</p>
+          <p>3 konsep AI + teks yang bisa kamu geser pakai jari ke mana saja.</p>
         </div>
       </header>
 
@@ -205,10 +261,10 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
           <h2>1 · Amunisi</h2>
           <button type="button" className="tub-btn-mini" onClick={ambilDariLahan}>🌱 Ambil dari Lahan</button>
         </div>
-        <input className="tub-input" value={judul} placeholder="Judul video (wajib)…"
+        <input className="tub-input" value={judul} placeholder="Judul video…"
           onChange={(e) => setJudul(e.target.value)} />
         <div className="tub-duo">
-          <input className="tub-input" value={niche} placeholder="Niche (mis: ibu, horor, uang)…"
+          <input className="tub-input" value={niche} placeholder="Niche (mis: ibu, horor)…"
             onChange={(e) => setNiche(e.target.value)} />
           <input className="tub-input" value={keyword} placeholder="Kata kunci (opsional)…"
             onChange={(e) => setKeyword(e.target.value)} />
@@ -223,19 +279,46 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
           </button>
         </div>
         {progres && <p className="tub-progres">{progres}</p>}
+
+        <div className="tub-prompt-lahan">
+          <div className="tub-baris-atas" style={{ marginBottom: 6 }}>
+            <small className="tub-label">PROMPT KHUSUS THUMBNAIL (opsional)</small>
+            <button type="button" className="tub-btn-mini" onClick={susunPromptLahan}>🪄 Susun dari Lahan</button>
+          </div>
+          {promptTxt ? (
+            <>
+              <textarea className="tub-area" rows={3} value={promptTxt}
+                onChange={(e) => { setPromptTxt(e.target.value); simpan({ promptTxt: e.target.value }); }} />
+              <label className="tub-cek">
+                <input type="checkbox" checked={pakaiPrompt}
+                  onChange={(e) => { setPakaiPrompt(e.target.checked); simpan({ pakaiPrompt: e.target.checked }); }} />
+                Pakai prompt ini untuk 3 varian (judul tetap untuk teks)
+              </label>
+            </>
+          ) : (
+            <small className="tub-catatan">Ketuk 🪄 untuk merangkai prompt dari judul + gaya visual + kunci karakter hasil Lahan, bisa kamu edit dulu.</small>
+          )}
+        </div>
+
         <div className="tub-grid">
           {varian.map((v, i) => (
-            <div key={i} className="tub-slot">
+            <div key={i} ref={(el) => { slotRefs.current[i] = el; }}
+              className={`tub-slot ${v.status === "ok" ? "tub-slot-geser" : ""}`}
+              onPointerDown={(e) => dragMulai(i, e)}
+              onPointerMove={(e) => dragGerak(i, e)}
+              onPointerUp={dragSelesai}
+              onPointerCancel={dragSelesai}>
               {v.status === "ok" && v.final ? (
                 <>
-                  <img src={v.final} alt={`Thumbnail varian ${i + 1}`} />
+                  <img src={v.final} alt={`Thumbnail varian ${i + 1}`} draggable={false} />
                   <div className="tub-slot-aksi">
-                    <small>{VARIAN_THUMB[i].nama}</small>
-                    <button type="button" className="tub-btn-mini" onClick={() => unduh(v.final!, `thumbnail-verve-v${i + 1}.png`)}>⬇ PNG 1280×720</button>
+                    <small>{VARIAN_THUMB[i].nama} · ✥ geser</small>
+                    <button type="button" className="tub-btn-mini" onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => unduh(v.final!, `thumbnail-verve-v${i + 1}.png`)}>⬇ PNG 1280×720</button>
                   </div>
                 </>
               ) : v.status === "muat" ? (
-                <div className="tub-slot-kosong"><span className="tub-blink">🎨</span><small>{VARIAN_THUMB[i].nama}…</small></div>
+                <div className="tub-slot-kosong"><span className="tub-blink">🎨</span><small>{v.pesan || VARIAN_THUMB[i].nama + "…"}</small></div>
               ) : v.status === "gagal" ? (
                 <div className="tub-slot-kosong">💥<small>{v.pesan || "gagal"}</small></div>
               ) : (
@@ -244,10 +327,11 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
             </div>
           ))}
         </div>
+        <small className="tub-catatan">✥ Tahan jari di atas thumbnail lalu seret — teks mengikuti ke mana pun kamu mau.</small>
       </div>
 
       <div className="tub-kartu">
-        <h2>3 · Teks & gayamu <small className="tub-label-mini">— instan, tanpa AI, Geser langsung berubah</small></h2>
+        <h2>3 · Teks & gayamu <small className="tub-label-mini">— instan, tanpa AI, geser langsung berubah</small></h2>
 
         <div className="tub-seg">
           {([["auto", "🤖 Otomatis"], ["manual", "✍️ Tulis sendiri"]] as const).map(([id, lb]) => (
@@ -278,11 +362,11 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
 
         <div className="tub-duo-kontrol">
           <div>
-            <small className="tub-label">POSISI TEKS</small>
+            <small className="tub-label">POSISI CEPAT</small>
             <div className="tub-seg">
               {([["kiri", "◀ Kiri"], ["kanan", "Kanan ▶"]] as const).map(([id, lb]) => (
-                <button key={id} type="button" className={`tub-seg-item ${posisi === id ? "tub-seg-on" : ""}`}
-                  onClick={() => { setPosisi(id); simpan({ posisi: id }); }}>{lb}</button>
+                <button key={id} type="button" className={`tub-seg-item ${pos.x < 0.5 === (id === "kiri") ? "tub-seg-on" : ""}`}
+                  onClick={() => { const p = PRESET[id]; setPos(p); simpan({ pos: p }); }}>{lb}</button>
               ))}
             </div>
           </div>

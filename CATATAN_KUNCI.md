@@ -313,3 +313,12 @@ Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".
 - DISENTUH: thumbstudio.ts (VARIAN 3 konsep mikir: Wajah&Emosi 85mm / Adegan Sinematik 24mm / Simbol&Bukti still life tanpa manusia; FONT_THUMB 8 font yang SUDAH dimuat layout; bagiBarisTeks murni), thumb.ts (drawAutoThumb +opsi {teksKustom,fontFam,skala} — default utuh 0 regresi), thumb-studio.tsx (DITULIS ULANG: kartu 3 studio teks — segmented oto/manual + textarea 3 baris + isi-saran pickPowerWords, 8 chip font berhuruf aslinya, posisi ◀kiri/kanan▶, slider 70–140%; RE-KOMPOSISI INSTAN: kontrol berubah → gambar ulang dari latar tersimpan TANPA panggil AI, debounce 180ms + token anti-balapan; sesi kontrol ikut tersimpan), globals.css (+~20 baris .tub-seg/.tub-fonts/.tub-slider), tests/thumb-studio.test.mjs (+10 cek → 46).
 - TIDAK DISENTUH: pickPowerWords/drawAutoThumb perilaku bawaan, rute API, editor, L3/L3.5.
 - GERBANG: tsc 0 · 46/46 · 23/23 suite · build 0.
+
+---
+
+## FASE L5.3 — GESER JARI BEBAS + PROMPT DARI LAHAN (2026-08-04)
+- KRITIK BOS #3 (screenshot): "belum bisa edit benar-benar manual; tulisan harus bisa kuklik lalu kuarahkan ke mana-mana (atas bawah bebas); ada tombol prompt otomatis dari Lahan khusus thumbnail yang dipanggil ke thumbnail". Bonus bug dari screenshot: badge melebar dari pill, varian "Failed to fetch" tanpa coba-ulang, AI masih menyelipkan huruf.
+- DISENTUH: thumbstudio.ts (+bangunPromptDariLahan murni: selTitle/topic + board.style_visual + color_grade + charLock, batas 340 char), thumb.ts (opsi +anchorX/anchorY 0..1: sisi teks & scrim & garis-tumpuk mengikuti jangkar — default utuh 0 regresi), thumb-studio.tsx (✋ GESER JARI: pointer capture di slot → fraksi kanvas 10-90%/14-92% → re-komposisi debounce 140ms; 🪄 tombol Susun dari Lahan + textarea prompt khusus + centang "pakai prompt ini" → generate memakai tema lahan, judul tetap untuk teks; coba-ulang 2× per varian dengan jeda 2.2d + status "mencoba ulang…"; fonts.load("800 26px Poppins") sebelum ukur badge — anti pill jegeg; badge width di-clamp 380), globals.css (.tub-slot-geser touch-action:none, .tub-prompt-lahan, .tub-cek), tests/thumb-studio.test.mjs (+11 cek → 57).
+- TIDAK DISENTUH: perilaku bawaan drawAutoThumb, rute API, editor, L3/L3.5.
+- PELAJARAN TEST: ekstrak fungsi baru lupa kupas `const bag: string[]` → SyntaxError; cek kontraktual harus ikut versi pemanggil baru (promptLatarThumb(tema,…)).
+- GERBANG: tsc 0 · 57/57 · 23/23 suite · build 0.
