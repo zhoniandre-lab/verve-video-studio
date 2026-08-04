@@ -4930,7 +4930,7 @@ function TimelineV6(p: any) {
     const dx = clientX - d.startX;
     if (Math.abs(dx) > 8) d.moved = true;
     if (!d.moved) return;
-    const w = clipW(d.i) + 4;
+    const w = clipW(d.i); // A.4: pitch presisi (gap jalur video = 0; napas visual di border klip)
     const to = clampN(d.i + Math.round(dx / w), 0, slides.length - 1);
     if (to !== d.to) { d.to = to; force(v => v + 1); }
   }
@@ -5358,7 +5358,9 @@ function TimelineV6(p: any) {
                 </div>
 
             {/* JALUR VIDEO — ikut susunan bebas, bisa diangkat & dipindah juga */}
-            <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0, position: "relative" }}>
+              {/* 📐 FASE-A.4: jalur VISUAL gap:0 — pitch klip = clipW presisi skala (napas visual di border klip).
+                  Jalur lain (audio/teks/stiker) tak diubah — posisi absolute memang skala-murni. */}
+              <div ref={laneRowRef("vid")} className={`v6e-track ${laneLift === "vid" ? "lanelift" : ""}`} style={{ order: laneIdx["vid"] ?? 0, position: "relative", gap: 0 }}>
               {/* v12.4 KEPALA REL — label jalur ala OpenCut: sticky kiri, 0 lebar → waktu klip tidak bergeser, pointer-events none → gesture tak tersentuh */}
               <div className="v6e-lanehead" aria-hidden="true"><span><b className="dot" />Visual · {slides.length}</span></div>
               {slides.map((s: Slide, i: number) => {
@@ -5374,6 +5376,9 @@ function TimelineV6(p: any) {
                     className={`v6e-clip ${sel ? "sel" : ""} ${lifting ? "lift" : ""}`}
                     style={{
                       width: clipW(i),
+                      // 📐 FASE-A.4 PRESISI-PAS: napas 4px kini lewat border transparan DI DALAM lebar klip
+                      // (border-box → tak menggeser skala waktu; sebelumnya gap-flex 4px menggeser pembatas ~0,06d/klip)
+                      boxSizing: "border-box", borderRight: "4px solid transparent",
                       opacity: ghost ? 0.35 : 1,
                       flex: "0 0 auto",
                       transform: lifting ? `translateX(${dxTrans}px) scale(1.07)` : undefined,
@@ -5392,16 +5397,16 @@ function TimelineV6(p: any) {
                 );
               })}
               {/* 🔀 v15.2D TRANSISI TENGAH STICKY ala CapCut — overlay absolute 1 layer, render SEMUA chip sekaligus di LUAR clip.
-                  Posisinya dihitung dari TRACK (bukan dari clip), jadi BERGERAK otomatis saat handle pangkas / drag clip.
-                  parent .v6e-track: display:flex, gap:4px → tiap clip dipisah 4px. offL = sum(clipW 0..i-1) + (i * 4px gap). */}
+                  Posisi dihitung dari TRACK. 📐 FASE-A.4: jalur video gap:0 → offL = Σ clipW(0..i-1) murni,
+                  chip tepat di pembatas mesin (ujung kanan clip-i) — bukan di tengah celah 4px lagi. */}
               {slides.length > 1 && (() => {
                 const chips: any[] = [];
                 for (let i = 0; i < slides.length - 1; i++) {
                   let offL = 0;
-                  for (let k = 0; k < i; k++) offL += clipW(k) + 4;
+                  for (let k = 0; k < i; k++) offL += clipW(k);
                   const wL = clipW(i);
-                  // celah 4px → centerX = ujung kanan clip-i + 2px (tengah celah)
-                  const centerX = offL + wL + 2;
+                  // pembatas mesin → centerX = ujung kanan clip-i
+                  const centerX = offL + wL;
                   const tr = canonicalTrans(slideOptsById[slides[i].id]?.trans ?? p.transition ?? "dissolve");
                   chips.push({ i, s: slides[i], centerX, tr });
                 }

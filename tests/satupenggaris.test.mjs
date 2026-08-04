@@ -55,5 +55,29 @@ T("dispTotal tetap lahir dari timeline.total mesin", /const total = timeline\?\.
 T("garis penanda tetap tetap di tengah (konten bergerak di bawahnya, ala CapCut)", /v6e-playhead-fixed/.test(page));
 T("strip tetap seek via skala PXS0 yang sama", /p\.onSeek\(clampN\(sl \/ PXS0/.test(page));
 
+/* ---------- 4. FASE-A.4 PRESISI-PAS: celah 4px tak lagi menggeser skala ---------- */
+T("jalur video gap:0 (gaya inline di div jalur 'vid')", /position: "relative", gap: 0 \}\}>/.test(page));
+T("napas visual 4px via border transparan border-box DI DALAM lebar klip", /borderRight: "4px solid transparent"/.test(page));
+T("chip transisi tepat di pembatas mesin (offL = Sigma clipW murni)", /for \(let k = 0; k < i; k\+\+\) offL \+= clipW\(k\);/.test(page) && /const centerX = offL \+ wL;/.test(page));
+T("ghost reorder memakai pitch presisi clipW", /const w = clipW\(d\.i\);/.test(page));
+T("formula '+4px' lama dimusnahkan dari chip & reorder", !/offL \+= clipW\(k\) \+ 4/.test(page) && !/clipW\(d\.i\) \+ 4/.test(page));
+
+/* ---------- 5. BUKTI untuk-semua-t: objek di strip == objek di mesin (anti lambat/duluan, selamanya) ---------- */
+{
+  const TL2 = factory(() => "dissolve")([3, 3, 3, 3, 3, 3, 2], [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0], ["x", "x", "x", "x", "x", "x", "x"]);
+  const widths = TL2.durs.map((_, i) => clipW(TL2, PXS0)(i));
+  let salah = 0;
+  for (let t = 0; t < TL2.total - 0.02; t += 0.037) {
+    // objek menurut STRIP (lebar kumulatif thumbnail presisi — setelah A.4 tanpa celah geser)
+    let acc = 0, idxStrip = TL2.durs.length - 1;
+    for (let i = 0; i < TL2.durs.length; i++) { acc += widths[i] / PXS0; if (t < acc) { idxStrip = i; break; } }
+    // objek menurut MESIN (starts + span)
+    let idxMesin = TL2.durs.length - 1;
+    for (let i = 0; i < TL2.durs.length; i++) { if (t < TL2.starts[i] + TL2.durs[i] + TL2.tdurs[i]) { idxMesin = i; break; } }
+    if (idxStrip !== idxMesin) salah++;
+  }
+  T("untuk-setiap-detik (langkah 0,037d): objek di bawah garis == objek di panggung", salah === 0, `selisih di ${salah} titik sampel`);
+}
+
 console.log(gagal === 0 ? "\n🏁 SATU PENGGARIS SEHAT — strip ≡ mesin ≡ ekspor. Garis rol PAS di setiap pembatas." : `\n💥 ${gagal} uji gagal`);
 process.exit(gagal === 0 ? 0 : 1);
