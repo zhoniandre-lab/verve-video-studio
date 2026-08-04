@@ -186,6 +186,42 @@ export function brainLevel(withCtr: number): { label: string; emoji: string; nex
   return { label: "Bayi Otak", emoji: "🍼", next: "5" };
 }
 
+/* ================= JADWAL UPLOAD GOLDEN HOUR (📅) ================= */
+
+const DAY_NAMES_FULL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+
+export type JadwalSlot = {
+  tanggal: string;
+  hari: string;
+  jendela: string;
+  hoki: boolean;
+  alasan: string;
+};
+
+/** 7 slot upload terbaik berikutnya — belajar dari jam hoki & hari terbaik channelmu. */
+export function jadwalUpload(brain: BrainMemory, n = 7): { slots: JadwalSlot[]; sumber: string } {
+  const { best } = bestUploadWindows(brain);
+  const day = bestUploadDay(brain);
+  const jendela = best?.label || "Malam (18-23)";
+  const vel = best?.avgVelocity ?? null;
+  const slots: JadwalSlot[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(Date.now() + i * 864e5);
+    const nama = DAY_NAMES_FULL[d.getDay()];
+    const hoki = !!day && day.label === nama;
+    const alasan = !best
+      ? "Data jam upload masih sedikit — sync dari YouTube biar jadwal makin akurat."
+      : hoki
+        ? `⭐ Hari & jam terbaikmu: ${day!.label} (${day!.avgVelocity} view/hari).`
+        : `Ikuti jam hoki: ${jendela}${vel != null ? ` (${vel} view/hari)` : ""}.`;
+    slots.push({ tanggal: d.toISOString().slice(0, 10), hari: nama, jendela, hoki, alasan });
+  }
+  const sumber = best
+    ? `Jam hoki dari ${best.n} video channelmu — makin sering sync, makin akurat.`
+    : "Belum ada data jam — pakai jendela umum dulu.";
+  return { slots, sumber };
+}
+
 /* ================= LAPORAN OTAK (ringkasan siap salin) ================= */
 
 export function buildBrainReport(brain: BrainMemory): string {

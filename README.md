@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔥 v19.4 — TREND RADAR GOOGLE TRENDS 🇮🇩 + JADWAL UPLOAD GOLDEN HOUR
+* **Ide:** Google tidak punya API resmi publik untuk Trends, tapi ada **RSS harian resmi** (`trends.google.com/trending/rss?geo=ID`) — gratis, tanpa API key, read-only, stabil. VERVE sekarang "menangkap gelombang" topik yang lagi hangat di Indonesia.
+* **Yang baru:**
+  1. **🔥 Trend Radar** (`/api/trends` + `src/lib/brain/trend-radar.ts`) — proxy RSS dengan cache 15 menit; tiap trend di-*tag* otomatis pakai kamus audiens VERVE: 💔 Emosional/Keluarga (cocok lagu), 👻 Horor, 🎧 DJ, ⚡ Umum. Di Lahan step 1: daftar 12 trend teratas → **satu klik jadi niat cerita/lagu** (nyambung langsung ke niche "cerita jadi lagu").
+  2. **📅 Jadwal Upload Golden Hour** — `jadwalUpload(brain, 7)` di deep-dive: 7 slot upload terbaik berikutnya belajar dari jam hoki & hari terbaik channelmu; hari terbaik ditandai ⭐. Tampil di kartu Deep Dive.
+  3. **⚡ Radar Kompetitor** — siap pakai: `AnalyzedVideo` sudah membawa `vpd` (views/day), bahan analisis kompetitor tercepat (dipakai di riset sudut).
+* **Test baru** `tests/trend-radar.test.mjs` (14 cek) — seluruh 28 suite repo tetap hijau. API `/api/trends` teruji live mengambil data asli Indonesia.
+
+
 ### 🔮 v19.3 — DEEP DIVE: OTAK BERPIKIR LEBIH DALAM (VELOCITY, JAM HOKI, PREDIKSI CTR)
 * **Ide:** semua tool memberi saran GENERIK ("upload jam 18-22", "buat video pendek"). VERVE sekarang belajar dari DATA CHANNEL SENDIRI — jawaban yang benar-benar milik pengguna, bukan tebakan umum.
 * **Yang baru** (`src/lib/brain/deep-dive.ts`, murni klien & offline):
