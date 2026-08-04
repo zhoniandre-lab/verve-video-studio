@@ -6,6 +6,7 @@ import {
   DEFAULT_TTS_MODEL,
   DEFAULT_VIDEO_MODEL,
 } from "./types";
+import { catatKredit, fiturDariPath, potongErr } from "./ledger";
 
 const API_KEY = process.env.HCNSEC_API_KEY;
 const BASE_URL = (process.env.HCNSEC_BASE_URL || "https://api.hcnsec.cn/v1").replace(/\/$/, "");
@@ -26,6 +27,7 @@ class ApiError extends Error {
 async function postJson(path: string, body: any, timeoutSec = 120): Promise<any> {
   const c = new AbortController();
   const to = setTimeout(() => c.abort(), timeoutSec * 1000);
+  const t0 = Date.now(); // 🧾 L3: timer pencatat kredit (fire-and-forget, tak mengganggu alur)
   try {
     const r = await fetch(`${BASE_URL}${path}`, {
       method: "POST", headers: h(), body: JSON.stringify(body), signal: c.signal,
@@ -33,7 +35,9 @@ async function postJson(path: string, body: any, timeoutSec = 120): Promise<any>
     const isBinary = path.endsWith("/speech");
     if (isBinary) {
       if (!r.ok) throw new ApiError(`Audio ${r.status}`, r.status, path);
-      return Buffer.from(await r.arrayBuffer()).toString("base64");
+      const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+      catatKredit({ fitur: fiturDariPath(path), model: body?.model || null, endpoint: path, penyedia: "hcnsec", ok: true, ms: Date.now() - t0 });
+      return b64;
     }
     const txt = await r.text();
     let payload: any;
@@ -43,8 +47,10 @@ async function postJson(path: string, body: any, timeoutSec = 120): Promise<any>
         (typeof payload === "string" ? payload : txt.slice(0, 400)) || `HTTP ${r.status}`;
       throw new ApiError(String(msg), r.status, path);
     }
+    catatKredit({ fitur: fiturDariPath(path), model: body?.model || null, endpoint: path, penyedia: "hcnsec", ok: true, ms: Date.now() - t0 });
     return payload;
   } catch (e: any) {
+    catatKredit({ fitur: fiturDariPath(path), model: body?.model || null, endpoint: path, penyedia: "hcnsec", ok: false, ms: Date.now() - t0, err: potongErr(e) });
     if (e.name === "AbortError") throw new ApiError(`Timeout ${timeoutSec}s`, 504, path);
     if (e instanceof ApiError) throw e;
     throw new ApiError(e?.message || "Unknown error", 500, path);

@@ -1,5 +1,6 @@
 
 import { NextResponse } from "next/server";
+import { catatKredit } from "../../../../lib/ledger";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -301,6 +302,7 @@ export async function POST(req: Request) {
         const controller = new AbortController();
         // Vercel serverless punya batas ~60s. Kasih timeout 55s biar masih sempat balas.
         const timeout = setTimeout(()=>controller.abort(), 55000);
+        const _t0 = Date.now(); // 🧾 L3: timer pencatat kredit
         const r = await fetch(url, {
           method: "POST", headers, body: JSON.stringify(body), cache: "no-store",
           signal: controller.signal,
@@ -309,6 +311,10 @@ export async function POST(req: Request) {
         const txt = await r.text().catch(()=>"");
         let data: any = {};
         try { data = txt ? JSON.parse(txt) : {}; } catch { data = { error: `Non-JSON (${r.status}): ${txt.slice(0,200)}` }; }
+        // 🧾 L3: catat panggilan musik berbayar (fire-and-forget — tak mengubah alur rute)
+        catatKredit({ fitur: "musik", model: (body as any)?.model || (body as any)?.mv || null,
+          endpoint: url, penyedia: provider, ok: r.ok, ms: Date.now() - _t0,
+          err: r.ok ? null : (typeof data?.error === "string" ? data.error : `HTTP ${r.status}`) });
 
         if (!r.ok) {
           if (r.status === 401 || r.status === 403) {
