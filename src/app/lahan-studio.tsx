@@ -22,6 +22,7 @@ import {
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
+import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
 import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
@@ -305,6 +306,27 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const insight = useMemo(() => analyzeBrainPatterns(brain), [brain]);
   const [guru, setGuru] = useState<GuruSuggestion[]>([]);
   const [guruMsg, setGuruMsg] = useState("");
+  // 🔮 v19.3: DEEP DIVE — velocity, jam hoki, durasi ideal, prediksi CTR
+  const deep = useMemo(() => {
+    const fastest = (brain.results || []).reduce<{ r: (typeof brain.results)[number] | null; vel: number | null }>(
+      (acc, r) => {
+        const vel = videoVelocity(r);
+        if (vel != null && (acc.vel == null || vel > acc.vel)) return { r, vel };
+        return acc;
+      },
+      { r: null, vel: null }
+    );
+    return {
+      level: brainLevel(insight.withCtr),
+      windows: bestUploadWindows(brain),
+      day: bestUploadDay(brain),
+      dur: idealDuration(brain),
+      fastest,
+      report: buildBrainReport(brain),
+    };
+  }, [brain, insight]);
+  const [predTitle, setPredTitle] = useState("");
+  const [predRes, setPredRes] = useState<{ est: number; low: number; high: number; n: number; why: string } | null>(null);
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
   function saveBrain(up: (b: BrainMemory) => BrainMemory) {
@@ -600,6 +622,15 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       results: [{ title: t, time: Date.now() }, ...b.results.filter((r) => normTitleKey(r.title) !== normTitleKey(t))].slice(0, 200),
     }));
     flash("🎯 Judul dipakai — tercatat di otak 🧠");
+  }
+
+  /* 🔮 v19.3 DEEP DIVE: prediksi CTR sebelum tayang + salin laporan otak */
+  function cekPrediksi() {
+    if (!predTitle.trim()) { setPredRes(null); flash("Ketik judulnya dulu bro"); return; }
+    setPredRes(predictCtrBayes(predTitle, brain));
+  }
+  function salinLaporanOtak() {
+    void navigator.clipboard?.writeText(deep.report).then(() => flash("📋 Laporan otak tersalin — siap dibagikan!"));
   }
 
   function resetLahan() {
@@ -1802,6 +1833,45 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             {insight.best && insight.bestCtr != null && (
               <p className="lh-note" style={{ marginTop: 8 }}>🏆 Judul terbaik di otakmu: <b>“{insight.best.title}”</b> (CTR {insight.bestCtr}%) — jadikan kompas gaya judul.</p>
             )}
+          </div>
+
+          {/* 🔮 v19.3 DEEP DIVE — kecepatan tayang, jam hoki, durasi ideal, prediksi CTR */}
+          <div className="lh-card" style={{ borderColor: "rgba(245,158,11,.3)" }}>
+            <div className="lh-h1">🔮 Otak berpikir lebih dalam <span style={{ fontSize: 9, background: "rgba(245,158,11,.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>v19.3 · DEEP DIVE</span></div>
+            <p className="lh-sub">Bukan saran generik — semua di bawah ini otak pelajari dari <b>datamu sendiri</b>: kecepatan tayang, jam upload, durasi video.</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+              <span style={{ fontSize: 22 }}>{deep.level.emoji}</span>
+              <div style={{ flex: 1 }}>
+                <b style={{ fontSize: 13 }}>Level otak: {deep.level.label}</b>
+                <div style={{ fontSize: 10, opacity: .6 }}>{deep.level.next ? `${insight.withCtr}/${deep.level.next} judul berangka untuk naik level` : "Level maksimal — otakmu udah jago 😎"}</div>
+              </div>
+              <button className="lh-mini" onClick={salinLaporanOtak} style={{ padding: "6px 10px" }}>📋 Salin Laporan</button>
+            </div>
+            {deep.windows.best && (
+              <p className="lh-note" style={{ color: "#f59e0b", marginTop: 8 }}>⏰ Jam hoki channelmu: <b>{deep.windows.best.label}</b> — rata-rata {deep.windows.best.avgVelocity} view/hari ({deep.windows.best.n} video){deep.day ? `, hari terbaik ${deep.day.label}` : ""}. Upload di jam ini = peluang tembus lebih besar.</p>
+            )}
+            {deep.dur.best && (
+              <p className="lh-note">⏱️ Durasi yang paling nempel: <b>{deep.dur.best.label}</b> ({deep.dur.best.avgVelocity} view/hari){deep.dur.best.avgAvd != null ? `, AVD ${deep.dur.best.avgAvd} dtk` : ""}.</p>
+            )}
+            {deep.fastest.r && deep.fastest.vel != null && (
+              <p className="lh-note">🚀 Video tercepatmu: <b>“{deep.fastest.r.title}”</b> — {deep.fastest.vel} view/hari ({velocityLabel(deep.fastest.vel)}). Pelajari kenapa dia laku: judul, thumbnail, jam uploadnya.</p>
+            )}
+            <div style={{ marginTop: 10, borderTop: "1px dashed rgba(255,255,255,.1)", paddingTop: 10 }}>
+              <p className="lh-sub" style={{ margin: 0 }}>🔮 <b>Prediksi CTR sebelum tayang</b> — ketik judul calon videomu, otak nebak performanya dari riwayat channelmu:</p>
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                <input className="lh-sel" style={{ flex: 1 }} placeholder="Ketik judul yang mau dicek…" value={predTitle} onChange={(e) => setPredTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") cekPrediksi(); }} />
+                <button className="lh-mini ok" onClick={cekPrediksi}>🔮 Cek</button>
+              </div>
+              {predRes && (
+                <div style={{ marginTop: 8, background: "rgba(245,158,11,.07)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 10, padding: "9px 11px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                    <b style={{ fontSize: 20, color: "#f59e0b" }}>~{predRes.est}%</b>
+                    <span style={{ fontSize: 11, opacity: .7 }}>rentang {predRes.low}–{predRes.high}% · {predRes.n} judul mirip</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, opacity: .75, marginTop: 4 }}>{predRes.why} {predRes.est >= 5.5 ? "Bisa jadi jagoan — gas!" : predRes.est >= 3.5 ? "Standar channelmu — boleh dicoba, tapi cari angle yang lebih kuat." : "Prediksi lemah — ganti angle / ikuti pola tembus di atas."}</div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 🎯 v19.1 TITLE GURU — otak menulis judul baru dari pola tembus */}

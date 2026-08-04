@@ -187,26 +187,36 @@ export async function GET(req: Request) {
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
     /* 6) Susun baris BrainResult — format sama dengan lapor performa manual:
-          { title, ctr, impressions, avdSec, time } + info ekstra untuk UI */
+          { title, ctr, impressions, avdSec, time } + info ekstra untuk UI
+          (v19.3: velocity & proyeksi linear — bahan Deep Dive) */
     const rows = recent
       .map((id) => {
         const v = videos[id];
         if (!v) return null;
         const a = perVideo[id] || {};
         const im = impressionsMap[id] || {};
+        const views = a.views ?? v.views ?? 0;
+        const ts = v.publishedAt ? +new Date(v.publishedAt) : Date.now();
+        const ageDays = Math.max(0.5, (Date.now() - ts) / 864e5);
+        const velocity = views > 0 ? Math.round((views / ageDays) * 10) / 10 : null;
         return {
           title: v.title,
           ctr: im.ctrPct ?? "",
           impressions: im.impressions ?? "",
           avdSec: a.avd != null ? Math.round(a.avd * 10) / 10 : "",
-          time: v.publishedAt ? +new Date(v.publishedAt) : Date.now(), // anchor umur video utk time-decay otak
+          time: ts, // anchor umur video utk time-decay otak
           videoId: id,
           url: `https://www.youtube.com/watch?v=${id}`,
-          views: a.views ?? v.views ?? 0,
+          views,
           likes: a.likes ?? v.likes ?? 0,
           comments: a.comments ?? v.comments ?? 0,
           durationSec: v.durationSec,
           publishedAt: v.publishedAt,
+          uploadHour: v.publishedAt ? new Date(v.publishedAt).getHours() : null,
+          uploadDay: v.publishedAt ? new Date(v.publishedAt).getDay() : null,
+          velocity, // 🔮 view/hari — bahan analisis Deep Dive
+          proyeksi30: velocity != null ? Math.round(velocity * 30) : null, // estimasi linear kasar
+          proyeksi90: velocity != null ? Math.round(velocity * 90) : null,
           source: "youtube-auto",
         };
       })

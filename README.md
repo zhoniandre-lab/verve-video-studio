@@ -17,6 +17,18 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔮 v19.3 — DEEP DIVE: OTAK BERPIKIR LEBIH DALAM (VELOCITY, JAM HOKI, PREDIKSI CTR)
+* **Ide:** semua tool memberi saran GENERIK ("upload jam 18-22", "buat video pendek"). VERVE sekarang belajar dari DATA CHANNEL SENDIRI — jawaban yang benar-benar milik pengguna, bukan tebakan umum.
+* **Yang baru** (`src/lib/brain/deep-dive.ts`, murni klien & offline):
+  1. **🚀 Kecepatan tayang (view velocity)** — view/hari tiap video + label 🚀 VIRAL / 🔥 Ngebut / 👍 Padat / 🐢 Merangkak / 😴 Sepi. Route sync sekarang mengirim `velocity`, `uploadHour`, `uploadDay`, `proyeksi30/90` per video.
+  2. **⏰ Jam hoki** — otak kelompokkan video berdasarkan jam upload & hari, hitung rata-rata kecepatan tayang → tahu jam & hari mana yang paling tembus DI CHANNELMU (bukan patokan umum).
+  3. **⏱️ Durasi ideal** — bucket durasi (Shorts/pendek/sedang/panjang) mana yang paling nempel (velocity + AVD).
+  4. **🔮 Prediksi CTR sebelum tayang** — ketik judul calon video → otak nebak CTR (rentang + jumlah judul mirip + alasan) pakai Bayes learningBoostV2 + baseline channel. Belum ada tool lain yang ngasih ini.
+  5. **🍼 Level otak** (Bayi Otak → Doktor Judul) + **📋 Laporan Otak** — ringkasan siap salin: baseline, pola tembus/gagal, jam hoki, durasi ideal, video tercepat.
+* **UI:** kartu baru "🔮 Otak berpikir lebih dalam" di Lahan (langkah Pilih Judul Juara) + level & jam hoki ditampilkan di panel live halaman Jualan.
+* **Test baru** `tests/brain-deepdive.test.mjs` (21 cek) — seluruh 27 suite repo tetap hijau.
+
+
 ### 💎 v19.2 — SYNC DI DOKTER CHANNEL + MOCKUP & HARGA DI HALAMAN JUALAN
 * **Masalah:** tombol "Sync Otak" hanya ada di Lahan Awalan — pengguna yang bekerja lewat Dokter Channel tidak bisa memicu belajar otak dari sana. Halaman Jualan belum punya visual produk & harga.
 * **Solusi:**

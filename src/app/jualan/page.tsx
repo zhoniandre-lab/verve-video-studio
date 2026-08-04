@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
+import { bestUploadWindows, brainLevel } from "@/lib/brain/deep-dive";
 import styles from "./jualan.module.css";
 
 type BrainMemory = { researches?: unknown[]; results?: { title?: string; ctr?: number | ""; time?: number }[] };
@@ -120,6 +121,9 @@ export default function JualanPage() {
   const insight = useMemo(() => {
     try { return analyzeBrainPatterns(brain as never); } catch { return null; }
   }, [brain]);
+  const deep = useMemo(() => {
+    try { return { level: brainLevel(insight?.withCtr || 0), windows: bestUploadWindows(brain as never) }; } catch { return null; }
+  }, [brain, insight]);
 
   return (
     <div className={styles.page}>
@@ -199,6 +203,8 @@ export default function JualanPage() {
               <div className={styles.liveRow}><span>Judul dipelajari</span><b>{insight.n}</b></div>
               <div className={styles.liveRow}><span>Dengan CTR asli</span><b>{insight.withCtr}</b></div>
               <div className={styles.liveRow}><span>Baseline CTR</span><b>{insight.baselineCtr}%</b></div>
+              {deep && <div className={styles.liveRow}><span>Level otak</span><b>{deep.level.emoji} {deep.level.label}</b></div>}
+              {deep?.windows.best && <div className={styles.liveRow}><span>Jam hoki</span><b>{deep.windows.best.label}</b></div>}
               {insight.top[0] && <div className={styles.liveWin}>▲ Pola tembus: <b>{insight.top[0].label}</b> — CTR {insight.top[0].avgCtr}% vs baseline {insight.baselineCtr}%</div>}
               {insight.worst[0] && <div className={styles.liveLose}>▼ Pola gagal: <b>{insight.worst[0].label}</b> — CTR {insight.worst[0].avgCtr}%</div>}
               {insight.best && <div className={styles.liveBest}>🏆 Judul terbaik: <b>“{insight.best.title}”</b> (CTR {insight.bestCtr}%)</div>}
