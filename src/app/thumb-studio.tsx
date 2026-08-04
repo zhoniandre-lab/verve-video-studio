@@ -59,13 +59,14 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
     });
   }
 
-  /** Tempel power-words + badai CTR di atas latar AI → PNG 1280×720. */
+  /** Tempel power-words + badge CTR di atas latar AI → PNG 1280×720. */
   async function komposisi(dataUrl: string, vId: number): Promise<string> {
     const im = await muatGambar(dataUrl);
     const cv = document.createElement("canvas");
     cv.width = 1280; cv.height = 720;
     const ctx = cv.getContext("2d")!;
-    drawAutoThumb(ctx, 1280, 720, im, judul, niche, vId - 1);
+    try { await (document as any).fonts?.ready; } catch {} // font Anton/Poppins siap sebelum diukur-digambar
+    drawAutoThumb(ctx, 1280, 720, im, judul, niche, vId - 1, "left"); // prompt MENJANJIKAN kiri kosong → teks wajib kiri
     // badge CTR kecil pojok kiri atas
     const badge = badgeCtr(niche);
     ctx.save();

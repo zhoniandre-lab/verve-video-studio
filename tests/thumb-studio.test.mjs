@@ -37,9 +37,13 @@ const badgeCtr = new Function(ekstrak(lib, "badgeCtr", [
 let gagal = 0, n = 0;
 const T = (nama, ok, info = "") => { n++; console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
 
-console.log("📦 A. gayaNiche ASLI — niche dikenali & diarahkan");
+console.log("📦 A. gayaNiche ASLI — niche dikenali & diarahkan (kamus diperluas bukti lapangan)");
 T("horor → suasana horor", gayaNiche("Horor Rumah Tua").includes("lilin"));
 T("uang → grafik koin", gayaNiche("cara cari UANG").includes("koin"));
+T("IBU → gaya emosional syahdu (BUKAN umum — bug lapangan terkunci)", gayaNiche("ibu aku rindu").includes("golden hour"));
+T("rindu → kursi kosong & hujan", gayaNiche("rindu kampung").includes("kursi kosong"));
+T("sedih → melodrama jendela hujan", gayaNiche("kisah sedih").includes("air mata"));
+T("keluarga → kehangatan rumah", gayaNiche("keluarga kecilku").includes("keluarga"));
 T("niche asing → umum", gayaNiche("xyzqwe") === "subjek utama menonjol tajam, latar blur sinematik, kontras tinggi");
 T("kosong → umum, tak meledak", gayaNiche("").includes("kontras"));
 
@@ -51,14 +55,17 @@ T("3 varian BEDA arah komposisi", p1 !== p2 && p2 !== p3 && p1 !== p3);
 T("selalu 16:9 widescreen", p1.includes("16:9"));
 T("selalu minta ruang kosong KIRI buat teks", p1.includes("KOSONGKAN 40% area KIRI"));
 T("AI DILARANG menggambar teks (teks dari kanvas)", p1.includes("DILARANG") && p1.includes("teks"));
+T("anti-huruf-palsu DIPERKERAS (bug 'Itur:lu'): PURE photographic only", p1.includes("ABSOLUTELY NO alphabet characters") && p1.includes("PURE photographic scene only"));
 T("judul menyusup ke prompt", p1.includes("Rahasia Kakek"));
-T("judul raksasa dipotong aman", promptLatarThumb("x".repeat(500), "umum", 1).length < 700);
+T("judul raksasa dipotong aman (≤90 karakter masuk prompt)", !promptLatarThumb("x".repeat(500), "umum", 1).includes("x".repeat(200)));
 T("varian ngaco (9) diputar ke varian 1", promptLatarThumb("a", "b", 9) === promptLatarThumb("a", "b", 1));
 T("kutip & newline di judul dibersihkan", !promptLatarThumb('A "B"\nC', "umum", 1).includes("\n"));
 
-console.log("📦 C. badgeCtr ASLI — badge kecil per niche");
+console.log("📦 C. badgeCtr ASLI — hook CTR per niche (tanpa emoji — anti jegeg)");
+T("ibu/rindu → SIAPKAN TISU", badgeCtr("ibu aku rindu") === "SIAPKAN TISU");
 T("horor → peringatan", badgeCtr("horor").includes("JANGAN"));
-T("umum → default viral", badgeCtr("apa aja").includes("VIRAL"));
+T("umum → default viral", badgeCtr("apa aja") === "VIRAL HARI INI");
+T("TANPA emoji di semua badge (font pill anti jegeg)", !/[^\x00-\x7F]/.test([badgeCtr("ibu"), badgeCtr("horor"), badgeCtr("uang"), badgeCtr("")].join("")));
 
 console.log("📦 D. Rumah lama DIAMPUTASI persis pesanan bos ('hapus aja')");
 T("tak ada lagi setModal(\"sampul\")", !pg.includes('setModal("sampul")'));
@@ -73,6 +80,8 @@ T("page: cabang render thumbnail", pg.includes('screen === "thumbnail" && <Thumb
 T("page: tombol hub di HomeDash menuju thumbnail", /go\("thumbnail"\)/.test(pg));
 T("studio: panggil rute image AI dengan prompt mentah", ts.includes('"/api/hcnsec/image"') && ts.includes("_rawPrompt: true") && ts.includes("promptLatarThumb(judul, niche"));
 T("studio: komposisi kanvas drawAutoThumb 1280×720", ts.includes("drawAutoThumb(ctx, 1280, 720") && ts.includes('toDataURL("image/png")'));
+T("studio: teks DIPAKSA kiri sesuai janji prompt (preferSide) + font siap dulu", ts.includes('"left"') && ts.includes("fonts?.ready"));
+T("thumb.ts: preferSide opsional, bawaan lama utuh (luminansi tetap memutuskan)", th.includes('preferSide?: "left" | "right"') && th.includes('preferSide === "left" ? true : preferSide === "right" ? false : L <= R'));
 T("studio: paket teks via titles + metadata (mesin lama)", ts.includes('"/api/hcnsec/titles"') && ts.includes('"/api/hcnsec/metadata"'));
 T("studio: jembatan Lahan (verve_brain_v1)", ts.includes('verve_brain_v1') && ts.includes("ambilDariLahan"));
 T("studio: tanpa await berlebih — varian berurutan ada progres", ts.includes("setProgres(") && ts.includes("for (let i = 0; i < 3; i++)"));

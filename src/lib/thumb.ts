@@ -49,8 +49,9 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
 const THUMB_FONT_BIG = "'Anton',Impact,sans-serif";
 const THUMB_FONT_KICK = "'Bebas Neue',Impact,sans-serif";
 
-/** Gambar thumbnail ke context (panggil dengan canvas 1280×720). img boleh null → latar gradien gelap. */
-export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0) {
+/** Gambar thumbnail ke context (panggil dengan canvas 1280×720). img boleh null → latar gradien gelap.
+ *  preferSide (opsional, L5): paksa sisi teks ("left"/"right") — bila tidak diisi, otak luminansi tetap yang memutuskan (perilaku lama utuh). */
+export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: number, img: CanvasImageSource | null, title: string, niche: string, salt = 0, preferSide?: "left" | "right") {
   // 1) Latar: foto adegan cover-fit
   if (img) {
     const iw = (img as any).naturalWidth || (img as any).width || W;
@@ -76,7 +77,7 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
       return n ? acc / n : 128;
     };
     const L = lum(d1), R = lum(d2);
-    leftDark = L <= R;
+    leftDark = preferSide === "left" ? true : preferSide === "right" ? false : L <= R;
     const dl = Math.min(L, R);
     scrimA = Math.max(0.58, Math.min(0.95, 0.5 + (dl / 255) * 0.6)); // adegan makin terang → scrim makin pekat
   } catch { /* canvas tainted → pakai default aman */ }

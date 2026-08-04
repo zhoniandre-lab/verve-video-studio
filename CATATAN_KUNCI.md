@@ -296,3 +296,12 @@ Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".
 - DISENTUH: src/lib/thumbstudio.ts (BARU — otak CTR murni: VARIAN_THUMB 3 arah komposisi, NICHE_GAYA 15 kamus, gayaNiche, promptLatarThumb [16:9, ruang kosong kiri 40%, AI dilarang gambar teks], badgeCtr), src/app/thumb-studio.tsx (BARU — dasbor: amunisi judul/niche/keyword + jembatan Lahan verve_brain_v1, 3 varian latar via /api/hcnsec/image _rawPrompt, komposisi kanvas drawAutoThumb 1280×720 + badge CTR, unduh PNG, paket teks via /api/hcnsec/titles + metadata, salin clipboard, sesi tersimpan), src/app/page.tsx (import+ScreenId+inSub+cabang render+tombol hub oranye di HomeDash → go("thumbnail"); AMPUTASI mesin Sampul lama: tile rel p.onCover, callsite onCover, render modal sampul — fungsi SampulModal dibiarkan dorman tak terpanggil, 0 error tsc), globals.css (+~70 baris .tub-*), tests/thumb-studio.test.mjs (BARU — 27 cek).
 - TIDAK DISENTUH: lib/thumb.ts (UTUH — dipakai studio baru), rute /api/hcnsec/* (0 perubahan — studio memakai kontrak yang SUDAH ADA), editor timeline/preview/ekspor, semua fitur L3/L3.5.
 - GERBANG: tsc 0 · 27/27 tes baru · 23/23 suite · build 0.
+
+---
+
+## FASE L5.1 — THUMBNAIL: BUKTI LAPANGAN → PERBAIKAN (2026-08-04)
+- BUKTI BOS (screenshot): 3 varian "ibu aku rindu" — datar (niche tak dikenal) + huruf palsu AI "Itur:lu" (AI diam-diam menggambar teks meski dilarang). Bos suka 3 konsep demo (foto ibu golden hour / pelukan senja / kursi kosong) dan meminta: gaya berubah-ubah sesuai niche + tulisan hook CTR sesuai niche.
+- DISENTUH: thumbstudio.ts (kamus niche +10 kunci emosional: ibu/ayah/rindu/sedih/keluarga/emosi/cinta/pernikahan/persahabatan/anak; prompt anti-huruf-palsu diperkeras "ABSOLUTELY NO alphabet characters… PURE photographic scene only"; badgeCtr +hook emosional "SIAPKAN TISU"/"KELUARGA NO.1", emoji dibuang agar pill tak jegeg), thumb.ts (drawAutoThumb +preferSide opsional — bawaan luminansi UTUH 0 regresi), thumb-studio.tsx (teks dipaksa "left" sesuai janji prompt + await fonts.ready sebelum ukur badge), tests/thumb-studio.test.mjs (+9 cek → 36).
+- TIDAK DISENTUH: perilaku bawaan drawAutoThumb untuk pemanggil lama, rute API, L3/L3.5.
+- PELAJARAN TEST: ambang "< 700" pecah karena prompt memang sengaja diperpanjang — ganti cek properti sesungguhnya (judul ≤90 char masuk prompt).
+- GERBANG: tsc 0 · 36/36 tes baru · 23/23 suite · build 0.

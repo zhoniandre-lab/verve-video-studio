@@ -14,6 +14,16 @@ export const VARIAN_THUMB: VarianThumb[] = [
 
 /** Kamus arahan visual per niche (kunci lowercase). */
 export const NICHE_GAYA: Record<string, string> = {
+  ibu: "anak dewasa menatap foto ibu, cahaya golden hour lewat jendela kayu desa, debu di berkas cahaya, syahdu mengharukan",
+  ayah: "punggung ayah di teras senja, cahaya hangat oranye, nuansa perjuangan diam-diam, sinematik",
+  rindu: "kursi kosong + foto berbingkai + hujan rintik di kaca jendela, satu lampu kuning redup, kehilangan yang dalam",
+  sedih: "wajah menahan air mata di samping jendela hujan, rim-light dingin dan lampu hangat berjauhan, melodrama sinematik",
+  keluarga: "kehangatan keluarga di rumah sederhana, cahaya jendela sore emas, tulus apa adanya",
+  emosi: "close-up mata berkaca-kaca menatap jauh, depth of field sangat dangkal, cahaya jendela dramatis",
+  cinta: "sepasang siluet berjauhan dibelah cahaya senja, jarak dan kerinduan, jingga-biru berani",
+  pernikahan: "detail cincin dan kain putih di cahaya jendela lembut, romantis elegan, emas hangat",
+  persahabatan: "dua siluet sahabat di atap senja, tawa dan nostalgia, jingga keunguan",
+  anak: "tangan kecil menggenggam jari orang tua, cahaya lembut keemasan, polos menyentuh",
   motivasi: "siluet tokoh kuat backlight emas, kabut tipis, aura berkabar",
   horor: "rumah tua gelap, satu cahaya lilin, vignette berat, hijau-merah gelap",
   misteri: "lorong remang, kabut, satu sumber cahaya dingin, siluet misterius",
@@ -56,16 +66,19 @@ export function promptLatarThumb(judul: string, niche: string, varian: number): 
     `ATURAN KERAS: subjek utama di KANAN frame, KOSONGKAN 40% area KIRI untuk teks nanti, ` +
     `kontras sangat tinggi, warna jenuh berani, fokus tajam di subjek, bokeh latar, kualitas majalah.`,
     `DILARANG: teks, tulisan, huruf, kata, logo, watermark, bingkai, tangan palsu, wajah rusak, gaya kartun datar.`,
+    `ABSOLUTELY NO alphabet characters or letters anywhere in the scene — PURE photographic scene only, as if shot by a human photographer.`,
   ].join(" ");
 }
 
 /** 3 opsi kata penguat CTR untuk badge kecil di pojok (murni — diuji). */
 export function badgeCtr(niche: string): string {
   const n = String(niche || "").toLowerCase();
-  if (n.includes("horor") || n.includes("misteri")) return "⚠️ JANGAN NONTON SENDIRIAN";
-  if (n.includes("uang") || n.includes("bisnis")) return "💰 PROVEN 2026";
-  if (n.includes("motivasi")) return "🔥 WAJIB TAHU";
-  if (n.includes("dapur") || n.includes("masak")) return "😋 AUTO NGILER";
-  if (n.includes("gaming")) return "🎮 EPIC MOMENT";
-  return "✨ VIRAL HARI INI";
+  if (n.includes("ibu") || n.includes("ayah") || n.includes("rindu") || n.includes("sedih")) return "SIAPKAN TISU";
+  if (n.includes("keluarga") || n.includes("anak")) return "KELUARGA NO.1";
+  if (n.includes("horor") || n.includes("misteri")) return "JANGAN NONTON SENDIRIAN";
+  if (n.includes("uang") || n.includes("bisnis")) return "PROVEN 2026";
+  if (n.includes("motivasi")) return "WAJIB TAHU";
+  if (n.includes("dapur") || n.includes("masak")) return "AUTO NGILER";
+  if (n.includes("gaming")) return "EPIC MOMENT";
+  return "VIRAL HARI INI";
 }
