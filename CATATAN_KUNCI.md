@@ -322,3 +322,16 @@ Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".
 - TIDAK DISENTUH: perilaku bawaan drawAutoThumb, rute API, editor, L3/L3.5.
 - PELAJARAN TEST: ekstrak fungsi baru lupa kupas `const bag: string[]` → SyntaxError; cek kontraktual harus ikut versi pemanggil baru (promptLatarThumb(tema,…)).
 - GERBANG: tsc 0 · 57/57 · 23/23 suite · build 0.
+
+═══════════════════════════════════════════════
+## v29.8 — AMPUTASI thumbnail pasca-render + FACELIFT WAH Studio Thumbnail (4 Agu 2026)
+Kritik bos: (1) "setelah render muncul thumbnail, minta dihapus, ternyata masih ada" → benar:
+yang diamputasi di v29.4 hanya SampulModal; mesin v13.7 (auto-thumbnail di layar Ekspor) masih hidup.
+Sekarang ditebas total: thumbU/genThumb/downloadThumb/props/kartu ekspor/auto-gen = 0 jejak di page.tsx.
+production.ts: item "Thumbnail" di checklist & teks paket jadi kondisional (tampil hanya kalau pemanggil kirim status).
+(2) "tampilan studio buruk & kaku" → facelift total: panggung besar bingkai conic + strip 3 konsep,
+hero gradien, font-chip sampel+nama, slider custom, aksi-bar lengket (unduh/varian), toast kapsul blur,
+kartu beranimasi, safe-area. Mesin/fungsi studio dipertahankan (57/57 tes).
+Disentuh: page.tsx, production.ts, thumb-studio.tsx, globals.css.
+TIDAK disentuh: thumb.ts, thumbstudio.ts, editor, lahan, spektrum, bos, semua api.
+Gerbang: tsc 0 · 23/23 tes hijau · build 0.

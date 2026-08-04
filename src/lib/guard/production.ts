@@ -39,7 +39,8 @@ export function productionChecklist(i: ProductionChecklistInput): { id: string; 
     { id: "subtitle", label: "Subtitle/karaoke siap", done: !!i.hasSubtitle },
     { id: "render", label: "Video sudah dirender", done: !!i.hasRender },
     { id: "metadata", label: "Metadata YouTube siap", done: !!i.hasMetadata },
-    { id: "thumbnail", label: "Thumbnail siap", done: !!i.hasThumbnail },
+    // Thumbnail kini fitur Studio Thumbnail (layar tersendiri) — tampil HANYA kalau pemanggil masih mengirim statusnya
+    ...(i.hasThumbnail === undefined ? [] : [{ id: "thumbnail", label: "Thumbnail siap", done: !!i.hasThumbnail }]),
   ];
 }
 
@@ -102,7 +103,7 @@ export function makeUploadKitText(i: UploadKitInput): string {
     `Rasio: ${i.ratio || "?"}`,
     `Durasi: ${fmtDur(i.durationSec)}`,
     `Video: ${i.hasVideo ? "SIAP" : "belum dirender / belum diunduh"}`,
-    `Thumbnail: ${i.hasThumbnail ? "SIAP" : "belum dibuat"}`,
+    ...(i.hasThumbnail === undefined ? [] : [`Thumbnail: ${i.hasThumbnail ? "SIAP" : "belum dibuat"}`]),
     i.health ? `Health: ${i.health.label || i.health.level || "?"} — ${i.health.short || ""}` : "Health: belum dicek",
     "",
     "=== CHECKLIST ===",

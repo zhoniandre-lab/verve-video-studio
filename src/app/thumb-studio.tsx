@@ -38,6 +38,8 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
   const tik = useRef(0);
   const slotRefs = useRef<(HTMLDivElement | null)[]>([null, null, null]);
   const geser = useRef(false);
+  const [aktifIdx, setAktifIdx] = useState(0); // 🎭 konsep yang tampil di panggung besar
+  const sentuh = useRef(false); // strip pernah disentuh manual → jangan auto-pindah panggung
   const kabar = (t: string) => { setTost(t); window.setTimeout(() => setTost(""), 2400); };
 
   useEffect(() => {
@@ -136,12 +138,13 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
   async function buatVarian() {
     if (!judul.trim() && !(pakaiPrompt && promptTxt.trim())) { kabar("✍️ Isi judul (atau susun prompt Lahan) dulu ya"); return; }
     if (sibuk) return;
-    setSibuk(true); simpan();
+    setSibuk(true); simpan(); sentuh.current = false; setAktifIdx(0);
     const tema = temaGenerate() || judul;
     setVarian([{ status: "muat" }, { status: "kosong" }, { status: "kosong" }]);
     for (let i = 0; i < 3; i++) {
       const v = VARIAN_THUMB[i];
       setProgres(`🎨 Melukis konsep ${i + 1}/3 — ${v.nama}…`);
+      if (!sentuh.current) setAktifIdx(i);
       setVarian((s) => s.map((x, xi) => (xi === i ? { status: "muat" } : x)));
       let berhasil = false, errTerakhir = "";
       for (let coba = 1; coba <= 2 && !berhasil; coba++) {
@@ -246,44 +249,95 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
 
   const saranTeks = () => pickPowerWords(judul, 0).filter((w) => !w.includes("😭")).join("\n");
 
+  const aktif: VarState = varian[aktifIdx] || { status: "kosong" };
+  const adaHasil = varian.some((v) => v.status === "ok" && !!v.final);
+
   return (
     <div className="tub-wrap">
       <header className="tub-kepala">
         <button type="button" className="tub-balik" onClick={onExit} aria-label="Kembali">‹</button>
-        <div>
-          <h1>🖼 Studio Thumbnail</h1>
-          <p>3 konsep AI + teks yang bisa kamu geser pakai jari ke mana saja.</p>
+        <div className="tub-kepala-teks">
+          <h1>Studio Thumbnail</h1>
+          <p>Bikin orang berhenti scroll, lalu klik videomu.</p>
         </div>
+        <span className="tub-lencana">HI-CTR</span>
       </header>
 
-      <div className="tub-kartu">
-        <div className="tub-baris-atas">
-          <h2>1 · Amunisi</h2>
-          <button type="button" className="tub-btn-mini" onClick={ambilDariLahan}>🌱 Ambil dari Lahan</button>
+      {/* 1 · AMUNISI */}
+      <section className="tub-kartu tub-muncul">
+        <div className="tub-sek">
+          <span className="tub-nomor">1</span>
+          <h2>Amunisi video</h2>
+          <button type="button" className="tub-pil" onClick={ambilDariLahan}>🌱 Tarik dari Lahan</button>
         </div>
-        <input className="tub-input" value={judul} placeholder="Judul video…"
+        <input className="tub-input" value={judul} placeholder="Judul video kamu…"
           onChange={(e) => setJudul(e.target.value)} />
         <div className="tub-duo">
-          <input className="tub-input" value={niche} placeholder="Niche (mis: ibu, horor)…"
+          <input className="tub-input" value={niche} placeholder="Niche (mis: ibu, horor)"
             onChange={(e) => setNiche(e.target.value)} />
-          <input className="tub-input" value={keyword} placeholder="Kata kunci (opsional)…"
+          <input className="tub-input" value={keyword} placeholder="Kata kunci (opsional)"
             onChange={(e) => setKeyword(e.target.value)} />
         </div>
-      </div>
+      </section>
 
-      <div className="tub-kartu">
-        <div className="tub-baris-atas">
-          <h2>2 · Thumbnail AI ×3 konsep</h2>
-          <button type="button" className="tub-btn tub-btn-utama" onClick={buatVarian} disabled={sibuk}>
-            {sibuk ? "⏳ Melukis…" : "🎨 Buat 3 varian"}
-          </button>
+      {/* 2 · PANGGUNG KONSEP */}
+      <section className="tub-kartu tub-muncul" style={{ animationDelay: "70ms" }}>
+        <div className="tub-sek">
+          <span className="tub-nomor">2</span>
+          <h2>Panggung konsep</h2>
+          <span className="tub-pil-info">✥ tahan &amp; geser teks</span>
         </div>
+
+        <div className="tub-panggung-bingkai">
+          <div ref={(el) => { slotRefs.current[aktifIdx] = el; }}
+            className={`tub-panggung ${aktif.status === "ok" ? "tub-slot-geser" : ""}`}
+            onPointerDown={(e) => dragMulai(aktifIdx, e)}
+            onPointerMove={(e) => dragGerak(aktifIdx, e)}
+            onPointerUp={dragSelesai}
+            onPointerCancel={dragSelesai}>
+            {aktif.status === "ok" && aktif.final ? (
+              <>
+                <img src={aktif.final} alt={`Thumbnail ${VARIAN_THUMB[aktifIdx].nama}`} draggable={false} />
+                <span className="tub-panggung-nama">{VARIAN_THUMB[aktifIdx].nama} · ✥ geser</span>
+                <button type="button" className="tub-bulat" aria-label="Unduh PNG"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => unduh(aktif.final!, `thumbnail-verve-v${aktifIdx + 1}.png`)}>⬇</button>
+              </>
+            ) : aktif.status === "muat" ? (
+              <div className="tub-menunggu"><span className="tub-blink">🎨</span><small>{aktif.pesan || "Melukis " + VARIAN_THUMB[aktifIdx].nama + "…"}</small></div>
+            ) : aktif.status === "gagal" ? (
+              <div className="tub-menunggu">💥<small>{aktif.pesan || "konsep ini gagal — coba lukis ulang"}</small></div>
+            ) : (
+              <div className="tub-menunggu">🖼<small>{VARIAN_THUMB[aktifIdx].nama}<br />menunggu dilukis</small></div>
+            )}
+          </div>
+        </div>
+
+        <div className="tub-strip">
+          {varian.map((v, i) => (
+            <button key={i} type="button"
+              className={`tub-strip-item ${aktifIdx === i ? "tub-strip-on" : ""}`}
+              onClick={() => { sentuh.current = true; setAktifIdx(i); }}>
+              <span className="tub-strip-kotak">
+                {v.status === "ok" && v.final ? <img src={v.final} alt="" draggable={false} />
+                  : v.status === "muat" ? <span className="tub-blink">🎨</span>
+                  : v.status === "gagal" ? <span>💥</span>
+                  : <span>{i + 1}</span>}
+              </span>
+              <span className="tub-strip-lbl">{VARIAN_THUMB[i].nama}</span>
+            </button>
+          ))}
+        </div>
+
+        <button type="button" className="tub-hero" onClick={buatVarian} disabled={sibuk}>
+          {sibuk ? "⏳ Sedang melukis 3 konsep — tunggu ya…" : "🎨 Lukis 3 Konsep Sekaligus"}
+        </button>
         {progres && <p className="tub-progres">{progres}</p>}
 
         <div className="tub-prompt-lahan">
-          <div className="tub-baris-atas" style={{ marginBottom: 6 }}>
-            <small className="tub-label">PROMPT KHUSUS THUMBNAIL (opsional)</small>
-            <button type="button" className="tub-btn-mini" onClick={susunPromptLahan}>🪄 Susun dari Lahan</button>
+          <div className="tub-sek-dalam">
+            <small className="tub-label">PROMPT KHUSUS THUMBNAIL · OPSIONAL</small>
+            <button type="button" className="tub-pil tub-pil-sihir" onClick={susunPromptLahan}>🪄 Susun dari Lahan</button>
           </div>
           {promptTxt ? (
             <>
@@ -292,46 +346,22 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
               <label className="tub-cek">
                 <input type="checkbox" checked={pakaiPrompt}
                   onChange={(e) => { setPakaiPrompt(e.target.checked); simpan({ pakaiPrompt: e.target.checked }); }} />
-                Pakai prompt ini untuk 3 varian (judul tetap untuk teks)
+                Pakai prompt ini untuk 3 varian (judul tetap dipakai untuk teks)
               </label>
             </>
           ) : (
-            <small className="tub-catatan">Ketuk 🪄 untuk merangkai prompt dari judul + gaya visual + kunci karakter hasil Lahan, bisa kamu edit dulu.</small>
+            <small className="tub-catatan">Ketuk 🪄 — prompt disusun dari judul + gaya visual + kunci karakter hasil Lahan, masih bisa kamu edit dulu.</small>
           )}
         </div>
+      </section>
 
-        <div className="tub-grid">
-          {varian.map((v, i) => (
-            <div key={i} ref={(el) => { slotRefs.current[i] = el; }}
-              className={`tub-slot ${v.status === "ok" ? "tub-slot-geser" : ""}`}
-              onPointerDown={(e) => dragMulai(i, e)}
-              onPointerMove={(e) => dragGerak(i, e)}
-              onPointerUp={dragSelesai}
-              onPointerCancel={dragSelesai}>
-              {v.status === "ok" && v.final ? (
-                <>
-                  <img src={v.final} alt={`Thumbnail varian ${i + 1}`} draggable={false} />
-                  <div className="tub-slot-aksi">
-                    <small>{VARIAN_THUMB[i].nama} · ✥ geser</small>
-                    <button type="button" className="tub-btn-mini" onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => unduh(v.final!, `thumbnail-verve-v${i + 1}.png`)}>⬇ PNG 1280×720</button>
-                  </div>
-                </>
-              ) : v.status === "muat" ? (
-                <div className="tub-slot-kosong"><span className="tub-blink">🎨</span><small>{v.pesan || VARIAN_THUMB[i].nama + "…"}</small></div>
-              ) : v.status === "gagal" ? (
-                <div className="tub-slot-kosong">💥<small>{v.pesan || "gagal"}</small></div>
-              ) : (
-                <div className="tub-slot-kosong">🖼<small>{VARIAN_THUMB[i].nama}</small></div>
-              )}
-            </div>
-          ))}
+      {/* 3 · TEKS & GAYA */}
+      <section className="tub-kartu tub-muncul" style={{ animationDelay: "140ms" }}>
+        <div className="tub-sek">
+          <span className="tub-nomor">3</span>
+          <h2>Teks &amp; gayamu</h2>
+          <span className="tub-pil-info">gratis · instan tanpa AI</span>
         </div>
-        <small className="tub-catatan">✥ Tahan jari di atas thumbnail lalu seret — teks mengikuti ke mana pun kamu mau.</small>
-      </div>
-
-      <div className="tub-kartu">
-        <h2>3 · Teks & gayamu <small className="tub-label-mini">— instan, tanpa AI, geser langsung berubah</small></h2>
 
         <div className="tub-seg">
           {([["auto", "🤖 Otomatis"], ["manual", "✍️ Tulis sendiri"]] as const).map(([id, lb]) => (
@@ -344,19 +374,21 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
             <textarea className="tub-area" rows={3} maxLength={90}
               placeholder={"Satu baris = satu baris teks besar (maks 3)\nContoh:\nIBU\nAKU RINDU"}
               value={teksManual} onChange={(e) => { setTeksManual(e.target.value); simpan({ teksManual: e.target.value }); }} />
-            <button type="button" className="tub-btn-mini" onClick={() => { const s = saranTeks(); setTeksManual(s); simpan({ teksManual: s }); }}>
+            <button type="button" className="tub-pil" style={{ marginTop: 8 }} onClick={() => { const s = saranTeks(); setTeksManual(s); simpan({ teksManual: s }); }}>
               ✨ Isi saran dari judul
             </button>
           </>
         )}
 
-        <small className="tub-label">FONT</small>
+        <small className="tub-label">FONT — GESER SAMPING</small>
         <div className="tub-fonts">
           {FONT_THUMB.map((f) => (
             <button key={f.id} type="button"
               className={`tub-font ${fontId === f.id ? "tub-font-on" : ""}`}
-              style={{ fontFamily: f.fam }}
-              onClick={() => { setFontId(f.id); simpan({ fontId: f.id }); }}>Ag</button>
+              onClick={() => { setFontId(f.id); simpan({ fontId: f.id }); }}>
+              <span className="tub-font-ag" style={{ fontFamily: f.fam }}>Ag</span>
+              <span className="tub-font-nama">{f.id}</span>
+            </button>
           ))}
         </div>
 
@@ -371,23 +403,26 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
             </div>
           </div>
           <div style={{ flex: 1 }}>
-            <small className="tub-label">BESAR TEKS: {skala}%</small>
+            <small className="tub-label">BESAR TEKS · {skala}%</small>
             <input className="tub-slider" type="range" min={70} max={140} step={5} value={skala}
               onChange={(e) => { const v = parseInt(e.target.value, 10); setSkala(v); simpan({ skala: v }); }} />
           </div>
         </div>
-      </div>
+        <small className="tub-catatan">✥ Cara paling bebas: tahan jari tepat DI ATAS teks di panggung, lalu seret ke mana pun.</small>
+      </section>
 
-      <div className="tub-kartu">
-        <div className="tub-baris-atas">
-          <h2>4 · Paket teks upload</h2>
-          <button type="button" className="tub-btn" onClick={buatPaketTeks} disabled={sibukTeks}>
-            {sibukTeks ? "⏳ Menulis…" : "📝 Judul + deskripsi + tag"}
+      {/* 4 · PAKET UPLOAD */}
+      <section className="tub-kartu tub-muncul" style={{ animationDelay: "210ms" }}>
+        <div className="tub-sek">
+          <span className="tub-nomor">4</span>
+          <h2>Paket upload</h2>
+          <button type="button" className="tub-pil" onClick={buatPaketTeks} disabled={sibukTeks}>
+            {sibukTeks ? "⏳ Menulis…" : "📝 Judul · deskripsi · tag"}
           </button>
         </div>
         {titles.length > 0 && (
           <div className="tub-blok">
-            <small className="tub-label">OPSIL JUDUL (ketuk untuk pakai)</small>
+            <small className="tub-label">OPSI JUDUL — KETUK UNTUK PAKAI</small>
             {titles.map((t, i) => (
               <button key={i} type="button" className="tub-judul" onClick={() => { setJudul(t); kabar("✍️ Judul diganti"); }}>{t}</button>
             ))}
@@ -395,25 +430,37 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
         )}
         {deskripsi && (
           <div className="tub-blok">
-            <div className="tub-baris-atas">
+            <div className="tub-sek-dalam">
               <small className="tub-label">DESKRIPSI</small>
-              <button type="button" className="tub-btn-mini" onClick={() => salin(deskripsi, "Deskripsi")}>📋 Salin</button>
+              <button type="button" className="tub-pil" onClick={() => salin(deskripsi, "Deskripsi")}>📋 Salin</button>
             </div>
             <textarea className="tub-area" rows={5} value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} />
           </div>
         )}
         {tags.length > 0 && (
           <div className="tub-blok">
-            <div className="tub-baris-atas">
+            <div className="tub-sek-dalam">
               <small className="tub-label">{tags.length} TAG</small>
-              <button type="button" className="tub-btn-mini" onClick={() => salin(tags.join(", "), "Semua tag")}>📋 Salin semua</button>
+              <button type="button" className="tub-pil" onClick={() => salin(tags.join(", "), "Semua tag")}>📋 Salin semua</button>
             </div>
             <div className="tub-tags">
               {tags.map((t, i) => <span key={i} className="tub-tag">{t}</span>)}
             </div>
           </div>
         )}
-      </div>
+      </section>
+
+      {/* AKSIBAR lengket — unduh selalu dalam jangkauan jempol */}
+      {adaHasil && (
+        <div className="tub-aksibar">
+          <button type="button" className="tub-pil" onClick={buatVarian} disabled={sibuk}>🔄 Varian baru</button>
+          <button type="button" className="tub-hero tub-hero-kecil"
+            disabled={aktif.status !== "ok" || !aktif.final}
+            onClick={() => aktif.final && unduh(aktif.final, `thumbnail-verve-v${aktifIdx + 1}.png`)}>
+            ⬇ Unduh PNG 1280×720
+          </button>
+        </div>
+      )}
 
       {tost && <div className="tub-tost" role="status">{tost}</div>}
     </div>

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { renderSlideshow, downloadBlob, vidPlan, vidLoopPrev } from "@/lib/recorder";
 import { transcribeBlobBesar, ccDiagMulai, ccDiag, ccDiagBaca } from "@/lib/audiocc";
 import { renderGif } from "@/lib/gif";
-import { makeAutoThumbBlob } from "@/lib/thumb";
 import { avWarm, avPut } from "@/lib/avault";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
@@ -3664,32 +3663,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
-  /* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */
-  const [thumbU, setThumbU] = useState("");
-  const [thumbBusy, setThumbBusy] = useState(false);
-  const [thumbIdx, setThumbIdx] = useState(0);
-  const [thumbSalt, setThumbSalt] = useState(0);
-  const thumbBlobRef = useRef<Blob | null>(null);
-  async function genThumb(saltOv?: number, idxOv?: number, quiet?: boolean) {
-    if (!slides.length) { if (!quiet) flash("Belum ada adegan — tambahkan klip dulu bro"); return; }
-    const s2 = saltOv ?? thumbSalt;
-    const i2 = (((idxOv ?? thumbIdx) % slides.length) + slides.length) % slides.length;
-    setThumbSalt(s2); setThumbIdx(i2);
-    setThumbBusy(true);
-    try {
-      const img = getImage(slides[i2]?.imageUrl || "");
-      const blob = await makeAutoThumbBlob(img, projTitle || "Cerita Jadi Lagu", niche || "cerita jadi lagu", s2);
-      thumbBlobRef.current = blob;
-      setThumbU((u) => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(blob); });
-      if (!quiet) flash("🖼 Thumbnail High-CTR siap — tinggal download!");
-    } catch { if (!quiet) flash("⚠️ Thumbnail gagal dirakit — coba lagi ya bro"); }
-    setThumbBusy(false);
-  }
-  function downloadThumb() {
-    const b = thumbBlobRef.current; if (!b) return;
-    downloadBlob(b, `thumb_${(projTitle || "verve").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_").slice(0, 30) || "verve"}_${Date.now()}.jpg`);
-    flash("⬇ Thumbnail 1280×720 terdownload — tinggal pasang di YouTube");
-  }
+  /* 🪦 v13.7 THUMBNAIL-SETELAH-RENDER DIAMPUTASI TOTAL (perintah bos: setelah render JANGAN muncul thumbnail) —
+     thumbnail kini hidup mandiri di Studio Thumbnail (layar "thumbnail"). */
   async function copyFld(k: string, t: string) {
     if (await copyTxt(t)) { setCopiedFld(k); setTimeout(() => setCopiedFld(""), 1400); }
   }
@@ -3768,7 +3743,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const next = [snap, ...arr.filter((d: any) => d?.id !== snap.id)].slice(0, MAX_DRAFTS);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
       void mirrorDraft(snap).catch(() => {});
-      setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null); setThumbU(u => { if (u) URL.revokeObjectURL(u); return ""; }); thumbBlobRef.current = null;
+      setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null);
       applySnapshot(snap); onSaved();
       flash("☁️ Backup cloud dipulihkan sebagai proyek BARU — cek/lanjut edit, lalu 💾 simpan");
     } catch (e: any) { setErr(e); }
@@ -3815,7 +3790,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const next = [snap, ...arr.filter((d: any) => d?.id !== snap.id)].slice(0, MAX_DRAFTS);
       localStorage.setItem(DRAFTS_KEY, JSON.stringify(next));
       void mirrorDraft(snap).catch(() => {});
-      setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null); setThumbU(u => { if (u) URL.revokeObjectURL(u); return ""; }); thumbBlobRef.current = null;
+      setVideoBlob(null); setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setMeta(null);
       applySnapshot(snap); onSaved();
       flash("📥 Backup dipulihkan sebagai proyek BARU — cek/lanjut edit, lalu 💾 simpan");
     } catch (e: any) { setErr({ message: e?.message || "Gagal membaca backup JSON" }); }
@@ -3848,7 +3823,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       hasSubtitle: !!(lyrScan.list.length || capWords.length),
       hasRender: !!videoBlob,
       hasMetadata: !!meta,
-      hasThumbnail: !!thumbBlobRef.current,
     });
     const stockSources = slides.map((s, i) => ({ scene: i + 1, ...((slideOptsById[s.id] as any)?.stock || {}) })).filter((x: any) => x.provider || x.by || x.link || x.id);
     return makeUploadKitText({
@@ -3860,7 +3834,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       ratio,
       durationSec: clipsTotal,
       hasVideo: !!videoBlob,
-      hasThumbnail: !!thumbBlobRef.current,
       health,
       checklist,
       sources: stockSources,
@@ -3886,7 +3859,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       hasSubtitle: !!(lyrScan.list.length || capWords.length),
       hasRender: !!videoBlob,
       hasMetadata: !!meta,
-      hasThumbnail: !!thumbBlobRef.current,
     });
     const stockSources = slides.map((s, i) => ({ scene: i + 1, ...((slideOptsById[s.id] as any)?.stock || {}) })).filter((x: any) => x.provider || x.by || x.link || x.id);
     return makeProductionReportText({
@@ -3898,7 +3870,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       ratio,
       durationSec: clipsTotal,
       hasVideo: !!videoBlob,
-      hasThumbnail: !!thumbBlobRef.current,
       health,
       healthIssues: health.issues || [],
       checklist,
@@ -4699,7 +4670,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             meta, genMetadata, copiedFld, copyFld, downloadMetaTxt, downloadProjectBackup, uploadProjectBackupCloud, cloudSaveMusic, importProjectBackupFile,
             listCloudBackups, restoreCloudBackup, deleteCloudBackup, cloudBackups, cloudListOpen, setCloudListOpen,
             downloadUploadKit, copyUploadKit, downloadProductionReport, copyProductionReport, saveMoneyPrinterVariants, projTitle,
-            thumbU, thumbBusy, thumbIdx, thumbSalt, genThumb, downloadThumb,
             applyGlobalSpeed, applyCinematicKit, copyCinematicPrompt,
           }}
         />
@@ -6630,7 +6600,6 @@ function StikerSheet({ api: A, tab0, onClose }: any) {
 
 /* ---------------- EKSPOR (video | GIF, slider resolusi/fps/bitrate) ---------------- */
 function EksporSheet({ api: A, onClose }: any) {
-  useEffect(() => { if (!A.thumbU && (A.slides || []).length) { try { A.genThumb(0, 0, true); } catch {} } }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const resIdx = RES_STOPS.indexOf(A.exRes);
   const fpsIdx = FPS_STOPS.indexOf(A.exFps);
   const mbIdx = MBPS_STOPS.indexOf(A.exMbps);
@@ -6641,7 +6610,6 @@ function EksporSheet({ api: A, onClose }: any) {
     hasSubtitle: !!((A.lyrList || []).length || (A.capWords || []).length),
     hasRender: !!A.videoBlob,
     hasMetadata: !!A.meta,
-    hasThumbnail: !!A.thumbU,
   });
   const prodDone = prodChecks.filter(c => c.done).length;
   return (
@@ -6761,19 +6729,6 @@ function EksporSheet({ api: A, onClose }: any) {
                     <button className="v6-btn" style={{ width: "100%", marginTop: 8, borderColor: "rgba(59,130,246,.45)", color: "#bfdbfe" }} onClick={A.copyUploadKit}>📋 Salin Paket Upload lengkap</button>
                   </div>
                 )}
-                {/* 🖼 v13.7 THUMBNAIL OTOMATIS — High-CTR dari judul terkunci + adegan video */}
-                <div style={{ marginTop: 10, border: "1px solid rgba(255,214,10,.35)", borderRadius: 14, padding: 12 }}>
-                  <b style={{ fontSize: 12 }}>🖼 Thumbnail YouTube otomatis</b>
-                  <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2, lineHeight: 1.5 }}>🧠 Dia MEMBACA adeganmu: ukur kecerahan kiri-kanan, taruh teks di sisi paling kontras, hitung kekuatan gradasinya — font Anton ala thumbnail viral, maks 3 kata emosional.</div>
-                  {A.thumbU
-                    ? <img src={A.thumbU} alt="thumbnail" style={{ width: "100%", borderRadius: 10, marginTop: 8, border: "1px solid var(--v6-line)" }} />
-                    : <div className="v6-note" style={{ marginTop: 8 }}>{A.thumbBusy ? "⏳ Merakit thumbnail…" : "Thumbnail dirakit otomatis begitu ada adegan."}</div>}
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button className="v6-chip" style={{ flex: 1 }} disabled={!!A.thumbBusy} onClick={() => A.genThumb(A.thumbSalt, A.thumbIdx + 1)}>🎬 Adegan lain</button>
-                    <button className="v6-chip" style={{ flex: 1 }} disabled={!!A.thumbBusy} onClick={() => A.genThumb(A.thumbSalt + 1, A.thumbIdx)}>🔀 Urutan kata lain</button>
-                  </div>
-                  <button className="v6-bigcta" style={{ marginTop: 8 }} disabled={!A.thumbU || !!A.thumbBusy} onClick={A.downloadThumb}>⬇ Download thumbnail (1280×720 JPG)</button>
-                </div>
               </>
             )}
           </>
