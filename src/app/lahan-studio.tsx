@@ -1411,6 +1411,30 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     </div>
   );
 
+  // 🧭 FASE-LAHAN L2 PROFESIONAL: kepala seragam tiap langkah — nomor jelas, tujuan blak-blakan,
+  //    bahan yang hilang tinggal diketuk untuk lompat mengisi. Konten & alur tiap langkah TIDAK diubah.
+  const LANGKAH_BUTUH: Record<number, number[]> = { 1: [], 2: [1], 3: [2], 4: [1, 2], 5: [4], 6: [4], 7: [6], 8: [6], 9: [7, 8] };
+  const kepalaLangkah = (k: number, judul: string, tujuan: string) => {
+    const kurang = (LANGKAH_BUTUH[k] || []).filter((x) => !langkahSiap[x - 1]);
+    return (
+      <div className="lh-stephead">
+        <div className="lh-stephead-top">
+          <span className="lh-stepnum">LANGKAH {k}/9</span>
+          <span className={`lh-stepstat ${langkahSiap[k - 1] ? "ok" : ""}`}>{langkahSiap[k - 1] ? "✅ bahan siap" : "⬜ belum terisi"}</span>
+        </div>
+        <div className="lh-stephead-t">{judul}</div>
+        <p className="lh-stephead-d">{tujuan}</p>
+        {kurang.length > 0 && (
+          <div className="lh-chips" style={{ marginTop: 7 }}>
+            {kurang.map((x) => (
+              <button key={x} className="lh-chip kurang" onClick={() => setStep(x)}>⬜ butuh: {x}. {STEP_LABEL[x - 1]}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   /* ================= RENDER ================= */
   return (
     <div className="lh-wrap">
@@ -1458,6 +1482,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {/* ============ LANGKAH 1: NIAT & TOPIK ============ */}
       {step === 1 && (
         <>
+          {kepalaLangkah(1, "Niat & topik 🌱", "Kompas seluruh produksi: cerita ini tentang apa. Judul, visual, lagu — semua turun dari niat yang kautulis di sini.")}
           <div className="lh-card">
             <div className="lh-h1">Apa niat ceritamu, bro? 🌱</div>
             <p className="lh-sub">Niche terkunci dulu: <b>🎵 Cerita Jadi Lagu</b> — biar fokus & dalam. Nanti merambah.</p>
@@ -1495,6 +1520,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
 
       {/* ============ LANGKAH 2: SUDUT ============ */}
       {step === 2 && (
+        <>
+          {kepalaLangkah(2, "Pilih sudut emas 🎯", "AI mengusulkan sudut pandang berbeda untuk topikmu — pilih yang paling pantas diklik penonton.")}
         <div className="lh-card">
           <div className="lh-h1">Pilih sudut pandang 🔍</div>
           <p className="lh-sub">Ini kata kunci asli yang orang ketik di YouTube (autocomplete), bukan tebakan. Pilih satu sebagai arah riset.</p>
@@ -1518,11 +1545,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             </div>
           )}
         </div>
+        </>
       )}
 
       {/* ============ LANGKAH 3: RISET ============ */}
       {step === 3 && (
         <>
+          {kepalaLangkah(3, "Riset bukti lapangan 📊", "Data nyata: video serupa yang meledak, view-nya berapa, dan kenapa. Keputusan dari bukti — bukan feeling.")}
           {!angle && (
             <div className="lh-card">
               <div className="lh-h1">Riset kompetitor 📊</div>
@@ -1611,6 +1640,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {step === 4 && !angle && kartuKurang("Hitung Judul Juara 🏆", [1, 2], "Mesin judul minum dari sudut yang kamu pilih & risetnya.")}
       {step === 4 && angle && (
         <>
+          {kepalaLangkah(4, "Judul juara 🏆", "Tiap kandidat judul diskor dari hasil risetmu — yang kaupilih jadi kompas visual, naskah, dan lagu.")}
           <div className="lh-card">
             <div className="lh-h1">Pilih judul juara 🏆</div>
             <p className="lh-sub">Semua kandidat diskor mesin vs pola & kemiripan kompetitor. Buka “audit” untuk lihat hitungannya — transparan, bukan kotak hitam.</p>
@@ -1683,9 +1713,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {/* ============ LANGKAH 5: MESIN VISUAL WAW (PROMPT ENGINE) ============ */}
       {step === 5 && (
         <>
+          {kepalaLangkah(5, "Mesin visual konsisten 🎬", "Kunci karakter & gayamu: wajah, pakaian, suasana SAMA dari adegan pertama sampai akhir — ciri video mahal.")}
           <div className="lh-card">
             <div className="lh-h1">Mesin visual WAW 🎬</div>
-            <p className="lh-sub">Judul terkunci: <b>{selTitle}</b></p>
+            <p className="lh-sub">Judul terkunci: <b>{selTitle || "— (belum ada, pilih dulu di langkah 4)"}</b></p>
             <p className="lh-sub">Di sinilah “script di dalam script” bekerja: <b>kartu karakter + gaya visual</b> di bawah ini disuntik ke prompt naskah, storyboard, dan TIAP gambar adegan — jadi wajah, pakaian & suasana <b>konsisten</b> dari adegan 1 sampai akhir.</p>
           </div>
 
@@ -1740,9 +1771,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {/* ============ LANGKAH 6: NASKAH CERITA ============ */}
       {step === 6 && (
         <>
+          {kepalaLangkah(6, "Naskah cerita 📝", "Alur yang menjaga retensi: hook kuat → masalah → puncak emosi → pesan yang membekas.")}
           <div className="lh-card">
             <div className="lh-h1">Naskah cerita 📝</div>
-            <p className="lh-sub">Untuk judul: <b>{selTitle}</b></p>
+            <p className="lh-sub">Untuk judul: <b>{selTitle || "— (belum, pilih di langkah 4)"}</b></p>
             <p className="lh-sub">AI menulis pakai perintah khusus: <b>hook 3 detik</b>, alur emosi (pembuka → konflik → klimaks haru → pesan), karakter konsisten, kalimat yang bisa dinyanyikan, dan CTA dari kartu audiens. Hasilnya bisa kau edit bebas — kau tetap sutradaranya.</p>
             <button className="lh-btn" disabled={busy === "cerita"} onClick={writeNaskah}>
               {busy === "cerita" ? "⏳ AI lagi nulis..." : naskah ? "✨ Tulis ulang naskah (AI)" : "✨ Tulis Naskah (AI)"}
@@ -1773,6 +1805,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {/* ============ LANGKAH 7: STORYBOARD & GAMBAR ADEGAN ============ */}
       {step === 7 && (
         <>
+          {kepalaLangkah(7, "Adegan bergambar 🎞️", "Naskah dipecah jadi adegan; tiap adegan digambar konsisten mengikuti kartu karakter yang kaubekukan.")}
           <div className="lh-card">
             <div className="lh-h1">Adegan & gambar 🎬</div>
             <p className="lh-sub">Naskah dipotong jadi adegan, tiap adegan digambar AI dengan <b>kartu karakter + gaya visual terinjeksi</b> — biar karakter nyambung antar adegan. Yang kurang pas tinggal <b>↻ ulangi</b> adegan itu saja.</p>
@@ -1911,9 +1944,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {/* ============ LANGKAH 8: LAGU (SUNO) ============ */}
       {step === 8 && (
         <>
+          {kepalaLangkah(8, "Panggung lagu 🎵", "Lirik & ceritamu jadi lagu utuh — musik yang membawa emosi video dari detik pertama.")}
           <div className="lh-card">
             <div className="lh-h1">Panggung lagu 🎵</div>
-            <p className="lh-sub">Judul: <b>{selTitle}</b> — lagu diolah Suno lewat provider pilihanmu. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
+            <p className="lh-sub">Judul: <b>{selTitle || "— (belum, pilih di langkah 4)"}</b> — lagu diolah Suno lewat provider pilihanmu. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
             <div className="lh-kv">
               <span>Provider</span>
               <b>
@@ -2107,6 +2141,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {step === 9 && !(board && song) && kartuKurang("Gabung Jadi Video 🎬", [6, 7, 8], "Video digabung dari adegan bergambar + lagu jadi. Keduanya lahir di:")}
       {step === 9 && board && song && (
         <>
+          {kepalaLangkah(9, "Video utuh 🎬", "Lagu + adegan digabung otomatis dengan pembagian durasi rata — poles halusnya lanjut di Studio Edit.")}
           <div className="lh-card">
             <div className="lh-h1">Video utuh 🎬</div>
             <p className="lh-sub">Lagu + {doneScenes.length} adegan digabung otomatis: tiap adegan dapat ±{perScene.toFixed(1)} detik mengikuti durasi lagu {fmtClock(totalDur)}. Jujur bro — pembagiannya rata; sinkron halus per ketukan/emosi bisa kau poles di Studio (ada penanda BPM).</p>

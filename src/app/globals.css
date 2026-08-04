@@ -2068,3 +2068,14 @@ b.ok, b.warn, b.err { color:inherit; }
 .lh-chip.kurang { border-color: rgba(245,158,11,.5); color: #fbbf24; background: rgba(245,158,11,.08); }
 .lh-btn { box-shadow: 0 6px 18px rgba(25,194,184,.16); }
 .lh-btn:active { transform: translateY(1px); }
+
+/* ==================================================================
+   🧭 FASE-LAHAN L2 PROFESIONAL — kepala seragam tiap langkah
+   ================================================================== */
+.lh-stephead { margin: 2px 0 10px; padding: 13px 15px; border-radius: 16px; background: linear-gradient(135deg, rgba(25,194,184,.09), rgba(25,194,184,.02) 55%, rgba(0,0,0,0)); border: 1px solid rgba(25,194,184,.18); }
+.lh-stephead-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.lh-stepnum { font-size: 9.5px; font-weight: 800; letter-spacing: .14em; color: var(--v6-teal); }
+.lh-stepstat { font-size: 9.5px; font-weight: 700; color: #fbbf24; background: rgba(245,158,11,.09); border: 1px solid rgba(245,158,11,.3); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.lh-stepstat.ok { color: var(--v6-teal); background: rgba(25,194,184,.1); border-color: rgba(25,194,184,.35); }
+.lh-stephead-t { font-size: 17px; font-weight: 800; margin-top: 7px; letter-spacing: .01em; }
+.lh-stephead-d { font-size: 11.5px; color: #9a9aa8; line-height: 1.55; margin: 3px 0 0; }

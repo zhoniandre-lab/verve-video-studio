@@ -74,5 +74,15 @@ T("langkah tersimpan di payload (pindah HP/refresh tak hilang)", /step, topic/.t
 T("langkah dipulihkan dari simpanan", /setStep\(j\.step \|\| 1\)/.test(lahan));
 T("9 langkah tetap utuh", /const STEP_LABEL = \["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"\];/.test(lahan));
 
+/* ---------- 6. FASE-LAHAN L2 PROFESIONAL: kepala seragam 9 langkah ---------- */
+const jmlKepala = (lahan.match(/kepalaLangkah\(\d+,/g) || []).length;
+T("kepala langkah profesional terpasang di 9/9 langkah", jmlKepala === 9, `terpasang ${jmlKepala}`);
+T("definisi kepalaLangkah + peta LANGKAH_BUTUH ada", /const LANGKAH_BUTUH: Record<number, number\[\]>/.test(lahan) && /const kepalaLangkah = \(k: number, judul: string, tujuan: string\)/.test(lahan));
+T("peta bahan langkah 9 jujur: butuh adegan(7) & lagu(8)", /9: \[7, 8\]/.test(lahan));
+T("status 'bahan siap/belum terisi' ditampilkan per langkah", /bahan siap/.test(lahan) && /belum terisi/.test(lahan));
+T("chip 'butuh' melompat ke langkah prasyarat", /butuh: \{x\}\. \{STEP_LABEL\[x - 1\]\}/.test(lahan));
+T("judul kosong tidak lagi tercetak blong (3 titik diganti fallback)", (lahan.match(/selTitle \|\| "— \(belum/g) || []).length >= 3);
+T("CSS kepala langkah terpasang", css.includes(".lh-stephead") && css.includes(".lh-stepnum"), "globals.css");
+
 console.log(gagal === 0 ? "\n🏁 LAHAN BEBAS LONCAT SEHAT — ke langkah 3 bisa, langsung ke 9 pun bisa, profesional & jujur." : `\n💥 ${gagal} uji gagal`);
 process.exit(gagal === 0 ? 0 : 1);
