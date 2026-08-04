@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 💎 v19.1 — OTAK BUKA CATATAN: INSIGHT POLA + TITLE GURU + DASHBOARD PENJUAL
+* **Masalah (dari v19.0):** otak sudah bisa "makan" data performa dari YouTube, tapi ilmunya masih tersembunyi — pengguna tidak melihat apa yang otak pelajari, dan otak belum "menulis" rekomendasi dari ilmunya itu.
+* **Solusi (3 fitur baru):**
+  1. **🧠 Panel Insight Pola** (`src/lib/brain/pattern-insight.ts`) — dari `brain.results`, otak menghitung baseline CTR channel lalu membandingkan tiap gaya judul (angka, kata tanya, kata emosi, panjang pendek, frasa "cerita jadi lagu"). Muncul kartu di Lahan: pola TEMBUS (▲) & pola GAGAL (▼) + judul terbaik. Murni klien, offline, gratis.
+  2. **🎯 Title Guru** (`src/lib/brain/title-guru.ts`) — otak MENULIS 4 judul baru memakai pola yang terbukti tembus di channelmu, disaring: nggak mirip judul yang gagal (CTR <3% 14 hari) & nggak kembar dengan yang sudah dipakai. Tombol "Pakai →" langsung mengunci judul ke otak.
+  3. **💎 Dashboard Penjual** (`/jualan`) — halaman showcase mobile-first buat demo ke calon pembeli: hero, 6 fitur utama, cara otak belajar, **panel "Bukti otak bekerja" yang live membaca brain di perangkat itu**, teknologi di balik layar, CTA lisensi. Tombol akses: grid tools di home (💎 Jualan · DEMO).
+* **Bonus:** test suite baru `tests/brain-guru.test.mjs` (14 cek) — seluruh 25 suite repo tetap hijau.
+
+
 ### 🧠 v19.0 — FEEDBACK LOOP: OTAK BELAJAR SENDIRI DARI YOUTUBE (read-only)
 * **Masalah:** Otak VERVE (`learningBoostV2` — skor judul Bayesian yang belajar dari performa) hanya pintar kalau `brain.results` diisi angka asli YouTube. Dulu harus input CTR manual / export CSV → jarang diisi → otak "kelaparan" dan belajar lambat.
 * **Solusi (Feedback Loop Otomatis):**

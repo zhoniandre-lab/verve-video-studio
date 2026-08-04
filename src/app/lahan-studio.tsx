@@ -20,6 +20,8 @@ import {
   detectAudienceIntent, audienceCard, dominantEmotion, watchActivity,
   solutionFor, monetizationHint, deviceAdvice, DATA_GAPS,
 } from "@/lib/brain/audience";
+import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
+import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
@@ -312,6 +314,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [syncLast, setSyncLast] = useState<number | null>(() => {
     try { const n = Number(localStorage.getItem(SYNC_KEY) || 0); return n > 0 ? n : null; } catch { return null; }
   });
+  // 🧠 v19.1: INSIGHT POLA + TITLE GURU — otak pamer catatan & menulis judul baru
+  const insight = useMemo(() => analyzeBrainPatterns(brain), [brain]);
+  const [guru, setGuru] = useState<GuruSuggestion[]>([]);
+  const [guruMsg, setGuruMsg] = useState("");
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
   function saveBrain(up: (b: BrainMemory) => BrainMemory) {
@@ -634,6 +640,27 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     } finally {
       setSyncBusy(false);
     }
+  }
+
+  /* 🎯 v19.1 TITLE GURU — otak menulis judul baru dari pola yang TERBUKTI tembus
+     di channelmu (hasil analisis brain), disaring: jangan mirip judul gagal,
+     jangan kembar dengan yang sudah dipakai. Offline, gratis, instan. */
+  function mintaSaranGuru() {
+    const kw = selKeyword || topic.trim() || "";
+    if (!kw) { setGuruMsg("Pilih keyword/sudut dulu di langkah 2 biar sarannya nyambung ke topikmu."); return; }
+    const list = suggestTitlesFromBrain(kw, brain, 4);
+    if (!list.length) { setGuruMsg("Semua pola yang dicoba mirip judul yang pernah gagal — coba keyword lain atau sync dulu biar otak punya data baru."); return; }
+    setGuru(list);
+    setGuruMsg("");
+    flash("🎯 Saran judul dari pola yang terbukti!");
+  }
+  function pakaiSaranGuru(t: string) {
+    setSelTitle(t);
+    saveBrain((b) => ({
+      ...b,
+      results: [{ title: t, time: Date.now() }, ...b.results.filter((r) => normTitleKey(r.title) !== normTitleKey(t))].slice(0, 200),
+    }));
+    flash("🎯 Judul dipakai — tercatat di otak 🧠");
   }
 
   function resetLahan() {
@@ -1802,6 +1829,62 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             </div>
             {!!syncMsg && <p className="lh-note" style={{ color: syncMsg.startsWith("⚠️") || syncMsg.startsWith("🔗") ? "#e8a15a" : "var(--v6-teal)", marginTop: 8 }}>{syncMsg}</p>}
             <p className="lh-note">Otomatis sync sekali sehari saat app dibuka (kalau YouTube sudah dihubungkan di 🩺 Dokter Channel). Yang sync manual bisa kapan saja. Data lama bobotnya turun (half-life 30 hari) — otak selalu ikut tren terbaru.</p>
+          </div>
+
+          {/* 🧠 v19.1 INSIGHT POLA — otak buka buku catatannya */}
+          <div className="lh-card">
+            <div className="lh-h1">🧠 Pola yang dipelajari otak</div>
+            <p className="lh-sub">{insight.summary}</p>
+            {insight.withCtr > 0 && insight.baselineCtr != null && (
+              <p className="lh-note">Dasar: rata-rata CTR channelmu <b>{insight.baselineCtr}%</b> dari {insight.withCtr} judul berangka · otak menyimpan {insight.n}/200 judul</p>
+            )}
+            {insight.top.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                {insight.top.map((p) => (
+                  <div key={p.key} style={{ display: "flex", gap: 8, alignItems: "center", background: "rgba(25,194,184,.08)", border: "1px solid rgba(25,194,184,.25)", borderRadius: 10, padding: "7px 10px" }}>
+                    <span style={{ color: "var(--v6-teal)", fontWeight: 800, fontSize: 12 }}>▲ +{p.delta}%</span>
+                    <span style={{ flex: 1, fontSize: 12 }}>{p.label} <span style={{ opacity: .6 }}>(CTR {p.avgCtr}% · {p.n} judul)</span></span>
+                    <span style={{ fontSize: 10, opacity: .55, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>cth: {p.examples[0]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {insight.worst.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                {insight.worst.map((p) => (
+                  <div key={p.key} style={{ display: "flex", gap: 8, alignItems: "center", background: "rgba(232,92,92,.07)", border: "1px solid rgba(232,92,92,.22)", borderRadius: 10, padding: "7px 10px" }}>
+                    <span style={{ color: "#e85c5c", fontWeight: 800, fontSize: 12 }}>▼ {p.delta}%</span>
+                    <span style={{ flex: 1, fontSize: 12 }}>{p.label} <span style={{ opacity: .6 }}>(CTR {p.avgCtr}% · {p.n} judul)</span></span>
+                    <span style={{ fontSize: 10, opacity: .55, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>cth: {p.examples[0]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {insight.best && insight.bestCtr != null && (
+              <p className="lh-note" style={{ marginTop: 8 }}>🏆 Judul terbaik di otakmu: <b>“{insight.best.title}”</b> (CTR {insight.bestCtr}%) — jadikan kompas gaya judul.</p>
+            )}
+          </div>
+
+          {/* 🎯 v19.1 TITLE GURU — otak menulis judul baru dari pola tembus */}
+          <div className="lh-card">
+            <div className="lh-h1">🎯 Saran judul dari otak</div>
+            <p className="lh-sub">Otak menulis 4 judul baru memakai pola yang <b>terbukti tembus di channelmu</b> — bukan template asal. Disaring: nggak mirip judul yang gagal, nggak kembar dengan yang sudah dipakai.</p>
+            <button className="lh-mini ok" onClick={mintaSaranGuru} style={{ padding: "7px 14px" }}>🎯 Minta saran judul</button>
+            {!!guruMsg && <p className="lh-note" style={{ color: "#e8a15a", marginTop: 8 }}>{guruMsg}</p>}
+            {!!guru.length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                {guru.map((s) => (
+                  <div key={s.title} style={{ display: "flex", gap: 8, alignItems: "center", background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 10, padding: "9px 11px" }}>
+                    <span className={`lh-sc ${s.score >= 70 ? "ok" : s.score >= 45 ? "warn" : "err"}`} style={{ minWidth: 34 }}>{s.score}</span>
+                    <div style={{ flex: 1 }}>
+                      <b style={{ fontSize: 13 }}>{s.title}</b>
+                      <div style={{ fontSize: 10, opacity: .6 }}>{s.alasan}</div>
+                    </div>
+                    <button className="lh-mini ok" onClick={() => pakaiSaranGuru(s.title)}>Pakai →</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           {selTitle && (
             <button className="lh-btn" onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
