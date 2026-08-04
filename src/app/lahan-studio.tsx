@@ -22,13 +22,12 @@ import {
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
+import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 
 const LAHAN_KEY = "verve_lahan_v1";
-const BRAIN_KEY = "verve_brain_v1";
-const SYNC_KEY = "verve_brain_yt_sync_v1"; // 🔄 v19.0: jam terakhir otak auto-sync dari YouTube
 
 /* ---------- util ---------- */
 function fmtNum(n: number): string {
@@ -40,16 +39,6 @@ function fmtNum(n: number): string {
 }
 function scoreTone(s: number): string {
   return s >= 70 ? "ok" : s >= 45 ? "warn" : "err";
-}
-function loadBrain(): BrainMemory {
-  try {
-    const raw = localStorage.getItem(BRAIN_KEY);
-    if (!raw) return { researches: [], results: [] };
-    const j = JSON.parse(raw);
-    return { researches: j.researches || [], results: j.results || [] };
-  } catch {
-    return { researches: [], results: [] };
-  }
 }
 /* 🧠 v13.1: kunci judul dinormalkan — dipakai dedupe otak & lapor performa */
 function normTitleKey(t: string): string {
@@ -311,9 +300,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   // 🔄 v19.0 FEEDBACK LOOP: otak belajar sendiri dari data YouTube (read-only)
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
-  const [syncLast, setSyncLast] = useState<number | null>(() => {
-    try { const n = Number(localStorage.getItem(SYNC_KEY) || 0); return n > 0 ? n : null; } catch { return null; }
-  });
+  const [syncLast, setSyncLast] = useState<number | null>(() => lastSyncTime());
   // 🧠 v19.1: INSIGHT POLA + TITLE GURU — otak pamer catatan & menulis judul baru
   const insight = useMemo(() => analyzeBrainPatterns(brain), [brain]);
   const [guru, setGuru] = useState<GuruSuggestion[]>([]);
@@ -323,12 +310,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   function saveBrain(up: (b: BrainMemory) => BrainMemory) {
     setBrain((prev) => {
       const next = up(prev);
-      try { localStorage.setItem(BRAIN_KEY, JSON.stringify(next)); } catch { /* penuh? abaikan */ }
-      fetch("/api/hcnsec/brain", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(next),
-      }).catch(() => { /* offline / brankas belum siap */ });
+      persistBrain(next);
       return next;
     });
   }
@@ -351,7 +333,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   // (kalau sudah terhubung) tanpa diminta. Ini "murid yang baca buku sendiri tiap hari".
   useEffect(() => {
     try {
-      const last = Number(localStorage.getItem(SYNC_KEY) || 0) || 0;
+      const last = lastSyncTime() || 0;
       if (Date.now() - last < 24 * 3600 * 1000) return; // sudah sync < 24 jam lalu
     } catch { /* abaikan */ }
     fetch("/api/youtube/status").then((r) => r.json()).then((st) => {
@@ -580,63 +562,20 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     flash("📊 Tersimpan — otak makin paham pola judulmu!");
   }
 
-  /* 🔄 v19.0 FEEDBACK LOOP OTOMATIS — otak "makan" data performa asli dari YouTube.
-     Skor kekayaan data: makin lengkap (CTR+Tayangan+AVD) makin menang saat digabung,
-     supaya hasil sync TIDAK menimpa laporan manual yang lebih lengkap. */
-  function hasilKeSkor(r: { ctr?: number | ""; impressions?: number | ""; avdSec?: number | "" }): number {
-    let s = 0;
-    if (r.ctr != null && r.ctr !== "") s += 2;
-    if (r.impressions != null && r.impressions !== "") s += 1;
-    if (r.avdSec != null && r.avdSec !== "") s += 1;
-    return s;
-  }
-  function mergeSyncResults(now: BrainResult[], rows: BrainResult[]): BrainResult[] {
-    const map = new Map<string, BrainResult>();
-    [...now, ...rows].forEach((r) => {
-      const k = normTitleKey(r.title || "");
-      if (!k) return;
-      const old = map.get(k);
-      if (!old) { map.set(k, r); return; }
-      const oldScore = hasilKeSkor(old), newScore = hasilKeSkor(r);
-      if (newScore > oldScore || (newScore === oldScore && (+r.time! || 0) >= (+old.time! || 0)))
-        map.set(k, { ...old, ...r });
-    });
-    return [...map.values()].sort((x, y) => (+y.time! || 0) - (+x.time! || 0)).slice(0, 200);
-  }
+  /* 🔄 v19.2 FEEDBACK LOOP OTOMATIS — otak "makan" data performa asli dari YouTube.
+     Logika sync dipakai bersama (Lahan + Dokter Channel) lewat lib/brain/auto-sync. */
   async function syncBrainFromYT(auto = false) {
     if (syncBusy) return;
     setSyncBusy(true);
     setSyncMsg("");
     try {
-      const st = await fetch("/api/youtube/status").then((r) => r.json()).catch(() => null);
-      if (!st?.configured) {
-        setSyncMsg(`⚠️ Koneksi YouTube resmi belum aktif di server (butuh ${(st?.missing || ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_OAUTH_COOKIE_SECRET"]).join(", ")}). Set di Vercel → Settings → Environment Variables, lalu redeploy.`);
-        return;
-      }
-      if (!st?.connected) {
-        setSyncMsg("🔗 YouTube belum terhubung. Hubungkan SEKALI di menu 🩺 Dokter Channel (read-only, berlaku 45 hari) — setelah itu otak sync sendiri.");
-        return;
-      }
-      const r = await fetch("/api/youtube/sync-brain?days=90&limit=50");
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      const rows: BrainResult[] = (j.rows || []).map((x: any) => ({
-        title: x.title, ctr: x.ctr ?? "", impressions: x.impressions ?? "", avdSec: x.avdSec ?? "",
-        time: x.time || Date.now(), ...x,
-      }));
-      if (!rows.length) {
-        setSyncMsg("Sync selesai: 0 video dalam 90 hari terakhir (channel masih kosong? Atur rentang?).");
-        return;
-      }
-      saveBrain((b) => ({ ...b, results: mergeSyncResults(b.results, rows) }));
-      try { localStorage.setItem(SYNC_KEY, String(Date.now())); } catch { /* abaikan */ }
-      setSyncLast(Date.now());
-      const ctrN = rows.filter((x) => x.ctr !== "" && x.ctr != null).length;
-      const top = [...rows].filter((x) => x.ctr !== "" && x.ctr != null).sort((a, b) => (+b.ctr! || 0) - (+a.ctr! || 0))[0];
-      setSyncMsg(`🧠 Otak sync ${rows.length} video asli dari channelmu${ctrN ? ` — ${ctrN} dapat CTR` : ""}${top ? `, terbaik: "${top.title}" (CTR ${top.ctr}%)` : ""}. Pola judul yang terbukti bagus langsung diprioritaskan.`);
-      if (!auto) flash(`🧠 Feedback loop ON — otak belajar dari ${rows.length} video asli!`);
-    } catch (e) {
-      setSyncMsg(`⚠️ Gagal sync: ${e instanceof Error ? e.message : String(e)}`);
+      const r = await syncYtBrain(brain);
+      if (!r.ok) { setSyncMsg(r.msg); return; }
+      saveBrain((b) => ({ ...b, results: r.merged }));
+      markSyncDone();
+      setSyncLast(lastSyncTime());
+      setSyncMsg(r.msg);
+      if (!auto) flash(`🧠 Feedback loop ON — otak belajar dari ${r.merged.length} video asli!`);
     } finally {
       setSyncBusy(false);
     }

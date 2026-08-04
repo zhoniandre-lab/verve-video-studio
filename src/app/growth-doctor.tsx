@@ -5,6 +5,7 @@ import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, comp
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
+import { lastSyncTime, loadBrain, markSyncDone, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 
 function num(v: string): number | undefined {
   const raw = String(v ?? "").trim();
@@ -133,6 +134,10 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ytRange, setYtRange] = useState<"lifetime" | "7" | "28" | "90">("lifetime");
   const [ytBusy, setYtBusy] = useState(false);
   const [ytMsg, setYtMsg] = useState("");
+  // 🧠 v19.2: tombol Sync Otak Belajar — tarik data performa → otak belajar (read-only)
+  const [brainSyncBusy, setBrainSyncBusy] = useState(false);
+  const [brainSyncMsg, setBrainSyncMsg] = useState("");
+  const [brainSyncLast, setBrainSyncLast] = useState<number | null>(() => lastSyncTime());
 
   const applyRow = (r: YtStudioCsvRow) => {
     // CSV harus jujur: field yang tidak ada di CSV dikosongkan, bukan dibiarkan dari input lama/placeholder.
@@ -263,6 +268,21 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       setYtStatus((s) => ({ ...(s || { configured: true, connected: false }), connected: false, channel: null }));
       setYtVideos([]); setYtMsg("✅ YouTube diputus dari browser ini.");
     } finally { setYtBusy(false); }
+  };
+  /* 🧠 v19.2: Sync otak dari sini juga — otak VERVE menarik data performa channel
+     (read-only), gabung ke BrainMemory, lalu pola judul di Lahan ikut update. */
+  const syncBrainDoctor = async () => {
+    if (brainSyncBusy) return;
+    setBrainSyncBusy(true); setBrainSyncMsg("");
+    try {
+      const cur = loadBrain();
+      const r = await syncYtBrain(cur);
+      if (r.ok) {
+        persistBrain({ ...cur, results: r.merged });
+        markSyncDone(); setBrainSyncLast(lastSyncTime());
+      }
+      setBrainSyncMsg(r.msg);
+    } finally { setBrainSyncBusy(false); }
   };
   const applyYoutubeVideo = async (v: YtVideo) => {
     const rangeLabel = ytRange === "lifetime" ? "sejak publish" : `${ytRange} hari`;
@@ -428,6 +448,13 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             <span>Mode read-only · YouTube Analytics API resmi</span>
             <div className="gd-textactions"><button onClick={loadYtVideos} disabled={ytBusy}>📺 Muat Video</button><button className="muted" onClick={disconnectYt} disabled={ytBusy}>Putus</button></div>
             <div className="gd-yturl"><input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="Tempel URL video YouTube" /><button onClick={applyYoutubeUrl} disabled={ytBusy}>Baca URL</button></div>
+            <div className="gd-textactions" style={{ gridTemplateColumns: "1fr" }}>
+              <button onClick={syncBrainDoctor} disabled={brainSyncBusy} style={{ borderColor: "#19c2b877", background: "#04212b", color: "#a5f3fc" }}>
+                {brainSyncBusy ? "⏳ Otak sedang belajar..." : "🧠 Sync Otak Belajar (pola judul ikut update)"}
+              </button>
+            </div>
+            {!!brainSyncLast && <span>Terakhir otak belajar: {new Date(brainSyncLast).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>}
+            {!!brainSyncMsg && <em>{brainSyncMsg}</em>}
           </div>
         ) : (
           <button className="gd-ytconnect" onClick={() => { location.href = "/api/youtube/oauth/start"; }}>🔗 Hubungkan YouTube</button>

@@ -17,6 +17,17 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 💎 v19.2 — SYNC DI DOKTER CHANNEL + MOCKUP & HARGA DI HALAMAN JUALAN
+* **Masalah:** tombol "Sync Otak" hanya ada di Lahan Awalan — pengguna yang bekerja lewat Dokter Channel tidak bisa memicu belajar otak dari sana. Halaman Jualan belum punya visual produk & harga.
+* **Solusi:**
+  1. **Logika sync dipakai bersama** — semua fungsi dipindah ke `src/lib/brain/auto-sync.ts` (satu sumber kebenaran: `syncYtBrain`, `mergeSyncResults` "data terlengkap menang", `persistBrain` localStorage+brankas, `loadBrain`). Lahan & Dokter pakai kode yang sama — tidak ada lagi kode dobel yang bisa beda perilaku.
+  2. **🩺 Tombol "🧠 Sync Otak Belajar" di Dokter Channel** (kartu YouTube terhubung) — sekali klik, otak makan data performa channel & pola judul di Lahan ikut update. Menampilkan jam terakhir otak belajar.
+  3. **📱 Halaman Jualan** (`/jualan`) tambah 2 section:
+     * **"Ini wajahnya di dalam app"** — mockup SVG panel otak (pola ▲/▼ + saran judul) yang selalu tajam & ter-render di perangkat mana pun.
+     * **"Pilih edisimu"** — 3 edisi: Personal (Rp 499rb), Pro/Reseller (Rp 1,5jt, paling laris), Lisensi Penuh/White-label (hubungi). Sekali bayar, tanpa langganan.
+  4. **Test baru** `tests/auto-sync.test.mjs` (9 cek) — seluruh 26 suite repo tetap hijau.
+
+
 ### 💎 v19.1 — OTAK BUKA CATATAN: INSIGHT POLA + TITLE GURU + DASHBOARD PENJUAL
 * **Masalah (dari v19.0):** otak sudah bisa "makan" data performa dari YouTube, tapi ilmunya masih tersembunyi — pengguna tidak melihat apa yang otak pelajari, dan otak belum "menulis" rekomendasi dari ilmunya itu.
 * **Solusi (3 fitur baru):**
