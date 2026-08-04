@@ -29,7 +29,8 @@ const TEKNO = [
   "18 model AI · auto-fallback", "OAuth YouTube read-only (aman)", "Token AES-256-GCM", "Bayes CTR + time-decay",
   "Kill-switch BOS + ledger kredit", "Parser CSV/OCR YouTube Studio", "Anti-halusinasi: semua skor punya reasons[]",
   "Render realtime anti-crash HP", "Memori brankas Supabase", "PWA auto-update",
-  "🔥 Trend Radar Google Trends 🇮🇩 (RSS resmi, tanpa API key)", "📅 Jadwal upload golden-hour dari datamu", "⚡ Radar kecepatan kompetitor (vpd)",
+  "🔥 Trend Radar Google Trends 🌏 (RSS resmi, tanpa API key)", "📅 Jadwal upload golden-hour dari datamu", "⚡ Radar 3 kompetitor tercepat + pola judulnya",
+  "🎨 Auto-thumbnail dari trend hangat", "🔔 Notifikasi harian otak (PWA)",
 ];
 
 const EDISI = [

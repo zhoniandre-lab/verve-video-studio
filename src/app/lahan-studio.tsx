@@ -24,6 +24,9 @@ import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
 import { skorTrend, type TrendItem } from "@/lib/brain/trend-radar";
+import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
+import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
+import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
 import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
@@ -328,12 +331,20 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   }, [brain, insight]);
   const [predTitle, setPredTitle] = useState("");
   const [predRes, setPredRes] = useState<{ est: number; low: number; high: number; n: number; why: string } | null>(null);
-  // 🔥 v19.4: TREND RADAR — topik hangat Indonesia dari Google Trends RSS
+  // 🔥 v19.4/19.5: TREND RADAR — topik hangat dari Google Trends RSS (multi-negara)
   const [trends, setTrends] = useState<TrendItem[] | null>(null);
   const [trendBusy, setTrendBusy] = useState(false);
   const [trendMsg, setTrendMsg] = useState("");
+  const [trendGeo, setTrendGeo] = useState("ID");
+  const [thumbTrend, setThumbTrend] = useState<{ title: string; saran: SaranThumbnail } | null>(null);
   const jadwal = useMemo(() => jadwalUpload(brain, 7), [brain]);
   const [showJadwal, setShowJadwal] = useState(false);
+  // ⚡ v19.5: RADAR KOMPETITOR — 3 kompetitor tercepat dari riset
+  const radar = useMemo(() => (angle ? radarKompetitor(angle.qualified || [], 3) : null), [angle]);
+  // 🔔 v19.5: NOTIFIKASI HARIAN OTAK
+  const [notifOn, setNotifOn] = useState(false);
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [notifMsg, setNotifMsg] = useState("");
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
   function saveBrain(up: (b: BrainMemory) => BrainMemory) {
@@ -369,6 +380,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       if (!st?.configured || !st?.connected) return; // belum bisa — nanti coba lagi besok
       void syncBrainFromYT(true);
     }).catch(() => { /* offline — nanti coba lagi */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 🔔 v19.5: NOTIFIKASI HARIAN OTAK — sekali sehari, kalau diaktifkan & diizinkan
+  useEffect(() => {
+    setNotifOn(notifEnabled());
+    if (!notifEnabled() || !notifSupported()) return;
+    if (typeof Notification !== "undefined" && Notification.permission !== "granted") return;
+    void cekNotifikasiHarian(brain).then((r) => {
+      if (r.ok) flash("🔔 Laporan otak harian terkirim!");
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -640,12 +662,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     void navigator.clipboard?.writeText(deep.report).then(() => flash("📋 Laporan otak tersalin — siap dibagikan!"));
   }
 
-  /* 🔥 v19.4 TREND RADAR — topik hangat Google Trends Indonesia */
-  async function muatTrend() {
+  /* 🔥 v19.4/19.5 TREND RADAR — topik hangat Google Trends (multi-negara) */
+  async function muatTrend(geo?: string) {
+    const g = geo || trendGeo;
     if (trendBusy) return;
     setTrendBusy(true); setTrendMsg("");
     try {
-      const r = await fetch("/api/trends?geo=ID");
+      const r = await fetch(`/api/trends?geo=${g}`);
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal ambil trend");
       setTrends(j.items || []);
@@ -656,9 +679,37 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       setTrendBusy(false);
     }
   }
+  function gantiGeo(g: string) {
+    if (g === trendGeo) return;
+    setTrendGeo(g); setTrends(null); setThumbTrend(null); setTrendMsg("");
+    void muatTrend(g);
+  }
   function pakaiTrend(t: string) {
     setTopic(t);
     flash(`🔥 Trend dipakai: "${t}" — gas cari sudutnya!`);
+  }
+  function lihatThumbTrend(t: TrendItem) {
+    const saran = saranThumbnail(t.title, skorTrend(t.title));
+    setThumbTrend((prev) => (prev?.title === t.title ? null : { title: t.title, saran }));
+  }
+  /* 🔔 v19.5 NOTIFIKASI HARIAN */
+  async function toggleNotif() {
+    if (notifBusy) return;
+    setNotifBusy(true);
+    try {
+      if (notifOn) {
+        setNotifEnabled(false); setNotifOn(false);
+        setNotifMsg("🔕 Notifikasi harian dimatikan.");
+        return;
+      }
+      const granted = await requestNotifPermission();
+      if (!granted) { setNotifMsg("⚠️ Izin notifikasi ditolak browser — aktifkan lewat pengaturan browser."); return; }
+      setNotifEnabled(true); setNotifOn(true);
+      const r = await cekNotifikasiHarian(brain);
+      setNotifMsg(r.ok ? "🔔 Notifikasi pertama terkirim — cek layarmu!" : r.msg);
+    } finally {
+      setNotifBusy(false);
+    }
   }
 
   function resetLahan() {
@@ -1612,30 +1663,54 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             </button>
           </div>
 
-          {/* 🔥 v19.4 TREND RADAR — topik hangat Indonesia → bisa langsung jadi cerita/lagu */}
+          {/* 🔥 v19.4/19.5 TREND RADAR — topik hangat multi-negara → cerita/lagu + thumbnail */}
           <div className="lh-card" style={{ borderColor: "rgba(245,158,11,.25)" }}>
-            <div className="lh-h1">🔥 Trend Radar <span style={{ fontSize: 9, background: "rgba(245,158,11,.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>GOOGLE TRENDS 🇮🇩</span></div>
-            <p className="lh-sub">Topik yang lagi hangat dicari orang Indonesia hari ini — yang <b>💔 Emosional</b> langsung bisa jadi cerita/lagu (niche-mu). Satu klik, niat terisi.</p>
-            <button className="lh-mini ok" onClick={muatTrend} disabled={trendBusy} style={{ padding: "7px 14px" }}>
-              {trendBusy ? "⏳ Menarik trend..." : "🔥 Muat Trend Hari Ini"}
-            </button>
+            <div className="lh-h1">🔥 Trend Radar <span style={{ fontSize: 9, background: "rgba(245,158,11,.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>GOOGLE TRENDS 🌏</span></div>
+            <p className="lh-sub">Topik yang lagi hangat dicari orang hari ini — yang <b>💔 Emosional</b> langsung bisa jadi cerita/lagu (niche-mu). Satu klik, niat terisi. Pilih negara, kasih 🎨 untuk saran thumbnail.</p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              {[["ID", "🇮🇩 Indonesia"], ["US", "🇺🇸 US"], ["JP", "🇯🇵 Jepang"], ["MY", "🇲🇾 Malaysia"]].map(([g, lb]) => (
+                <button key={g} onClick={() => gantiGeo(g)} style={{ fontSize: 10.5, fontWeight: 800, padding: "5px 11px", borderRadius: 999, cursor: "pointer", color: trendGeo === g ? "#0a0a14" : "#c7c7d4", background: trendGeo === g ? "#f59e0b" : "var(--v6-card)", border: trendGeo === g ? "1px solid #f59e0b" : "1px solid var(--v6-line)" }}>
+                  {lb}
+                </button>
+              ))}
+              <button className="lh-mini ok" onClick={() => muatTrend()} disabled={trendBusy} style={{ padding: "7px 14px", marginLeft: "auto" }}>
+                {trendBusy ? "⏳ Menarik..." : "🔥 Muat Trend"}
+              </button>
+            </div>
             {!!trends?.length && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
                 {trends.slice(0, 12).map((t) => {
                   const tg = skorTrend(t.title);
+                  const active = thumbTrend?.title === t.title;
                   return (
-                    <button key={t.title} onClick={() => pakaiTrend(t.title)} style={{ display: "flex", gap: 8, alignItems: "center", textAlign: "left", background: "var(--v6-card)", border: tg.cocokLagu ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, padding: "8px 10px", cursor: "pointer", color: "#fff" }}>
-                      <span style={{ fontSize: 16 }}>{tg.emoji}</span>
-                      <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>{t.title}</span>
-                      <span style={{ fontSize: 9.5, opacity: .55 }}>{t.traffic || ""}</span>
-                      <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{tg.cocokLagu ? "🎵 jadi lagu?" : tg.label} →</span>
-                    </button>
+                    <div key={t.title} style={{ background: "var(--v6-card)", border: active ? "2px solid rgba(245,158,11,.6)" : tg.cocokLagu ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, overflow: "hidden" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px" }}>
+                        <button onClick={() => pakaiTrend(t.title)} style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, textAlign: "left", background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: 0 }}>
+                          <span style={{ fontSize: 16 }}>{tg.emoji}</span>
+                          <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>{t.title}</span>
+                          <span style={{ fontSize: 9.5, opacity: .55 }}>{t.traffic || ""}</span>
+                          <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{tg.cocokLagu ? "🎵 jadi lagu?" : tg.label}</span>
+                        </button>
+                        <button onClick={() => lihatThumbTrend(t)} title="Saran thumbnail dari trend ini" style={{ fontSize: 13, background: active ? "rgba(245,158,11,.2)" : "transparent", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "3px 8px", cursor: "pointer" }}>🎨</button>
+                      </div>
+                      {active && thumbTrend && (
+                        <div style={{ padding: "9px 10px", borderTop: "1px dashed rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)" }}>
+                          <div style={{ fontSize: 10.5, opacity: .8 }}>{thumbTrend.saran.alasan}</div>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+                            <span style={{ background: thumbTrend.saran.warna, color: "#fff", fontWeight: 900, fontSize: 11, padding: "5px 10px", borderRadius: 8 }}>{thumbTrend.saran.overlay}</span>
+                            <span style={{ fontSize: 9.5, opacity: .6 }}>warna {thumbTrend.saran.warna}</span>
+                          </div>
+                          <div style={{ fontSize: 10, fontFamily: "monospace", background: "rgba(0,0,0,.3)", borderRadius: 8, padding: "7px 9px", marginTop: 6, color: "#c7c7d4" }}>{thumbTrend.saran.prompt}</div>
+                          <button className="lh-mini" style={{ marginTop: 6 }} onClick={() => { void navigator.clipboard?.writeText(thumbTrend.saran.prompt).then(() => flash("📋 Prompt thumbnail tersalin")); }}>📋 Salin prompt thumbnail</button>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             )}
             {!!trendMsg && <p className="lh-note" style={{ color: trendMsg.startsWith("⚠️") ? "#e8a15a" : "rgba(255,255,255,.5)", marginTop: 8 }}>{trendMsg}</p>}
-            <p className="lh-note">Data dari RSS publik Google Trends (read-only, gratis). Tag otomatis pakai kamus audiens VERVE.</p>
+            <p className="lh-note">Data dari RSS publik Google Trends (read-only, gratis). Tag & saran thumbnail pakai kamus audiens VERVE.</p>
           </div>
 
           <div className="lh-card">
@@ -1733,6 +1808,31 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                       <span key={p.id} className="lh-chip" title={p.examples.slice(0, 3).join("\n")}>{p.label} ×{p.count}</span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* ⚡ v19.5 RADAR KOMPETITOR — 3 tercepat + pola judulnya */}
+              {!!radar?.top.length && (
+                <div className="lh-card" style={{ borderColor: "rgba(25,194,184,.3)" }}>
+                  <div className="lh-h2">⚡ Radar kompetitor tercepat <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>v19.5</span></div>
+                  <p className="lh-note">Bukan sekadar yang muncul pertama — ini 3 yang <b>paling cepat ngumpulin view</b>. Belajar dari yang paling laku di lapanganmu.</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                    {radar.top.map((t, i) => (
+                      <div key={t.video.id || i} style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "9px 11px" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 13 }}>{["🥇", "🥈", "🥉"][i] || `#${i + 1}`}</span>
+                          <a href={t.video.url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 12, fontWeight: 700, color: "#fff", textDecoration: "none" }}>{t.video.title}</a>
+                          <b style={{ color: "var(--v6-teal)", fontSize: 12, whiteSpace: "nowrap" }}>{fmtNum(t.video.vpd)}/hr</b>
+                        </div>
+                        <div style={{ fontSize: 10, opacity: .65, marginTop: 4 }}>{t.insight}</div>
+                        <div style={{ fontSize: 10, marginTop: 4, opacity: .8 }}>Kata khas: <b>{t.tokens.join(" · ")}</b></div>
+                        {!!t.phrases.length && <div style={{ fontSize: 10, marginTop: 2, opacity: .8 }}>Frasa: <b>{t.phrases.join(" · ")}</b></div>}
+                      </div>
+                    ))}
+                  </div>
+                  {!!radar.polaBersama.length && (
+                    <p className="lh-note" style={{ marginTop: 8 }}>🧬 Pola bersama para juara: <b>{radar.polaBersama.map((p) => `${p.token} ×${p.count}`).join(" · ")}</b> — pertimbangkan dipakai di judulmu.</p>
+                  )}
                 </div>
               )}
 
@@ -1900,6 +2000,12 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <div style={{ fontSize: 10, opacity: .6 }}>{deep.level.next ? `${insight.withCtr}/${deep.level.next} judul berangka untuk naik level` : "Level maksimal — otakmu udah jago 😎"}</div>
               </div>
               <button className="lh-mini" onClick={salinLaporanOtak} style={{ padding: "6px 10px" }}>📋 Salin Laporan</button>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+              <button className="lh-mini" onClick={toggleNotif} disabled={notifBusy} style={{ padding: "6px 10px", borderColor: notifOn ? "rgba(25,194,184,.5)" : undefined, color: notifOn ? "var(--v6-teal)" : undefined }}>
+                {notifBusy ? "⏳..." : notifOn ? "🔔 Notifikasi harian ON" : "🔔 Aktifkan notifikasi harian"}
+              </button>
+              {!!notifMsg && <span className="lh-note" style={{ marginTop: 0 }}>{notifMsg}</span>}
             </div>
             {deep.windows.best && (
               <p className="lh-note" style={{ color: "#f59e0b", marginTop: 8 }}>⏰ Jam hoki channelmu: <b>{deep.windows.best.label}</b> — rata-rata {deep.windows.best.avgVelocity} view/hari ({deep.windows.best.n} video){deep.day ? `, hari terbaik ${deep.day.label}` : ""}. Upload di jam ini = peluang tembus lebih besar.</p>

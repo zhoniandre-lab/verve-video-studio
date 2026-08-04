@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### ⚡🎨🔔 v19.5 — RADAR KOMPETITOR + THUMB TREND + NOTIFIKASI HARIAN + TREND MULTI-NEGARA
+* **Masalah:** riset menampilkan kompetitor, tapi tidak menunjuk siapa yang TERCEPAT & pola judulnya; Trend Radar hanya Indonesia; tidak ada saran thumbnail & pengingat harian.
+* **Solusi (4 fitur):**
+  1. **⚡ Radar Kompetitor** (`src/lib/brain/kompetitor-radar.ts`) — di riset (Lahan step 3): 3 kompetitor dengan view/hari tertinggi (🥇🥈🥉), insight "kenapa dia kencang", kata khas & frasa judulnya, plus **pola bersama** para juara (kata yang dipakai 2+ kompetitor cepat).
+  2. **🎨 Auto-thumbnail dari trend** (`src/lib/brain/thumb-trend.ts`) — tombol 🎨 di tiap baris Trend Radar → teks overlay pendek, palet warna, & prompt gambar Inggris siap salin (emosional=hangat+tears, horor=gelap+JANGAN, DJ=neon+FULL BASS, umum=berani).
+  3. **🔔 Notifikasi harian otak** (`src/lib/brain/daily-notify.ts`) — sekali sehari (saat app dibuka) otak sync lalu kirim notifikasi PWA: berapa judul dipelajari + jam hoki + slot terbaik besok. Tombol aktifkan di kartu Deep Dive. Jujur: foreground (background push butuh server push, di luar scope).
+  4. **🌏 Trend multi-negara** — chip 🇮🇩 ID / 🇺🇸 US / 🇯🇵 JP / 🇲🇾 MY di Trend Radar; `/api/trends?geo=` sudah mendukung semua.
+* **Test baru** `tests/radar-v19.test.mjs` (14 cek) — seluruh 29 suite repo tetap hijau.
+
+
 ### 🔥 v19.4 — TREND RADAR GOOGLE TRENDS 🇮🇩 + JADWAL UPLOAD GOLDEN HOUR
 * **Ide:** Google tidak punya API resmi publik untuk Trends, tapi ada **RSS harian resmi** (`trends.google.com/trending/rss?geo=ID`) — gratis, tanpa API key, read-only, stabil. VERVE sekarang "menangkap gelombang" topik yang lagi hangat di Indonesia.
 * **Yang baru:**
