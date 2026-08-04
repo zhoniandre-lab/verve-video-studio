@@ -1378,16 +1378,38 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     } finally { (masukStudio as any)._busy = false; } // v13.7: tutup gerbang anti dobel-klik
   }
 
-  const canGo = (k: number): boolean =>
-    k === 1 ||
-    (k === 2 && topic.trim().length >= 3) ||
-    (k === 3 && !!selKeyword) ||
-    (k === 4 && !!angle) ||
-    (k === 5 && !!selTitle) ||
-    (k === 6 && !!selTitle) ||
-    (k === 7 && naskah.trim().length >= 10) ||
-    (k === 8 && naskah.trim().length >= 10) ||
-    (k === 9 && doneScenes.length > 0 && !!song);
+  // 🧭 FASE-LAHAN BEBAS LONCAT (permintaan user 2026-08-04): SEMUA langkah SELALU boleh dibuka —
+  //    yang digembok hanya AKSI di dalam langkah (tombol riset/generate/gabung punya syaratnya sendiri).
+  //    Kesiapan dihitung dari DATA (jujur), bukan posisi — anti "done palsu".
+  //    Indeks 0 = langkah 1 (Niat) … indeks 8 = langkah 9 (Video). Dijaga: tests/lahan-bebas-loncat.test.mjs.
+  const langkahSiap: boolean[] = [
+    topic.trim().length >= 3,                 // 1 Niat
+    selKeyword.trim().length > 0,             // 2 Sudut
+    !!angle && (researchAt || "").length > 0, // 3 Riset
+    selTitle.trim().length > 0,               // 4 Judul
+    selTitle.trim().length > 0,               // 5 Visual (konfig suntik konsistensi — butuh judul terkunci)
+    naskah.trim().length >= 10,               // 6 Cerita
+    doneScenes.length > 0,                    // 7 Adegan
+    !!song,                                   // 8 Lagu
+    doneScenes.length > 0 && !!song,          // 9 Video
+  ];
+  const siapCount = langkahSiap.filter(Boolean).length;
+
+  // 🧭 Kartu "bahan langkah" — tujuan mendarat saat user melompat bebas ke langkah
+  //    yang prasyaratnya belum terisi (bukan halaman kosong/bingung, tapi peta jalan).
+  const kartuKurang = (judul: string, kebutuhan: number[], pesan: string) => (
+    <div className="lh-card lh-empty">
+      <div className="lh-h1">{judul}</div>
+      <p className="lh-sub">{pesan} Melompat ke sini <b>boleh &amp; bebas</b> 🙌 — ini bahan yang langkah ini pakai:</p>
+      <div className="lh-chips">
+        {kebutuhan.map((k) => (
+          <button key={k} className={`lh-chip ${langkahSiap[k - 1] ? "ok" : "kurang"}`} onClick={() => setStep(k)}>
+            {langkahSiap[k - 1] ? "✅" : "⬜"} {k}. {STEP_LABEL[k - 1]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   /* ================= RENDER ================= */
   return (
@@ -1401,18 +1423,26 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
         <button className="lh-reset" title="Lahan baru" onClick={resetLahan}>↺</button>
       </div>
 
-      <div className="lh-steps">
-        {STEP_LABEL.map((lb, i) => {
-          const k = i + 1;
-          const on = step === k;
-          const done = k < step && canGo(k + 1);
-          return (
-            <button key={lb} className={`lh-dot ${on ? "on" : ""} ${done ? "done" : ""}`} disabled={!canGo(k)} onClick={() => setStep(k)}>
-              <i>{done ? "✓" : k}</i>
-              <span>{lb}</span>
-            </button>
-          );
-        })}
+      {/* 🧭 REL LANGKAH BEBAS — ketuk nomor mana pun, kapan pun (FASE-LAHAN BEBAS LONCAT).
+          Titik = status DATA (jujur): ✓ siap · angka = belum terisi tapi TETAP boleh dibuka. */}
+      <div className="lh-steps-wrap">
+        <div className="lh-steps">
+          {STEP_LABEL.map((lb, i) => {
+            const k = i + 1;
+            const on = step === k;
+            const done = langkahSiap[i] && !on;
+            return (
+              <button key={lb} className={`lh-dot ${on ? "on" : ""} ${done ? "done" : ""}`} onClick={() => setStep(k)}
+                aria-current={on ? "step" : undefined}
+                title={`Langkah ${k}: ${lb} — ${langkahSiap[i] ? "siap ✅" : "belum terisi (tetap boleh dibuka)"}`}>
+                <i>{done ? "✓" : k}</i>
+                <span>{lb}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="lh-prog" title={`Kesiapan lahan: ${siapCount}/9`}><div className="lh-progfill" style={{ width: `${Math.round((siapCount / 9) * 100)}%` }} /></div>
+        <p className="lh-progtext"><b>{siapCount}/9</b> bahan siap · ketuk langkah mana pun — bebas loncat ✦</p>
       </div>
 
       {err && (
@@ -1577,6 +1607,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       )}
 
       {/* ============ LANGKAH 4: JUDUL JUARA ============ */}
+      {/* 🧭 Mendarat bebas di langkah 4 tanpa sudut → peta bahan, bukan halaman kosong */}
+      {step === 4 && !angle && kartuKurang("Hitung Judul Juara 🏆", [1, 2], "Mesin judul minum dari sudut yang kamu pilih & risetnya.")}
       {step === 4 && angle && (
         <>
           <div className="lh-card">
@@ -2071,6 +2103,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       )}
 
       {/* ============ LANGKAH 9: GABUNG OTOMATIS → STUDIO EDIT ============ */}
+      {/* 🧭 Mendarat bebas di langkah 9 tanpa adegan/lagu → peta kesiapan akhir */}
+      {step === 9 && !(board && song) && kartuKurang("Gabung Jadi Video 🎬", [6, 7, 8], "Video digabung dari adegan bergambar + lagu jadi. Keduanya lahir di:")}
       {step === 9 && board && song && (
         <>
           <div className="lh-card">
