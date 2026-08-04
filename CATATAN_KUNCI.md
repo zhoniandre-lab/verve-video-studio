@@ -288,3 +288,11 @@ Tag calon: v15.2D-transisi-capcut-fix. Lock final: setelah bro bilang "kunci".
 - PR BOS: 1) Run supabase-bos-jalankan-sekali.sql. 2) Vercel env BOS_EMAILS=<gmail bos> (redeploy/picu). 3) Supabase → Auth → URL Configuration: tambah https://verve-video-studio.vercel.app/auth/callback. 4) Google button butuh provider Google di Supabase Auth (client ID/secret); link ajaib jalan TANPA konfigurasi apa pun.
 - INSIDEN BUILD: prerender /bos meledak (createBrowserClient tanpa env di build) → klien dibuat malas (useRef + panggil hanya di efek/handler). GERBANG: tsc 0 · 29/29 tes baru · 22/22 suite · build 0 (◌ /bos statis-shell).
 - PRINSIP GERBANG: panel bos error/tabel belum ada → semua fitur LOLOS (jangan hukum pengguna karena alat bos rusak). Setelan berlaku ≤1 menit (cache 45d). Kuota dihitung "hari ini WIB", hanya panggilan SUKSES.
+
+---
+
+## FASE L5 — STUDIO THUMBNAIL: DASBOR KHUSUS PAKET CTR (2026-08-04)
+- PESANAN BOS (verbatim): "buat khusus thumbnailnya biar high CTR sesuai niche, berada di menu dasbor khusus thumbnail deskripsi tag; yang ada berada di export itu hapus aja, kita ganti baru di rumah baru". Keputusan bos: sumber=AI gambar dari nol · paket=LENGKAP (thumbnail+judul+deskripsi+tag) · mesin Sampul lama=HAPUS TOTAL dari editor.
+- DISENTUH: src/lib/thumbstudio.ts (BARU — otak CTR murni: VARIAN_THUMB 3 arah komposisi, NICHE_GAYA 15 kamus, gayaNiche, promptLatarThumb [16:9, ruang kosong kiri 40%, AI dilarang gambar teks], badgeCtr), src/app/thumb-studio.tsx (BARU — dasbor: amunisi judul/niche/keyword + jembatan Lahan verve_brain_v1, 3 varian latar via /api/hcnsec/image _rawPrompt, komposisi kanvas drawAutoThumb 1280×720 + badge CTR, unduh PNG, paket teks via /api/hcnsec/titles + metadata, salin clipboard, sesi tersimpan), src/app/page.tsx (import+ScreenId+inSub+cabang render+tombol hub oranye di HomeDash → go("thumbnail"); AMPUTASI mesin Sampul lama: tile rel p.onCover, callsite onCover, render modal sampul — fungsi SampulModal dibiarkan dorman tak terpanggil, 0 error tsc), globals.css (+~70 baris .tub-*), tests/thumb-studio.test.mjs (BARU — 27 cek).
+- TIDAK DISENTUH: lib/thumb.ts (UTUH — dipakai studio baru), rute /api/hcnsec/* (0 perubahan — studio memakai kontrak yang SUDAH ADA), editor timeline/preview/ekspor, semua fitur L3/L3.5.
+- GERBANG: tsc 0 · 27/27 tes baru · 23/23 suite · build 0.

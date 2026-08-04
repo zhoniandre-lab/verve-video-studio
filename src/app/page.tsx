@@ -9,6 +9,7 @@ import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
 import GrowthDoctor from "./growth-doctor";
+import ThumbStudio from "./thumb-studio";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
 import { decideTick, manualAfterMasterEnd, resolveSeekTarget, totalAllOf } from "@/lib/studio/clock"; // ⏱ FASE-A JAM TUNGGAL — keputusan sync murni & teruji
@@ -36,7 +37,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
 
 interface Slide { id: string; imageUrl: string; videoUrl?: string; dur?: number; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
-type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan" | "growth";
+type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan" | "growth" | "thumbnail";
 
 const DRAFTS_KEY = "verve_drafts_v1";
 const SESSION_KEY = "verve_session_v6";
@@ -369,7 +370,7 @@ export default function Page() {
     setScreen("editor");
   }
 
-  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan" || screen === "growth";
+  const inSub = screen === "editor" || screen === "spectrum" || screen === "editfoto" || screen === "transkrip" || screen === "lahan" || screen === "growth" || screen === "thumbnail";
   return (
     <div className="v6-root">
       <div className="v6-app">
@@ -382,6 +383,7 @@ export default function Page() {
         {screen === "spectrum" && <SpectrumStudio onExit={() => setScreen("home")} />}
         {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
         {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} />}
+        {screen === "thumbnail" && <ThumbStudio onExit={() => setScreen("home")} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
         {screen === "transkrip" && <TranskripPage onExit={() => setScreen("home")} />}
         {!inSub && (
@@ -471,6 +473,13 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
             <div className="text-group">
               <span className="title">Lahan Awalan</span>
               <span className="desc">Ide jadi lagu</span>
+            </div>
+          </button>
+          <button className="v6-btn-sub" style={{ background: "linear-gradient(135deg, #b45309, #dc2626)" }} onClick={() => go("thumbnail")}>
+            <span className="ic">🖼</span>
+            <div className="text-group">
+              <span className="title">Studio Thumbnail</span>
+              <span className="desc">Paket CTR: thumb+judul+tag</span>
             </div>
           </button>
           <button className="v6-btn-sub" onClick={() => go("editfoto")}>
@@ -4533,7 +4542,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             flash(`🤖 ${slides.length} klip otomatis pas durasi audio (${formatDur(d)})`);
           });
         }}
-        onCover={() => setModal("sampul")}
         hapticSel={() => { pilihObjek("clip"); setClipBar(true); }}
         transition={transition}
       />
@@ -4718,7 +4726,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} niche={niche} projTitle={projTitle} delAudio={()=>{ if (musicUrl) { setLastMusicBackup({ url: musicUrl, name: musicName || "Lagu AI", dur: musicDur }); try { localStorage.setItem("verve_last_music_v1", JSON.stringify({ url: musicUrl, name: musicName, dur: musicDur, at: Date.now() })); } catch {} } setMusicUrl(""); setMusicName(""); setMusicDur(0); }} restoreLastMusic={restoreLastMusic} downloadCurrentMusic={downloadCurrentMusic} lastMusicBackup={lastMusicBackup} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
       {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
-      {modal === "sampul" && <SampulModal slides={slides} slideOptsById={slideOptsById} timeline={timeline} ratio={ratio} getImage={getImage} onClose={() => setModal(null)} onSave={(dataUrl: string) => { setCoverThumb(dataUrl); persistSnapshot(true); setModal(null); flash("✏️ Sampul disimpan"); }} />}
+
       {modal === "ganti" && (
         <MiniModal title="⇄ Ganti media klip" onClose={() => setModal(null)}>
           <label className="v6-bigcta" style={{ display: "block", textAlign: "center" }}>
@@ -5325,9 +5333,7 @@ function TimelineV6(p: any) {
           <button className="v6e-rail-tile" onClick={p.onAiCut} title="Pemotong klip AI">
             ✂️<span>Pemotong klip AI</span><b className="new">New</b>
           </button>
-          <button className="v6e-rail-tile" onClick={p.onCover} title="Sampul proyek">
-            ✏️<span>Sampul</span>
-          </button>
+
         </div>
 
         {/* tracks (garis penanda DIAM di tengah — konten yang bergerak di bawahnya) */}

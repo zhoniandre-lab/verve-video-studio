@@ -2136,3 +2136,51 @@ b.ok, b.warn, b.err { color:inherit; }
 .bos-tost{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b2133;border:1px solid #7c3aed;
   color:#fff;padding:11px 18px;border-radius:12px;font:700 13px Poppins,sans-serif;z-index:10000;
   box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:92vw;text-align:center}
+
+/* ============ 🖼 STUDIO THUMBNAIL (L5) ============ */
+.tub-wrap{min-height:100dvh;background:#0b0d12;color:#e8ebf2;
+  font:14px/1.5 Poppins,-apple-system,Segoe UI,Roboto,sans-serif;padding:14px 14px 96px;box-sizing:border-box;
+  background-image:radial-gradient(420px 200px at 80% -40px,rgba(220,38,38,.14),transparent)}
+.tub-kepala{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.tub-kepala h1{font-size:19px;margin:0}
+.tub-kepala p{color:#8b93a7;font-size:12px;margin:2px 0 0}
+.tub-balik{width:38px;height:38px;flex:none;border-radius:12px;border:1px solid #2c3550;background:#1b2133;
+  color:#e8ebf2;font-size:20px;cursor:pointer}
+.tub-kartu{background:#141824;border:1px solid #232a3d;border-radius:14px;padding:14px;margin:0 0 14px}
+.tub-kartu h2{font-size:14px;margin:0}
+.tub-baris-atas{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.tub-input{width:100%;box-sizing:border-box;background:#0e121c;border:1px solid #2c3550;color:#e8ebf2;
+  border-radius:12px;padding:11px 12px;font:600 14px Poppins,sans-serif;margin-bottom:8px}
+.tub-input:focus{outline:2px solid #dc262655;border-color:#dc2626}
+.tub-duo{display:flex;gap:8px}.tub-duo .tub-input{margin-bottom:0}
+.tub-btn{padding:10px 14px;border-radius:12px;border:1px solid #2c3550;background:#1b2133;color:#e8ebf2;
+  font:700 13px Poppins,sans-serif;cursor:pointer;flex:none}
+.tub-btn-utama{background:linear-gradient(135deg,#b45309,#dc2626);border:0}
+.tub-btn[disabled]{opacity:.55;cursor:wait}
+.tub-btn-mini{padding:7px 10px;border-radius:10px;border:1px solid #2c3550;background:#1b2133;color:#e8ebf2;
+  font:700 11px Poppins,sans-serif;cursor:pointer;flex:none}
+.tub-progres{color:#ffd166;font-size:12px;margin:0 0 8px}
+.tub-grid{display:flex;flex-direction:column;gap:10px}
+.tub-slot{background:#0e121c;border:1px solid #232a3d;border-radius:12px;overflow:hidden;aspect-ratio:16/9;position:relative}
+.tub-slot img{width:100%;height:100%;object-fit:cover;display:block}
+.tub-slot-kosong{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  color:#5b6478;font-size:26px}
+.tub-slot-kosong small{font-size:11px}
+.tub-slot-aksi{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:space-between;
+  padding:8px 10px;background:linear-gradient(transparent,rgba(5,7,12,.92))}
+.tub-slot-aksi small{color:#e8ebf2;font-weight:700;font-size:11px}
+.tub-blink{animation:tubB 1s infinite alternate}
+@keyframes tubB{from{opacity:.45;transform:scale(.94)}to{opacity:1;transform:scale(1.06)}}
+.tub-catatan{color:#5b6478;font-size:11px;display:block;margin-top:8px}
+.tub-blok{margin-top:10px}
+.tub-label{color:#8b93a7;font-size:11px;font-weight:700;letter-spacing:.4px}
+.tub-judul{display:block;width:100%;text-align:left;background:#0e121c;border:1px solid #232a3d;color:#e8ebf2;
+  border-radius:10px;padding:9px 11px;font:600 13px Poppins,sans-serif;margin-top:6px;cursor:pointer}
+.tub-judul:active{border-color:#dc2626}
+.tub-area{width:100%;box-sizing:border-box;background:#0e121c;border:1px solid #2c3550;color:#e8ebf2;
+  border-radius:12px;padding:10px 12px;font:500 13px/1.5 Poppins,sans-serif;margin-top:6px;resize:vertical}
+.tub-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tub-tag{background:#1b2133;border:1px solid #2c3550;color:#a8b3cf;border-radius:99px;padding:4px 10px;font-size:11px;font-weight:600}
+.tub-tost{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b2133;border:1px solid #dc2626;
+  color:#fff;padding:11px 18px;border-radius:12px;font:700 13px Poppins,sans-serif;z-index:10000;
+  box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:92vw;text-align:center}
