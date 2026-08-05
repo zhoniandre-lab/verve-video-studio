@@ -120,7 +120,8 @@ T("studio: komposisi kanvas drawAutoThumb 1280×720", ts.includes("drawAutoThumb
 T("studio: teks DIPAKSA kiri sesuai janji prompt (preferSide) + font siap dulu", ts.includes('"left"') && ts.includes("fonts?.ready"));
 T("thumb.ts: preferSide opsional, bawaan lama utuh (luminansi tetap memutuskan)", th.includes('preferSide?: "left" | "right"') && th.includes('preferSide === "left" ? true : preferSide === "right" ? false : L <= R'));
 T("studio: paket teks via titles + metadata (mesin lama)", ts.includes('"/api/hcnsec/titles"') && ts.includes('"/api/hcnsec/metadata"'));
-T("studio: jembatan Lahan (verve_brain_v1)", ts.includes('verve_brain_v1') && ts.includes("ambilDariLahan"));
+T("studio: jembatan Lahan pakai key BENAR (verve_lahan_v1, bukan brain)", ts.includes('verve_lahan_v1') && ts.includes('verve_brain_v1') && ts.includes("ambilDariLahan")); // FIX v19.8.8
+T("studio: auto-tarik dari Lahan saat dibuka via tombol jembatan (flag)", ts.includes('verve_thumb_dari_lahan_v1') && ts.includes('FLAG_DARI_LAHAN'));
 T("studio: tanpa await berlebih — varian berurutan ada progres", ts.includes("setProgres(") && ts.includes("for (let i = 0; i < 3; i++)"));
 
 console.log(`\n${gagal === 0 ? "🏁 SEMUA HIJAU" : "💥 ADA YANG GAGAL"} — ${n - gagal}/${n} cek lulus`);

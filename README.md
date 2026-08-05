@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🖼️🎯 v19.8.8 — FIX JEMBATAN THUMBNAIL (bug key!) + JUDUL LAWAN BISA DIPILIH ARAHNYA
+* **Masalah (screenshot + riset user):** (1) Thumb Studio baca key SALAH — `KUNCI_LAHAN = "verve_brain_v1"` padahal state produksi Lahan (topic/selTitle/selKeyword/charLock) ada di `verve_lahan_v1` → "Tarik dari Lahan"/"Susun dari Lahan" selalu bilang kosong. (2) Judul lawan di Radar Kompetitor tidak bisa "diambil" sebagai arah produksi — sistem masih fokus ke pilihan niche step 1.
+* **Solusi:**
+  1. **Fix key**: `KUNCI_LAHAN = "verve_lahan_v1"` + fallback brain untuk data lama; test diperketat (cek key benar + flag auto-tarik).
+  2. **Auto-tarik**: tombol jembatan 🖼️ di Lahan (step 4 & duel) set flag `verve_thumb_dari_lahan_v1` → Thumb Studio otomatis isi judul + prompt dari Lahan saat dibuka (tanpa tekan tombol manual).
+  3. **Pilih arah**: tiap judul kompetitor di Radar RSS kini punya **🎯** = jadikan topik produksi (ganti niat, lanjut cari sudut dari judul lawan) + di panel Duel ada "🎯 Jadikan topik produksi" — user bebas pilih: produksi dari judul lawan ATAU tetap dari niche-nya. Micro-copy menjelaskan aksi ⚖️ vs 🎯.
+* **Test**: thumb-studio 58 cek (+2) — 30 suite hijau; tsc 0; build 0.
+
+
 ### 🖼️ v19.8.7 — JEMBATAN LAHAN → OTAK THUMBNAIL (judul juara langsung jadi thumbnail)
 * **Masalah (riset + feedback user):** Otak Thumbnail sudah ada (Thumb Studio: 3 varian latar, badge CTR, prompt dari Lahan via `bangunPromptDariLahan`), TAPI alur Lahan tidak punya tombol ke sana — user harus keluar Lahan → home → cari Thumbnail manual. Padahal thumbnail = penentu CTR (views = impressions × CTR; CTR ditentukan judul + thumbnail).
 * **Solusi:**

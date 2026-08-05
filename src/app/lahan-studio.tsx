@@ -803,6 +803,19 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     void navigator.clipboard?.writeText(deep.report).then(() => flash("📋 Laporan otak tersalin — siap dibagikan!"));
   }
 
+  /* 🖼️ v19.8.8: buka Thumb Studio + tandai "dari Lahan" biar auto-tarik data */
+  function bukaThumb() {
+    try { localStorage.setItem("verve_thumb_dari_lahan_v1", "1"); } catch { /* abaikan */ }
+    gotoThumb?.();
+  }
+  /* 🎯 v19.8.8: pakai judul kompetitor sebagai topik baru (pilih arah: lawan vs niche) */
+  function pakaiJudulLawan(t: string) {
+    setTopic(t);
+    setSelTitle("");
+    setAngle(null);
+    flash(`🎯 Judul lawan jadi topik: "${t.slice(0, 40)}..." — lanjut Cari Sudut 🔍`);
+  }
+
   /* 🔥 v19.4/19.5 TREND RADAR — topik hangat Google Trends (multi-negara) */
   async function muatTrend(geo?: string) {
     const g = geo || trendGeo;
@@ -2002,6 +2015,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           <div className="lh-card" style={{ borderColor: "rgba(25,194,184,.25)" }}>
             <div className="lh-h1">🛰️ Radar Kompetitor — pantauan live lawanmu <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>PELENGKAP RISET</span></div>
             <p className="lh-sub">Riset di atas = <b>potret statis</b> (hasil pencarian). Radar ini = <b>pantauan hidup</b>: begitu lawan upload, otak tahu judulnya & cek <b>mirip nggak dengan judulmu</b>. <b>Gratis via RSS, tanpa nyentuh kuota API risetmu.</b> Data pola lawan dipakai saat riset ulang & duel judul.</p>
+            <p className="lh-note" style={{ color: "rgba(255,255,255,.55)", marginTop: 4 }}>Aksi per judul lawan: <b>⚖️</b> = duel dengan judulmu · <b>🎯</b> = <b>pilih arah</b>: pakai judul ini jadi topik produksi (ganti niat) — atau tetap pakai pilihan dari niche-mu.</p>
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               <input className="lh-sel" style={{ flex: 1 }} placeholder="Link channel (@nama / UC...) — link video juga bisa" value={kompUrl} onChange={(e) => setKompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void tambahKomp(); }} />
               <button className="lh-mini ok" onClick={tambahKomp} disabled={kompBusy} style={{ padding: "7px 12px" }}>+ Pantau</button>
@@ -2045,6 +2059,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                                 {bahaya && sim.match && <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>vs "{sim.match}" ({sim.max}%)</div>}
                               </a>
                               <button className="lh-mini" onClick={() => bandingDenganLawan(it.title)} title="Bandingkan dengan judulmu" style={{ padding: "4px 8px", fontSize: 10 }}>⚖️</button>
+                              <button className="lh-mini" onClick={() => pakaiJudulLawan(it.title)} title="Jadikan topik produksi (pilih arah: dari lawan, bukan niche)" style={{ padding: "4px 8px", fontSize: 10, borderColor: "rgba(139,92,246,.5)", color: "#c7c7d4" }}>🎯</button>
                             </div>
                           );
                         })}
@@ -2094,10 +2109,13 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                           {menangBesar ? `🏆 Ada yang MENANG BESAR (+${menangBesar.selisih} poin): "${menangBesar.saran.a.title}"` : adaMenang ? `⚔️ Sudah ada yang menang — generate lagi buat cari yang menang lebih besar!` : `Belum ada yang menang vs lawan (skor terbaik ${Math.max(...serang.map((x) => x.saran.a.skor))}). Coba generate lagi — tiap putaran varian baru.`}
                         </p>
                         {menangBesar && (
-                          <button className="lh-mini" style={{ marginTop: 6, padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={() => { pakaiJudulSerang(menangBesar.saran.a.title); gotoThumb?.(); }}>
+                          <button className="lh-mini" style={{ marginTop: 6, padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={() => { pakaiJudulSerang(menangBesar.saran.a.title); bukaThumb(); }}>
                             🖼️ Pakai & Bikin Thumbnail-nya
                           </button>
                         )}
+                        <button className="lh-mini" style={{ marginTop: 6, padding: "7px 12px", borderColor: "rgba(139,92,246,.5)", color: "#c7c7d4", background: "rgba(139,92,246,.08)" }} onClick={() => pakaiJudulLawan(banding.b.title)}>
+                          🎯 Jadikan topik produksi (ganti niat)
+                        </button>
                       </>
                     );
                   })()}
@@ -2369,7 +2387,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           {selTitle && (
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button className="lh-btn" style={{ flex: 2 }} onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
-              <button className="lh-btn sec" style={{ flex: 1, borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={() => gotoThumb?.()}>
+              <button className="lh-btn sec" style={{ flex: 1, borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={bukaThumb}>
                 🖼️ Thumbnail
               </button>
             </div>

@@ -13,7 +13,12 @@ import { VARIAN_THUMB, promptLatarThumb, badgeCtr, FONT_THUMB, bagiBarisTeks, ba
 type VarState = { status: "kosong" | "muat" | "ok" | "gagal"; url?: string; final?: string; pesan?: string };
 type Pos = { x: number; y: number };
 const KUNCI_SIMPAN = "verve_thumb_paket_v1";
-const KUNCI_LAHAN = "verve_brain_v1";
+// 🐛 FIX v19.8.8: dulu baca "verve_brain_v1" (memori otak {researches,results}) —
+// padahal state produksi Lahan (topic/selTitle/selKeyword/charLock) ada di
+// "verve_lahan_v1". Makanya "Tarik dari Lahan" selalu bilang kosong.
+const KUNCI_LAHAN = "verve_lahan_v1";
+const KUNCI_BRAIN = "verve_brain_v1"; // fallback (data lama)
+const FLAG_DARI_LAHAN = "verve_thumb_dari_lahan_v1"; // tanda dibuka dari tombol jembatan Lahan
 const PRESET: Record<string, Pos> = { kiri: { x: 0.27, y: 0.82 }, kanan: { x: 0.73, y: 0.82 } };
 
 export default function ThumbStudio({ onExit }: { onExit: () => void }) {
@@ -66,7 +71,14 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
   }
 
   function bacaLahan(): any | null {
-    try { return JSON.parse(localStorage.getItem(KUNCI_LAHAN) || "null"); } catch { return null; }
+    try {
+      const j = JSON.parse(localStorage.getItem(KUNCI_LAHAN) || "null");
+      if (j && (j.topic || j.selTitle)) return j; // state produksi Lahan (benar)
+      // Fallback: data lama di brain (kalau belum pernah buka Lahan baru)
+      const b = JSON.parse(localStorage.getItem(KUNCI_BRAIN) || "null");
+      if (b && (b.topic || b.selTitle)) return b;
+      return j;
+    } catch { return null; }
   }
 
   function ambilDariLahan() {
@@ -87,6 +99,25 @@ export default function ThumbStudio({ onExit }: { onExit: () => void }) {
     simpan({ promptTxt: p, pakaiPrompt: true });
     kabar("🪄 Prompt tersusun dari Lahan — tinggal Buat 3 varian");
   }
+
+  // 🖼️ v19.8.8: kalau dibuka dari tombol jembatan di Lahan → tarik otomatis sekali.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(FLAG_DARI_LAHAN) !== "1") return;
+      localStorage.removeItem(FLAG_DARI_LAHAN);
+      const j = bacaLahan();
+      if (!j) return;
+      const jd = j.selTitle || j.topic || "";
+      if (jd) {
+        setJudul(jd); setNiche(j.topic || ""); setKeyword(j.selKeyword || "");
+        simpan({ judul: jd, niche: j.topic || "", keyword: j.selKeyword || "" });
+      }
+      const p = bangunPromptDariLahan(j);
+      if (p) { setPromptTxt(p); setPakaiPrompt(true); simpan({ promptTxt: p, pakaiPrompt: true }); }
+      kabar("🖼️ Otomatis ditarik dari Lahan — tinggal Buat 3 varian!");
+    } catch { /* abaikan */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function muatGambar(src: string): Promise<HTMLImageElement> {
     return new Promise((res, rej) => {
