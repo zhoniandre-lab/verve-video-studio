@@ -32,7 +32,7 @@ export function saranThumbnail(trend: string, tags: TrendTags): SaranThumbnail {
     return {
       overlay: `JANGAN ${upper.slice(0, 20)}`,
       warna: "#0b0b12",
-      prompt: `dark horror thumbnail, ${kw}, creepy silhouette, dim moonlight, fog, high contrast, dramatic, cinematic, text space on right side, Indonesian horror vibe`,
+      prompt: `dark horror thumbnail, ${kw}, creepy silhouette, dim moonlight, fog, high contrast, dramatic, cinematic, text space on right side, horror vibe`,
       alasan: "Trend horor → gelap + teks larangan (pola CTR tinggi di niche horor).",
     };
   }
@@ -48,7 +48,7 @@ export function saranThumbnail(trend: string, tags: TrendTags): SaranThumbnail {
     return {
       overlay: upper || "RINDU",
       warna: "#f59e0b",
-      prompt: `emotional close-up portrait, ${kw}, warm golden light, tears in eyes, soft cinematic bokeh, heartfelt, Indonesian family, text space on right, YouTube thumbnail`,
+      prompt: `emotional close-up portrait, ${kw}, warm golden light, tears in eyes, soft cinematic bokeh, heartfelt, text space on right, YouTube thumbnail`,
       alasan: "Trend emosional → wajah emosi besar + cahaya hangat (kartu audiens VERVE).",
     };
   }

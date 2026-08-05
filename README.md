@@ -17,6 +17,17 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🌏 v19.19 — SIAP INTERNASIONAL: LIRIK IKUT BAHASA LAGU + THUMBNAIL TIDAK "INDONESIA" LAGI
+* **Ide (pertanyaan user):** VERVE mau dipakai orang luar negeri (niche internasional) — jangan paksa bahasa Indonesia.
+* **Perbaikan:**
+  1. **Auto-pas lirik**: bahasa transkripsi TIDAK dipaksa "id" lagi — default **🌐 Auto** (deteksi otomatis sesuai lagu), plus pilihan bahasa: 🇮🇩 id / 🇬🇧 en / 🇯🇵 ja / 🇰🇷 ko / 🇲🇾 ms. Filter aksara kini hanya buang aksara yang jarang buat lagu pop (Arab/Kiril/Ibrani/Devanagari) — lirik Inggris/Jepang/Korea tetap bisa.
+  2. **Thumbnail trend**: prompt tidak lagi menyebut "Indonesian" — generik (horror vibe, heartfelt) supaya thumbnail netral untuk pasar global.
+  3. **Pesan** disesuaikan generik ("tidak ada kata terdeteksi", bukan "kata Indonesia").
+  4. **Trend Radar** sudah multi-negara (ID/US/JP/MY) — tetap.
+* Catatan: kunci identitas karakter (wajah Nusantara) tetap — itu spesifik niche Cerita Jadi Lagu Indonesia; pengguna internasional bisa ganti kalimat identitasnya sendiri.
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🐛 v19.18 — FIX AUTO-PAS LIRIK: BAHASA DIPAKSA INDONESIA + FILTER KATA ASING
 * **Masalah (feedback user):** hasil Auto-pas lirik muncul kata/bait bahasa Inggris & Cina/Korea padahal lagunya bahasa Indonesia.
 * **Akar masalah:** panggilan `transcribeBlobBesar(blob, "id")` — parameter kedua itu HINT, bukan LANG → Whisper tidak dipaksa bahasa Indonesia (auto-detect) → potongan chunk yang mulai di tengah lagu bisa keluar bahasa lain.

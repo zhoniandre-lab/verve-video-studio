@@ -160,6 +160,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 🎤 v19.17 AUTO-PAS LIRIK (Whisper) — timing persis audio
   const [lyrAuto, setLyrAuto] = useState(false);
   const autoWordsRef = useRef<{ w: string; start: number; end: number; line: number }[]>([]);
+  // 🌏 v19.19: bahasa lagu untuk transkripsi (auto = deteksi otomatis, atau paksa bahasa)
+  const [transLang, setTransLang] = useState("auto");
   /* master */
   const [eq, setEq] = useState("flat");
   const [comp, setComp] = useState(55);
@@ -330,23 +332,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         blob = new Blob([wavBuf], { type: "audio/wav" });
       }
       // 2) Transkripsi (Whisper) → kata + timestamp
-      // 🐛 FIX v19.18: dulu transcribeBlobBesar(blob, "id") — "id" masuk param HINT,
-      // bukan LANG → Whisper auto-detect bisa ngeluarin Inggris/Cina/Korea.
-      // Sekarang lang dipaksa "id" (bahasa Indonesia) + hint dikosongkan.
-      const res = await transcribeBlobBesar(blob, "", "id");
+      // 🌏 v19.19: bahasa TIDAK dipaksa "id" — ikut bahasa lagu (default: auto-detect),
+      // biar bisa dipakai untuk lagu luar negeri juga. Bisa diatur via toggle.
+      const bahasaLagu = transLang === "auto" ? "" : transLang;
+      const res = await transcribeBlobBesar(blob, "", bahasaLagu);
       if (!res?.ok || !Array.isArray(res.words) || !res.words.length) {
         setLyrMsg("⚠️ Tidak ada kata terdeteksi (lagu instrumental? coba yang ada vokalnya).");
         return;
       }
-      // 3) Filter kata asing — buang aksara non-Latin (Cina/Korea/Jepang/dll) & simbol aneh
-      const aksaraAsing = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u0600-\u06FF\u0400-\u04FF]/;
+      // 3) Filter kata aneh — buang aksara tak dikenal & simbol doang (bukan bahasa spesifik,
+      // supaya lirik Inggris/Jepang/Korea tetap bisa kalau memang lagunya begitu)
+      const aksaraAneh = /[\u0600-\u06FF\u0400-\u04FF\u0590-\u05FF\u0900-\u097F]/; // Arab/Kiril/Ibrani/Devanagari (jarang buat lagu pop)
       const kataAsli = (res.words as { w: string; start: number; end: number }[])
         .map((w) => ({ ...w, w: String(w.w || "").trim() }))
-        .filter((w) => w.w && !aksaraAsing.test(w.w) && /[A-Za-z0-9]/.test(w.w));
+        .filter((w) => w.w && !aksaraAneh.test(w.w) && /[\p{L}\p{N}]/u.test(w.w));
       const dibuang = (res.words as { w: string }[]).length - kataAsli.length;
       // 4) Kelompokkan kata jadi BARIS (baris baru tiap jeda >0.8s atau panjang)
       const words = kataAsli;
-      if (!words.length) { setLyrMsg("⚠️ Tidak ada kata Indonesia terdeteksi (lagu instrumental?)."); return; }
+      if (!words.length) { setLyrMsg("⚠️ Tidak ada kata terdeteksi (lagu instrumental? coba yang ada vokalnya)."); return; }
       const lines: string[] = [];
       const grouped: { w: string; start: number; end: number; line: number }[] = [];
       let cur = "", curStart = words[0].start, curEnd = words[0].end, li = 0;
@@ -1331,11 +1334,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             {lirikOn && (
               <>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
                   <button className="v6-chip" style={{ flex: 1, borderColor: "rgba(34,197,94,.5)", color: "#86efac", background: "rgba(34,197,94,.1)" }} disabled={lyrBusy} onClick={autoPasLirik}>
                     {lyrBusy ? "⏳ Mendengar audio…" : "🎤 Auto-pas Lirik ke Audio (pas banget)"}
                   </button>
                   {lyrAuto && <button className="v6-chip" style={{ color: "#fbbf24" }} onClick={() => { setLyrAuto(false); autoWordsRef.current = []; }}>↺ Manual</button>}
+                </div>
+                {/* 🌏 v19.19: pilih bahasa lagu (auto = deteksi; bisa Inggris/Jepang/dll) */}
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, opacity: .7 }}>🌏 Bahasa lagu:</span>
+                  {[["auto", "🌐 Auto"], ["id", "🇮🇩 Indonesia"], ["en", "🇬🇧 Inggris"], ["ja", "🇯🇵 Jepang"], ["ko", "🇰🇷 Korea"], ["ms", "🇲🇾 Melayu"]].map(([v, lb]) => (
+                    <button key={v} className={`v6-chip ${transLang === v ? "on" : ""}`} style={{ fontSize: 10 }} onClick={() => setTransLang(v)}>{lb}</button>
+                  ))}
                 </div>
                 {!!lyrMsg && <p style={{ fontSize: 11, color: lyrMsg.startsWith("✅") ? "#86efac" : "#fbbf24", margin: "0 0 6px" }}>{lyrMsg}</p>}
                 {lyrAuto && <p style={{ fontSize: 10, opacity: .7, margin: "0 0 6px" }}>✨ Timing dari deteksi suara asli (Whisper) — setiap kata menyala PERSIS saat dinyanyikan, bukan dibagi rata.</p>}
