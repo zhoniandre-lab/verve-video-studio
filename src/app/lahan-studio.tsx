@@ -27,6 +27,7 @@ import { skorTrend, type TrendItem } from "@/lib/brain/trend-radar";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
+import { butuhResolve, extractChannelId, ringkasanScan, simJudul, waktuLalu, type KompChannel, type KompFeed } from "@/lib/brain/competitor-rss";
 import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
@@ -345,6 +346,65 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [notifOn, setNotifOn] = useState(false);
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifMsg, setNotifMsg] = useState("");
+  // 🛰️ v19.6: RADAR KOMPETITOR RSS — pantau upload channel lawan (gratis, tanpa kuota API)
+  const KOMP_KEY = "verve_kompetitor_v1";
+  const [kompCh, setKompCh] = useState<KompChannel[]>(() => {
+    try { const j = JSON.parse(localStorage.getItem(KOMP_KEY) || "[]"); return Array.isArray(j) ? j : []; } catch { return []; }
+  });
+  const [kompUrl, setKompUrl] = useState("");
+  const [kompBusy, setKompBusy] = useState(false);
+  const [kompMsg, setKompMsg] = useState("");
+  const [kompFeeds, setKompFeeds] = useState<KompFeed[] | null>(null);
+  const [kompScanAt, setKompScanAt] = useState<number | null>(null);
+  function simpanKomp(next: KompChannel[]) {
+    setKompCh(next);
+    try { localStorage.setItem(KOMP_KEY, JSON.stringify(next)); } catch { /* penuh? abaikan */ }
+  }
+  async function tambahKomp() {
+    const input = kompUrl.trim();
+    if (!input) { flash("Tempel link channel YouTube dulu bro"); return; }
+    if (kompBusy) return;
+    setKompBusy(true); setKompMsg("");
+    try {
+      let id = extractChannelId(input) || "";
+      let name = "";
+      if (!id) {
+        const r = await fetch("/api/competitor-rss", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: input }) });
+        const j = await r.json();
+        if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal resolve");
+        id = j.channelId; name = j.name || "";
+      }
+      if (kompCh.some((k) => k.id === id)) { setKompMsg("⚠️ Channel ini sudah dipantau."); return; }
+      const next = [...kompCh, { id, name, addedAt: Date.now() }];
+      simpanKomp(next);
+      setKompUrl("");
+      flash(`🛰️ "${name || id}" masuk radar!`);
+    } catch (e) {
+      setKompMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal tambah channel"}`);
+    } finally {
+      setKompBusy(false);
+    }
+  }
+  async function scanKomp() {
+    if (!kompCh.length) { setKompMsg("Tambah minimal 1 channel dulu bro."); return; }
+    if (kompBusy) return;
+    setKompBusy(true); setKompMsg("");
+    try {
+      const ids = kompCh.map((k) => k.id).join("|");
+      const r = await fetch(`/api/competitor-rss?ids=${encodeURIComponent(ids)}`);
+      const j = await r.json();
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal scan");
+      setKompFeeds(j.feeds || []);
+      setKompScanAt(Date.now());
+      const msg = ringkasanScan(j.feeds || [], brain);
+      setKompMsg(msg.split("\n")[0]);
+      if (msg.includes("⚠️")) flash("🛰️ Ada upload kompetitor mirip judulmu!");
+    } catch (e) {
+      setKompMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal scan"}`);
+    } finally {
+      setKompBusy(false);
+    }
+  }
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
   function saveBrain(up: (b: BrainMemory) => BrainMemory) {
@@ -1711,6 +1771,61 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             )}
             {!!trendMsg && <p className="lh-note" style={{ color: trendMsg.startsWith("⚠️") ? "#e8a15a" : "rgba(255,255,255,.5)", marginTop: 8 }}>{trendMsg}</p>}
             <p className="lh-note">Data dari RSS publik Google Trends (read-only, gratis). Tag & saran thumbnail pakai kamus audiens VERVE.</p>
+          </div>
+
+          {/* 🛰️ v19.6 RADAR KOMPETITOR RSS — pantau upload channel lawan via RSS gratis */}
+          <div className="lh-card" style={{ borderColor: "rgba(25,194,184,.25)" }}>
+            <div className="lh-h1">🛰️ Radar Kompetitor <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>RSS · v19.6</span></div>
+            <p className="lh-sub">Mata-mata real-time: pantau channel lawan lewat <b>RSS publik YouTube</b> — begitu mereka upload, otak langsung tahu judulnya & cek <b>mirip nggak dengan judulmu</b>. <b>Gratis, tanpa nyentuh kuota API risetmu.</b></p>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input className="lh-sel" style={{ flex: 1 }} placeholder="Link channel: youtube.com/@nama atau /channel/UC..." value={kompUrl} onChange={(e) => setKompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void tambahKomp(); }} />
+              <button className="lh-mini ok" onClick={tambahKomp} disabled={kompBusy} style={{ padding: "7px 12px" }}>+ Pantau</button>
+            </div>
+            {!!kompCh.length && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {kompCh.map((k) => (
+                  <span key={k.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 999, padding: "4px 10px", fontSize: 11 }}>
+                    {k.name || k.id}
+                    <button onClick={() => simpanKomp(kompCh.filter((x) => x.id !== k.id))} style={{ background: "none", border: "none", color: "#e85c5c", cursor: "pointer", fontSize: 12, padding: 0 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+              <button className="lh-mini ok" onClick={scanKomp} disabled={kompBusy} style={{ padding: "7px 14px" }}>
+                {kompBusy ? "⏳ Scanning..." : "🛰️ Scan Sekarang"}
+              </button>
+              {!!kompScanAt && <span className="lh-note" style={{ marginTop: 0 }}>Terakhir: {new Date(kompScanAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>}
+            </div>
+            {!!kompMsg && <p className="lh-note" style={{ color: kompMsg.startsWith("⚠️") ? "#e8a15a" : "var(--v6-teal)", marginTop: 8 }}>{kompMsg}</p>}
+            {!!kompFeeds?.length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                {kompFeeds.map((f) => (
+                  <div key={f.channelId} style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "9px 11px" }}>
+                    <b style={{ fontSize: 12 }}>📺 {f.channelName || f.channelId}</b>
+                    {f.error ? <p className="lh-note" style={{ color: "#e8a15a", marginTop: 4 }}>{f.error}</p> : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
+                        {f.items.slice(0, 5).map((it) => {
+                          const sim = simJudul(it.title, brain);
+                          const bahaya = sim.max >= 60;
+                          return (
+                            <a key={it.videoId} href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: "#fff" }}>
+                              <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5 }}>
+                                <span style={{ flex: 1 }}>{it.title}</span>
+                                {bahaya && <span style={{ fontSize: 9, background: "rgba(232,92,92,.15)", color: "#e85c5c", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>⚠️ mirip judulmu</span>}
+                                <span style={{ fontSize: 9.5, opacity: .55, whiteSpace: "nowrap" }}>{waktuLalu(it.publishedAt)}</span>
+                              </div>
+                              {bahaya && sim.match && <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>vs "{sim.match}" ({sim.max}%)</div>}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="lh-note">Channel @nama otomatis di-resolve jadi ID (sekali, tanpa API key). Data RSS publik — murah, stabil, legal.</p>
           </div>
 
           <div className="lh-card">

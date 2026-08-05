@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🛰️ v19.6 — RADAR KOMPETITOR RSS (mata-mata real-time, tanpa kuota API)
+* **Ide (dari The Book of Secret Knowledge — prinsip OSINT):** data publik termurah & paling stabil = RSS. Setiap channel YouTube punya RSS gratis (`youtube.com/feeds/videos.xml?channel_id=...`) — pantau upload kompetitor TANPA menyentuh kuota YouTube Data API (10rb/hari).
+* **Yang baru:**
+  1. `src/lib/brain/competitor-rss.ts` — parser RSS Atom murni, ekstrak channel ID dari berbagai bentuk URL, deteksi judul mirip (jaccard vs brain), ringkasan scan.
+  2. `/api/competitor-rss` — GET scan RSS (cache 10 mnt, maks 6 channel), POST resolve @handle /c/ → channel ID dari meta halaman (tanpa API key). Teruji live: MrBeast ter-resolve & ter-scan.
+  3. Kartu "🛰️ Radar Kompetitor" di Lahan step 1: tambah channel (link/ID), scan sekali klik, tiap upload baru tampil dengan waktu + badge ⚠️ kalau judulnya mirip judulmu (≥60%).
+* **Test baru** `tests/competitor-rss.test.mjs` (16 cek) — seluruh 30 suite repo tetap hijau.
+
+
 ### ⚡🎨🔔 v19.5 — RADAR KOMPETITOR + THUMB TREND + NOTIFIKASI HARIAN + TREND MULTI-NEGARA
 * **Masalah:** riset menampilkan kompetitor, tapi tidak menunjuk siapa yang TERCEPAT & pola judulnya; Trend Radar hanya Indonesia; tidak ada saran thumbnail & pengingat harian.
 * **Solusi (4 fitur):**

@@ -30,7 +30,7 @@ const TEKNO = [
   "Kill-switch BOS + ledger kredit", "Parser CSV/OCR YouTube Studio", "Anti-halusinasi: semua skor punya reasons[]",
   "Render realtime anti-crash HP", "Memori brankas Supabase", "PWA auto-update",
   "🔥 Trend Radar Google Trends 🌏 (RSS resmi, tanpa API key)", "📅 Jadwal upload golden-hour dari datamu", "⚡ Radar 3 kompetitor tercepat + pola judulnya",
-  "🎨 Auto-thumbnail dari trend hangat", "🔔 Notifikasi harian otak (PWA)",
+  "🎨 Auto-thumbnail dari trend hangat", "🔔 Notifikasi harian otak (PWA)", "🛰️ Radar Kompetitor RSS — pantau upload lawan tanpa kuota API",
 ];
 
 const EDISI = [
