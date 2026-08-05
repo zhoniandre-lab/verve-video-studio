@@ -115,6 +115,18 @@ export function bandingkanGelombang(sekarang: TrendItem[], kemarin: SnapshotTren
   });
 }
 
+/**
+ * 🎯 v19.20: Apakah trend ini COCOK dengan niche pilihan pengguna?
+ * Pakai kamus INTENTS per niche (audience.ts) + fallback emosi untuk story_song/family.
+ */
+export function cocokNiche(title: string, nicheId: string): boolean {
+  const t = String(title || "").toLowerCase();
+  const keys = ((INTENTS as Record<string, { keys?: string[] }>)[nicheId]?.keys) || [];
+  if (keys.some((k) => t.includes(k.toLowerCase()))) return true;
+  if (nicheId === "story_song" || nicheId === "family") return skorTrend(title).cocokLagu;
+  return false;
+}
+
 /* ================= SKOR RELEVANSI NICHE ================= */
 
 /**

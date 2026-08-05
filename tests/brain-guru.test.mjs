@@ -11,12 +11,14 @@ function transpile(rel) {
 }
 
 const yieJs = transpile("../src/lib/brain/yie-score.ts");
+const nicJs = transpile("../src/lib/brain/niche.ts");
 const patJs = transpile("../src/lib/brain/pattern-insight.ts");
 const P = await import(enc(patJs));
 // title-guru butuh dependensi — suntik sebagai data URL (impor relatif tidak jalan di data URL)
 const tgJs = transpile("../src/lib/brain/title-guru.ts")
   .replace('from "./pattern-insight"', `from "${enc(patJs)}"`)
-  .replace('from "./yie-score"', `from "${enc(yieJs)}"`);
+  .replace('from "./yie-score"', `from "${enc(yieJs)}"`)
+  .replace('from "./niche"', `from "${enc(nicJs)}"`);
 const G = await import(enc(tgJs));
 
 let gagal = 0;

@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎯 v19.20 — SEMUA NICHE BISA: PILIH NICHE DI LAHAN + TITLE GURU NICHE-AWARE
+* **Ide (pertanyaan user):** VERVE nggak boleh terpaku "Cerita Jadi Lagu" — pengguna beda-beda nichenya; harus bisa merambah semua niche.
+* **Yang baru:**
+  1. **Modul `niche.ts`** — 7 niche: 🎵 Cerita Jadi Lagu (default, perilaku lama aman), 👨‍👩‍👧 Keluarga, 👻 Horor, 🎧 DJ, 📚 Tutorial, 🕌 Religi, ✏️ Kustom (tulis sendiri).
+  2. **Step 1 Lahan**: picker "Pilih niche-mu" + input kustom + chips contoh per niche.
+  3. **Seluruh alur ikut niche**: intent audiens, prompt AI (naskah/storyboard/gambar), suffix riset, meta ekspor, header, trend "cocok niche" (`cocokNiche`), pabrik konten 7 hari, hashtag (`nicheById.tags`).
+  4. **Title Guru niche-aware**: tiap niche punya template judul sendiri (Horor: "JANGAN Nonton...", DJ: "FULL BASS Nonstop", Tutorial: "Cara... dalam N Menit", Religi: "Nasihat...", Keluarga: "Kisah...") — tetap disaring pola tembus channel.
+* **Test baru** `tests/niche.test.mjs` (13 cek) — seluruh 32 suite hijau; tsc 0; build 0.
+
+
 ### 🌏 v19.19 — SIAP INTERNASIONAL: LIRIK IKUT BAHASA LAGU + THUMBNAIL TIDAK "INDONESIA" LAGI
 * **Ide (pertanyaan user):** VERVE mau dipakai orang luar negeri (niche internasional) — jangan paksa bahasa Indonesia.
 * **Perbaikan:**

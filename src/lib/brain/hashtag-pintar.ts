@@ -6,6 +6,7 @@
  */
 
 import { tok } from "./yie-score";
+import { nicheById } from "./niche";
 
 const STOP = new Set(
   "yang dan di ke dari ini itu untuk dengan pada akan ada adalah the of and in to a is or for an video lirik full official".split(" ")
@@ -33,15 +34,15 @@ export type HashtagPaket = {
 /**
  * Susun paket hashtag: niche (cerita jadi lagu) + kata kunci judul + trend hangat + umum.
  */
-export function hashtagPintar(judul: string, keyword: string, trend?: string): HashtagPaket {
+export function hashtagPintar(judul: string, keyword: string, trend?: string, nicheId = "story_song"): HashtagPaket {
   const out: string[] = [];
   const push = (t: string) => {
     const tag = jadiHashtag(t);
     if (tag && tag.length >= 3 && !out.includes(tag)) out.push(tag);
   };
 
-  // 1) Niche tetap
-  ["ceritajadilagu", "lagusedih", "laguviral"].forEach(push);
+  // 1) Niche tetap (v19.20: ikut niche pilihan)
+  (nicheById(nicheId).tags || ["ceritajadilagu", "lagusedih", "laguviral"]).forEach(push);
   // 2) Kata kunci dari judul (2-3 tag)
   tok(judul).slice(0, 3).forEach((w) => push(w));
   // 3) Keyword riset

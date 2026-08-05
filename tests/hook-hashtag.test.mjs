@@ -11,9 +11,12 @@ function transpile(rel) {
 }
 
 const yieJs = transpile("../src/lib/brain/yie-score.ts");
+const nicJs = transpile("../src/lib/brain/niche.ts");
 const hkJs = transpile("../src/lib/brain/hook-engine.ts");
 const H = await import(enc(hkJs));
-const htJs = transpile("../src/lib/brain/hashtag-pintar.ts").replace('from "./yie-score"', `from "${enc(yieJs)}"`);
+const htJs = transpile("../src/lib/brain/hashtag-pintar.ts")
+  .replace('from "./yie-score"', `from "${enc(yieJs)}"`)
+  .replace('from "./niche"', `from "${enc(nicJs)}"`);
 const HP = await import(enc(htJs));
 
 let gagal = 0;

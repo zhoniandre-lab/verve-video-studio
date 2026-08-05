@@ -22,8 +22,9 @@ import {
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
+import { NICHES, nicheAiLabel, nicheById, nicheLabel } from "@/lib/brain/niche";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
-import { ambilSnapshotTrend, bandingkanGelombang, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
+import { ambilSnapshotTrend, bandingkanGelombang, cocokNiche, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
 import { kompetitorVelocity, type KompItem } from "@/lib/brain/competitor-rss";
 import { rencanaKonten, type SlotKonten } from "@/lib/brain/content-factory";
 import { analisaHook, upgradeAdegan1 } from "@/lib/brain/hook-engine";
@@ -230,6 +231,15 @@ function injectCharacter(sceneVisual: string, chars: CharCard[], gaya: string): 
 export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit: () => void; gotoEditor?: (id?: string, cmd?: { tool?: string; newProject?: number; applyAdjust?: number }) => void; gotoThumb?: () => void }) {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
+  // 🎯 v19.20 SEMUA NICHE: pilihan niche pengguna (default Cerita Jadi Lagu, bisa ganti)
+  const [nicheId, setNicheId] = useState<string>(() => { try { return localStorage.getItem("verve_lahan_niche_v1") || "story_song"; } catch { return "story_song"; } });
+  const [nicheCustom, setNicheCustom] = useState<string>(() => { try { return localStorage.getItem("verve_lahan_niche_custom_v1") || ""; } catch { return ""; } });
+  const nicheDef = nicheById(nicheId);
+  const nicheAI = nicheAiLabel(nicheId, nicheCustom);
+  function gantiNiche(id: string) {
+    setNicheId(id);
+    try { localStorage.setItem("verve_lahan_niche_v1", id); } catch { /* abaikan */ }
+  }
   const [angles, setAngles] = useState<string[]>([]);
   const [selKeyword, setSelKeyword] = useState("");
   const [angle, setAngle] = useState<Angle | null>(null);
@@ -352,7 +362,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   // 🌊 v19.9: RADAR GELOMBANG — status trend (naik/baru/turun) + pabrik konten
   const [gelombang, setGelombang] = useState<TrendGelombang[] | null>(null);
   const [showPabrik, setShowPabrik] = useState(false);
-  const pabrik = useMemo(() => (trends?.length ? rencanaKonten(brain, trends, gelombang, 7) : []), [brain, trends, gelombang]);
+  const pabrik = useMemo(() => (trends?.length ? rencanaKonten(brain, trends, gelombang, 7, nicheId) : []), [brain, trends, gelombang, nicheId]);
   // 🪝 v19.10: HOOK ENGINE — analisis 3 detik pertama storyboard
   const hook = useMemo(() => analisaHook(board), [board]);
   // 🛰️ v19.6: RADAR KOMPETITOR RSS — pantau upload channel lawan (gratis, tanpa kuota API)
@@ -653,8 +663,10 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     return () => clearInterval(it);
   }, [polling, task]);
 
-  /* ---------- intent audiens (niche terkunci story_song) ---------- */
-  const intentId = topic.trim() ? detectAudienceIntent(topic + " cerita jadi lagu") : "story_song";
+  /* ---------- intent audiens (v19.20: ikut niche pilihan; custom = deteksi dari topik) ---------- */
+  const intentId = nicheId === "custom"
+    ? (topic.trim() ? detectAudienceIntent(topic) : "general")
+    : (topic.trim() ? (nicheId === "story_song" ? detectAudienceIntent(topic + " cerita jadi lagu") : nicheId) : nicheId);
   const intentEff = intentId === "general" ? "story_song" : intentId;
   const card = audienceCard(intentEff);
 
@@ -690,7 +702,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || j.message || `HTTP ${r.status}`);
       const list: string[] = Array.isArray(j.suggestions) ? j.suggestions : [];
-      const extra = /cerita jadi lagu/i.test(topic) ? [] : [`${topic.trim()} | cerita jadi lagu`];
+      const extra = nicheId === "custom" ? [] : (/cerita jadi lagu/i.test(topic) ? [] : [`${topic.trim()} | ${nicheAI}`]);
       setAngles(uniq([topic.trim(), ...extra, ...list]).slice(0, 30));
       flash("🔍 Sudut ketemu dari YouTube autocomplete");
     } catch (e) {
@@ -713,7 +725,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       }
       const a = analyzeAngle(selKeyword, { videos: j.videos || [] }, {
         seed: topic.trim(),
-        nicheNote: "cerita jadi lagu",
+        nicheNote: nicheAI || "topik",
         suggest: angles,
       });
       setAngle(a);
@@ -788,7 +800,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   function mintaSaranGuru() {
     const kw = selKeyword || topic.trim() || "";
     if (!kw) { setGuruMsg("Pilih keyword/sudut dulu di langkah 2 biar sarannya nyambung ke topikmu."); return; }
-    const list = suggestTitlesFromBrain(kw, brain, 4);
+    const list = suggestTitlesFromBrain(kw, brain, 4, nicheId);
     if (!list.length) { setGuruMsg("Semua pola yang dicoba mirip judul yang pernah gagal — coba keyword lain atau sync dulu biar otak punya data baru."); return; }
     setGuru(list);
     setGuruMsg("");
@@ -910,7 +922,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
         body: JSON.stringify({
           title: selTitle,
           keyword: selKeyword,
-          niche: "Cerita jadi lagu / lagu emosional",
+          niche: nicheDef.label + (nicheId === "story_song" ? " / lagu emosional" : ""),
           chars: chars.filter((c) => c.nama.trim()).map((c) => ({ nama: c.nama, peran: c.peran, usia: c.usia, ciri: c.ciri })),
           audience: { emotion: dominantEmotion(intentEff), fears: card.fears, desires: card.desires, cta: card.ctas[0] },
           lines: Math.max(6, Math.min(10, angle ? 6 + Math.floor(angle.total / 8) : 8)),
@@ -942,7 +954,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
         body: JSON.stringify({
           title: selTitle,
           keyword: `${selKeyword} | karakter wajib konsisten: ${charLine || "sesuai judul"} | arah gaya: ${GAYA_VISUAL[gaya]}`,
-          niche: "Cerita jadi lagu / lagu emosional",
+          niche: nicheDef.label + (nicheId === "story_song" ? " / lagu emosional" : ""),
           slides: sceneCount,
           naskah: (naskah || "").slice(0, 1500), // 🎬 v13.2: naskah jadi SUMBER ALUR storyboard — adegan berantai seperti film
         }),
@@ -1028,7 +1040,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             style: GAYA_TO_STYLE[gaya] || "cinematic",
             title: selTitle,
             keyword: selKeyword,
-            niche: "cerita jadi lagu",
+            niche: nicheAI || nicheDef.label,
           }),
         });
         clearTimeout(watchdog);
@@ -1230,7 +1242,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       const r = await fetch("/api/hcnsec/lyrics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: selTitle, keyword: selKeyword, niche: "Cerita jadi lagu / lagu emosional", genre, mood }),
+        body: JSON.stringify({ title: selTitle, keyword: selKeyword, niche: nicheDef.label + (nicheId === "story_song" ? " / lagu emosional" : ""), genre, mood }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -1692,7 +1704,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       ttsUrl: "", ttsText: "", voiceUrl: "", ttsDur: 0, voiceDur: 0, ttsOff: 0, voiceOff: 0, voiceVol: 1,
       filterPreset: "none", qualitySharp: false, audMuted: false,
       capWords: [], capStyle: "capcut", ccTpl: "standar", ccSize: 0.055, ccY: 0.78,
-      niche: "cerita jadi lagu",
+      niche: nicheAI || nicheDef.label,
       coverThumb: (builtSlides[0]?.imageUrl || "").slice(0, 40000),
       adj: { b: 0, c: 6, s: 4, e: 0, tem: 4, hue: 0, fade: 0, vig: 12, grain: 0 },
       mTitle: selTitle, mLyrics: lyrics, mStyle, mGenre: genre, mMood: mood,
@@ -1778,7 +1790,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
         <button className="lh-back" onClick={onExit}>‹</button>
         <div className="lh-top-t">
           <b>🌱 Lahan Awalan</b>
-          <span>Cerita Jadi Lagu · wizard produksi AI</span>
+          <span>{nicheDef.emoji} {nicheDef.label} · wizard produksi AI</span>
         </div>
         <button className="lh-reset" title="Lahan baru" onClick={resetLahan}>↺</button>
       </div>
@@ -1821,7 +1833,17 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           {kepalaLangkah(1, "Niat, inspirasi & topik 🌱", "Kompas seluruh produksi: cerita ini tentang apa. Tulis niatmu sendiri — atau ambil dari Inspirasi Trend di bawah (klik = niat terisi).")}
           <div className="lh-card">
             <div className="lh-h1">Apa niat ceritamu, bro? 🌱</div>
-            <p className="lh-sub">Niche terkunci dulu: <b>🎵 Cerita Jadi Lagu</b> — biar fokus & dalam. Nanti merambah.</p>
+            <p className="lh-sub">Pilih <b>niche-mu</b> dulu — seluruh alur (riset, trend, judul, hashtag) ikut niche ini. Bisa diganti kapan saja.</p>
+            <div className="lh-chips" style={{ flexWrap: "wrap" }}>
+              {NICHES.map((n) => (
+                <button key={n.id} className={`lh-chip ${nicheId === n.id ? "on" : ""}`} style={nicheId === n.id ? { borderColor: "#f59e0b", color: "#f59e0b" } : undefined} onClick={() => gantiNiche(n.id)}>
+                  {n.emoji} {n.label}
+                </button>
+              ))}
+            </div>
+            {nicheId === "custom" && (
+              <input className="lh-in" style={{ marginTop: 8 }} placeholder="Tulis niche-mu (mis. 'otomotif', 'gaming', 'memasak')" value={nicheCustom} onChange={(e) => { setNicheCustom(e.target.value); try { localStorage.setItem("verve_lahan_niche_custom_v1", e.target.value); } catch { /* abaikan */ } }} />
+            )}
             <textarea
               className="lh-ta"
               rows={3}
@@ -1831,7 +1853,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             />
             <Ngomong onText={(t) => setTopic((v) => (v ? v + " " : "") + t)} hint="niat cerita lagu Indonesia: rindu ibu, sedih, perjuangan, keluarga, cinta, kampung halaman, doa" title="🎤 Ngomong niat ceritamu — teks terisi otomatis" /> {/* v14.5 */}
             <div className="lh-chips">
-              {["rindu ibu cerita jadi lagu", "maaf ibu aku terlambat", "lagu untuk ayah tersayang", "ibu engkau yang terbaik"].map((p) => (
+              {nicheDef.contoh.map((p) => (
                 <button key={p} className="lh-chip" onClick={() => setTopic(p)}>{p}</button>
               ))}
             </div>
@@ -1844,7 +1866,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           {/* 🔥 v19.8 INSPIRASI DARI TREND — nyambung ke niat di atas: yang cocok niche diurutkan paling atas */}
           <div className="lh-card" style={{ borderColor: "rgba(245,158,11,.25)" }}>
             <div className="lh-h1">🔥 Inspirasi dari Trend <span style={{ fontSize: 9, background: "rgba(245,158,11,.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>GOOGLE TRENDS 🌏</span></div>
-            <p className="lh-sub">Topik hangat hari ini — yang <b>🎵 cocok niche-mu (cerita jadi lagu)</b> diurutkan paling atas. <b>Klik trend → langsung terisi ke niat di atas</b>, lalu gas cari sudutnya. Pilih negara, kasih 🎨 untuk saran thumbnail.</p>
+            <p className="lh-sub">Topik hangat hari ini — yang <b>{nicheDef.emoji} cocok niche-mu ({nicheDef.label})</b> diurutkan paling atas. <b>Klik trend → langsung terisi ke niat di atas</b>, lalu gas cari sudutnya. Pilih negara, kasih 🎨 untuk saran thumbnail.</p>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               {[["ID", "🇮🇩 Indonesia"], ["US", "🇺🇸 US"], ["JP", "🇯🇵 Jepang"], ["MY", "🇲🇾 Malaysia"]].map(([g, lb]) => (
                 <button key={g} onClick={() => gantiGeo(g)} style={{ fontSize: 10.5, fontWeight: 800, padding: "5px 11px", borderRadius: 999, cursor: "pointer", color: trendGeo === g ? "#0a0a14" : "#c7c7d4", background: trendGeo === g ? "#f59e0b" : "var(--v6-card)", border: trendGeo === g ? "1px solid #f59e0b" : "1px solid var(--v6-line)" }}>
@@ -1857,11 +1879,11 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             </div>
             {!!trends?.length && (() => {
               // 🧠 v19.8: sortir kecerdasan — yang cocok niche (bisa jadi lagu) paling atas
-              const sorted = [...trends].sort((a, b) => (skorTrend(b.title).cocokLagu ? 1 : 0) - (skorTrend(a.title).cocokLagu ? 1 : 0));
-              const cocok = sorted.filter((t) => skorTrend(t.title).cocokLagu).length;
+              const sorted = [...trends].sort((a, b) => (cocokNiche(b.title, nicheId) ? 1 : 0) - (cocokNiche(a.title, nicheId) ? 1 : 0));
+              const cocok = sorted.filter((t) => cocokNiche(t.title, nicheId)).length;
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
-                  {cocok > 0 && <p className="lh-note" style={{ color: "#f59e0b", margin: 0 }}>🎵 {cocok} trend cocok langsung jadi cerita/lagu — diprioritaskan otak.</p>}
+                  {cocok > 0 && <p className="lh-note" style={{ color: "#f59e0b", margin: 0 }}>{nicheDef.emoji} {cocok} trend cocok niche-mu — diprioritaskan otak.</p>}
                   {sorted.slice(0, 12).map((t) => {
                     const tg = skorTrend(t.title);
                     const active = thumbTrend?.title === t.title;
@@ -1876,7 +1898,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                             {g?.status === "naik" && <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>🌊 NAIK</span>}
                             {g?.status === "turun" && <span style={{ fontSize: 9, background: "rgba(255,255,255,.08)", color: "rgba(255,255,255,.5)", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>📉 turun</span>}
                             <span style={{ fontSize: 9.5, opacity: .55 }}>{t.traffic || ""}</span>
-                            <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{tg.cocokLagu ? "🎵 jadi lagu?" : tg.label}</span>
+                            <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{cocokNiche(t.title, nicheId) ? "🎯 cocok niche?" : tg.label}</span>
                           </button>
                           <button onClick={() => lihatThumbTrend(t)} title="Saran thumbnail dari trend ini" style={{ fontSize: 13, background: active ? "rgba(245,158,11,.2)" : "transparent", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "3px 8px", cursor: "pointer" }}>🎨</button>
                         </div>

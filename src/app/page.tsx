@@ -3831,7 +3831,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       title: meta.titleHighCTR || projTitle,
       description: meta.description || "",
       tags: meta.tags || [],
-      hashtags: meta.hashtags || hashtagPintar(meta.titleHighCTR || projTitle, projTitle).tags.join(" "), // #️⃣ v19.10: kalau kosong, otak bikin otomatis
+      hashtags: meta.hashtags || hashtagPintar(meta.titleHighCTR || projTitle, projTitle, undefined, (() => { try { return localStorage.getItem("verve_lahan_niche_v1") || "story_song"; } catch { return "story_song"; } })()).tags.join(" "), // #️⃣ v19.10/19.20: hashtag otomatis ikut niche
       projectTitle: projTitle,
       ratio,
       durationSec: clipsTotal,
