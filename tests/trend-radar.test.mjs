@@ -86,4 +86,22 @@ const SAMPLE = `<?xml version="1.0"?>
   T2("tanpa data tetap keluar 3 slot (fallback jujur)", kosong.slots.length === 3 && kosong.slots[0].alasan.includes("sync"));
 }
 
+/* ---------- 4. RADAR GELOMBANG (v19.9) ---------- */
+{
+  const kemarin = { at: "2026-08-04", items: ["Bola", "Game", "Makanan", "Hantu", "Ibu Rindu", "Musik"] };
+  const sekarang = [
+    { title: "Ibu Rindu", traffic: "100K+" },   // naik dari pos 4 → 0 (≥3)
+    { title: "Gelombang Baru", traffic: "50K+" }, // 🆕 baru
+    { title: "Hantu", traffic: "20K+" },         // naik dari 3 → 2 (tipis, stabil)
+    { title: "Bola", traffic: "90K+" },          // turun dari 0 → 3 (≥3)
+    { title: "Game", traffic: "10K+" },          // 1 → 4 (turun tipis, stabil)
+  ];
+  const g = T.bandingkanGelombang(sekarang, kemarin);
+  T2("trend baru terdeteksi 🆕", g.find((x) => x.title === "Gelombang Baru")?.status === "baru");
+  T2("trend naik terdeteksi 🌊 (Ibu Rindu)", g.find((x) => x.title === "Ibu Rindu")?.status === "naik");
+  T2("geser tipis = stabil (bukan naik)", g.find((x) => x.title === "Hantu")?.status === "stabil");
+  T2("trend turun terdeteksi 📉 (Bola)", g.find((x) => x.title === "Bola")?.status === "turun");
+  T2("tanpa snapshot → semua stabil", T.bandingkanGelombang(sekarang, null).every((x) => x.status === "stabil"));
+}
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI TREND RADAR GAGAL`); process.exit(1); }

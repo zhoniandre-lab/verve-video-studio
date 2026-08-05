@@ -1,5 +1,5 @@
 /**
- * 🔥 VERVE TREND RADAR v19.4 — otak "menangkap gelombang" dari Google Trends.
+ * 🔥 VERVE TREND RADAR v19.4 + v19.9 — otak "menangkap gelombang" dari Google Trends.
  * Sumber: RSS publik Google Trends (trends.google.com/trending/rss?geo=ID)
  * — GRATIS, tanpa API key, read-only, legal. Google tidak punya API resmi publik
  * untuk Trends, tapi RSS harian ini stabil & resmi.
@@ -7,9 +7,16 @@
  * Fungsi di sini PURE & offline (parser + skor) — route /api/trends yang fetch.
  * Skor relevansi memakai kamus audiens VERVE (audience.ts): trend yang cocok
  * dengan niche "cerita jadi lagu" ditandai 💔 Emosional — bisa langsung jadi lagu.
+ *
+ * 🧠 v19.9 ILMU BARU — "RADAR GELOMBANG" (pola OSINT monitoring):
+ *   otak menyimpan snapshot trend tiap hari (localStorage), lalu membandingkan
+ *   posisi hari ini vs kemarin → deteksi 🆕 BARU / 🌊 NAIK / 📉 TURUN / stabil.
+ *   Ini "intelijen pasar": tahu gelombang mana yang sedang membesar sebelum ramai.
  */
 
 import { INTENTS } from "./audience";
+
+export const GELOMBANG_KEY = "verve_trend_gelombang_v1";
 
 export type TrendItem = {
   title: string;
@@ -56,6 +63,59 @@ const KAMUS_EMOSI = [
   "pulang", "pergi", "kangen", "sayang", "anak", "keluarga", "tanggung jawab", "perjuangan",
   "ikhlas", "tabah", "kisah", "cerita", "kenangan", "meninggal", "wafat", "selamat tinggal",
 ];
+
+/* ================= v19.9: RADAR GELOMBANG (deteksi naik/turun lintas hari) ================= */
+
+export type GelombangStatus = "baru" | "naik" | "turun" | "stabil";
+
+export type TrendGelombang = {
+  title: string;
+  status: GelombangStatus;
+  posKemarin: number; // -1 kalau belum ada
+  posHariIni: number;
+};
+
+export type SnapshotTrend = { at: string; items: string[] };
+
+/** Simpan snapshot daftar trend hari ini (untuk perbandingan besok). */
+export function simpanSnapshotTrend(items: TrendItem[]): void {
+  try {
+    const snap: SnapshotTrend = { at: new Date().toISOString().slice(0, 10), items: (items || []).map((t) => t.title) };
+    localStorage.setItem(GELOMBANG_KEY, JSON.stringify(snap));
+  } catch { /* abaikan */ }
+}
+
+/** Ambil snapshot kemarin (atau null kalau belum ada / sudah kedaluwarsa >2 hari). */
+export function ambilSnapshotTrend(): SnapshotTrend | null {
+  try {
+    const j = JSON.parse(localStorage.getItem(GELOMBANG_KEY) || "null");
+    if (!j || !Array.isArray(j.items)) return null;
+    const umur = (Date.now() - +new Date(j.at)) / 864e5;
+    if (!Number.isFinite(umur) || umur > 2) return null;
+    return j as SnapshotTrend;
+  } catch { return null; }
+}
+
+/**
+ * Bandingkan daftar trend hari ini vs kemarin → status tiap trend:
+ * 🆕 BARU (tidak ada kemarin) · 🌊 NAIK (naik ≥3 posisi) · 📉 TURUN (turun ≥3) · stabil.
+ */
+export function bandingkanGelombang(sekarang: TrendItem[], kemarin: SnapshotTrend | null): TrendGelombang[] {
+  const prev = kemarin?.items || [];
+  const idxPrev = new Map(prev.map((t, i) => [t.toLowerCase().trim(), i]));
+  return (sekarang || []).map((t, i) => {
+    const k = t.title.toLowerCase().trim();
+    const p = idxPrev.get(k);
+    let status: GelombangStatus = "stabil";
+    if (!kemarin) status = "stabil"; // belum ada snapshot → jujur: belum bisa dibandingkan
+    else if (p === undefined) status = "baru";
+    else if (p - i >= 3) status = "naik";
+    else if (i - p >= 3) status = "turun";
+    return { title: t.title, status, posKemarin: p === undefined ? -1 : p, posHariIni: i };
+  });
+}
+
+/* ================= SKOR RELEVANSI NICHE ================= */
 
 /**
  * Skor relevansi trend terhadap niche VERVE (cerita jadi lagu & kawan-kawan).

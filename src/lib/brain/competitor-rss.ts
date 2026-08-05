@@ -32,7 +32,27 @@ export type KompItem = {
   url: string;
   published: string; // ISO
   publishedAt: number;
+  views?: number; // v19.9: dari scrape halaman (viewCountText)
+  velocity?: number; // v19.9: perkiraan view/hari (ilmu "kecepatan lawan")
 };
+
+/** Parse angka view "1.7K" / "818" / "39K" → angka baku. */
+export function parseViewCount(text: string): number | undefined {
+  const t = String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const m = t.match(/([\d.,]+)\s*([kmb]?)\s*views?/);
+  if (!m) return undefined;
+  const n = Number(m[1].replace(/,/g, "."));
+  if (!Number.isFinite(n)) return undefined;
+  const mult = m[2] === "k" ? 1e3 : m[2] === "m" ? 1e6 : m[2] === "b" ? 1e9 : 1;
+  return Math.round(n * mult);
+}
+
+/** Kecepatan tayang kompetitor: views / umur (hari). Semua dari data publik. */
+export function kompetitorVelocity(views: number | undefined, publishedAt: number): number | null {
+  if (views == null || views <= 0) return null;
+  const umurHari = Math.max(0.5, (Date.now() - publishedAt) / 864e5);
+  return Math.round((views / umurHari) * 10) / 10;
+}
 
 export type KompFeed = {
   channelId: string;
@@ -152,14 +172,18 @@ export function parseYtVideosPage(html: string, limit = 10): KompItem[] {
     const vid = c.match(/"videoId":"([\w-]{11})"/);
     const title = c.match(/"title":\{"runs":\[\{"text":"([^"]{2,150})"/);
     const time = c.match(/"publishedTimeText":\{"runs":\[\{"text":"([^"]+)"/);
+    const viewsRaw = c.match(/"viewCountText":\{"runs":\[\{"text":"([^"]+)"/);
     if (!vid || !title) continue;
     const ts = time ? relTimeToTs(time[1]) : Date.now();
+    const views = viewsRaw ? parseViewCount(viewsRaw[1]) : undefined;
     out.push({
       title: decodeXml(title[1]).replace(/\\\//g, "/").trim(),
       videoId: vid[1],
       url: `https://www.youtube.com/watch?v=${vid[1]}`,
       published: new Date(ts).toISOString(),
       publishedAt: ts,
+      views, // v19.9: ilmu "kecepatan lawan"
+      velocity: kompetitorVelocity(views, ts) ?? undefined,
     });
     if (out.length >= limit) break;
   }

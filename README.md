@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🧠 v19.9 — ILMU BARU: RADAR GELOMBANG + KECEPATAN LAWAN + PABRIK KONTEN 7 HARI
+* **Ilmu yang dicuri dari The Book of Secret Knowledge:** (1) OSINT monitoring — pantau data lintas hari & deteksi perubahan; (2) automation — jadwalkan produksi; (3) intelligence gathering — hitung metrik dari data publik.
+* **Fitur baru:**
+  1. **🌊 Radar Gelombang** (`trend-radar.ts`): otak simpan snapshot trend tiap hari (localStorage `verve_trend_gelombang_v1`), lalu bandingkan posisi hari ini vs kemarin → badge 🆕 BARU / 🌊 NAIK (naik ≥3 posisi) / 📉 TURUN / stabil. "Intelijen pasar": tahu gelombang yang sedang membesar sebelum ramai. Jujur: tanpa snapshot → stabil, bukan semua BARU.
+  2. **⚡ Kecepatan lawan** (`competitor-rss.ts`): parser halaman /videos kini juga menangkap viewCountText ("818", "1.7K") → `parseViewCount` + `kompetitorVelocity` (view/hari). Radar Kompetitor menampilkan badge kecepatan per video lawan (🚀/🔥/👍 + X/hr) — bandingkan dengan velocity videomu.
+  3. **📅 Pabrik Konten 7 Hari** (`content-factory.ts`): otak menyusun 7 slot konten sekaligus — topik dari gelombang 🆕/🌊 yang cocok niche + pola tembus channel, judul saran (Title Guru) + skor, jam upload golden-hour, badge ⭐ hari terbaik. Tombol "➕ Isi ke Lahan" → satu klik mulai produksi. Auto-pilot konten seminggu.
+* **Test**: trend-radar +8 cek gelombang, competitor-rss +6 cek kecepatan — seluruh 30 suite hijau; tsc 0; build 0.
+
+
 ### 🖼️🎯 v19.8.8 — FIX JEMBATAN THUMBNAIL (bug key!) + JUDUL LAWAN BISA DIPILIH ARAHNYA
 * **Masalah (screenshot + riset user):** (1) Thumb Studio baca key SALAH — `KUNCI_LAHAN = "verve_brain_v1"` padahal state produksi Lahan (topic/selTitle/selKeyword/charLock) ada di `verve_lahan_v1` → "Tarik dari Lahan"/"Susun dari Lahan" selalu bilang kosong. (2) Judul lawan di Radar Kompetitor tidak bisa "diambil" sebagai arah produksi — sistem masih fokus ke pilihan niche step 1.
 * **Solusi:**

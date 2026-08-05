@@ -23,7 +23,9 @@ import {
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
-import { skorTrend, type TrendItem } from "@/lib/brain/trend-radar";
+import { ambilSnapshotTrend, bandingkanGelombang, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
+import { kompetitorVelocity, type KompItem } from "@/lib/brain/competitor-rss";
+import { rencanaKonten, type SlotKonten } from "@/lib/brain/content-factory";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
@@ -346,6 +348,10 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [notifOn, setNotifOn] = useState(false);
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifMsg, setNotifMsg] = useState("");
+  // 🌊 v19.9: RADAR GELOMBANG — status trend (naik/baru/turun) + pabrik konten
+  const [gelombang, setGelombang] = useState<TrendGelombang[] | null>(null);
+  const [showPabrik, setShowPabrik] = useState(false);
+  const pabrik = useMemo(() => (trends?.length ? rencanaKonten(brain, trends, gelombang, 7) : []), [brain, trends, gelombang]);
   // 🛰️ v19.6: RADAR KOMPETITOR RSS — pantau upload channel lawan (gratis, tanpa kuota API)
   const KOMP_KEY = "verve_kompetitor_v1";
   const [kompCh, setKompCh] = useState<KompChannel[]>(() => {
@@ -827,6 +833,12 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal ambil trend");
       setTrends(j.items || []);
       setTrendMsg(j.note || "");
+      // 🌊 v19.9: bandingkan dengan snapshot kemarin → deteksi gelombang naik/baru
+      const kemarin = ambilSnapshotTrend();
+      setGelombang(bandingkanGelombang(j.items || [], kemarin));
+      simpanSnapshotTrend(j.items || []);
+      const naik = bandingkanGelombang(j.items || [], kemarin).filter((g) => g.status === "naik" || g.status === "baru").length;
+      if (naik > 0) flash(`🌊 ${naik} gelombang baru/naik terdeteksi!`);
     } catch (e) {
       setTrendMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal ambil trend"} — coba lagi nanti.`);
     } finally {
@@ -1842,12 +1854,16 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                   {sorted.slice(0, 12).map((t) => {
                     const tg = skorTrend(t.title);
                     const active = thumbTrend?.title === t.title;
+                    const g = gelombang?.find((x) => x.title === t.title);
                     return (
                       <div key={t.title} style={{ background: "var(--v6-card)", border: active ? "2px solid rgba(245,158,11,.6)" : tg.cocokLagu ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, overflow: "hidden" }}>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px" }}>
                           <button onClick={() => pakaiTrend(t.title)} style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, textAlign: "left", background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: 0 }}>
                             <span style={{ fontSize: 16 }}>{tg.emoji}</span>
                             <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>{t.title}</span>
+                            {g?.status === "baru" && <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>🆕 BARU</span>}
+                            {g?.status === "naik" && <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>🌊 NAIK</span>}
+                            {g?.status === "turun" && <span style={{ fontSize: 9, background: "rgba(255,255,255,.08)", color: "rgba(255,255,255,.5)", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>📉 turun</span>}
                             <span style={{ fontSize: 9.5, opacity: .55 }}>{t.traffic || ""}</span>
                             <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{tg.cocokLagu ? "🎵 jadi lagu?" : tg.label}</span>
                           </button>
@@ -1872,6 +1888,32 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             })()}
             {!!trendMsg && <p className="lh-note" style={{ color: trendMsg.startsWith("⚠️") ? "#e8a15a" : "rgba(255,255,255,.5)", marginTop: 8 }}>{trendMsg}</p>}
             <p className="lh-note">Data dari RSS publik Google Trends (read-only, gratis). Tag & saran thumbnail pakai kamus audiens VERVE.</p>
+          </div>
+
+          {/* 📅 v19.9 PABRIK KONTEN 7 HARI — auto-pilot konten dari trend + pola + jam hoki */}
+          <div className="lh-card" style={{ borderColor: "rgba(139,92,246,.3)" }}>
+            <div className="lh-h1">📅 Pabrik Konten 7 Hari <span style={{ fontSize: 9, background: "rgba(139,92,246,.15)", color: "#8b5cf6", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>v19.9 · AUTO-PILOT</span></div>
+            <p className="lh-sub">Otak menyusun <b>7 slot konten</b> sekaligus: topik dari gelombang trend 🆕/🌊 + pola tembus channelmu, judul saran + skor, dan jam upload golden-hour. <b>Satu klik → topik & judul langsung ke Lahan.</b></p>
+            <button className="lh-mini" onClick={() => setShowPabrik((v) => !v)} style={{ padding: "7px 12px", borderColor: "rgba(139,92,246,.5)", color: "#c7c7d4", background: "rgba(139,92,246,.08)" }}>
+              {showPabrik ? "Tutup rencana ▴" : "📅 Lihat Rencana 7 Hari"}
+            </button>
+            {showPabrik && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                {pabrik.map((s) => (
+                  <div key={s.index} style={{ background: "var(--v6-card)", border: s.hoki ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontWeight: 800, fontSize: 10.5, minWidth: 84 }}>{s.tanggal.slice(5)} · {s.hari}</span>
+                      <span style={{ fontSize: 10, opacity: .8, flex: 1 }}>{s.jendela}</span>
+                      {s.hoki && <span style={{ fontSize: 9, color: "#f59e0b", whiteSpace: "nowrap" }}>⭐ terbaik</span>}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginTop: 4 }}>🎯 {s.topik}</div>
+                    <div style={{ fontSize: 10.5, opacity: .85, marginTop: 2 }}>💡 {s.judul} <span style={{ color: "var(--v6-teal)", fontWeight: 700 }}>({s.predCtr})</span></div>
+                    <div style={{ fontSize: 9.5, opacity: .6, marginTop: 3 }}>{s.alasan}</div>
+                    <button className="lh-mini" style={{ marginTop: 6, padding: "5px 10px", fontSize: 10 }} onClick={() => { pakaiTrend(s.topik); setSelTitle(s.judul); flash("📅 Slot diisi ke Lahan — gas produksi!"); }}>➕ Isi ke Lahan</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="lh-card">
@@ -2048,11 +2090,13 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                         {f.items.slice(0, 5).map((it) => {
                           const sim = simJudul(it.title, brain);
                           const bahaya = sim.max >= 60;
+                          const vel = kompetitorVelocity(it.views, it.publishedAt);
                           return (
                             <div key={it.videoId} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                               <a href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: "#fff", flex: 1 }}>
                                 <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5 }}>
                                   <span style={{ flex: 1 }}>{it.title}</span>
+                                  {vel != null && <span style={{ fontSize: 9, color: vel >= 50 ? "var(--v6-teal)" : "rgba(255,255,255,.5)", whiteSpace: "nowrap", fontWeight: 700 }}>{vel >= 1000 ? "🚀" : vel >= 200 ? "🔥" : vel >= 50 ? "👍" : ""}{fmtNum(vel)}/hr</span>}
                                   {bahaya && <span style={{ fontSize: 9, background: "rgba(232,92,92,.15)", color: "#e85c5c", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>⚠️ mirip</span>}
                                   <span style={{ fontSize: 9.5, opacity: .55, whiteSpace: "nowrap" }}>{waktuLalu(it.publishedAt)}</span>
                                 </div>

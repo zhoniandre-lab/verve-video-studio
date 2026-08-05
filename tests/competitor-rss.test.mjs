@@ -118,11 +118,11 @@ const SAMPLE = `<?xml version="1.0"?>
   T("frasa 'sedang naik' terdeteksi", p.naik.length > 0, p.naik.map((x) => x.phrase).join(","));
 }
 
-/* ---------- 7. Fallback scrape halaman /videos (RSS 404) ---------- */
-{
   const SAMPLE_HTML = `<html><head><meta property="og:title" content="DJ KINAR - YouTube"></head><body>
 var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\\x22videoId\\x22:\\x227Vxltc_Ol6w\\x22,\\x22title\\x22:\\x7b\\x22runs\\x22:\\x5b\\x7b\\x22text\\x22:\\x22BAK SERUMPUN SUMPAH JANJI BERDUA\\x22\\x7d\\x5d\\x7d,\\x22publishedTimeText\\x22:\\x7b\\x22runs\\x22:\\x5b\\x7b\\x22text\\x22:\\x221 day ago\\x22\\x7d\\x5d\\x7d,\\x22viewCountText\\x22:\\x7b\\x22runs\\x22:\\x5b\\x7b\\x22text\\x22:\\x22818 views\\x22\\x7d\\x5d\\x7d\\x7d\\x7d';
 </body></html>`;
+/* ---------- 7. Fallback scrape halaman /videos (RSS 404) ---------- */
+{
   const items = K.parseYtVideosPage(SAMPLE_HTML, 5);
   T("scrape: 1 video ke-extract", items.length === 1, `dapat ${items.length}`);
   T("scrape: judul & id benar", items[0].videoId === "7Vxltc_Ol6w" && items[0].title.includes("BAK SERUMPUN"));
@@ -183,6 +183,21 @@ var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\
   T("batch 1 punya varian emosi/penasaran", b1.some((x) => /Rindu|Maaf|Ternyata|Jangan Nonton|Air Mata|Akhirnya/i.test(x.saran.a.title)), b1.map((x) => x.saran.a.title.slice(0, 35)).join(" | "));
   T("batch 2 ≠ batch 1 (tiap putaran beda)", b2.some((x) => !b1.some((y) => y.saran.a.title === x.saran.a.title)));
   T("semua batch tetap pakai frasa lawan & di-score", [...b0, ...b1, ...b2].every((x) => x.saran.a.skor > 0 && /viral|tiktok/i.test(x.saran.a.title)));
+}
+
+/* ---------- 9b. Ilmu kecepatan lawan (v19.9) ---------- */
+{
+  T("parse view '818 views'", K.parseViewCount("818 views") === 818);
+  T("parse view '1.7K views'", K.parseViewCount("1.7K views") === 1700);
+  T("parse view '39K views'", K.parseViewCount("39K views") === 39000);
+  T("parse view rusak → undefined", K.parseViewCount("gak jelas") === undefined);
+  const vel = K.kompetitorVelocity(1000, Date.now() - 10 * 864e5);
+  T("kecepatan 1000 view / 10 hari = 100", vel === 100, String(vel));
+  T("tanpa views → null", K.kompetitorVelocity(undefined, Date.now()) === null);
+  // scrape halaman sekarang bawa views & velocity
+  const items = K.parseYtVideosPage(SAMPLE_HTML, 5);
+  T("scrape bawa views (818)", items[0].views === 818, String(items[0].views));
+  T("scrape bawa velocity > 0", items[0].velocity != null && items[0].velocity > 0, String(items[0].velocity));
 }
 
 /* ---------- 10. Bandingkan judulmu vs lawan ---------- */
