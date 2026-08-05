@@ -438,7 +438,9 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   function bandingDenganLawan(lawanTitle: string) {
     const judulSaya = selTitle || (brain.results?.[0]?.title) || topic.trim() || "";
     if (!judulSaya) { setKompMsg("Kunci judul dulu di langkah 4 (atau isi topik) biar bisa dibandingkan."); return; }
-    setBanding(bandingkanJudul(lawanTitle, judulSaya, brain));
+    // 🐛 FIX v19.8.5: dulu (lawan, judulSaya) — kebalik dari label UI (KIRI=judulmu).
+    // Sekarang a = JUDULMU, b = LAWAN → skor & verdict jadi benar.
+    setBanding(bandingkanJudul(judulSaya, lawanTitle, brain));
     setSerang(null);
   }
   /* ⚔️ v19.8.3/19.8.4: SERANG BALIK — judul penyerang berbasis DATA judul lawan */

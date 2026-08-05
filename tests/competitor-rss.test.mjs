@@ -167,6 +167,13 @@ var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\
   T("tahun (2026) tidak ikut", !angka.includes("2026"), angka.join(","));
   const s2 = K.serangBalikJudul(lawan, "Ibu", brain, 3, angka);
   T("saran memakai angka dari data lawan", s2.some((x) => x.saran.a.title.startsWith("5 ") || x.saran.a.title.startsWith("3 ") || x.saran.a.title.startsWith("7 ")), s2.map((x) => x.saran.a.title.slice(0, 20)).join(" | "));
+
+  // v19.8.5: NATURAL — tidak maksa angka di depan judul panjang
+  const inti = K.intiJudulUntukSerang("Ibu Engkau Yang Terbaik | Cerita Jadi Lagu | Dengarkan Sampai Habis");
+  T("inti judul: buang label niche & sambung", inti.penuh === "Ibu Engkau Yang Terbaik" && inti.inti1 === "Ibu", `${inti.penuh} | ${inti.inti1}`);
+  const s3 = K.serangBalikJudul(lawan, "Ibu Engkau Yang Terbaik | Cerita Jadi Lagu | Dengarkan Sampai Habis", brain, 4, angka);
+  T("tidak ada saran '3 Ibu Engkau Yang Terbaik' (angka + judul penuh)", s3.every((x) => !/^\d+ Ibu Engkau/i.test(x.saran.a.title)), s3.map((x) => x.saran.a.title.slice(0, 35)).join(" | "));
+  T("ada saran TANPA angka (natural niche lagu)", s3.some((x) => !/^\d/.test(x.saran.a.title) && x.saran.a.title.includes("Ibu Engkau Yang Terbaik")), s3.map((x) => x.saran.a.title.slice(0, 35)).join(" | "));
 }
 
 /* ---------- 10. Bandingkan judulmu vs lawan ---------- */

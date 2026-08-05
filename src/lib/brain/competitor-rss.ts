@@ -377,21 +377,40 @@ export function angkaPopulerDariJudul(rows: KompTitleRow[]): string[] {
 }
 
 /**
- * ⚔️ Buat 3 judul rekomendasi yang MENYERANG judul lawan:
- * meminjam pola yang sedang menang di lawan (frasa viral + ANGKA yang paling
- * sering mereka pakai — dari data, bukan template) + menggabungkannya
- * dengan keyword/angle-mu, lalu di-score mesin otak vs judul lawan.
+ * 🧠 v19.8.5: Ambil INTI judul dari judul user (buang label niche "| Cerita Jadi
+ * Lagu" & kata sambung di awal) → buat judul saran yang NATURAL sesuai niche,
+ * bukan menyalin judul panjang mentah.
+ * Contoh: "Ibu Engkau Yang Terbaik | Cerita Jadi Lagu | Dengarkan Sampai Habis"
+ *   → penuh: "Ibu Engkau Yang Terbaik" · inti1: "Ibu"
+ */
+export function intiJudulUntukSerang(title: string): { penuh: string; inti1: string } {
+  const seg = String(title || "").split("|")[0].trim() || String(title || "").trim();
+  const STOP_AWAL = new Set(["yang", "dan", "di", "ke", "dari", "ini", "itu", "untuk", "dengan", "pada", "akan", "adalah", "sebuah", "saat", "kisah"]);
+  const words = seg.split(/\s+/).filter(Boolean);
+  const tanpa = words.filter((w) => !STOP_AWAL.has(w.toLowerCase()));
+  const inti1 = cap((tanpa.length ? tanpa : words)[0] || "Kisah");
+  return { penuh: cap(seg), inti1 };
+}
+
+/**
+ * ⚔️ Buat 3-4 judul rekomendasi yang MENYERANG judul lawan — TAPI TETAP
+ * NATURAL sesuai niche (cerita jadi lagu = judul puitis, bukan daftar angka):
+ *   - mayoritas saran TANPA angka (judul penuh + frasa viral)
+ *   - angka (dari data lawan) cuma dipakai lewat pola "Kisah" yang wajar
+ * Semua di-score mesin otak vs judul lawan; yang paling kuat di depan.
  */
 export function serangBalikJudul(lawanTitle: string, keyword: string, brain: BrainMemory, n = 3, angkaPopuler?: string[]): HasilSerang[] {
-  const kw = cap(String(keyword || "").trim()) || "Kisah";
+  const { penuh, inti1 } = intiJudulUntukSerang(keyword);
   const frasaViral = ambilFrasaViral(lawanTitle) || "Viral TikTok Terbaru 2026";
   // 🧠 v19.8.4: angka dari DATA judul lawan kalau ada; fallback hanya kalau belum ada data
   const angka = (angkaPopuler && angkaPopuler.length ? angkaPopuler : ["3", "5", "7"]);
   const tpls: string[] = [
-    `${angka[0]} ${kw} - ${frasaViral}`,
-    `${kw} ${frasaViral} | Cerita Jadi Lagu`,
-    `${angka[1] || angka[0]} Kisah ${kw} - ${frasaViral}`,
-    `${kw} ${frasaViral} - Lagu Paling Menyentuh`,
+    // Tanpa angka — natural untuk niche cerita jadi lagu
+    `${penuh} - ${frasaViral}`,
+    `${penuh} - ${frasaViral} | Cerita Jadi Lagu`,
+    `Rindu ${inti1} - ${frasaViral}`,
+    // Angka (dari data lawan) hanya lewat pola "Kisah" yang wajar
+    `${angka[0]} Kisah ${inti1} - ${frasaViral}`,
   ];
   const seen = new Set<string>();
   const out: HasilSerang[] = [];

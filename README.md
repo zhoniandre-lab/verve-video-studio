@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🧠 v19.8.5 — SERANG BALIK NATURAL (baca niche, bukan maksa angka) + FIX Duel Terbalik
+* **Masalah (screenshot user):** saran judul jadi "3 Ibu Engkau Yang Terbaik - Viral TikTok" — tidak natural untuk niche "cerita jadi lagu" (judul puitis, bukan daftar angka). Juga ditemukan **bug transposisi**: `bandingDenganLawan` mengirim (lawan, judulSaya) padahal UI menampilkan KIRI=JUDULMU → skor & verdict kebalik.
+* **Solusi:**
+  1. **Fix duel** — `bandingkanJudul(judulSaya, lawanTitle)` → a=JUDULMU, b=LAWAN; skor, verdict, alasan jadi benar.
+  2. **Niche-aware** — `intiJudulUntukSerang()`: buang label niche ("| Cerita Jadi Lagu") & kata sambung → inti judul ("Ibu Engkau Yang Terbaik" / "Ibu"). Template baru: mayoritas TANPA angka (natural), angka (dari data lawan) hanya lewat pola "Kisah" yang wajar, plus varian emosional "Rindu ...".
+* **Hasil contoh:** "Ibu Engkau Yang Terbaik - Cover Paling Viral TikTok" · "Rindu Ibu - Cover Paling Viral TikTok" · "5 Kisah Ibu - Cover Paling Viral TikTok" — bukan lagi "3 Ibu Engkau Yang Terbaik".
+* **Test** +3 cek (inti judul, larangan angka+judul penuh, ada varian tanpa angka) — 30 suite hijau; tsc 0; build 0.
+
+
 ### 🎯 v19.8.4 — SERANG BALIK JUJUR: ANGKA JUGA DIAMBIL DARI DATA JUDUL LAWAN
 * **Masalah (feedback user):** angka "3"/"5" di judul saran Serang Balik itu TEMPLATE hardcode, bukan dari data — melanggar prinsip repo "AI tidak mengarang angka".
 * **Solusi:** `angkaPopulerDariJudul()` — hitung angka yang PALING SERING dipakai di judul kompetitor yang terkumpul (tahun 2026 & angka besar dibuang), lalu `serangBalikJudul` memakainya (fallback template hanya kalau belum ada data). UI menampilkan catatan jujur: "frasa viral & angka di judul saran diambil dari data judul lawan (bukan tebakan)" + flash angka yang dipakai.
