@@ -71,6 +71,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [bgGrad, setBgGrad] = useState("g0");
   const [bgColor, setBgColor] = useState("#0a0a12");
   const [bgImg, setBgImg] = useState("");
+  // 🎨 v19.11: BACKGROUND AI OTOMATIS — ketik suasana → generate background sinematik
+  const [bgPrompt, setBgPrompt] = useState("");
+  const [bgAiBusy, setBgAiBusy] = useState(false);
+  const [bgAiMsg, setBgAiMsg] = useState("");
   const [specStyle, setSpecStyle] = useState("bars");
   const [specColor, setSpecColor] = useState("#22d3ee");
   const [overlay, setOverlay] = useState("none");
@@ -196,6 +200,29 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   useEffect(() => () => stopPlayback(), []); // eslint-disable-line
 
   /* ---------- painter ---------- */
+  // 🎨 v19.11: GENERATE BACKGROUND AI dari suasana/lirik (16:9 & 9:16) — otak gambar, bar jalan di atas
+  async function buatBgAI() {
+    const mood = bgPrompt.trim() || (mLyrics ? mLyrics.split("\n")[0] : "");
+    if (!mood) { setBgAiMsg("⚠️ Ketik suasana dulu (misal: 'hujan di jendela, rindu ibu, malam sepi')"); return; }
+    setBgAiBusy(true); setBgAiMsg("🎨 Otak lagi menggambar suasana…");
+    try {
+      const rasio = ratio === "9:16" ? "vertical 9:16" : "widescreen 16:9";
+      const prompt = `Cinematic music video background, ${rasio}, no text no letters no watermark. Mood: "${mood}". Dark atmospheric scene with empty space in the middle for a visualizer, deep rich colors, dramatic lighting, film grain, 8K quality, PURE photographic scene only.`;
+      const r = await fetch("/api/hcnsec/image", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "spektrum-bg", keyword: "musik", niche: "visualizer", _rawPrompt: true, prompt }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBgImg(j.url); setBgType("img");
+      setBgAiMsg("✅ Background AI jadi — bar visualizer jalan di atasnya!");
+    } catch (e) {
+      setBgAiMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal generate"} — pakai Gradasi/Foto dulu, coba lagi nanti.`);
+    } finally {
+      setBgAiBusy(false);
+    }
+  }
+
   const drawScene = useCallback((ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq?: Uint8Array | null) => {
     // background
     if (bgType === "img" && bgImgRef.current) {
@@ -600,7 +627,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className={`v6-chip ${bgType === "grad" ? "on" : ""}`} onClick={() => setBgType("grad")}>🌈 Gradasi</button>
               <button className={`v6-chip ${bgType === "color" ? "on" : ""}`} onClick={() => setBgType("color")}>🎨 Warna</button>
               <button className={`v6-chip ${bgType === "img" ? "on" : ""}`} onClick={() => setBgType("img")}>🖼 Foto</button>
+              <button className={`v6-chip ${bgType === "img" && bgImg ? "on" : ""}`} style={{ borderColor: "rgba(139,92,246,.5)", color: "#c4b5fd" }} onClick={() => { setBgType("img"); }}>✨ AI</button>
             </div>
+            {bgType === "img" && (
+              <div className="v6-rows" style={{ marginTop: 8 }}>
+                <input className="v6-inp" placeholder='Ketik suasana: "hujan di jendela, rindu ibu, malam sepi"' value={bgPrompt} onChange={(e) => setBgPrompt(e.target.value)} />
+                <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#8b5cf6,#d946ef)" }} disabled={bgAiBusy} onClick={buatBgAI}>
+                  {bgAiBusy ? "⏳ Otak menggambar suasana…" : "🎨 Generate Background AI"}
+                </button>
+                {!!bgAiMsg && <p style={{ fontSize: 11, color: bgAiMsg.startsWith("⚠️") ? "#fbbf24" : "#6ee7b7", margin: "6px 0 0" }}>{bgAiMsg}</p>}
+                <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Kosongkan input → otak pakai baris pertama lirik sebagai suasana. Gambar dipakai otomatis; kalau kurang pas, tekan upload 📥 di bawah.</p>
+              </div>
+            )}
             {bgType === "grad" && (
               <div className="v6-rows">
                 {BG_GRADS.map(g => (

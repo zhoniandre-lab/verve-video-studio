@@ -17,6 +17,13 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎨 v19.11 — BACKGROUND AI OTOMATIS DI SPECTRUM STUDIO
+* **Ide (dari arah spektrum & feedback user):** visualizer makin "wah" kalau background-nya sinematik, bukan cuma gradien — dan user nggak mau ribet cari gambar sendiri.
+* **Fitur:** di Spectrum Studio → step Visual → chip **✨ AI** → ketik suasana/lirik (mis. "hujan di jendela, rindu ibu, malam sepi") → tombol **🎨 Generate Background AI** → otak panggil `/api/hcnsec/image` (prompt sinematik, rasio ikut 16:9/9:16, tanpa teks) → hasil otomatis jadi background (bgType=img) → bar visualizer/lirik/overlay jalan di atasnya. Input kosong → otak pakai baris pertama lirik sebagai suasana. Ada pesan jujur + fallback ke Gradasi/Foto kalau gagal.
+* **Cara pakai:** 1) isi musik → 2) Visual → ✨ AI → ketik suasana → Generate → lihat preview → Lanjut Lirik → Ekspor.
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🎬 v19.10.1 — THUMBNAIL MAKIN "WAH": SINEMATIK + TEKS NANCAP (feedback: gitu-gitu aja)
 * **Masalah (feedback user):** hasil Thumb Studio terasa monoton — gambar "gitu-gitu aja", teks kurang tegas, beda dari hasil AI image modern.
 * **Solusi (2 lapis):**
