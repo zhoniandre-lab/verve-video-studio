@@ -244,7 +244,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setPresetMsg(`🗑 Preset "${nama}" dihapus`);
     } catch { /* abaikan */ }
   }
-  const barsRef = useRef<Float32Array>(new Float32Array(64));
+  const barsRef = useRef<Float32Array>(new Float32Array(128)); // 🐛 FIX v19.17.1: harus ≥ barCount maks (128) — dulu 64 → naikkan bar >64 bikin NaN
   const renderRecRef = useRef<MediaRecorder | null>(null);
 
   const dim = useMemo(() => ratio === "9:16" ? { w: 608, h: 1080 } : { w: 1080, h: 608 }, [ratio]);
@@ -454,7 +454,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const N = barCount; // 🎛️ v19.14: jumlah bar bisa diatur
     let bass = 0;
     if (freq) {
-      const step = Math.floor(freq.length * 0.72 / N);
+      const step = Math.max(1, Math.floor(freq.length * 0.72 / N)); // 🐛 FIX v19.17.1: step minimal 1 — dulu bisa 0 → NaN
       for (let i = 0; i < N; i++) {
         let s = 0; for (let k = 0; k < step; k++) s += freq[Math.min(freq.length - 1, i * step + k)];
         const v = (s / step) / 255;

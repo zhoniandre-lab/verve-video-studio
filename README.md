@@ -17,6 +17,17 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🐛 v19.17.1 — FIX BUG "NAIKKAN JUMLAH BAR → PREVIEW/RENDER RUSAK"
+* **Masalah (screenshot user):** slider "Jumlah bar" dinaikkan (mis. ke 128) → preview & hasil render rusak.
+* **Akar masalah (ditelusuri):**
+  1. `barsRef` dibuat `new Float32Array(64)` (fixed 64) padahal `barCount` bisa 24–128 → saat N>64, `barsRef.current[i]` di luar indeks → `undefined` → NaN → gambar rusak.
+  2. `step = Math.floor(freq.length * 0.72 / N)` bisa jadi **0** saat N besar & freq kecil → `s / 0 = NaN`.
+* **Perbaikan:**
+  1. `barsRef` → `new Float32Array(128)` (≥ barCount maks).
+  2. `step` → `Math.max(1, Math.floor(...))` (minimal 1).
+* **Test baru** `tests/spectrum-bar.test.mjs` (3 cek) — anti-regresi; seluruh 31 suite hijau; tsc 0; build 0.
+
+
 ### 🎤 v19.17 — AUTO-PAS LIRIK KE AUDIO (Whisper) + HAPUS GOYANG MULTI-GAMBAR
 * **Masalah (feedback user):** (1) multi-gambar goyang-goyang bikin nggak suka — mau pergantian gambar kalem aja, bukan ikut lagu; (2) lirik harus otomatis pas dengan audio, bukan dibagi rata / edit manual.
 * **Solusi:**
