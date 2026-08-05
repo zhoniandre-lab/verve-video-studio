@@ -17,6 +17,18 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎬 v19.12 — SPECTRUM STUDIO DI-UPGRADE "WAH" (setara demo visualizer)
+* **Masalah (screenshot user):** preview Spectrum Studio di HP terlihat POLOS (gradien + bar warna datar) — beda jauh dari renderer SpectrumVisualizer (demo: glow, reflection, gradien 3 warna, logo berdenyut). User: "update harus benar-benar terlihat wah, bukan omong".
+* **Solusi** (`drawScene` spectrum-studio.tsx):
+  1. **Glow bergerak di background** (ala Trap Nation) — radial gradient warna spectrum berdenyut mengikuti bass, bergerak halus.
+  2. **Bars**: gradien 3 warna (warna utama → ungu → cyan), reflection bawah (flip 0.45, alpha 0.26), glow shadow 22px, lingkaran bass di bawah.
+  3. **Mirror**: glow shadow 20px + gradien atas-bawah + reflection bawah lebih dalam.
+  4. **Circle**: glow 25px, berputar halus, center glow putih→warna ikut bass (ala NCS).
+  5. **Wave & Dots**: glow shadow 14px.
+* **Bukti:** demo video `demo_v2_spectrum_upgrade.mp4` di-render dari logika drawScene yang SAMA (bars/mirror/circle/wave + glow bg) — hasilnya kini setara yang akan dilihat di HP.
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🎨 v19.11 — BACKGROUND AI OTOMATIS DI SPECTRUM STUDIO
 * **Ide (dari arah spektrum & feedback user):** visualizer makin "wah" kalau background-nya sinematik, bukan cuma gradien — dan user nggak mau ribet cari gambar sendiri.
 * **Fitur:** di Spectrum Studio → step Visual → chip **✨ AI** → ketik suasana/lirik (mis. "hujan di jendela, rindu ibu, malam sepi") → tombol **🎨 Generate Background AI** → otak panggil `/api/hcnsec/image` (prompt sinematik, rasio ikut 16:9/9:16, tanpa teks) → hasil otomatis jadi background (bgType=img) → bar visualizer/lirik/overlay jalan di atasnya. Input kosong → otak pakai baris pertama lirik sebagai suasana. Ada pesan jujur + fallback ke Gradasi/Foto kalau gagal.

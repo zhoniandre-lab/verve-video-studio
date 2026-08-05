@@ -265,51 +265,88 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const bars = barsRef.current;
     const [r, g2, b] = rgb;
     const acc = `rgb(${r},${g2},${b})`;
+    // 🎬 v19.12: GLOW BERGERAK di background (ala Trap Nation) — bikin nggak polos
+    const gb2 = ctx.createRadialGradient(W / 2 + Math.sin(t * 0.3) * W * 0.15, H * 0.32 + Math.cos(t * 0.4) * H * 0.12, 40, W / 2, H / 2, Math.max(W, H));
+    gb2.addColorStop(0, `rgba(${r},${g2},${b},${(0.10 + bass * 0.16).toFixed(3)})`);
+    gb2.addColorStop(0.5, "rgba(0,0,0,0)"); gb2.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gb2; ctx.fillRect(0, 0, W, H);
 
-    // ---- spectrum styles ----
+    // ---- spectrum styles (🎬 v19.12: upgrade WAH — glow, reflection, gradien 3 warna, center glow) ----
     if (specStyle === "bars") {
       const bw = W / N;
+      const baseY = H - 8;
+      const grad3 = ctx.createLinearGradient(0, H, 0, 0);
+      grad3.addColorStop(0, acc);
+      grad3.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.55 + 139))},${Math.min(255, Math.round(g2 * 0.45 + 85))},255)`);
+      grad3.addColorStop(1, "#22d3ee");
+      // reflection bawah (flip) + glow
+      ctx.save(); ctx.globalAlpha = 0.26; ctx.translate(0, baseY + 4); ctx.scale(1, -0.45);
       for (let i = 0; i < N; i++) {
-        const v = bars[i];
-        const h = Math.max(3, v * H * 0.62);
-        const x = i * bw + bw * 0.18;
-        const grd = ctx.createLinearGradient(0, H - h, 0, H);
-        grd.addColorStop(0, `rgb(${Math.min(255, r + 80)},${Math.min(255, g2 + 60)},255)`);
-        grd.addColorStop(1, acc);
-        ctx.fillStyle = grd;
+        const v = bars[i]; const h = Math.max(3, v * H * 0.4);
+        ctx.fillStyle = grad3;
         ctx.beginPath();
-        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, H - h, bw * 0.64, h, bw * 0.3);
-        else ctx.rect(x, H - h, bw * 0.64, h);
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.16, 0, bw * 0.68, h, bw * 0.3);
+        else ctx.rect(i * bw + bw * 0.16, 0, bw * 0.68, h);
         ctx.fill();
       }
+      ctx.restore();
+      // bars utama + glow
+      ctx.save(); ctx.shadowBlur = 22; ctx.shadowColor = acc;
+      for (let i = 0; i < N; i++) {
+        const v = bars[i]; const h = Math.max(3, v * H * 0.62);
+        ctx.fillStyle = grad3;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h, bw * 0.3);
+        else ctx.rect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h);
+        ctx.fill();
+      }
+      ctx.restore();
+      // lingkar bass di bawah tengah
+      ctx.beginPath(); ctx.arc(W / 2, H - 46, 10 + bass * 26, 0, Math.PI * 2);
+      ctx.fillStyle = acc; ctx.globalAlpha = 0.45 + bass * 0.5; ctx.fill(); ctx.globalAlpha = 1;
     } else if (specStyle === "mirror") {
       const bw = W / N; const cy = H * 0.56;
+      ctx.save(); ctx.shadowBlur = 20; ctx.shadowColor = acc;
       for (let i = 0; i < N; i++) {
-        const v = bars[i]; const h = Math.max(2, v * H * 0.26);
-        ctx.fillStyle = acc; ctx.globalAlpha = 0.95;
-        ctx.fillRect(i * bw + bw * 0.2, cy - h, bw * 0.6, h);
+        const v = bars[i]; const h = Math.max(2, v * H * 0.28);
+        const grd = ctx.createLinearGradient(0, cy - h, 0, cy + h);
+        grd.addColorStop(0, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
+        grd.addColorStop(1, acc);
+        ctx.fillStyle = grd; ctx.globalAlpha = 0.95;
+        ctx.fillRect(i * bw + bw * 0.18, cy - h, bw * 0.64, h);
         ctx.globalAlpha = 0.35;
-        ctx.fillRect(i * bw + bw * 0.2, cy + 2, bw * 0.6, h);
+        ctx.fillRect(i * bw + bw * 0.18, cy + 3, bw * 0.64, h * 0.85);
         ctx.globalAlpha = 1;
       }
+      ctx.restore();
     } else if (specStyle === "circle") {
       const cx = W / 2, cy = H / 2; const R = Math.min(W, H) * 0.22;
       ctx.save(); ctx.translate(cx, cy);
+      ctx.shadowBlur = 25; ctx.shadowColor = acc; ctx.lineWidth = 3;
       for (let i = 0; i < N; i++) {
-        const v = bars[i]; const len = Math.max(2, v * R * 1.1);
-        const ang = (i / N) * Math.PI * 2 - Math.PI / 2;
+        const v = bars[i]; const len = Math.max(2, v * R * 1.2);
+        const ang = (i / N) * Math.PI * 2 - Math.PI / 2 + t * 0.15;
         ctx.save(); ctx.rotate(ang);
         const grd = ctx.createLinearGradient(R, 0, R + len, 0);
         grd.addColorStop(0, acc); grd.addColorStop(1, `rgba(${r},${g2},${b},0.05)`);
         ctx.fillStyle = grd;
-        ctx.fillRect(R, -Math.max(1, Math.min(W, H) * 0.006), len, Math.max(2, Math.min(W, H) * 0.012));
+        ctx.fillRect(R, -Math.max(1, Math.min(W, H) * 0.007), len, Math.max(2, Math.min(W, H) * 0.014));
         ctx.restore();
       }
+      ctx.shadowBlur = 0;
       ctx.beginPath(); ctx.arc(0, 0, R * 0.9, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(${r},${g2},${b},0.4)`; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = `rgba(${r},${g2},${b},0.5)`; ctx.lineWidth = 2; ctx.stroke();
+      // center glow ikut bass (ala NCS)
+      const gr = R * (0.55 + bass * 0.4);
+      const rgc = ctx.createRadialGradient(0, 0, 0, 0, 0, gr);
+      rgc.addColorStop(0, "rgba(255,255,255,0.85)");
+      rgc.addColorStop(0.4, `rgba(${r},${g2},${b},0.55)`);
+      rgc.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = rgc; ctx.beginPath(); ctx.arc(0, 0, gr, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     } else if (specStyle === "wave") {
       const cy = H * 0.55;
+      ctx.save(); ctx.shadowBlur = 14; ctx.shadowColor = acc;
       for (const [alpha, amp] of [[0.95, 1], [0.4, 1.6], [0.2, 2.3]] as any[]) {
         ctx.beginPath();
         for (let x = 0; x <= W; x += 4) {
@@ -319,17 +356,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         }
         ctx.strokeStyle = acc; ctx.globalAlpha = alpha; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
       }
+      ctx.restore();
     } else { // dots/partikel
+      ctx.save(); ctx.shadowBlur = 14; ctx.shadowColor = acc;
       for (let i = 0; i < N; i++) {
-        const v = bars[i]; const ang = (i / N) * Math.PI * 2;
+        const v = bars[i]; const ang = (i / N) * Math.PI * 2 + t * 0.25;
         const rr = Math.min(W, H) * (0.12 + v * 0.3);
-        const x = W / 2 + Math.cos(ang + t * 0.25) * rr;
-        const y = H / 2 + Math.sin(ang + t * 0.25) * rr;
+        const x = W / 2 + Math.cos(ang) * rr;
+        const y = H / 2 + Math.sin(ang) * rr;
         ctx.globalAlpha = 0.25 + v * 0.75;
         ctx.fillStyle = acc;
         ctx.beginPath(); ctx.arc(x, y, Math.max(1.5, Math.min(W, H) * (0.004 + v * 0.012)), 0, Math.PI * 2); ctx.fill();
       }
-      ctx.globalAlpha = 1;
+      ctx.restore(); ctx.globalAlpha = 1;
     }
 
     // overlay suasana
