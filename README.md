@@ -17,6 +17,14 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🪝#️⃣ v19.10 — HOOK ENGINE (3 detik pertama) + HASHTAG PINTAR
+* **Ilmu dari repo agency-agents (139k★)** — agen "Short-Video Editing Coach" & "TikTok Strategist": (1) visual hook WAJIB muncul dalam 3 detik pertama (close-up / extreme close-up + emosi); (2) mix 5-8 hashtag: trending + niche + kata kunci + umum.
+* **Fitur baru:**
+  1. **🪝 Hook Engine** (`src/lib/brain/hook-engine.ts`) — analisis storyboard: tiap adegan diskor (close-up +30, wajah +15, emosi +20, wide -25) → verdict KUAT/SEDANG/LEMAH. Kartu di Lahan step 7 (Adegan): ringkasan adegan 1, alasan, saran (close-up emosi, cahaya hangat, ruang teks), badge ✅/🟡/🔴 per adegan, dan tombol **"🪝 Upgrade Adegan 1"** yang menyuntik prompt close-up emosi (tinggal ↻ ulangi adegan 1).
+  2. **#️⃣ Hashtag Pintar** (`src/lib/brain/hashtag-pintar.ts`) — otomatis 6-8 tag dari judul + keyword (+ trend): niche (ceritajadilagu/lagusedih/laguviral) + kata kunci judul + trend + umum (shorts/viraltiktok/youtubeshorts). Dipakai di **Upload Kit**: kalau hashtag belum diisi, otak bikin otomatis.
+* **Test baru** `tests/hook-hashtag.test.mjs` (14 cek) — seluruh 30 suite hijau; tsc 0; build 0.
+
+
 ### 🧠 v19.9 — ILMU BARU: RADAR GELOMBANG + KECEPATAN LAWAN + PABRIK KONTEN 7 HARI
 * **Ilmu yang dicuri dari The Book of Secret Knowledge:** (1) OSINT monitoring — pantau data lintas hari & deteksi perubahan; (2) automation — jadwalkan produksi; (3) intelligence gathering — hitung metrik dari data publik.
 * **Fitur baru:**

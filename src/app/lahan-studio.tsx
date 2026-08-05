@@ -26,6 +26,7 @@ import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDu
 import { ambilSnapshotTrend, bandingkanGelombang, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
 import { kompetitorVelocity, type KompItem } from "@/lib/brain/competitor-rss";
 import { rencanaKonten, type SlotKonten } from "@/lib/brain/content-factory";
+import { analisaHook, upgradeAdegan1 } from "@/lib/brain/hook-engine";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
@@ -352,6 +353,8 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [gelombang, setGelombang] = useState<TrendGelombang[] | null>(null);
   const [showPabrik, setShowPabrik] = useState(false);
   const pabrik = useMemo(() => (trends?.length ? rencanaKonten(brain, trends, gelombang, 7) : []), [brain, trends, gelombang]);
+  // 🪝 v19.10: HOOK ENGINE — analisis 3 detik pertama storyboard
+  const hook = useMemo(() => analisaHook(board), [board]);
   // 🛰️ v19.6: RADAR KOMPETITOR RSS — pantau upload channel lawan (gratis, tanpa kuota API)
   const KOMP_KEY = "verve_kompetitor_v1";
   const [kompCh, setKompCh] = useState<KompChannel[]>(() => {
@@ -820,6 +823,14 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     setSelTitle("");
     setAngle(null);
     flash(`🎯 Judul lawan jadi topik: "${t.slice(0, 40)}..." — lanjut Cari Sudut 🔍`);
+  }
+  /* 🪝 v19.10: upgrade adegan 1 biar hook-nya nancap (close-up emosi) */
+  function upgradeAdeganSatu() {
+    setBoard((b) => b && ({
+      ...b,
+      scenes: b.scenes.map((sc, i) => (i === 0 ? { ...sc, visual_prompt: upgradeAdegan1(sc), status: sc.status === "done" ? "idle" : sc.status, url: undefined } : sc)),
+    }));
+    flash("🪝 Adegan 1 di-upgrade (close-up emosi) — tekan ↻ ulangi adegan 1 buat gambar baru");
   }
 
   /* 🔥 v19.4/19.5 TREND RADAR — topik hangat Google Trends (multi-negara) */
@@ -2568,6 +2579,33 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
 
           {board && (
             <>
+              {/* 🪝 v19.10 HOOK ENGINE — cek 3 detik pertama (ilmu Short-Video Coach) */}
+              {hook.adegan1 && (
+                <div className="lh-card" style={{ borderColor: hook.adegan1.verdict === "kuat" ? "rgba(25,194,184,.4)" : hook.adegan1.verdict === "sedang" ? "rgba(245,158,11,.4)" : "rgba(232,92,92,.45)" }}>
+                  <div className="lh-h1">🪝 Cek Hook 3 Detik Pertama <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>v19.10</span></div>
+                  <p className="lh-sub" style={{ color: hook.adegan1.verdict === "kuat" ? "var(--v6-teal)" : hook.adegan1.verdict === "sedang" ? "#f59e0b" : "#e85c5c", fontWeight: 800 }}>
+                    {hook.ringkasan}
+                  </p>
+                  {!!hook.adegan1.alasan.length && (
+                    <ul className="lh-reasons" style={{ marginTop: 6 }}>
+                      {hook.adegan1.alasan.map((a, i) => <li key={i} className={a.startsWith("⚠️") ? "bad" : "good"}>{a}</li>)}
+                    </ul>
+                  )}
+                  {!!hook.saran.length && (
+                    <div style={{ marginTop: 6 }}>
+                      {hook.saran.map((s, i) => <p key={i} className="lh-note" style={{ color: "#e8a15a", marginTop: 3 }}>💡 {s}</p>)}
+                    </div>
+                  )}
+                  {hook.adegan1.verdict !== "kuat" && (
+                    <button className="lh-mini" style={{ marginTop: 8, padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={upgradeAdeganSatu}>
+                      🪝 Upgrade Adegan 1 (close-up emosi)
+                    </button>
+                  )}
+                  {hook.semua.length > 1 && (
+                    <p className="lh-note" style={{ marginTop: 6 }}>Adegan lain: {hook.semua.slice(1).map((a) => `${a.scene}:${a.verdict === "kuat" ? "✅" : a.verdict === "sedang" ? "🟡" : "🔴"}`).join(" · ")}</p>
+                  )}
+                </div>
+              )}
               {board.scenes.map((sc, i) => (
                 <div key={i} className="lh-card lh-scene">
                   <div className="lh-scene-head">

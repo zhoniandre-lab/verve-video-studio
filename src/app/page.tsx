@@ -13,6 +13,7 @@ import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
 import { ringkasTimelineHealth } from "@/lib/guard/timeline"; // 🛡️ Guard: cek stabilitas timeline sebelum ekspor
 import { decideTick, manualAfterMasterEnd, resolveSeekTarget, totalAllOf } from "@/lib/studio/clock"; // ⏱ FASE-A JAM TUNGGAL — keputusan sync murni & teruji
 import { applyMoneyPrinterVariant, makeProductionReportText, makeUploadKitText, moneyPrinterVariants, productionChecklist } from "@/lib/guard/production"; // 💸 Upload Kit ala MoneyPrinterTurbo
+import { hashtagPintar } from "@/lib/brain/hashtag-pintar"; // #️⃣ v19.10 hashtag otomatis
 import { buildCinematicEditPrompt, buildVerveCinematicStudioSummary, VERVE_CINEMATIC_ADJUST } from "@/lib/guard/cinematic-prompt"; // 🎬 Cinematic Prompt Kit
 import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarizeJob, type GuardJob } from "@/lib/guard/job"; // 💸 job log proses panjang
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
@@ -3830,7 +3831,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       title: meta.titleHighCTR || projTitle,
       description: meta.description || "",
       tags: meta.tags || [],
-      hashtags: meta.hashtags || "",
+      hashtags: meta.hashtags || hashtagPintar(meta.titleHighCTR || projTitle, projTitle).tags.join(" "), // #️⃣ v19.10: kalau kosong, otak bikin otomatis
       projectTitle: projTitle,
       ratio,
       durationSec: clipsTotal,
