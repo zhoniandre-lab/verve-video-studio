@@ -82,6 +82,31 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const embersRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; ph: number }[]>([]);
   const shockRef = useRef<{ x: number; y: number; r: number; a: number }[]>([]);
   const lastBassRef = useRef(0);
+  // 🎛️ v19.14 KUSTOMISASI PRO: layout, posisi logo (drag), bar count, skala, rotasi, glow, ikut beat
+  const [layoutId, setLayoutId] = useState("logo-tengah");
+  const [logoPos, setLogoPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.42 });
+  const [titlePos, setTitlePos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.05 });
+  const [barCount, setBarCount] = useState(64);
+  const [logoScale, setLogoScale] = useState(1);
+  const [rotSpeed, setRotSpeed] = useState(0.5);
+  const [glowInt, setGlowInt] = useState(1);
+  const [beatMode, setBeatMode] = useState<"denyut" | "membesar" | "statis">("denyut");
+  const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+  // Layout preset — posisi logo & judul (fraksi)
+  const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
+    "logo-tengah": { logo: { x: 0.5, y: 0.42 }, titleY: 0.035, titleScale: 1 },
+    "logo-kiri": { logo: { x: 0.22, y: 0.45 }, titleY: 0.035, titleScale: 0.9 },
+    "logo-kanan": { logo: { x: 0.78, y: 0.45 }, titleY: 0.035, titleScale: 0.9 },
+    "logo-atas": { logo: { x: 0.5, y: 0.14 }, titleY: 0.30, titleScale: 0.75 },
+    "logo-bawah": { logo: { x: 0.5, y: 0.68 }, titleY: 0.035, titleScale: 0.85 },
+    "judul-besar": { logo: { x: 0.5, y: 0.55 }, titleY: 0.03, titleScale: 1.5 },
+  };
+  function setLayout(id: string) {
+    setLayoutId(id);
+    const L = LAYOUTS[id];
+    if (L) { setLogoPos(L.logo); try { localStorage.setItem("verve_spektrum_layout", id); } catch {} }
+  }
   const [specStyle, setSpecStyle] = useState("bars");
   const [specColor, setSpecColor] = useState("#22d3ee");
   const [overlay, setOverlay] = useState("none");
@@ -256,7 +281,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 
     // bars dari analyser atau dummy berdenyut
-    const N = 64;
+    const N = barCount; // 🎛️ v19.14: jumlah bar bisa diatur
     let bass = 0;
     if (freq) {
       const step = Math.floor(freq.length * 0.72 / N);
@@ -278,16 +303,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const acc = `rgb(${r},${g2},${b})`;
     // 🎬 v19.12: GLOW BERGERAK di background (ala Trap Nation) — bikin nggak polos
     const gb2 = ctx.createRadialGradient(W / 2 + Math.sin(t * 0.3) * W * 0.15, H * 0.32 + Math.cos(t * 0.4) * H * 0.12, 40, W / 2, H / 2, Math.max(W, H));
-    gb2.addColorStop(0, `rgba(${r},${g2},${b},${(0.10 + bass * 0.16).toFixed(3)})`);
+    gb2.addColorStop(0, `rgba(${r},${g2},${b},${((0.10 + bass * 0.16) * glowInt).toFixed(3)})`);
     gb2.addColorStop(0.5, "rgba(0,0,0,0)"); gb2.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = gb2; ctx.fillRect(0, 0, W, H);
 
     // 👑 v19.13 AURORA — 3 gumpalan cahaya bergerak pelan + bintang berkelip (murah, tanpa shadowBlur)
     ctx.save(); ctx.globalCompositeOperation = "lighter";
     const aur = [
-      { x: W * 0.2, y: H * 0.25, r: W * 0.5, sp: 0.3, a: 0.10 + bass * 0.05 },
-      { x: W * 0.8, y: H * 0.7, r: W * 0.55, sp: 0.22, a: 0.08 + bass * 0.04 },
-      { x: W * 0.5, y: H * 0.5, r: W * 0.6, sp: 0.16, a: 0.07 },
+      { x: W * 0.2, y: H * 0.25, r: W * 0.5, sp: 0.3, a: (0.10 + bass * 0.05) * glowInt },
+      { x: W * 0.8, y: H * 0.7, r: W * 0.55, sp: 0.22, a: (0.08 + bass * 0.04) * glowInt },
+      { x: W * 0.5, y: H * 0.5, r: W * 0.6, sp: 0.16, a: 0.07 * glowInt },
     ];
     for (let i = 0; i < aur.length; i++) {
       const A = aur[i];
@@ -428,14 +453,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     ctx.restore();
 
-    // 👑 v19.13 PRO PACK: LOGO PUSAT — denyut ikut bass + sinar cahaya berputar + ring
+    // 👑 v19.13/v19.14 PRO PACK: LOGO PUSAT — denyut ikut bass + sinar berputar + ring
+    // 🎛️ v19.14: posisi bebas (drag), skala, kecepatan rotasi, mode ikut-beat
     const punyaLogo = logoImgRef.current || title.trim() || mTitle.trim();
     if (punyaLogo) {
-      const cx = W / 2, cy = H * 0.42;
-      const logoR = Math.min(W, H) * (0.11 + bass * 0.05);
+      const cx = logoPos.x * W, cy = logoPos.y * H;
+      const beatK = beatMode === "statis" ? 0 : 1; // denyut/membesar pakai bass
+      const beatBoost = beatMode === "membesar" ? 0.10 : 0.05;
+      const logoR = Math.min(W, H) * (0.11 * logoScale + bass * beatBoost * beatK);
       ctx.save();
       // sinar (god rays) berputar
-      ctx.translate(cx, cy); ctx.rotate(t * 0.5);
+      ctx.translate(cx, cy); ctx.rotate(t * rotSpeed);
       ctx.globalCompositeOperation = "lighter";
       const RAYS = 12;
       for (let i = 0; i < RAYS; i++) {
@@ -466,7 +494,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.lineWidth = 2 + bass * 3;
       ctx.beginPath(); ctx.arc(cx, cy, logoR * (0.9 + bass * 0.18), 0, Math.PI * 2); ctx.stroke();
       // ring luar putus-putus berputar
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(-t * 0.7);
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(-t * rotSpeed * 1.4);
       ctx.strokeStyle = `rgba(${r},${g2},${b},0.55)`;
       ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
       ctx.beginPath(); ctx.arc(0, 0, logoR * 1.55, 0, Math.PI * 2); ctx.stroke();
@@ -511,16 +539,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // overlay suasana
     if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
 
-    // 👑 v19.13 judul pro + info bar ala video visualizer (TRACK / EFFECT)
+    // 👑 v19.13/v19.14 judul pro + info bar ala video visualizer (TRACK / EFFECT)
+    // 🎛️ v19.14: posisi judul bisa di-drag bebas
     if (title.trim()) {
       ctx.textAlign = "center"; ctx.textBaseline = "top";
-      const tfs = Math.round(H * 0.055);
+      const L = LAYOUTS[layoutId] || LAYOUTS["logo-tengah"];
+      const tfs = Math.round(H * 0.055 * L.titleScale);
+      const tx = titlePos.x * W, ty = titlePos.y * H;
       ctx.font = `900 ${tfs}px 'Poppins',system-ui,sans-serif`;
       ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = Math.round(tfs * 0.16); ctx.lineJoin = "round";
-      ctx.strokeText(title, W / 2, H * 0.035);
-      const tg = ctx.createLinearGradient(0, H * 0.035, 0, H * 0.035 + tfs);
+      ctx.strokeText(title, tx, ty);
+      const tg = ctx.createLinearGradient(0, ty, 0, ty + tfs);
       tg.addColorStop(0, "#ffffff"); tg.addColorStop(1, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
-      ctx.fillStyle = tg; ctx.fillText(title, W / 2, H * 0.035);
+      ctx.fillStyle = tg; ctx.fillText(title, tx, ty);
       // info bar kecil (ala video pro: TRACK • EFFECT)
       ctx.font = `700 ${Math.round(H * 0.02)}px 'Poppins',sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
@@ -743,7 +774,23 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
           <div style={{ position: "relative", width: "100%", maxWidth: ratio === "9:16" ? 250 : 480 }}>
             <canvas ref={cvRef} width={dim.w} height={dim.h}
-              style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,.14)", background: "#000", aspectRatio: `${dim.w}/${dim.h}` }} />
+              style={{ width: "100%", borderRadius: 14, border: dragMode ? "2px solid rgba(139,92,246,.7)" : "1px solid rgba(255,255,255,.14)", background: "#000", aspectRatio: `${dim.w}/${dim.h}`, touchAction: "none", cursor: dragMode ? "crosshair" : "default" }}
+              onPointerDown={(e) => {
+                if (!dragMode) return;
+                const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
+                dragRef.current = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+                (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                if (!dragMode || !dragRef.current) return;
+                const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
+                const x = Math.min(0.95, Math.max(0.05, (e.clientX - r.left) / r.width));
+                const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
+                if (dragMode === "logo") setLogoPos({ x, y });
+                else setTitlePos({ x, y });
+              }}
+              onPointerUp={() => { dragRef.current = null; }}
+            />
             {!!audioUrl && (
               <button onClick={audition} disabled={rendering}
                 style={{ position: "absolute", right: 10, bottom: 10, background: "rgba(0,0,0,.55)", border: "1px solid rgba(255,255,255,.25)", color: "#fff", borderRadius: 999, padding: "8px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
@@ -796,6 +843,50 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <div className="v6-lbl">GAYA SPECTRUM</div>
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
               {SPEC_STYLES.map(s => <button key={s.id} className={`v6-chip ${specStyle === s.id ? "on" : ""}`} onClick={() => setSpecStyle(s.id)}>{s.label}</button>)}
+            </div>
+            {/* 🎛️ v19.14 KUSTOMISASI PRO — layout, geser, slider, ikut-beat */}
+            <div className="v6-lbl">🎛️ ATURAN / LAYOUT</div>
+            <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+              {Object.entries(LAYOUTS).map(([id, L]) => (
+                <button key={id} className={`v6-chip ${layoutId === id ? "on" : ""}`} onClick={() => setLayout(id)}>
+                  {id === "logo-tengah" ? "🎯 Logo Tengah" : id === "logo-kiri" ? "⬅ Logo Kiri" : id === "logo-kanan" ? "Logo Kanan ➡" : id === "logo-atas" ? "⬆ Logo Atas" : id === "logo-bawah" ? "⬇ Logo Bawah" : "🅰 Judul Besar"}
+                </button>
+              ))}
+            </div>
+            <div className="v6-lbl">✋ GESER POSISI (sentuh & seret di preview)</div>
+            <div className="v6-chips" style={{ padding: 0 }}>
+              <button className={`v6-chip ${dragMode === "logo" ? "on" : ""}`} onClick={() => setDragMode(dragMode === "logo" ? null : "logo")}>👑 Geser Logo</button>
+              <button className={`v6-chip ${dragMode === "judul" ? "on" : ""}`} onClick={() => setDragMode(dragMode === "judul" ? null : "judul")}>🅰 Geser Judul</button>
+              {dragMode && <button className="v6-chip" onClick={() => setDragMode(null)}>✅ Selesai</button>}
+            </div>
+            <div className="v6-lbl">🖼 GAMBAR IKUT BEAT</div>
+            <div className="v6-chips" style={{ padding: 0 }}>
+              {[["denyut", "💓 Denyut"], ["membesar", "📈 Membesar"], ["statis", "🚫 Statis"]].map(([id, lb]) => (
+                <button key={id} className={`v6-chip ${beatMode === id ? "on" : ""}`} onClick={() => setBeatMode(id as any)}>{lb}</button>
+              ))}
+            </div>
+            <div className="v6-lbl">⚙️ PENGATURAN</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>
+              <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ minWidth: 96 }}>Jumlah bar</span>
+                <input type="range" min={24} max={128} step={8} value={barCount} onChange={(e) => setBarCount(Number(e.target.value))} style={{ flex: 1 }} />
+                <b style={{ minWidth: 28 }}>{barCount}</b>
+              </label>
+              <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ minWidth: 96 }}>Ukuran logo</span>
+                <input type="range" min={0.5} max={2} step={0.1} value={logoScale} onChange={(e) => setLogoScale(Number(e.target.value))} style={{ flex: 1 }} />
+                <b style={{ minWidth: 28 }}>{logoScale.toFixed(1)}×</b>
+              </label>
+              <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ minWidth: 96 }}>Putar sinar</span>
+                <input type="range" min={0} max={1.5} step={0.1} value={rotSpeed} onChange={(e) => setRotSpeed(Number(e.target.value))} style={{ flex: 1 }} />
+                <b style={{ minWidth: 28 }}>{rotSpeed.toFixed(1)}</b>
+              </label>
+              <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ minWidth: 96 }}>Intensitas glow</span>
+                <input type="range" min={0.3} max={2} step={0.1} value={glowInt} onChange={(e) => setGlowInt(Number(e.target.value))} style={{ flex: 1 }} />
+                <b style={{ minWidth: 28 }}>{glowInt.toFixed(1)}×</b>
+              </label>
             </div>
             <div className="v6-lbl">WARNA SPECTRUM</div>
             <div className="v6-rows">

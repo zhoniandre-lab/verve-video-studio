@@ -17,6 +17,17 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎛️ v19.14 — KUSTOMISASI PRO: ATURAN/LAYOUT + GESER POSISI + GAMBAR IKUT BEAT + SLIDER
+* **Masalah (screenshot user):** "nggak puas" — penyedia visualizer beneran bisa pindah-pindah posisi logo/judul, banyak aturan/layout, gambar ngikut beat, banyak pengaturan; punya kita masih elemen diam di posisi tetap.
+* **Solusi (Spectrum Studio step 2):**
+  1. **🎛️ ATURAN/LAYOUT** — 6 preset: Logo Tengah / Logo Kiri / Logo Kanan / Logo Atas / Logo Bawah / Judul Besar — posisi logo & judul ikut preset.
+  2. **✋ GESER POSISI** — tombol "Geser Logo" / "Geser Judul" → sentuh & seret langsung di preview (pointer capture), posisi tersimpan. Border ungu saat mode geser.
+  3. **🖼 GAMBAR IKUT BEAT** — 3 mode: 💓 Denyut (logoR ikut bass) / 📈 Membesar (amplifikasi lebih besar) / 🚫 Statis.
+  4. **⚙️ PENGATURAN** — slider: Jumlah bar (24-128), Ukuran logo (0.5-2×), Putar sinar (0-1.5), Intensitas glow (0.3-2×).
+* **Bukti:** `demo_v4_kustom.mp4` — logo KIRI + bar 96 + judul besar (logika sama).
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 👑 v19.13 — PRO PACK: SPECTRUM JADI SEPERTI VISUALIZER YANG DIJUAL ORANG (logo + sinar + shockwave)
 * **Masalah (screenshot user):** hasil masih "2D bars polos" — jauh dari visualizer pro yang dijual (Trap Nation/NCS: logo berdenyut, sinar cahaya, shockwave, partikel, teks TRACK/BPM/EFFECT) dan terasa berat di HP (shadowBlur per bar).
 * **Solusi (PRO PACK, `drawScene` spectrum-studio.tsx):**
