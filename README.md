@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🩰 v19.16 — GAMBAR "MENARI IKUT IRAMA" + FIX LAYOUT NGE-LOMPAT SAAT MASUK LOGO
+* **Masalah (screenshot user):** (1) saat masuk/pilih logo malah berubah posisi — `setLayout` selalu memaksa `setLogoPos(L.logo)` walau user sudah geser manual. (2) multi-gambar masih kaku "gitu-gitu aja" — user mau gambar ikut alur musik: cepat saat drum/bass cepat, syahdu saat lambat.
+* **Solusi:**
+  1. **Fix layout nge-lompat**: `setLayout` hanya memakai posisi preset kalau user BELUM pernah geser (flag `verve_spektrum_drag`); setelah geser, posisi drag dihormati.
+  2. **🩰 Gambar menari ikut irama** (multi-gambar): deteksi **tempo/energi musik** dari analiser (bass + treble, smoothing) → gambar **zoom halus** (denyut cepat saat musik cepat, pelan saat lambat) + **geser kiri-kanan** (sway) mengikuti energi. Slider "Kuat menari" (0-20%), mode 💃 Ikut musik / 🚫 Statis. Tetap background (spectrum keliatan) + crossfade.
+* **Bukti:** `demo_v6_dance.mp4` — angka tempo & zoom di pojok (logika sama).
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🐛 v19.15.1 — FIX TOTAL PENGATURAN SPECTRUM (deps useCallback + multi-gambar + drag)
 * **Masalah (feedback user):** banyak pengaturan nggak berfungsi; gambar ikut beat bikin pusing (ganti tiap ketukan tanpa henti); pas tambah gambar spectrum jadi nggak keliatan; logo/judul nggak bisa digeser jari.
 * **Akar masalah (ditelusuri):**

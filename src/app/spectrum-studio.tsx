@@ -97,7 +97,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 🖼️ v19.15 MODE MULTI-GAMBAR — array gambar bergantian per bar/beat
   const [multiImgs, setMultiImgs] = useState<string[]>([]);
   const [multiBeat, setMultiBeat] = useState(2); // 🐛 v19.15.1: ganti tiap N ketukan (default 2 → nggak pusing)
+  const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
+  const [danceZoom, setDanceZoom] = useState(0.06); // amplitudo zoom (0 = mati)
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
+  const tempoRef = useRef(0.5); // 🩰 estimasi energi musik 0..1 (untuk gambar "menari")
   // 🎢 v19.15 EFEK 3D TUNNEL
   const [tunnelSpeed, setTunnelSpeed] = useState(1);
   const [tunnelDepth, setTunnelDepth] = useState(40); // jumlah lapisan
@@ -117,8 +120,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   };
   function setLayout(id: string) {
     setLayoutId(id);
-    const L = LAYOUTS[id];
-    if (L) { setLogoPos(L.logo); setTitlePos({ x: 0.5, y: L.titleY }); try { localStorage.setItem("verve_spektrum_layout", id); } catch {} }
+    // 🐛 FIX v19.16: layout TIDAK memaksa posisi kalau user sudah geser manual.
+    // Kalau belum pernah geser (masih di preset), baru ikuti posisi preset.
+    try {
+      const pernahGeser = localStorage.getItem("verve_spektrum_drag") === "1";
+      if (!pernahGeser) {
+        const L = LAYOUTS[id];
+        if (L) { setLogoPos(L.logo); setTitlePos({ x: 0.5, y: L.titleY }); }
+      }
+      localStorage.setItem("verve_spektrum_layout", id);
+    } catch { /* abaikan */ }
   }
   const [specStyle, setSpecStyle] = useState("bars");
   const [specColor, setSpecColor] = useState("#22d3ee");
@@ -378,6 +389,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         barsRef.current[i] = barsRef.current[i] * 0.35 + v * 0.65;
       }
       for (let i = 0; i < 8; i++) bass += barsRef.current[i]; bass /= 8;
+      // 🩰 v19.16: estimasi "tempo/energi" dari distribusi frekuensi —
+      // bass kuat + treble = cepat; rata & pelan = lambat/syahdu
+      let treble = 0, nT = 0;
+      for (let i = Math.floor(N * 0.5); i < N; i++) { treble += barsRef.current[i]; nT++; }
+      treble /= Math.max(1, nT);
+      const target = Math.min(1, Math.max(0, bass * 0.55 + treble * 0.65));
+      tempoRef.current = tempoRef.current * 0.85 + target * 0.15; // smoothing
     } else {
       for (let i = 0; i < N; i++) {
         const target = 0.25 + 0.55 * Math.abs(Math.sin(t * 2.2 + i * 0.7)) * (0.5 + Math.abs(Math.sin(t * 0.9 + i)));
@@ -420,30 +438,37 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     ctx.restore();
 
-    // 🖼️ v19.15.1 MULTI-GAMBAR sebagai BACKGROUND (DI BAWAH bars — spectrum tetap keliatan)
-    // + crossfade halus + ganti tiap N ketukan (anti pusing)
-    if (multiImgsRef.current.length >= 2) {
-      const beatLen = 60 / 96; // asumsi 96 BPM
+    // 🩰 v19.16 MULTI-GAMBAR "MENARI IKUT IRAMA" — zoom & geser halus mengikuti energi musik
+    // (cepat saat drum/bass cepat, syahdu saat lambat). Tetap background, spectrum keliatan.
+    if (multiImgsRef.current.length >= 1) {
+      const tempo = tempoRef.current; // 0..1 (energi musik sekarang)
+      const imgs = multiImgsRef.current;
+      const beatLen = 60 / 96;
       const period = beatLen * Math.max(1, multiBeat);
-      const idx = Math.floor(t / period) % multiImgsRef.current.length;
-      const prevIdx = (idx - 1 + multiImgsRef.current.length) % multiImgsRef.current.length;
+      const idx = Math.floor(t / period) % Math.max(1, imgs.length);
+      const prevIdx = (idx - 1 + imgs.length) % imgs.length;
       const within = (t % period) / period;
-      const fade = within < 0.25 ? within / 0.25 : 1; // fade-in 25% pertama
-      const im = multiImgsRef.current[idx];
-      const imPrev = multiImgsRef.current[prevIdx];
-      const drawBg = (im2: HTMLImageElement, alpha: number) => {
+      const fade = within < 0.25 ? within / 0.25 : 1;
+      const im = imgs[idx];
+      const imPrev = imgs[prevIdx];
+      // Zoom halus: denyut mengikuti tempo (bass) + "tarikan napas" pelan
+      const zoom = danceMode === "irama" ? 1 + (danceZoom || 0) * (0.5 + tempo * 0.5) * Math.max(0, Math.sin(t * (2 + tempo * 9)) ) : 1;
+      const swayX = danceMode === "irama" ? Math.sin(t * (1 + tempo * 5)) * 14 * tempo : 0; // geser kiri-kanan halus
+      const drawBg = (im2: HTMLImageElement, alpha: number, z: number, swx: number) => {
         if (!im2 || !(im2 as any).complete || !(im2 as any).naturalWidth) return;
-        const ir = (im2 as any).naturalWidth / (im2 as any).naturalHeight, cr = W / H;
-        let sw = (im2 as any).naturalWidth, sh = (im2 as any).naturalHeight, sx = 0, sy = 0;
-        if (ir > cr) { sw = (im2 as any).naturalHeight * cr; sx = ((im2 as any).naturalWidth - sw) / 2; }
-        else { sh = (im2 as any).naturalWidth / cr; sy = ((im2 as any).naturalHeight - sh) / 2; }
+        const iw = (im2 as any).naturalWidth, ih = (im2 as any).naturalHeight;
+        const ir = iw / ih, cr = W / H;
+        let sw = iw, sh = ih, sx = 0, sy = 0;
+        if (ir > cr) { sw = ih * cr; sx = (iw - sw) / 2; }
+        else { sh = iw / cr; sy = (ih - sh) / 2; }
+        const dw = W * z, dh = H * z;
         ctx.save(); ctx.globalAlpha = alpha;
-        ctx.drawImage(im2, sx, sy, sw, sh, 0, 0, W, H);
+        ctx.drawImage(im2, sx, sy, sw, sh, (W - dw) / 2 + swx, (H - dh) / 2, dw, dh);
         ctx.restore();
       };
-      drawBg(imPrev, (1 - fade) * 0.55);
-      drawBg(im, 0.55 * fade + 0.45);
-      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H); // scrim tipis — bars tetap jelas
+      drawBg(imPrev, (1 - fade) * 0.5, zoom * 0.98, swayX * 0.5);
+      drawBg(im, 0.5 * fade + 0.5, zoom, swayX);
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H); // scrim tipis
     }
 
     // ---- spectrum styles (🎬 v19.12: upgrade WAH — glow, reflection, gradien 3 warna, center glow) ----
@@ -744,7 +769,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.fillText("∞ loop mulus", W - H * 0.1 - 8, 8 + H * 0.023);
     }
   }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless,
-    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
+    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
@@ -968,6 +993,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
                 if (dragRef.current.target === "logo") setLogoPos({ x, y });
                 else setTitlePos({ x, y });
+                try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ } // 🐛 FIX: tanda user pernah geser manual
               }}
               onPointerUp={() => { dragRef.current = null; }}
             />
@@ -1070,7 +1096,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   </select>
                   <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
                 </div>
-                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: gambar jadi BACKGROUND + crossfade — spectrum tetap keliatan, ganti lebih pelan biar nggak pusing.</p>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontSize: 10, opacity: .7 }}>🩰 Menari ikut irama:</span>
+                  {[["irama", "💃 Ikut musik"], ["statis", "🚫 Statis"]].map(([id, lb]) => (
+                    <button key={id} className={`v6-chip ${danceMode === id ? "on" : ""}`} style={{ fontSize: 10 }} onClick={() => setDanceMode(id as any)}>{lb}</button>
+                  ))}
+                </div>
+                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 96 }}>Kuat menari</span>
+                  <input type="range" min={0} max={0.2} step={0.01} value={danceZoom} onChange={(e) => setDanceZoom(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 28 }}>{(danceZoom * 100).toFixed(0)}%</b>
+                </label>
+                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: gambar jadi BACKGROUND + crossfade + zoom/geser ikut energi musik — spectrum tetap keliatan, nggak pusing.</p>
               </div>
             )}
 
