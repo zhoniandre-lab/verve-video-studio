@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🐛 v19.18 — FIX AUTO-PAS LIRIK: BAHASA DIPAKSA INDONESIA + FILTER KATA ASING
+* **Masalah (feedback user):** hasil Auto-pas lirik muncul kata/bait bahasa Inggris & Cina/Korea padahal lagunya bahasa Indonesia.
+* **Akar masalah:** panggilan `transcribeBlobBesar(blob, "id")` — parameter kedua itu HINT, bukan LANG → Whisper tidak dipaksa bahasa Indonesia (auto-detect) → potongan chunk yang mulai di tengah lagu bisa keluar bahasa lain.
+* **Perbaikan:**
+  1. `transcribeBlobBesar(blob, "", "id")` — bahasa dipaksa "id" (param ketiga = lang).
+  2. **Filter pasca-transkripsi**: buang kata beraksara non-Latin (Cina/Korea/Jepang/Arab/Kiril) & kata tanpa huruf/angka. Pesan hasil kini menampilkan "N kata asing dibuang".
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🐛 v19.17.1 — FIX BUG "NAIKKAN JUMLAH BAR → PREVIEW/RENDER RUSAK"
 * **Masalah (screenshot user):** slider "Jumlah bar" dinaikkan (mis. ke 128) → preview & hasil render rusak.
 * **Akar masalah (ditelusuri):**

@@ -330,13 +330,23 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         blob = new Blob([wavBuf], { type: "audio/wav" });
       }
       // 2) Transkripsi (Whisper) → kata + timestamp
-      const res = await transcribeBlobBesar(blob, "id");
+      // 🐛 FIX v19.18: dulu transcribeBlobBesar(blob, "id") — "id" masuk param HINT,
+      // bukan LANG → Whisper auto-detect bisa ngeluarin Inggris/Cina/Korea.
+      // Sekarang lang dipaksa "id" (bahasa Indonesia) + hint dikosongkan.
+      const res = await transcribeBlobBesar(blob, "", "id");
       if (!res?.ok || !Array.isArray(res.words) || !res.words.length) {
         setLyrMsg("⚠️ Tidak ada kata terdeteksi (lagu instrumental? coba yang ada vokalnya).");
         return;
       }
-      // 3) Kelompokkan kata jadi BARIS (baris baru tiap jeda >0.8s atau panjang)
-      const words = res.words as { w: string; start: number; end: number }[];
+      // 3) Filter kata asing — buang aksara non-Latin (Cina/Korea/Jepang/dll) & simbol aneh
+      const aksaraAsing = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u0600-\u06FF\u0400-\u04FF]/;
+      const kataAsli = (res.words as { w: string; start: number; end: number }[])
+        .map((w) => ({ ...w, w: String(w.w || "").trim() }))
+        .filter((w) => w.w && !aksaraAsing.test(w.w) && /[A-Za-z0-9]/.test(w.w));
+      const dibuang = (res.words as { w: string }[]).length - kataAsli.length;
+      // 4) Kelompokkan kata jadi BARIS (baris baru tiap jeda >0.8s atau panjang)
+      const words = kataAsli;
+      if (!words.length) { setLyrMsg("⚠️ Tidak ada kata Indonesia terdeteksi (lagu instrumental?)."); return; }
       const lines: string[] = [];
       const grouped: { w: string; start: number; end: number; line: number }[] = [];
       let cur = "", curStart = words[0].start, curEnd = words[0].end, li = 0;
@@ -351,12 +361,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         }
       }
       if (cur.trim()) { lines.push(cur.trim()); grouped.push({ w: cur.trim(), start: curStart, end: curEnd, line: li }); }
-      // 4) Simpan → lyricsText (baris) & autoWords (timing presisi)
+      // 5) Simpan → lyricsText (baris) & autoWords (timing presisi)
       setAutoLines(lines);
       autoWordsRef.current = grouped;
       setLyrAuto(true);
       setLyricsText(lines.join("\n"));
-      setLyrMsg(`✅ ${words.length} kata terdeteksi → ${lines.length} baris. Timing PAS audio, cek preview!`);
+      setLyrMsg(`✅ ${words.length} kata terdeteksi (${dibuang} kata asing dibuang) → ${lines.length} baris. Timing PAS audio!`);
     } catch (e) {
       setLyrMsg(`⚠️ Gagal: ${e instanceof Error ? e.message : "coba lagi"}`);
     } finally {
