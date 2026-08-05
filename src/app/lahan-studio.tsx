@@ -1726,7 +1726,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       {/* ============ LANGKAH 1: NIAT & TOPIK ============ */}
       {step === 1 && (
         <>
-          {kepalaLangkah(1, "Niat & topik 🌱", "Kompas seluruh produksi: cerita ini tentang apa. Judul, visual, lagu — semua turun dari niat yang kautulis di sini.")}
+          {kepalaLangkah(1, "Niat, inspirasi & topik 🌱", "Kompas seluruh produksi: cerita ini tentang apa. Tulis niatmu sendiri — atau ambil dari Inspirasi Trend di bawah (klik = niat terisi).")}
           <div className="lh-card">
             <div className="lh-h1">Apa niat ceritamu, bro? 🌱</div>
             <p className="lh-sub">Niche terkunci dulu: <b>🎵 Cerita Jadi Lagu</b> — biar fokus & dalam. Nanti merambah.</p>
@@ -1746,12 +1746,13 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             <button className="lh-btn" disabled={topic.trim().length < 3 || busy === "suggest"} onClick={() => { void fetchSuggest().then(() => setStep(2)); }}>
               {busy === "suggest" ? "⏳ Nyari sudut..." : "Cari Sudut 🔍"}
             </button>
+            <p className="lh-note" style={{ color: "rgba(255,255,255,.45)" }}>👇 Nggak ada ide? Ambil dari <b style={{ color: "#f59e0b" }}>Inspirasi Trend</b> di bawah — klik satu trend = niat di atas langsung terisi.</p>
           </div>
 
-          {/* 🔥 v19.4/19.5 TREND RADAR — topik hangat multi-negara → cerita/lagu + thumbnail */}
+          {/* 🔥 v19.8 INSPIRASI DARI TREND — nyambung ke niat di atas: yang cocok niche diurutkan paling atas */}
           <div className="lh-card" style={{ borderColor: "rgba(245,158,11,.25)" }}>
-            <div className="lh-h1">🔥 Trend Radar <span style={{ fontSize: 9, background: "rgba(245,158,11,.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>GOOGLE TRENDS 🌏</span></div>
-            <p className="lh-sub">Topik yang lagi hangat dicari orang hari ini — yang <b>💔 Emosional</b> langsung bisa jadi cerita/lagu (niche-mu). Satu klik, niat terisi. Pilih negara, kasih 🎨 untuk saran thumbnail.</p>
+            <div className="lh-h1">🔥 Inspirasi dari Trend <span style={{ fontSize: 9, background: "rgba(245,158,11,.15)", color: "#f59e0b", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>GOOGLE TRENDS 🌏</span></div>
+            <p className="lh-sub">Topik hangat hari ini — yang <b>🎵 cocok niche-mu (cerita jadi lagu)</b> diurutkan paling atas. <b>Klik trend → langsung terisi ke niat di atas</b>, lalu gas cari sudutnya. Pilih negara, kasih 🎨 untuk saran thumbnail.</p>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               {[["ID", "🇮🇩 Indonesia"], ["US", "🇺🇸 US"], ["JP", "🇯🇵 Jepang"], ["MY", "🇲🇾 Malaysia"]].map(([g, lb]) => (
                 <button key={g} onClick={() => gantiGeo(g)} style={{ fontSize: 10.5, fontWeight: 800, padding: "5px 11px", borderRadius: 999, cursor: "pointer", color: trendGeo === g ? "#0a0a14" : "#c7c7d4", background: trendGeo === g ? "#f59e0b" : "var(--v6-card)", border: trendGeo === g ? "1px solid #f59e0b" : "1px solid var(--v6-line)" }}>
@@ -1762,137 +1763,46 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 {trendBusy ? "⏳ Menarik..." : "🔥 Muat Trend"}
               </button>
             </div>
-            {!!trends?.length && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
-                {trends.slice(0, 12).map((t) => {
-                  const tg = skorTrend(t.title);
-                  const active = thumbTrend?.title === t.title;
-                  return (
-                    <div key={t.title} style={{ background: "var(--v6-card)", border: active ? "2px solid rgba(245,158,11,.6)" : tg.cocokLagu ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, overflow: "hidden" }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px" }}>
-                        <button onClick={() => pakaiTrend(t.title)} style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, textAlign: "left", background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: 0 }}>
-                          <span style={{ fontSize: 16 }}>{tg.emoji}</span>
-                          <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>{t.title}</span>
-                          <span style={{ fontSize: 9.5, opacity: .55 }}>{t.traffic || ""}</span>
-                          <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{tg.cocokLagu ? "🎵 jadi lagu?" : tg.label}</span>
-                        </button>
-                        <button onClick={() => lihatThumbTrend(t)} title="Saran thumbnail dari trend ini" style={{ fontSize: 13, background: active ? "rgba(245,158,11,.2)" : "transparent", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "3px 8px", cursor: "pointer" }}>🎨</button>
-                      </div>
-                      {active && thumbTrend && (
-                        <div style={{ padding: "9px 10px", borderTop: "1px dashed rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)" }}>
-                          <div style={{ fontSize: 10.5, opacity: .8 }}>{thumbTrend.saran.alasan}</div>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
-                            <span style={{ background: thumbTrend.saran.warna, color: "#fff", fontWeight: 900, fontSize: 11, padding: "5px 10px", borderRadius: 8 }}>{thumbTrend.saran.overlay}</span>
-                            <span style={{ fontSize: 9.5, opacity: .6 }}>warna {thumbTrend.saran.warna}</span>
-                          </div>
-                          <div style={{ fontSize: 10, fontFamily: "monospace", background: "rgba(0,0,0,.3)", borderRadius: 8, padding: "7px 9px", marginTop: 6, color: "#c7c7d4" }}>{thumbTrend.saran.prompt}</div>
-                          <button className="lh-mini" style={{ marginTop: 6 }} onClick={() => { void navigator.clipboard?.writeText(thumbTrend.saran.prompt).then(() => flash("📋 Prompt thumbnail tersalin")); }}>📋 Salin prompt thumbnail</button>
+            {!!trends?.length && (() => {
+              // 🧠 v19.8: sortir kecerdasan — yang cocok niche (bisa jadi lagu) paling atas
+              const sorted = [...trends].sort((a, b) => (skorTrend(b.title).cocokLagu ? 1 : 0) - (skorTrend(a.title).cocokLagu ? 1 : 0));
+              const cocok = sorted.filter((t) => skorTrend(t.title).cocokLagu).length;
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                  {cocok > 0 && <p className="lh-note" style={{ color: "#f59e0b", margin: 0 }}>🎵 {cocok} trend cocok langsung jadi cerita/lagu — diprioritaskan otak.</p>}
+                  {sorted.slice(0, 12).map((t) => {
+                    const tg = skorTrend(t.title);
+                    const active = thumbTrend?.title === t.title;
+                    return (
+                      <div key={t.title} style={{ background: "var(--v6-card)", border: active ? "2px solid rgba(245,158,11,.6)" : tg.cocokLagu ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, overflow: "hidden" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px" }}>
+                          <button onClick={() => pakaiTrend(t.title)} style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, textAlign: "left", background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: 0 }}>
+                            <span style={{ fontSize: 16 }}>{tg.emoji}</span>
+                            <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>{t.title}</span>
+                            <span style={{ fontSize: 9.5, opacity: .55 }}>{t.traffic || ""}</span>
+                            <span style={{ fontSize: 10, color: tg.cocokLagu ? "#f59e0b" : "rgba(255,255,255,.4)", whiteSpace: "nowrap" }}>{tg.cocokLagu ? "🎵 jadi lagu?" : tg.label}</span>
+                          </button>
+                          <button onClick={() => lihatThumbTrend(t)} title="Saran thumbnail dari trend ini" style={{ fontSize: 13, background: active ? "rgba(245,158,11,.2)" : "transparent", border: "1px solid rgba(245,158,11,.35)", borderRadius: 999, padding: "3px 8px", cursor: "pointer" }}>🎨</button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                        {active && thumbTrend && (
+                          <div style={{ padding: "9px 10px", borderTop: "1px dashed rgba(245,158,11,.3)", background: "rgba(245,158,11,.06)" }}>
+                            <div style={{ fontSize: 10.5, opacity: .8 }}>{thumbTrend.saran.alasan}</div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+                              <span style={{ background: thumbTrend.saran.warna, color: "#fff", fontWeight: 900, fontSize: 11, padding: "5px 10px", borderRadius: 8 }}>{thumbTrend.saran.overlay}</span>
+                              <span style={{ fontSize: 9.5, opacity: .6 }}>warna {thumbTrend.saran.warna}</span>
+                            </div>
+                            <div style={{ fontSize: 10, fontFamily: "monospace", background: "rgba(0,0,0,.3)", borderRadius: 8, padding: "7px 9px", marginTop: 6, color: "#c7c7d4" }}>{thumbTrend.saran.prompt}</div>
+                            <button className="lh-mini" style={{ marginTop: 6 }} onClick={() => { void navigator.clipboard?.writeText(thumbTrend.saran.prompt).then(() => flash("📋 Prompt thumbnail tersalin")); }}>📋 Salin prompt thumbnail</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {!!trendMsg && <p className="lh-note" style={{ color: trendMsg.startsWith("⚠️") ? "#e8a15a" : "rgba(255,255,255,.5)", marginTop: 8 }}>{trendMsg}</p>}
             <p className="lh-note">Data dari RSS publik Google Trends (read-only, gratis). Tag & saran thumbnail pakai kamus audiens VERVE.</p>
-          </div>
-
-          {/* 🛰️ v19.6 RADAR KOMPETITOR RSS — pantau upload channel lawan via RSS gratis */}
-          <div className="lh-card" style={{ borderColor: "rgba(25,194,184,.25)" }}>
-            <div className="lh-h1">🛰️ Radar Kompetitor <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>RSS · v19.6</span></div>
-            <p className="lh-sub">Mata-mata real-time: pantau channel lawan lewat <b>RSS publik YouTube</b> — begitu mereka upload, otak langsung tahu judulnya & cek <b>mirip nggak dengan judulmu</b>. <b>Gratis, tanpa nyentuh kuota API risetmu.</b></p>
-            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <input className="lh-sel" style={{ flex: 1 }} placeholder="Link channel: youtube.com/@nama atau /channel/UC..." value={kompUrl} onChange={(e) => setKompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void tambahKomp(); }} />
-              <button className="lh-mini ok" onClick={tambahKomp} disabled={kompBusy} style={{ padding: "7px 12px" }}>+ Pantau</button>
-            </div>
-            {!!kompCh.length && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                {kompCh.map((k) => (
-                  <span key={k.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 999, padding: "4px 10px", fontSize: 11 }}>
-                    {k.name || k.id}
-                    <button onClick={() => simpanKomp(kompCh.filter((x) => x.id !== k.id))} style={{ background: "none", border: "none", color: "#e85c5c", cursor: "pointer", fontSize: 12, padding: 0 }}>✕</button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
-              <button className="lh-mini ok" onClick={scanKomp} disabled={kompBusy} style={{ padding: "7px 14px" }}>
-                {kompBusy ? "⏳ Scanning..." : "🛰️ Scan Sekarang"}
-              </button>
-              {!!kompScanAt && <span className="lh-note" style={{ marginTop: 0 }}>Terakhir: {new Date(kompScanAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>}
-            </div>
-            {!!kompMsg && <p className="lh-note" style={{ color: kompMsg.startsWith("⚠️") ? "#e8a15a" : "var(--v6-teal)", marginTop: 8 }}>{kompMsg}</p>}
-            {!!kompFeeds?.length && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-                {kompFeeds.map((f) => (
-                  <div key={f.channelId} style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "9px 11px" }}>
-                    <b style={{ fontSize: 12 }}>📺 {f.channelName || f.channelId}</b>
-                    {f.error ? <p className="lh-note" style={{ color: "#e8a15a", marginTop: 4 }}>{f.error}</p> : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
-                        {f.items.slice(0, 5).map((it) => {
-                          const sim = simJudul(it.title, brain);
-                          const bahaya = sim.max >= 60;
-                          return (
-                            <div key={it.videoId} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                              <a href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: "#fff", flex: 1 }}>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5 }}>
-                                  <span style={{ flex: 1 }}>{it.title}</span>
-                                  {bahaya && <span style={{ fontSize: 9, background: "rgba(232,92,92,.15)", color: "#e85c5c", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>⚠️ mirip</span>}
-                                  <span style={{ fontSize: 9.5, opacity: .55, whiteSpace: "nowrap" }}>{waktuLalu(it.publishedAt)}</span>
-                                </div>
-                                {bahaya && sim.match && <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>vs "{sim.match}" ({sim.max}%)</div>}
-                              </a>
-                              <button className="lh-mini" onClick={() => bandingDenganLawan(it.title)} title="Bandingkan dengan judulmu" style={{ padding: "4px 8px", fontSize: 10 }}>⚖️</button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* ⚖️ v19.7: HASIL BANDING — judulmu vs judul lawan */}
-            {banding && (
-              <div style={{ marginTop: 10, background: "rgba(25,194,184,.06)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 12, padding: "10px 12px" }}>
-                <b style={{ fontSize: 12 }}>⚖️ Duel judul</b>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <div style={{ flex: 1, background: "rgba(25,194,184,.08)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 10, padding: 8 }}>
-                    <span style={{ fontSize: 9, opacity: .6 }}>JUDULMU</span>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 2 }}>{banding.a.title}</div>
-                    <div style={{ fontSize: 10, opacity: .75, marginTop: 4 }}>Skor <b style={{ color: "var(--v6-teal)" }}>{banding.a.skor}</b> · pred CTR ~{banding.a.predCtr}% · {banding.a.kata} kata{banding.a.angka ? " · angka" : ""}{banding.a.emosi ? " · emosi" : ""}</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", fontSize: 10, fontWeight: 900, color: "#f59e0b", whiteSpace: "nowrap" }}>VS<br />{banding.sim}%</div>
-                  <div style={{ flex: 1, background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.3)", borderRadius: 10, padding: 8 }}>
-                    <span style={{ fontSize: 9, opacity: .6 }}>LAWAN</span>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 2 }}>{banding.b.title}</div>
-                    <div style={{ fontSize: 10, opacity: .75, marginTop: 4 }}>Skor <b style={{ color: "#8b5cf6" }}>{banding.b.skor}</b> · pred CTR ~{banding.b.predCtr}% · {banding.b.kata} kata{banding.b.angka ? " · angka" : ""}{banding.b.emosi ? " · emosi" : ""}</div>
-                  </div>
-                </div>
-                <div style={{ fontSize: 11, marginTop: 8, color: banding.pemenang === "a" ? "var(--v6-teal)" : banding.pemenang === "b" ? "#e85c5c" : "#f59e0b", fontWeight: 700 }}>
-                  {banding.pemenang === "a" ? "🏆 " : banding.pemenang === "b" ? "🛡️ " : "⚖️ "}{banding.alasan}
-                </div>
-              </div>
-            )}
-            {/* 🧬 v19.7: POLA JUDUL KOMPETITOR — dari judul yang terkumpul */}
-            {kompPola && kompPola.total > 0 && (
-              <div style={{ marginTop: 10, background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "10px 12px" }}>
-                <b style={{ fontSize: 12 }}>🧬 Pola judul lawan <span style={{ fontSize: 9, opacity: .6 }}>(dari {kompPola.total} judul terkumpul)</span></b>
-                {!!kompPola.pola.length && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                    {kompPola.pola.slice(0, 6).map((p) => (
-                      <span key={p.key} style={{ fontSize: 10, background: "rgba(139,92,246,.12)", border: "1px solid rgba(139,92,246,.3)", color: "#c7c7d4", borderRadius: 999, padding: "3px 9px" }}>{p.label} {p.count}× ({p.pct}%)</span>
-                    ))}
-                  </div>
-                )}
-                {!!kompPola.topTokens.length && <p className="lh-note" style={{ marginTop: 6 }}>Kata khas: <b>{kompPola.topTokens.join(" · ")}</b></p>}
-                {!!kompPola.naik.length && (
-                  <p className="lh-note" style={{ color: "#f59e0b", marginTop: 4 }}>📈 Sedang naik: <b>{kompPola.naik.map((x) => `${x.phrase} ×${x.count}`).join(" · ")}</b></p>
-                )}
-              </div>
-            )}
-            <p className="lh-note">Channel @nama otomatis di-resolve jadi ID (sekali, tanpa API key). Data RSS publik — murah, stabil, legal. Upload baru terdeteksi otomatis & masuk notifikasi harian.</p>
           </div>
 
           <div className="lh-card">
@@ -2032,6 +1942,102 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 <p className="lh-note">{DATA_GAPS.join(" ")}</p>
               </div>
 
+          {/* 🛰️ v19.6 RADAR KOMPETITOR RSS — pantau upload channel lawan via RSS gratis */}
+          <div className="lh-card" style={{ borderColor: "rgba(25,194,184,.25)" }}>
+            <div className="lh-h1">🛰️ Radar Kompetitor — pantauan live lawanmu <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>PELENGKAP RISET</span></div>
+            <p className="lh-sub">Riset di atas = <b>potret statis</b> (hasil pencarian). Radar ini = <b>pantauan hidup</b>: begitu lawan upload, otak tahu judulnya & cek <b>mirip nggak dengan judulmu</b>. <b>Gratis via RSS, tanpa nyentuh kuota API risetmu.</b> Data pola lawan dipakai saat riset ulang & duel judul.</p>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input className="lh-sel" style={{ flex: 1 }} placeholder="Link channel: youtube.com/@nama atau /channel/UC..." value={kompUrl} onChange={(e) => setKompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void tambahKomp(); }} />
+              <button className="lh-mini ok" onClick={tambahKomp} disabled={kompBusy} style={{ padding: "7px 12px" }}>+ Pantau</button>
+            </div>
+            {!!kompCh.length && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {kompCh.map((k) => (
+                  <span key={k.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 999, padding: "4px 10px", fontSize: 11 }}>
+                    {k.name || k.id}
+                    <button onClick={() => simpanKomp(kompCh.filter((x) => x.id !== k.id))} style={{ background: "none", border: "none", color: "#e85c5c", cursor: "pointer", fontSize: 12, padding: 0 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+              <button className="lh-mini ok" onClick={scanKomp} disabled={kompBusy} style={{ padding: "7px 14px" }}>
+                {kompBusy ? "⏳ Scanning..." : "🛰️ Scan Sekarang"}
+              </button>
+              {!!kompScanAt && <span className="lh-note" style={{ marginTop: 0 }}>Terakhir: {new Date(kompScanAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}</span>}
+            </div>
+            {!!kompMsg && <p className="lh-note" style={{ color: kompMsg.startsWith("⚠️") ? "#e8a15a" : "var(--v6-teal)", marginTop: 8 }}>{kompMsg}</p>}
+            {!!kompFeeds?.length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                {kompFeeds.map((f) => (
+                  <div key={f.channelId} style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "9px 11px" }}>
+                    <b style={{ fontSize: 12 }}>📺 {f.channelName || f.channelId}</b>
+                    {f.error ? <p className="lh-note" style={{ color: "#e8a15a", marginTop: 4 }}>{f.error}</p> : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
+                        {f.items.slice(0, 5).map((it) => {
+                          const sim = simJudul(it.title, brain);
+                          const bahaya = sim.max >= 60;
+                          return (
+                            <div key={it.videoId} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <a href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: "#fff", flex: 1 }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5 }}>
+                                  <span style={{ flex: 1 }}>{it.title}</span>
+                                  {bahaya && <span style={{ fontSize: 9, background: "rgba(232,92,92,.15)", color: "#e85c5c", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>⚠️ mirip</span>}
+                                  <span style={{ fontSize: 9.5, opacity: .55, whiteSpace: "nowrap" }}>{waktuLalu(it.publishedAt)}</span>
+                                </div>
+                                {bahaya && sim.match && <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>vs "{sim.match}" ({sim.max}%)</div>}
+                              </a>
+                              <button className="lh-mini" onClick={() => bandingDenganLawan(it.title)} title="Bandingkan dengan judulmu" style={{ padding: "4px 8px", fontSize: 10 }}>⚖️</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* ⚖️ v19.7: HASIL BANDING — judulmu vs judul lawan */}
+            {banding && (
+              <div style={{ marginTop: 10, background: "rgba(25,194,184,.06)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 12, padding: "10px 12px" }}>
+                <b style={{ fontSize: 12 }}>⚖️ Duel judul</b>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <div style={{ flex: 1, background: "rgba(25,194,184,.08)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 10, padding: 8 }}>
+                    <span style={{ fontSize: 9, opacity: .6 }}>JUDULMU</span>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 2 }}>{banding.a.title}</div>
+                    <div style={{ fontSize: 10, opacity: .75, marginTop: 4 }}>Skor <b style={{ color: "var(--v6-teal)" }}>{banding.a.skor}</b> · pred CTR ~{banding.a.predCtr}% · {banding.a.kata} kata{banding.a.angka ? " · angka" : ""}{banding.a.emosi ? " · emosi" : ""}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", fontSize: 10, fontWeight: 900, color: "#f59e0b", whiteSpace: "nowrap" }}>VS<br />{banding.sim}%</div>
+                  <div style={{ flex: 1, background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.3)", borderRadius: 10, padding: 8 }}>
+                    <span style={{ fontSize: 9, opacity: .6 }}>LAWAN</span>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 2 }}>{banding.b.title}</div>
+                    <div style={{ fontSize: 10, opacity: .75, marginTop: 4 }}>Skor <b style={{ color: "#8b5cf6" }}>{banding.b.skor}</b> · pred CTR ~{banding.b.predCtr}% · {banding.b.kata} kata{banding.b.angka ? " · angka" : ""}{banding.b.emosi ? " · emosi" : ""}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, marginTop: 8, color: banding.pemenang === "a" ? "var(--v6-teal)" : banding.pemenang === "b" ? "#e85c5c" : "#f59e0b", fontWeight: 700 }}>
+                  {banding.pemenang === "a" ? "🏆 " : banding.pemenang === "b" ? "🛡️ " : "⚖️ "}{banding.alasan}
+                </div>
+              </div>
+            )}
+            {/* 🧬 v19.7: POLA JUDUL KOMPETITOR — dari judul yang terkumpul */}
+            {kompPola && kompPola.total > 0 && (
+              <div style={{ marginTop: 10, background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "10px 12px" }}>
+                <b style={{ fontSize: 12 }}>🧬 Pola judul lawan <span style={{ fontSize: 9, opacity: .6 }}>(dari {kompPola.total} judul terkumpul)</span></b>
+                {!!kompPola.pola.length && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                    {kompPola.pola.slice(0, 6).map((p) => (
+                      <span key={p.key} style={{ fontSize: 10, background: "rgba(139,92,246,.12)", border: "1px solid rgba(139,92,246,.3)", color: "#c7c7d4", borderRadius: 999, padding: "3px 9px" }}>{p.label} {p.count}× ({p.pct}%)</span>
+                    ))}
+                  </div>
+                )}
+                {!!kompPola.topTokens.length && <p className="lh-note" style={{ marginTop: 6 }}>Kata khas: <b>{kompPola.topTokens.join(" · ")}</b></p>}
+                {!!kompPola.naik.length && (
+                  <p className="lh-note" style={{ color: "#f59e0b", marginTop: 4 }}>📈 Sedang naik: <b>{kompPola.naik.map((x) => `${x.phrase} ×${x.count}`).join(" · ")}</b></p>
+                )}
+              </div>
+            )}
+            <p className="lh-note">Channel @nama otomatis di-resolve jadi ID (sekali, tanpa API key). Data RSS publik — murah, stabil, legal. Upload baru terdeteksi otomatis & masuk notifikasi harian.</p>
+          </div>
               <div className="lh-card">
                 <div className="lh-h2">🎯 Audiens & CTA</div>
                 <div className="lh-kv"><span>Yang mereka takutkan</span><b>{card.fears.join(" · ")}</b></div>

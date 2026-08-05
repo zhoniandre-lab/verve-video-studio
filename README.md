@@ -17,6 +17,14 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🧭 v19.8 — ALUR LAHAN DISATUKAN: INSPIRASI NYAMBUNG, RADAR PINDAH KE RISET
+* **Masalah (feedback user):** Trend Radar & Radar Kompetitor RSS di step 1 (Niat & Topik) terasa terpisah & tidak nyambung dengan niche & alur produksi.
+* **Solusi (selaras konvensi v29.0/29.1 — langkah bertujuan jelas, bahan dari data):**
+  1. **Step 1 → "Niat, inspirasi & topik"** — Trend Radar dirombak jadi **🔥 Inspirasi dari Trend**: trend yang 🎵 cocok niche (cerita jadi lagu) diurutkan PALING ATAS (tweak otak: sortir relevansi niche), jembatan visual "👇 klik trend = niat terisi", dan penghitung "X trend cocok langsung jadi cerita/lagu". Satu kesatuan: niat ↔ inspirasi.
+  2. **🛰️ Radar Kompetitor RSS PINDAH ke Step 3 (Riset)** — tempatnya yang logis: di sana sudah ada "Pola judul kompetitor", "⚡ 3 kompetitor tercepat", "👀 Lawan terlaris". Radar RSS jadi **"pantauan live lawan"** pelengkap potret statis riset — satu kesatuan riset: statis (API) + live (RSS), pola lawan + duel judul ⚖️.
+* **Test:** seluruh 30 suite tetap hijau; tsc 0; build 0.
+
+
 ### ⚖️🛰️ v19.7 — AUTO-ALERT KOMPETITOR + ANALISIS POLA LAWAN + DUEL JUDUL
 * **Masalah:** Radar Kompetitor (v19.6) sudah bisa scan, tapi belum: (1) memberi tahu otomatis saat lawan upload, (2) belajar pola judul lawan dari waktu ke waktu, (3) membandingkan judulmu vs judul lawan.
 * **Solusi:**
