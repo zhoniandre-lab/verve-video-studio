@@ -399,19 +399,30 @@ export function intiJudulUntukSerang(title: string): { penuh: string; inti1: str
  *   - angka (dari data lawan) cuma dipakai lewat pola "Kisah" yang wajar
  * Semua di-score mesin otak vs judul lawan; yang paling kuat di depan.
  */
-export function serangBalikJudul(lawanTitle: string, keyword: string, brain: BrainMemory, n = 3, angkaPopuler?: string[]): HasilSerang[] {
+export function serangBalikJudul(lawanTitle: string, keyword: string, brain: BrainMemory, n = 3, angkaPopuler?: string[], batch = 0): HasilSerang[] {
   const { penuh, inti1 } = intiJudulUntukSerang(keyword);
   const frasaViral = ambilFrasaViral(lawanTitle) || "Viral TikTok Terbaru 2026";
   // 🧠 v19.8.4: angka dari DATA judul lawan kalau ada; fallback hanya kalau belum ada data
   const angka = (angkaPopuler && angkaPopuler.length ? angkaPopuler : ["3", "5", "7"]);
-  const tpls: string[] = [
-    // Tanpa angka — natural untuk niche cerita jadi lagu
-    `${penuh} - ${frasaViral}`,
-    `${penuh} - ${frasaViral} | Cerita Jadi Lagu`,
-    `Rindu ${inti1} - ${frasaViral}`,
-    // Angka (dari data lawan) hanya lewat pola "Kisah" yang wajar
-    `${angka[0]} Kisah ${inti1} - ${frasaViral}`,
-  ];
+  // 🧠 v19.8.6: batch 0 = varian inti; batch 1 = emosi + penasaran (buat "Generate Lagi")
+  const EMO = ["Rindu", "Maaf", "Doa Terakhir untuk", "Air Mata"];
+  const PENS = ["Ternyata", "Jangan Nonton", "Akhirnya", "Ini Dia"];
+  const tpls: string[] =
+    batch === 0
+      ? [
+          // Tanpa angka — natural untuk niche cerita jadi lagu
+          `${penuh} - ${frasaViral}`,
+          `${penuh} - ${frasaViral} | Cerita Jadi Lagu`,
+          `Rindu ${inti1} - ${frasaViral}`,
+          // Angka (dari data lawan) hanya lewat pola "Kisah" yang wajar
+          `${angka[0]} Kisah ${inti1} - ${frasaViral}`,
+        ]
+      : [
+          `${EMO[(batch - 1) % EMO.length]} ${inti1} - ${frasaViral}`,
+          `${PENS[(batch - 1) % PENS.length]} ${inti1} - ${frasaViral}`,
+          `${EMO[(batch + 1) % EMO.length]} ${inti1} - ${frasaViral} | Cerita Jadi Lagu`,
+          `${angka[0]} Kisah ${inti1} yang Menyentuh - ${frasaViral}`,
+        ];
   const seen = new Set<string>();
   const out: HasilSerang[] = [];
   for (const t of tpls) {

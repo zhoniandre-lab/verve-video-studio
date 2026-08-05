@@ -363,6 +363,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [kompPola, setKompPola] = useState<PolaKompetitor | null>(null);
   const [banding, setBanding] = useState<HasilBanding | null>(null);
   const [serang, setSerang] = useState<HasilSerang[] | null>(null);
+  const [serangBatch, setSerangBatch] = useState(0);
   function simpanKomp(next: KompChannel[]) {
     setKompCh(next);
     try { localStorage.setItem(KOMP_KEY, JSON.stringify(next)); } catch { /* penuh? abaikan */ }
@@ -442,6 +443,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     // Sekarang a = JUDULMU, b = LAWAN → skor & verdict jadi benar.
     setBanding(bandingkanJudul(judulSaya, lawanTitle, brain));
     setSerang(null);
+    setSerangBatch(0);
   }
   /* ⚔️ v19.8.3/19.8.4: SERANG BALIK — judul penyerang berbasis DATA judul lawan */
   function serangBalik() {
@@ -450,9 +452,31 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     const kw = topic.trim() || selTitle || (brain.results?.[0]?.title || "");
     // 🧠 v19.8.4: angka diambil dari DATA judul lawan (bukan template tebakan)
     const angka = angkaPopulerDariJudul(kompTitles);
-    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka);
+    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka, 0);
     setSerang(hasil);
+    setSerangBatch(0);
     flash(angka.length ? `⚔️ Saran jadi — angka ${angka.join(", ")} diambil dari judul lawan!` : "⚔️ Saran judul penyerang jadi — pilih yang paling kuat!");
+  }
+  /* 🔁 v19.8.6: GENERATE LAGI — varian baru sampai nemu yang menang besar */
+  function serangLagi() {
+    const lawan = banding?.b.title;
+    if (!lawan) { setKompMsg("Klik ⚖️ di salah satu judul lawan dulu ya bro."); return; }
+    const kw = topic.trim() || selTitle || (brain.results?.[0]?.title || "");
+    const angka = angkaPopulerDariJudul(kompTitles);
+    const nextBatch = serangBatch + 1;
+    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka, nextBatch);
+    // Gabung dengan hasil lama (jangan dobel), urut skor, tunjuk yang menang besar
+    const lama = serang || [];
+    const gabung = [...lama, ...hasil].filter(
+      (x, i, arr) => arr.findIndex((y) => y.saran.a.title === x.saran.a.title) === i
+    );
+    const urut = gabung.sort((x, y) => y.saran.a.skor - x.saran.a.skor);
+    setSerang(urut);
+    setSerangBatch(nextBatch);
+    const menangBesar = urut.find((x) => x.menang && x.selisih >= 3);
+    if (menangBesar) flash(`🏆 Nemu yang MENANG BESAR: "${menangBesar.saran.a.title}" (+${menangBesar.selisih} poin)!`);
+    else if (urut.some((x) => x.menang)) flash(`⚔️ Varian baru masuk — masih ada yang menang tipis, coba generate lagi buat cari yang besar!`);
+    else flash(`🔁 Varian baru masuk — belum ada yang menang, generate lagi?`);
   }
   function pakaiJudulSerang(t: string) {
     setSelTitle(t);
@@ -2053,9 +2077,23 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 </div>
                 {/* ⚔️ v19.8.3: SERANG BALIK — judul rekomendasi yang menyerang lawan */}
                 <div style={{ marginTop: 10, borderTop: "1px dashed rgba(255,255,255,.12)", paddingTop: 8 }}>
-                  <button className="lh-mini" onClick={serangBalik} style={{ padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }}>
-                    ⚔️ Serang Balik — bikin judul yang mengalahkannya
-                  </button>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    <button className="lh-mini" onClick={serangBalik} style={{ padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }}>
+                      ⚔️ Serang Balik
+                    </button>
+                    <button className="lh-mini" onClick={serangLagi} style={{ padding: "7px 12px", borderColor: "rgba(25,194,184,.5)", color: "var(--v6-teal)", background: "rgba(25,194,184,.08)" }}>
+                      🔁 Generate Lagi {serangBatch > 0 ? `(${serangBatch}×)` : ""}
+                    </button>
+                  </div>
+                  {!!serang?.length && (() => {
+                    const menangBesar = serang.find((x) => x.menang && x.selisih >= 3);
+                    const adaMenang = serang.some((x) => x.menang);
+                    return (
+                      <p className="lh-note" style={{ marginTop: 8, color: menangBesar ? "var(--v6-teal)" : adaMenang ? "#f59e0b" : "rgba(255,255,255,.55)", fontWeight: 700 }}>
+                        {menangBesar ? `🏆 Ada yang MENANG BESAR (+${menangBesar.selisih} poin): "${menangBesar.saran.a.title}"` : adaMenang ? `⚔️ Sudah ada yang menang — generate lagi buat cari yang menang lebih besar!` : `Belum ada yang menang vs lawan (skor terbaik ${Math.max(...serang.map((x) => x.saran.a.skor))}). Coba generate lagi — tiap putaran varian baru.`}
+                      </p>
+                    );
+                  })()}
                   <p className="lh-note" style={{ marginTop: 6 }}>Jujur: frasa viral & angka di judul saran diambil dari <b>data judul lawan</b> yang terkumpul (bukan tebakan) — di-score mesin otak vs judul lawan sebelum kamu pakai.</p>
                   {!!serang?.length && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>

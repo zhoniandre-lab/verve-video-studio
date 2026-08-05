@@ -174,6 +174,15 @@ var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\
   const s3 = K.serangBalikJudul(lawan, "Ibu Engkau Yang Terbaik | Cerita Jadi Lagu | Dengarkan Sampai Habis", brain, 4, angka);
   T("tidak ada saran '3 Ibu Engkau Yang Terbaik' (angka + judul penuh)", s3.every((x) => !/^\d+ Ibu Engkau/i.test(x.saran.a.title)), s3.map((x) => x.saran.a.title.slice(0, 35)).join(" | "));
   T("ada saran TANPA angka (natural niche lagu)", s3.some((x) => !/^\d/.test(x.saran.a.title) && x.saran.a.title.includes("Ibu Engkau Yang Terbaik")), s3.map((x) => x.saran.a.title.slice(0, 35)).join(" | "));
+
+  // v19.8.6: GENERATE LAGI — batch beda → varian beda (emoji emosi/penasaran)
+  const b0 = K.serangBalikJudul(lawan, "Ibu", brain, 3, angka, 0);
+  const b1 = K.serangBalikJudul(lawan, "Ibu", brain, 3, angka, 1);
+  const b2 = K.serangBalikJudul(lawan, "Ibu", brain, 3, angka, 2);
+  T("batch 0 ≠ batch 1 (varian beda)", b0.some((x) => !b1.some((y) => y.saran.a.title === x.saran.a.title)), `${b0[0].saran.a.title.slice(0, 30)} vs ${b1[0].saran.a.title.slice(0, 30)}`);
+  T("batch 1 punya varian emosi/penasaran", b1.some((x) => /Rindu|Maaf|Ternyata|Jangan Nonton|Air Mata|Akhirnya/i.test(x.saran.a.title)), b1.map((x) => x.saran.a.title.slice(0, 35)).join(" | "));
+  T("batch 2 ≠ batch 1 (tiap putaran beda)", b2.some((x) => !b1.some((y) => y.saran.a.title === x.saran.a.title)));
+  T("semua batch tetap pakai frasa lawan & di-score", [...b0, ...b1, ...b2].every((x) => x.saran.a.skor > 0 && /viral|tiktok/i.test(x.saran.a.title)));
 }
 
 /* ---------- 10. Bandingkan judulmu vs lawan ---------- */

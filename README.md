@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔁 v19.8.6 — GENERATE LAGI: otak terus nyoba varian sampai MENANG BESAR dari lawan
+* **Masalah (screenshot user):** hasil Serang Balik kadang 1 menang tapi 2 masih kalah — user mau bisa "generate lagi" sampai nemu yang menang besar.
+* **Solusi:**
+  1. `serangBalikJudul(..., batch)` — batch 0 = varian inti (natural); batch 1,2,3... = varian baru (emosi: Rindu/Maaf/Doa Terakhir/Air Mata + penasaran: Ternyata/Jangan Nonton/Akhirnya/Ini Dia + "yang Menyentuh").
+  2. Tombol **🔁 Generate Lagi (N×)** di panel Serang Balik — tiap klik = putaran varian baru, digabung dengan hasil lama (dedupe), diurutkan skor terbaik.
+  3. **Ringkasan otak**: "🏆 Ada yang MENANG BESAR (+N poin): ..." / "Belum ada yang menang — coba generate lagi" — jadi user tahu kapan berhenti.
+* **Test** +4 cek (batch beda → varian beda, varian emosi/penasaran, semua tetap pakai frasa lawan & di-score) — 30 suite hijau; tsc 0; build 0.
+
+
 ### 🧠 v19.8.5 — SERANG BALIK NATURAL (baca niche, bukan maksa angka) + FIX Duel Terbalik
 * **Masalah (screenshot user):** saran judul jadi "3 Ibu Engkau Yang Terbaik - Viral TikTok" — tidak natural untuk niche "cerita jadi lagu" (judul puitis, bukan daftar angka). Juga ditemukan **bug transposisi**: `bandingDenganLawan` mengirim (lawan, judulSaya) padahal UI menampilkan KIRI=JUDULMU → skor & verdict kebalik.
 * **Solusi:**
