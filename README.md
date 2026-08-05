@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎨🎢💾 v19.15 — TEMA WARNA + MULTI-GAMBAR + 3D TUNNEL + SIMPAN PRESET
+* **Fitur baru (semua di Spectrum Studio step 2):**
+  1. **🎨 TEMA WARNA SIAP-PAKAI** — 6 preset ala channel visualizer terkenal: 🔥 Trap Nation Emas, 💫 NCS Biru, 🌆 Synthwave Pink-Cyan, 🎧 Monstercat Ungu, ⚡ Neon Hijau, ❤️‍🔥 Bara Merah — satu tap set warna + gradasi.
+  2. **🖼️ MODE MULTI-GAMBAR** — upload 2-6 gambar → otak ganti-ganti gambar tiap ketukan beat (96 BPM), dengan scrim biar bar tetap kebaca.
+  3. **🎢 EFEK 3D TUNNEL** — style baru "3D Tunnel": terowongan perspektif (lapisan kotak membesar dari pusat, garis radial, bar melesat radial ikut beat, rotasi spiral). Slider khusus: Kecepatan tunnel & Kedalaman.
+  4. **💾 SIMPAN PRESET KUSTOM** — simpan semua pengaturan (style, warna, tema, background, layout, posisi logo/judul, bar count, skala, rotasi, glow, ikut-beat, multi-gambar, tunnel) dengan nama → muat kapan saja, hapus. Tersimpan di HP.
+* **Bukti:** `demo_v5_tunnel3d.mp4` — efek 3D tunnel asli (logika sama dengan app).
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🎛️ v19.14 — KUSTOMISASI PRO: ATURAN/LAYOUT + GESER POSISI + GAMBAR IKUT BEAT + SLIDER
 * **Masalah (screenshot user):** "nggak puas" — penyedia visualizer beneran bisa pindah-pindah posisi logo/judul, banyak aturan/layout, gambar ngikut beat, banyak pengaturan; punya kita masih elemen diam di posisi tetap.
 * **Solusi (Spectrum Studio step 2):**

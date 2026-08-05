@@ -33,6 +33,7 @@ const SPEC_STYLES = [
   { id: "circle", label: "⭕ Lingkaran", desc: "Radial futuristik" },
   { id: "wave", label: "🌊 Gelombang", desc: "Garis ombak lembut" },
   { id: "dots", label: "✨ Partikel", desc: "Bintik mengambang" },
+  { id: "tunnel", label: "🎢 3D Tunnel", desc: "Terowongan perspektif (v19.15)" },
 ];
 const BG_GRADS = [
   { id: "g0", css: ["#05070f", "#0e7490"], label: "Samudra Malam" },
@@ -91,6 +92,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [rotSpeed, setRotSpeed] = useState(0.5);
   const [glowInt, setGlowInt] = useState(1);
   const [beatMode, setBeatMode] = useState<"denyut" | "membesar" | "statis">("denyut");
+  // 🎨 v19.15 TEMA WARNA SIAP-PAKAI
+  const [themeId, setThemeId] = useState("");
+  // 🖼️ v19.15 MODE MULTI-GAMBAR — array gambar bergantian per bar/beat
+  const [multiImgs, setMultiImgs] = useState<string[]>([]);
+  const multiImgsRef = useRef<HTMLImageElement[]>([]);
+  // 🎢 v19.15 EFEK 3D TUNNEL
+  const [tunnelSpeed, setTunnelSpeed] = useState(1);
+  const [tunnelDepth, setTunnelDepth] = useState(40); // jumlah lapisan
+  // 💾 v19.15 SIMPAN PRESET KUSTOM
+  const [presetName, setPresetName] = useState("");
+  const [presetMsg, setPresetMsg] = useState("");
   const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   // Layout preset — posisi logo & judul (fraksi)
@@ -109,6 +121,23 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   }
   const [specStyle, setSpecStyle] = useState("bars");
   const [specColor, setSpecColor] = useState("#22d3ee");
+  // 🎨 v19.15 TEMA WARNA SIAP-PAKAI (seperti channel visualizer terkenal)
+  const COLOR_THEMES: { id: string; label: string; emoji: string; color: string; grad: string }[] = [
+    { id: "trapnation", label: "Trap Nation Emas", emoji: "🔥", color: "#f59e0b", grad: "g1" },
+    { id: "ncs", label: "NCS Biru", emoji: "💫", color: "#22d3ee", grad: "g0" },
+    { id: "synthwave", label: "Synthwave Pink-Cyan", emoji: "🌆", color: "#ec4899", grad: "g1" },
+    { id: "monstercat", label: "Monstercat Ungu", emoji: "🎧", color: "#8b5cf6", grad: "g1" },
+    { id: "neon", label: "Neon Hijau", emoji: "⚡", color: "#22c55e", grad: "g3" },
+    { id: "blood", label: "Bara Merah", emoji: "❤️‍🔥", color: "#ef4444", grad: "g2" },
+  ];
+  function pilihTema(id: string) {
+    const t = COLOR_THEMES.find((x) => x.id === id);
+    if (!t) return;
+    setThemeId(id);
+    setSpecColor(t.color);
+    if (t.grad) setBgGrad(t.grad);
+    try { localStorage.setItem("verve_spektrum_tema", id); } catch {}
+  }
   const [overlay, setOverlay] = useState("none");
   const [title, setTitle] = useState("");
   /* lirik */
@@ -142,6 +171,63 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!logoImg) { logoImgRef.current = null; return; }
     const im = new Image(); im.onload = () => { logoImgRef.current = im; }; im.src = logoImg;
   }, [logoImg]);
+
+  // 🖼️ v19.15 MULTI-GAMBAR: muat semua ke ref, dipakai bergantian per beat
+  useEffect(() => {
+    const imgs = multiImgs.filter(Boolean);
+    multiImgsRef.current = imgs.map((u) => {
+      const im = new Image();
+      if (/^data:|^blob:/.test(u) || u.startsWith("/")) im.src = u;
+      else im.crossOrigin = "anonymous";
+      im.src = u;
+      return im;
+    });
+  }, [multiImgs]);
+
+  // 💾 v19.15 SIMPAN & MUAT PRESET KUSTOM (semua pengaturan visual)
+  function simpanPreset() {
+    const nama = presetName.trim();
+    if (!nama) { setPresetMsg("⚠️ Kasih nama preset dulu"); return; }
+    try {
+      const list = JSON.parse(localStorage.getItem("verve_spektrum_presets_v1") || "[]");
+      const preset = {
+        nama, at: Date.now(),
+        specStyle, specColor, themeId, bgType, bgGrad, bgColor, bgImg: bgImg.slice(0, 20000),
+        overlay, layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
+        multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
+      };
+      const idx = list.findIndex((p: any) => p.nama === nama);
+      if (idx >= 0) list[idx] = preset; else list.unshift(preset);
+      localStorage.setItem("verve_spektrum_presets_v1", JSON.stringify(list.slice(0, 12)));
+      setPresetMsg(`✅ Preset "${nama}" tersimpan (${list.length} total)`);
+    } catch { setPresetMsg("⚠️ Gagal simpan (storage penuh?)"); }
+  }
+  function muatPreset(nama: string) {
+    try {
+      const list = JSON.parse(localStorage.getItem("verve_spektrum_presets_v1") || "[]");
+      const p = list.find((x: any) => x.nama === nama);
+      if (!p) return;
+      setSpecStyle(p.specStyle || "bars"); setSpecColor(p.specColor || "#22d3ee"); setThemeId(p.themeId || "");
+      setBgType(p.bgType || "grad"); setBgGrad(p.bgGrad || "g0"); setBgColor(p.bgColor || "#06060c");
+      if (p.bgImg) setBgImg(p.bgImg);
+      setOverlay(p.overlay || "none");
+      setLayoutId(p.layoutId || "logo-tengah"); setLogoPos(p.logoPos || { x: 0.5, y: 0.42 }); setTitlePos(p.titlePos || { x: 0.5, y: 0.05 });
+      setBarCount(p.barCount || 64); setLogoScale(p.logoScale || 1); setRotSpeed(p.rotSpeed ?? 0.5); setGlowInt(p.glowInt ?? 1);
+      setBeatMode(p.beatMode || "denyut"); if (Array.isArray(p.multiImgs)) setMultiImgs(p.multiImgs);
+      setTunnelSpeed(p.tunnelSpeed ?? 1); setTunnelDepth(p.tunnelDepth ?? 40);
+      setPresetMsg(`✅ Preset "${nama}" dimuat`);
+    } catch { setPresetMsg("⚠️ Gagal muat preset"); }
+  }
+  function daftarPreset(): string[] {
+    try { return JSON.parse(localStorage.getItem("verve_spektrum_presets_v1") || "[]").map((p: any) => p.nama); } catch { return []; }
+  }
+  function hapusPreset(nama: string) {
+    try {
+      const list = JSON.parse(localStorage.getItem("verve_spektrum_presets_v1") || "[]").filter((x: any) => x.nama !== nama);
+      localStorage.setItem("verve_spektrum_presets_v1", JSON.stringify(list));
+      setPresetMsg(`🗑 Preset "${nama}" dihapus`);
+    } catch { /* abaikan */ }
+  }
   const barsRef = useRef<Float32Array>(new Float32Array(64));
   const renderRecRef = useRef<MediaRecorder | null>(null);
 
@@ -436,6 +522,59 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.restore(); ctx.globalAlpha = 1;
     }
 
+    // 🎢 v19.15 EFEK 3D TUNNEL — perspektif kedalaman: bar melesat menjauh dari pusat (ala tunnel-3d.jpg)
+    if (specStyle === "tunnel") {
+      const cx = W / 2, cy = H / 2;
+      const layers = Math.max(12, Math.min(80, tunnelDepth));
+      const off = t * (0.4 + tunnelSpeed * 1.1);
+      ctx.save();
+      // glow pusat tunnel
+      const tg0 = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(W, H) * 0.5);
+      tg0.addColorStop(0, `rgba(${r},${g2},${b},${(0.10 + bass * 0.14) * glowInt})`);
+      tg0.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = tg0; ctx.fillRect(0, 0, W, H);
+      // lapisan persegi perspektif (semakin jauh semakin kecil & redup)
+      for (let i = 0; i < layers; i++) {
+        const z = (i / layers) * 1.6;
+        const zz = (i + off) % layers / layers;
+        const s = Math.max(0.04, 1 - zz); // ukuran relatif
+        const size = Math.min(W, H) * s;
+        const v = bars[Math.floor(i % N)]; // energi per lapisan
+        const alpha = 0.04 + v * 0.16 * (1 - zz * 0.7);
+        ctx.strokeStyle = `rgba(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255,${alpha.toFixed(3)})`;
+        ctx.lineWidth = Math.max(1, s * 10 + bass * 6);
+        // rotasi pelan per lapisan (efek spiral)
+        ctx.save();
+        ctx.translate(cx, cy); ctx.rotate(z * 0.6 + t * 0.05 * tunnelSpeed);
+        ctx.strokeRect(-size / 2, -size / 2, size, size);
+        ctx.restore();
+      }
+      // garis-garis radial (dinding tunnel) — menciptakan kedalaman
+      ctx.strokeStyle = `rgba(${r},${g2},${b},0.25)`;
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + t * 0.08 * tunnelSpeed;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * Math.max(W, H), cy + Math.sin(a) * Math.max(W, H));
+        ctx.stroke();
+      }
+      // bar radial melesat (seperti spectrum di dalam tunnel)
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < N; i++) {
+        const v = bars[i];
+        const a = (i / N) * Math.PI * 2 + t * 0.2 * tunnelSpeed;
+        const len = 20 + v * Math.min(W, H) * 0.45;
+        const grd = ctx.createLinearGradient(cx, cy, cx + Math.cos(a) * len, cy + Math.sin(a) * len);
+        grd.addColorStop(0, `rgba(${r},${g2},${b},0.7)`); grd.addColorStop(1, `rgba(${r},${g2},${b},0)`);
+        ctx.strokeStyle = grd; ctx.lineWidth = 3 + v * 6;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * 40, cy + Math.sin(a) * 40);
+        ctx.lineTo(cx + Math.cos(a) * (40 + len), cy + Math.sin(a) * (40 + len));
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else {
     // 👑 v19.13 PRO PACK: SHOCKWAVE — cincin membesar saat bass naik
     if (bass > 0.52 && bass > lastBassRef.current * 1.18) {
       shockRef.current.push({ x: W / 2, y: H * 0.55, r: 50, a: 0.85 });
@@ -535,6 +674,25 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r + bass * 1.5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
+
+    } // 🎢 akhir else non-tunnel
+
+    // 🖼️ v19.15 MULTI-GAMBAR: ganti-ganti gambar per beat (kalau user upload beberapa)
+    if (multiImgsRef.current.length >= 2) {
+      const idx = Math.floor(t / (60 / 96)) % multiImgsRef.current.length; // ganti tiap ketukan (96 BPM)
+      const im = multiImgsRef.current[idx];
+      if (im && (im as any).complete && (im as any).naturalWidth > 0) {
+        const ir = (im as any).naturalWidth / (im as any).naturalHeight, cr = W / H;
+        let sw = (im as any).naturalWidth, sh = (im as any).naturalHeight, sx = 0, sy = 0;
+        if (ir > cr) { sw = (im as any).naturalHeight * cr; sx = ((im as any).naturalWidth - sw) / 2; }
+        else { sh = (im as any).naturalWidth / cr; sy = ((im as any).naturalHeight - sh) / 2; }
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.drawImage(im, sx, sy, sw, sh, 0, 0, W, H);
+        ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+    }
 
     // overlay suasana
     if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
@@ -865,6 +1023,67 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 <button key={id} className={`v6-chip ${beatMode === id ? "on" : ""}`} onClick={() => setBeatMode(id as any)}>{lb}</button>
               ))}
             </div>
+            {/* 🎨 v19.15 TEMA WARNA SIAP-PAKAI */}
+            <div className="v6-lbl">🎨 TEMA WARNA SIAP-PAKAI</div>
+            <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+              {COLOR_THEMES.map((t) => (
+                <button key={t.id} className={`v6-chip ${themeId === t.id ? "on" : ""}`} style={{ borderColor: themeId === t.id ? t.color : undefined, color: themeId === t.id ? t.color : undefined }} onClick={() => pilihTema(t.id)}>
+                  {t.emoji} {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 🖼️ v19.15 MODE MULTI-GAMBAR */}
+            <div className="v6-lbl">🖼️ MULTI-GAMBAR (ganti per beat — upload 2+ gambar)</div>
+            <label className="v6-cardrow">
+              <span style={{ fontSize: 20 }}>🖼️</span><div className="tt">{multiImgs.length ? `✅ ${multiImgs.length} gambar — ganti per ketukan` : "Pilih 2-6 gambar (bergantian tiap beat)"}</div><span className="arr">›</span>
+              <input type="file" accept="image/*" multiple hidden onChange={e => {
+                const fs2 = Array.from(e.target.files || []).slice(0, 6);
+                const readers = fs2.map(f => new Promise<string>((res) => { const rd = new FileReader(); rd.onload = () => res(rd.result as string); rd.readAsDataURL(f); }));
+                Promise.all(readers).then(imgs => setMultiImgs(imgs));
+              }} />
+            </label>
+            {multiImgs.length > 1 && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+                <span style={{ fontSize: 10, opacity: .6, flex: 1 }}>Gambar ganti tiap ketukan (96 BPM). Posisi bisa diatur geser di atas.</span>
+                <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
+              </div>
+            )}
+
+            {/* 🎢 v19.15 Slider khusus TUNNEL */}
+            {specStyle === "tunnel" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>
+                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 96 }}>Kecepatan tunnel</span>
+                  <input type="range" min={0.2} max={2.5} step={0.1} value={tunnelSpeed} onChange={(e) => setTunnelSpeed(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 28 }}>{tunnelSpeed.toFixed(1)}</b>
+                </label>
+                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 96 }}>Kedalaman</span>
+                  <input type="range" min={12} max={80} step={4} value={tunnelDepth} onChange={(e) => setTunnelDepth(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 28 }}>{tunnelDepth}</b>
+                </label>
+              </div>
+            )}
+
+            {/* 💾 v19.15 SIMPAN PRESET KUSTOM */}
+            <div className="v6-lbl">💾 SIMPAN / MUAT PRESET KUSTOM</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input className="v6-inp" style={{ flex: 1 }} placeholder="Nama preset (mis. 'Trap Gold + Tunnel')" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
+              <button className="v6-chip" onClick={simpanPreset}>💾 Simpan</button>
+            </div>
+            {!!daftarPreset().length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
+                {daftarPreset().map((n) => (
+                  <div key={n} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button className="v6-chip" style={{ flex: 1 }} onClick={() => muatPreset(n)}>▶ Muat "{n}"</button>
+                    <button className="v6-chip" style={{ color: "#f87171" }} onClick={() => hapusPreset(n)}>🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!!presetMsg && <p style={{ fontSize: 11, color: presetMsg.startsWith("✅") ? "#6ee7b7" : "#fbbf24", margin: "6px 0 0" }}>{presetMsg}</p>}
+
             <div className="v6-lbl">⚙️ PENGATURAN</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>
               <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
