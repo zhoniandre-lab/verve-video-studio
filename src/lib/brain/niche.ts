@@ -18,7 +18,7 @@ export type NicheDef = {
 };
 
 export const NICHES: NicheDef[] = [
-  { id: "story_song", label: "Kisah & Lagu", aiLabel: "kisah emosional yang menyentuh", emoji: "🎵", desc: "Kisah emosional yang menyentuh", tags: ["kisahnyata", "kisahmenyentuh", "laguemosional"], contoh: ["kisah ibu yang mengharukan", "maaf yang terlambat", "perjuangan seorang ayah", "rindu yang tak tersampaikan"] },
+  { id: "story_song", label: "Kisah & Lagu", aiLabel: "cerita jadi lagu", emoji: "🎵", desc: "Kisah emosional yang menyentuh", tags: ["kisahnyata", "kisahmenyentuh", "laguemosional"], contoh: ["kisah ibu yang mengharukan", "maaf yang terlambat", "perjuangan seorang ayah", "rindu yang tak tersampaikan"] },
   { id: "family", label: "Keluarga", aiLabel: "kisah keluarga", emoji: "👨‍👩‍👧", desc: "Kisah keluarga mengharukan", tags: ["kisahkeluarga", "keluargaharu", "kisahnyata"], contoh: ["kisah ibu single parent", "ayah pulang setelah bertahun-tahun", "anak mencari orang tuanya", "kehangatan keluarga sederhana"] },
   { id: "horror", label: "Horor / Mistis", aiLabel: "cerita horor", emoji: "👻", desc: "Cerita horor & mistis", tags: ["ceritahoror", "mistis", "scarystory"], contoh: ["hantu di rumah kosong", "kuntilanak di kebun belakang", "mistis kamar kos", "pocong di jalan desa"] },
   { id: "dj", label: "DJ / Remix", aiLabel: "musik dj remix", emoji: "🎧", desc: "Musik DJ & remix", tags: ["djremix", "fullbass", "musikviral"], contoh: ["dj remix viral terbaru", "full bass nonstop", "dj slow sedih", "remix lagu indonesia"] },

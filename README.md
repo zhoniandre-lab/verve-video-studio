@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔄 v19.23.1 — FIX KOREKSI: HASIL TETAP "CERITA JADI LAGU", HANYA LABEL FITUR YANG NETRAL
+* **Koreksi user:** yang harus netral cuma NAMA FITUR/label menu (biar nggak ketahuan niche) — BUKAN hasilnya. Kalau niche-nya cerita jadi lagu, judul saran harus TETAP bisa "| Cerita Jadi Lagu".
+* **Perbaikan:**
+  - **Hasil dikembalikan**: template judul title-guru, serang-balik, kandidat yie-score, audience → kembali "| Cerita Jadi Lagu" (hasil TIDAK diblok/diubah).
+  - **aiLabel story_song** kembali "cerita jadi lagu" (prompt AI tetap optimal).
+  - **Label fitur tetap netral**: niche.ts label "Kisah & Lagu", home "Kisah & Lagu: Riset & Judul AI".
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### 🔒📱 v19.23 — LABEL NETRAL "KISAH & LAGU" (anti dicuri niche) + RESET PER PERANGKAT
 * **Masalah (feedback user):** (1) tulisan "Cerita Jadi Lagu" di mana-mana bikin orang tahu niche aslinya — takut niche dicuri; (2) buka HP berbeda harus kembali default (data pribadi jangan bisa diintip orang).
 * **Solusi:**

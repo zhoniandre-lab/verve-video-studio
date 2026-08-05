@@ -434,14 +434,14 @@ export function serangBalikJudul(lawanTitle: string, keyword: string, brain: Bra
     ? (batch === 0
       ? [
           `${penuh} - ${frasaViral}`,
-          `${penuh} - ${frasaViral} | Kisah & Lagu`,
+          `${penuh} - ${frasaViral} | Cerita Jadi Lagu`,
           `Rindu ${inti1} - ${frasaViral}`,
           `${angka[0]} Kisah ${inti1} - ${frasaViral}`,
         ]
       : [
           `${EMO[(batch - 1) % EMO.length]} ${inti1} - ${frasaViral}`,
           `${PENS[(batch - 1) % PENS.length]} ${inti1} - ${frasaViral}`,
-          `${EMO[(batch + 1) % EMO.length]} ${inti1} - ${frasaViral} | Kisah & Lagu`,
+          `${EMO[(batch + 1) % EMO.length]} ${inti1} - ${frasaViral} | Cerita Jadi Lagu`,
           `${angka[0]} Kisah ${inti1} yang Menyentuh - ${frasaViral}`,
         ])
     : (batch === 0
