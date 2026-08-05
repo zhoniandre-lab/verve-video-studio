@@ -17,6 +17,14 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎤 v19.17 — AUTO-PAS LIRIK KE AUDIO (Whisper) + HAPUS GOYANG MULTI-GAMBAR
+* **Masalah (feedback user):** (1) multi-gambar goyang-goyang bikin nggak suka — mau pergantian gambar kalem aja, bukan ikut lagu; (2) lirik harus otomatis pas dengan audio, bukan dibagi rata / edit manual.
+* **Solusi:**
+  1. **Multi-gambar**: goyang ikut lagu DIHAPUS. Sekarang pergantian gambar KALEM — fade + zoom "tarikan napas" super halus (slider Zoom halus 0-10%), kayak slideshow sinematik. Mode "ikut musik" & sway dihapus dari UI.
+  2. **🎤 Auto-pas Lirik**: tombol baru di step Lirik → transkripsi Whisper (`transcribeBlobBesar`) mendeteksi KATA + TIMESTAMP asli dari audio → dikelompokkan jadi baris (baris baru tiap jeda >0.8s) → `capWords` memakai timing PERSIS (tiap kata menyala saat dinyanyikan, bukan dibagi rata). Ada tombol "↺ Manual" buat balik ke cara lama.
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🐛 v19.16.1 — FIX BUG 3D TUNNEL (logo hilang) + GAMBAR IKUT LAGU DIPERHALUS
 * **Masalah (feedback user):** (1) saat pilih style **3D Tunnel, logo tidak muncul** (style lain aman); (2) multi-gambar gerakannya "getak-getak nggak jelas, bikin pusing" — bukan ikut lagu.
 * **Akar masalah & perbaikan:**

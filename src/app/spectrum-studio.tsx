@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { paintEffect, paintPreviewCaptions, CC_TEMPLATES, ensureFontsLoaded } from "@/lib/editing";
 import type { CapWord } from "@/lib/editing";
+import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -156,6 +157,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [lirikOn, setLirikOn] = useState(true);
   const [lyricsText, setLyricsText] = useState("");
   const [ccTpl, setCcTpl] = useState("karaoke");
+  // 🎤 v19.17 AUTO-PAS LIRIK (Whisper) — timing persis audio
+  const [lyrAuto, setLyrAuto] = useState(false);
+  const autoWordsRef = useRef<{ w: string; start: number; end: number; line: number }[]>([]);
   /* master */
   const [eq, setEq] = useState("flat");
   const [comp, setComp] = useState(55);
@@ -253,6 +257,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   /* ---------- build CapWords dari lirik + durasi ---------- */
   const capWords = useMemo<CapWord[]>(() => {
     if (!lirikOn || !duration) return [];
+    // 🎤 v19.17: kalau ada hasil AUTO-PAS (Whisper) → pakai timing PERSIS audio
+    if (lyrAuto && autoWordsRef.current.length) {
+      return autoWordsRef.current.map((aw) => ({ text: aw.w, start: Math.max(0, aw.start), end: Math.min(duration, aw.end), line: aw.line }));
+    }
     const lines = lyricsText.split(/\n+/).map(s => s.trim()).filter(Boolean);
     if (!lines.length) return [];
     const totalChars = lines.reduce((a, s) => a + s.length, 0) || 1;
@@ -272,7 +280,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       acc += seg;
     });
     return words;
-  }, [lirikOn, lyricsText, duration]);
+  }, [lirikOn, lyricsText, duration, lyrAuto]);
 
   /* ---------- decode audio sekali ---------- */
   async function loadAudio(url: string, name: string) {
@@ -290,7 +298,71 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setMBusy(false);
   }
 
-  /* ---------- audio chain (EQ + kompresor + gain) ---------- */
+  /* 🎤 v19.17 AUTO-PAS LIRIK — transkripsi Whisper → lirik + timing PERSIS audio (bukan dibagi rata) */
+  const [lyrBusy, setLyrBusy] = useState(false);
+  const [lyrMsg, setLyrMsg] = useState("");
+  const [autoLines, setAutoLines] = useState<string[]>([]);
+
+  async function autoPasLirik() {
+    if (!audioUrl && !bufRef.current) { setLyrMsg("⚠️ Isi musik dulu di langkah 1."); return; }
+    setLyrBusy(true); setLyrMsg("🎤 Mendengarkan audio & deteksi kata… (bisa 30-60 detik)");
+    try {
+      // 1) Ambil blob audio (dari URL atau buffer)
+      let blob: Blob;
+      if (audioUrl && !audioUrl.startsWith("blob:")) {
+        const r = await fetch(proxify(audioUrl));
+        blob = await r.blob();
+      } else {
+        // konversi AudioBuffer → WAV
+        const b = bufRef.current!;
+        const ch = b.numberOfChannels, sr = b.sampleRate;
+        const n = Math.floor(b.duration * sr);
+        const pcm = new Float32Array(n * ch);
+        for (let c = 0; c < ch; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) pcm[i * ch + c] = d[i]; }
+        const wavBuf = new ArrayBuffer(44 + n * ch * 2);
+        const dv = new DataView(wavBuf);
+        const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+        ws(0, "RIFF"); dv.setUint32(4, 36 + n * ch * 2, true); ws(8, "WAVE"); ws(12, "fmt ");
+        dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true); dv.setUint32(24, sr, true);
+        dv.setUint32(28, sr * ch * 2, true); dv.setUint16(32, ch * 2, true); dv.setUint16(34, 16, true);
+        ws(36, "data"); dv.setUint32(40, n * ch * 2, true);
+        for (let i = 0; i < n * ch; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
+        blob = new Blob([wavBuf], { type: "audio/wav" });
+      }
+      // 2) Transkripsi (Whisper) → kata + timestamp
+      const res = await transcribeBlobBesar(blob, "id");
+      if (!res?.ok || !Array.isArray(res.words) || !res.words.length) {
+        setLyrMsg("⚠️ Tidak ada kata terdeteksi (lagu instrumental? coba yang ada vokalnya).");
+        return;
+      }
+      // 3) Kelompokkan kata jadi BARIS (baris baru tiap jeda >0.8s atau panjang)
+      const words = res.words as { w: string; start: number; end: number }[];
+      const lines: string[] = [];
+      const grouped: { w: string; start: number; end: number; line: number }[] = [];
+      let cur = "", curStart = words[0].start, curEnd = words[0].end, li = 0;
+      for (let i = 0; i < words.length; i++) {
+        const w = words[i];
+        const gap = i > 0 ? w.start - words[i - 1].end : 0;
+        if (gap > 0.8 || cur.length > 60) {
+          lines.push(cur.trim()); grouped.push({ w: cur.trim(), start: curStart, end: curEnd, line: li }); li++;
+          cur = w.w; curStart = w.start; curEnd = w.end;
+        } else {
+          cur = cur ? cur + " " + w.w : w.w; curEnd = w.end;
+        }
+      }
+      if (cur.trim()) { lines.push(cur.trim()); grouped.push({ w: cur.trim(), start: curStart, end: curEnd, line: li }); }
+      // 4) Simpan → lyricsText (baris) & autoWords (timing presisi)
+      setAutoLines(lines);
+      autoWordsRef.current = grouped;
+      setLyrAuto(true);
+      setLyricsText(lines.join("\n"));
+      setLyrMsg(`✅ ${words.length} kata terdeteksi → ${lines.length} baris. Timing PAS audio, cek preview!`);
+    } catch (e) {
+      setLyrMsg(`⚠️ Gagal: ${e instanceof Error ? e.message : "coba lagi"}`);
+    } finally {
+      setLyrBusy(false);
+    }
+  }
   function buildChain(actx: AudioContext, destAnalyserToo = true): { input: AudioNode; analyser: AnalyserNode } {
     const nodes: AudioNode[] = [];
     const input = actx.createGain();
@@ -441,7 +513,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 🩰 v19.16 MULTI-GAMBAR "MENARI IKUT IRAMA" — zoom & geser halus mengikuti energi musik
     // (cepat saat drum/bass cepat, syahdu saat lambat). Tetap background, spectrum keliatan.
     if (multiImgsRef.current.length >= 1) {
-      const tempo = tempoRef.current; // 0..1 (energi musik sekarang)
+      const tempo = tempoRef.current; // 0..1 (energi musik sekarang) — dipakai buat timing pergantian (bukan goyang)
       const imgs = multiImgsRef.current;
       const beatLen = 60 / 96;
       const period = beatLen * Math.max(1, multiBeat);
@@ -451,12 +523,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const fade = within < 0.25 ? within / 0.25 : 1;
       const im = imgs[idx];
       const imPrev = imgs[prevIdx];
-      // 🩰 v19.16.1 GAMBAR IKUT LAGU — denyut FREKUENSINYA mengikuti tempo:
-      // saat tempo tinggi denyut cepat & besar, saat syahdu denyut pelan & halus.
-      // (bukan gerakan acak yang bikin pusing)
-      const pulse = danceMode === "irama" ? Math.max(0, Math.sin(t * (1.1 + tempo * 4.2) * Math.PI)) : 0;
-      const zoom = danceMode === "irama" ? 1 + (danceZoom || 0) * (0.4 + 0.6 * tempo) * pulse : 1;
-      const swayX = danceMode === "irama" ? Math.sin(t * 0.4 * (0.6 + tempo)) * 9 * tempo : 0; // geser halus pelan
+      // 🐛 v19.17: HAPUS goyang ikut lagu (feedback user: "nggak suka goyang-goyang").
+      // Sekarang pergantian gambar KALEM: zoom super halus (tarikan napas) + fade,
+      // kayak slideshow sinematik — bukan denyut/getak.
+      const zoom = 1 + (danceZoom || 0) * 0.5 * Math.abs(Math.sin(t * 0.7));
+      const swayX = 0; // tanpa goyang kiri-kanan
       const drawBg = (im2: HTMLImageElement, alpha: number, z: number, swx: number) => {
         if (!im2 || !(im2 as any).complete || !(im2 as any).naturalWidth) return;
         const iw = (im2 as any).naturalWidth, ih = (im2 as any).naturalHeight;
@@ -1100,18 +1171,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   </select>
                   <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, opacity: .7 }}>🩰 Menari ikut irama:</span>
-                  {[["irama", "💃 Ikut musik"], ["statis", "🚫 Statis"]].map(([id, lb]) => (
-                    <button key={id} className={`v6-chip ${danceMode === id ? "on" : ""}`} style={{ fontSize: 10 }} onClick={() => setDanceMode(id as any)}>{lb}</button>
-                  ))}
-                </div>
                 <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ minWidth: 96 }}>Kuat menari</span>
-                  <input type="range" min={0} max={0.2} step={0.01} value={danceZoom} onChange={(e) => setDanceZoom(Number(e.target.value))} style={{ flex: 1 }} />
+                  <span style={{ minWidth: 96 }}>Zoom halus</span>
+                  <input type="range" min={0} max={0.1} step={0.005} value={danceZoom} onChange={(e) => setDanceZoom(Number(e.target.value))} style={{ flex: 1 }} />
                   <b style={{ minWidth: 28 }}>{(danceZoom * 100).toFixed(0)}%</b>
                 </label>
-                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: gambar jadi BACKGROUND + crossfade + zoom/geser ikut energi musik — spectrum tetap keliatan, nggak pusing.</p>
+                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: goyang-goyang dihapus — sekarang pergantian gambar kalem (fade + zoom napas halus), kayak slideshow sinematik. Spectrum tetap tampil.</p>
               </div>
             )}
 
@@ -1256,7 +1321,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             {lirikOn && (
               <>
-                <textarea className="v6-inp v6-ta" style={{ minHeight: 130 }} placeholder={"Tempel lirik di sini — satu baris = satu keterangan.\nKata akan menyala satu per satu pas dinyanyikan ✨"} value={lyricsText} onChange={e => setLyricsText(e.target.value)} />
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                  <button className="v6-chip" style={{ flex: 1, borderColor: "rgba(34,197,94,.5)", color: "#86efac", background: "rgba(34,197,94,.1)" }} disabled={lyrBusy} onClick={autoPasLirik}>
+                    {lyrBusy ? "⏳ Mendengar audio…" : "🎤 Auto-pas Lirik ke Audio (pas banget)"}
+                  </button>
+                  {lyrAuto && <button className="v6-chip" style={{ color: "#fbbf24" }} onClick={() => { setLyrAuto(false); autoWordsRef.current = []; }}>↺ Manual</button>}
+                </div>
+                {!!lyrMsg && <p style={{ fontSize: 11, color: lyrMsg.startsWith("✅") ? "#86efac" : "#fbbf24", margin: "0 0 6px" }}>{lyrMsg}</p>}
+                {lyrAuto && <p style={{ fontSize: 10, opacity: .7, margin: "0 0 6px" }}>✨ Timing dari deteksi suara asli (Whisper) — setiap kata menyala PERSIS saat dinyanyikan, bukan dibagi rata.</p>}
+                <textarea className="v6-inp v6-ta" style={{ minHeight: 130 }} placeholder={"Tempel lirik di sini — satu baris = satu keterangan.\nKata akan menyala satu per satu pas dinyanyikan ✨"} value={lyricsText} onChange={e => { setLyricsText(e.target.value); setLyrAuto(false); }} />
                 <div className="v6-lbl">TEMPLATE</div>
                 <div className="v6-rows">
                   {CC_TEMPLATES.map(t => (
