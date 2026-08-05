@@ -11,7 +11,14 @@ function transpile(rel) {
 }
 
 const yieJs = transpile("../src/lib/brain/yie-score.ts");
-const krJs = transpile("../src/lib/brain/competitor-rss.ts").replace('from "./yie-score"', `from "${enc(yieJs)}"`);
+const patJs = transpile("../src/lib/brain/pattern-insight.ts").replace('from "./yie-score"', `from "${enc(yieJs)}"`);
+const ddJs = transpile("../src/lib/brain/deep-dive.ts")
+  .replace('from "./pattern-insight"', `from "${enc(patJs)}"`)
+  .replace('from "./yie-score"', `from "${enc(yieJs)}"`);
+const krJs = transpile("../src/lib/brain/competitor-rss.ts")
+  .replace('from "./deep-dive"', `from "${enc(ddJs)}"`)
+  .replace('from "./pattern-insight"', `from "${enc(patJs)}"`)
+  .replace('from "./yie-score"', `from "${enc(yieJs)}"`);
 const K = await import(enc(krJs));
 
 let gagal = 0;
@@ -76,6 +83,50 @@ const SAMPLE = `<?xml version="1.0"?>
   T("ringkasan memuat channel & waktu", sum.includes("Lawan A") && sum.includes("lalu"), sum.slice(0, 60));
   const kosong = K.ringkasanScan([], { researches: [], results: [] });
   T("tanpa data → pesan jujur", kosong.includes("Belum ada upload baru"));
+}
+
+/* ---------- 5. Koleksi judul & deteksi upload baru ---------- */
+{
+  const mk = (id, title, ts) => ({ channelId: "UC1", channelName: "Lawan", items: [{ title, videoId: id, url: "#", published: "", publishedAt: ts }] });
+  const f1 = [mk("v1", "Judul Lama", 1000), mk("v2", "Judul Baru A", 2000)];
+  const f2 = [mk("v1", "Judul Lama", 1000), mk("v3", "Judul Baru B", 3000)];
+  const all1 = K.kumpulkanJudul(f1, []);
+  T("koleksi 2 judul", all1.length === 2);
+  const all2 = K.kumpulkanJudul(f2, all1);
+  T("gabung 2 scan → 3 judul unik", all2.length === 3, `dapat ${all2.length}`);
+  T("terbaru di depan", all2[0].title === "Judul Baru B");
+
+  const baru = K.deteksiUploadBaru(f1, { UC1: ["v1"] });
+  T("deteksi upload baru (v2 saja)", baru.length === 1 && baru[0].videoId === "v2");
+  const seen2 = K.tandaiTerlihat(f1, { UC1: ["v1"] });
+  T("tandai terlihat → v1+v2", seen2.UC1.length === 2 && seen2.UC1.includes("v2"));
+}
+
+/* ---------- 6. Analisis pola judul kompetitor ---------- */
+{
+  const rows = [
+    { title: "5 Kisah Ibu yang Mengharukan", publishedAt: Date.now() - 1 * 864e5, channelId: "UC1", channelName: "A" },
+    { title: "5 Kisah Ayah yang Tak Terlupakan", publishedAt: Date.now() - 2 * 864e5, channelId: "UC1", channelName: "A" },
+    { title: "3 Doa untuk Ibu Tersayang", publishedAt: Date.now() - 3 * 864e5, channelId: "UC2", channelName: "B" },
+    { title: "Rindu Ibu di Malam Hari", publishedAt: Date.now() - 4 * 864e5, channelId: "UC2", channelName: "B" },
+    { title: "Review HP Murah Biasa", publishedAt: Date.now() - 5 * 864e5, channelId: "UC3", channelName: "C" },
+  ];
+  const p = K.analisisPolaKompetitor(rows);
+  T("total judul terhitung", p.total === 5);
+  T("pola angka & emosi terdeteksi", p.pola.some((x) => x.key === "angka" && x.count >= 2) && p.pola.some((x) => x.key === "emosi"));
+  T("top tokens & frasa keluar", p.topTokens.length > 0 && p.topPhrases.length > 0, `${p.topTokens.join(",")} | ${p.topPhrases.join(",")}`);
+  T("frasa 'sedang naik' terdeteksi", p.naik.length > 0, p.naik.map((x) => x.phrase).join(","));
+}
+
+/* ---------- 7. Bandingkan judulmu vs lawan ---------- */
+{
+  const brain = { researches: [], results: [
+    { title: "5 Kisah Ibu yang Mengharukan", ctr: 7.0, time: Date.now() - 5 * 864e5 },
+  ]};
+  const h = K.bandingkanJudul("5 Kisah Ibu yang Mengharukan", "5 Kisah Ibu yang Mengharukan Banget", brain);
+  T("duel memuat skor & prediksi kedua sisi", h.a.skor > 0 && h.b.skor > 0 && h.a.predCtr > 0 && h.sim >= 60, `sim=${h.sim} skor ${h.a.skor} vs ${h.b.skor}`);
+  const h2 = K.bandingkanJudul("5 Kisah Ibu yang Mengharukan", "Review HP Murah Biasa Saja", brain);
+  T("pemenang jelas untuk judul kuat", h2.pemenang === "a" && h2.alasan.includes("lebih kuat"), h2.alasan);
 }
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI KOMPETITOR RSS GAGAL`); process.exit(1); }

@@ -28,9 +28,14 @@ const ddJs = transpile("../src/lib/brain/deep-dive.ts")
 const D = await import(enc(ddJs));
 
 const asJs = transpile("../src/lib/brain/auto-sync.ts");
+const krJs2 = transpile("../src/lib/brain/competitor-rss.ts")
+  .replace('from "./deep-dive"', `from "${enc(ddJs)}"`)
+  .replace('from "./pattern-insight"', `from "${enc(patJs)}"`)
+  .replace('from "./yie-score"', `from "${enc(yieJs)}"`);
 const dnJs = transpile("../src/lib/brain/daily-notify.ts")
   .replace('from "./deep-dive"', `from "${enc(ddJs)}"`)
   .replace('from "./auto-sync"', `from "${enc(asJs)}"`)
+  .replace('from "./competitor-rss"', `from "${enc(krJs2)}"`)
   .replace('from "./yie-score"', `from "${enc(yieJs)}"`);
 const DN = await import(enc(dnJs));
 

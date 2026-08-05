@@ -27,7 +27,7 @@ import { skorTrend, type TrendItem } from "@/lib/brain/trend-radar";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
-import { butuhResolve, extractChannelId, ringkasanScan, simJudul, waktuLalu, type KompChannel, type KompFeed } from "@/lib/brain/competitor-rss";
+import { analisisPolaKompetitor, bandingkanJudul, butuhResolve, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
 import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
@@ -356,6 +356,12 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   const [kompMsg, setKompMsg] = useState("");
   const [kompFeeds, setKompFeeds] = useState<KompFeed[] | null>(null);
   const [kompScanAt, setKompScanAt] = useState<number | null>(null);
+  // 🛰️ v19.7: koleksi judul lawan (untuk analisis pola) + hasil banding judul
+  const [kompTitles, setKompTitles] = useState<KompTitleRow[]>(() => {
+    try { const j = JSON.parse(localStorage.getItem(KOMP_TITLES_KEY) || "[]"); return Array.isArray(j) ? j : []; } catch { return []; }
+  });
+  const [kompPola, setKompPola] = useState<PolaKompetitor | null>(null);
+  const [banding, setBanding] = useState<HasilBanding | null>(null);
   function simpanKomp(next: KompChannel[]) {
     setKompCh(next);
     try { localStorage.setItem(KOMP_KEY, JSON.stringify(next)); } catch { /* penuh? abaikan */ }
@@ -394,16 +400,35 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       const r = await fetch(`/api/competitor-rss?ids=${encodeURIComponent(ids)}`);
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal scan");
-      setKompFeeds(j.feeds || []);
+      const feeds: KompFeed[] = j.feeds || [];
+      setKompFeeds(feeds);
       setKompScanAt(Date.now());
-      const msg = ringkasanScan(j.feeds || [], brain);
-      setKompMsg(msg.split("\n")[0]);
+      // 🛰️ v19.7: kumpulkan judul lawan & deteksi upload BARU sejak scan terakhir
+      let alertBaru = 0;
+      try {
+        const seen = JSON.parse(localStorage.getItem(KOMP_SEEN_KEY) || "{}");
+        const baru = deteksiUploadBaru(feeds, seen);
+        alertBaru = baru.length;
+        localStorage.setItem(KOMP_SEEN_KEY, JSON.stringify(tandaiTerlihat(feeds, seen)));
+        const all = kumpulkanJudul(feeds, kompTitles);
+        setKompTitles(all);
+        try { localStorage.setItem(KOMP_TITLES_KEY, JSON.stringify(all)); } catch { /* penuh? abaikan */ }
+        setKompPola(analisisPolaKompetitor(all));
+      } catch { /* jangan gagalkan scan */ }
+      const msg = ringkasanScan(feeds, brain);
+      setKompMsg(alertBaru ? `🛰️ ${alertBaru} upload BARU dari kompetitor! ${msg.split("\n")[0]}` : msg.split("\n")[0]);
       if (msg.includes("⚠️")) flash("🛰️ Ada upload kompetitor mirip judulmu!");
     } catch (e) {
       setKompMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal scan"}`);
     } finally {
       setKompBusy(false);
     }
+  }
+  /* ⚖️ v19.7: bandingkan judulmu vs judul lawan pakai mesin otak */
+  function bandingDenganLawan(lawanTitle: string) {
+    const judulSaya = selTitle || (brain.results?.[0]?.title) || topic.trim() || "";
+    if (!judulSaya) { setKompMsg("Kunci judul dulu di langkah 4 (atau isi topik) biar bisa dibandingkan."); return; }
+    setBanding(bandingkanJudul(lawanTitle, judulSaya, brain));
   }
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
@@ -1809,14 +1834,17 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                           const sim = simJudul(it.title, brain);
                           const bahaya = sim.max >= 60;
                           return (
-                            <a key={it.videoId} href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: "#fff" }}>
-                              <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5 }}>
-                                <span style={{ flex: 1 }}>{it.title}</span>
-                                {bahaya && <span style={{ fontSize: 9, background: "rgba(232,92,92,.15)", color: "#e85c5c", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>⚠️ mirip judulmu</span>}
-                                <span style={{ fontSize: 9.5, opacity: .55, whiteSpace: "nowrap" }}>{waktuLalu(it.publishedAt)}</span>
-                              </div>
-                              {bahaya && sim.match && <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>vs "{sim.match}" ({sim.max}%)</div>}
-                            </a>
+                            <div key={it.videoId} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <a href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "none", color: "#fff", flex: 1 }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5 }}>
+                                  <span style={{ flex: 1 }}>{it.title}</span>
+                                  {bahaya && <span style={{ fontSize: 9, background: "rgba(232,92,92,.15)", color: "#e85c5c", borderRadius: 999, padding: "2px 7px", whiteSpace: "nowrap" }}>⚠️ mirip</span>}
+                                  <span style={{ fontSize: 9.5, opacity: .55, whiteSpace: "nowrap" }}>{waktuLalu(it.publishedAt)}</span>
+                                </div>
+                                {bahaya && sim.match && <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>vs "{sim.match}" ({sim.max}%)</div>}
+                              </a>
+                              <button className="lh-mini" onClick={() => bandingDenganLawan(it.title)} title="Bandingkan dengan judulmu" style={{ padding: "4px 8px", fontSize: 10 }}>⚖️</button>
+                            </div>
                           );
                         })}
                       </div>
@@ -1825,7 +1853,46 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 ))}
               </div>
             )}
-            <p className="lh-note">Channel @nama otomatis di-resolve jadi ID (sekali, tanpa API key). Data RSS publik — murah, stabil, legal.</p>
+            {/* ⚖️ v19.7: HASIL BANDING — judulmu vs judul lawan */}
+            {banding && (
+              <div style={{ marginTop: 10, background: "rgba(25,194,184,.06)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 12, padding: "10px 12px" }}>
+                <b style={{ fontSize: 12 }}>⚖️ Duel judul</b>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <div style={{ flex: 1, background: "rgba(25,194,184,.08)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 10, padding: 8 }}>
+                    <span style={{ fontSize: 9, opacity: .6 }}>JUDULMU</span>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 2 }}>{banding.a.title}</div>
+                    <div style={{ fontSize: 10, opacity: .75, marginTop: 4 }}>Skor <b style={{ color: "var(--v6-teal)" }}>{banding.a.skor}</b> · pred CTR ~{banding.a.predCtr}% · {banding.a.kata} kata{banding.a.angka ? " · angka" : ""}{banding.a.emosi ? " · emosi" : ""}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", fontSize: 10, fontWeight: 900, color: "#f59e0b", whiteSpace: "nowrap" }}>VS<br />{banding.sim}%</div>
+                  <div style={{ flex: 1, background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.3)", borderRadius: 10, padding: 8 }}>
+                    <span style={{ fontSize: 9, opacity: .6 }}>LAWAN</span>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 2 }}>{banding.b.title}</div>
+                    <div style={{ fontSize: 10, opacity: .75, marginTop: 4 }}>Skor <b style={{ color: "#8b5cf6" }}>{banding.b.skor}</b> · pred CTR ~{banding.b.predCtr}% · {banding.b.kata} kata{banding.b.angka ? " · angka" : ""}{banding.b.emosi ? " · emosi" : ""}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, marginTop: 8, color: banding.pemenang === "a" ? "var(--v6-teal)" : banding.pemenang === "b" ? "#e85c5c" : "#f59e0b", fontWeight: 700 }}>
+                  {banding.pemenang === "a" ? "🏆 " : banding.pemenang === "b" ? "🛡️ " : "⚖️ "}{banding.alasan}
+                </div>
+              </div>
+            )}
+            {/* 🧬 v19.7: POLA JUDUL KOMPETITOR — dari judul yang terkumpul */}
+            {kompPola && kompPola.total > 0 && (
+              <div style={{ marginTop: 10, background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "10px 12px" }}>
+                <b style={{ fontSize: 12 }}>🧬 Pola judul lawan <span style={{ fontSize: 9, opacity: .6 }}>(dari {kompPola.total} judul terkumpul)</span></b>
+                {!!kompPola.pola.length && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                    {kompPola.pola.slice(0, 6).map((p) => (
+                      <span key={p.key} style={{ fontSize: 10, background: "rgba(139,92,246,.12)", border: "1px solid rgba(139,92,246,.3)", color: "#c7c7d4", borderRadius: 999, padding: "3px 9px" }}>{p.label} {p.count}× ({p.pct}%)</span>
+                    ))}
+                  </div>
+                )}
+                {!!kompPola.topTokens.length && <p className="lh-note" style={{ marginTop: 6 }}>Kata khas: <b>{kompPola.topTokens.join(" · ")}</b></p>}
+                {!!kompPola.naik.length && (
+                  <p className="lh-note" style={{ color: "#f59e0b", marginTop: 4 }}>📈 Sedang naik: <b>{kompPola.naik.map((x) => `${x.phrase} ×${x.count}`).join(" · ")}</b></p>
+                )}
+              </div>
+            )}
+            <p className="lh-note">Channel @nama otomatis di-resolve jadi ID (sekali, tanpa API key). Data RSS publik — murah, stabil, legal. Upload baru terdeteksi otomatis & masuk notifikasi harian.</p>
           </div>
 
           <div className="lh-card">

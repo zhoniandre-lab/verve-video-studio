@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### ⚖️🛰️ v19.7 — AUTO-ALERT KOMPETITOR + ANALISIS POLA LAWAN + DUEL JUDUL
+* **Masalah:** Radar Kompetitor (v19.6) sudah bisa scan, tapi belum: (1) memberi tahu otomatis saat lawan upload, (2) belajar pola judul lawan dari waktu ke waktu, (3) membandingkan judulmu vs judul lawan.
+* **Solusi:**
+  1. **🛰️ Auto-alert gabung notifikasi harian** — tiap scan & tiap notifikasi harian, upload BARU (videoId yang belum pernah terlihat) dari kompetitor otomatis terdeteksi (`deteksiUploadBaru` + jejak `KOMP_SEEN_KEY`) dan masuk pesan notifikasi: *"Kompetitor baru upload: ... (2 jam lalu) +2 lagi"*.
+  2. **🧬 Analisis pola judul lawan** — judul kompetitor dikumpulkan lintas scan (`KOMP_TITLES_KEY`, dedupe, maks 200); otak menghitung pola yang sedang naik: kata khas, frasa 2-3 kata (angka 1 digit ikut dihitung — "5 Kisah" ketangkap), persentase tiap gaya, dan frasa yang muncul di ≥2 judul terbaru (📈 sedang naik).
+  3. **⚖️ Duel judul** — tombol ⚖️ di tiap upload lawan → bandingkan side-by-side dengan judulmu pakai mesin otak (prediksi CTR Bayes + fitur angka/emosi/panjang): skor, similiarity, dan pemenang + alasan.
+* **Test** diperluas `tests/competitor-rss.test.mjs` (25 cek) — seluruh 30 suite repo tetap hijau.
+
+
 ### 🛰️ v19.6 — RADAR KOMPETITOR RSS (mata-mata real-time, tanpa kuota API)
 * **Ide (dari The Book of Secret Knowledge — prinsip OSINT):** data publik termurah & paling stabil = RSS. Setiap channel YouTube punya RSS gratis (`youtube.com/feeds/videos.xml?channel_id=...`) — pantau upload kompetitor TANPA menyentuh kuota YouTube Data API (10rb/hari).
 * **Yang baru:**

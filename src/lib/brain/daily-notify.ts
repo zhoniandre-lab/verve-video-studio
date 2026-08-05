@@ -10,7 +10,10 @@
 
 import { bestUploadWindows, jadwalUpload } from "./deep-dive";
 import { mergeSyncResults, persistBrain, syncYtBrain } from "./auto-sync";
+import { deteksiUploadBaru, KOMP_SEEN_KEY, tandaiTerlihat, waktuLalu } from "./competitor-rss";
 import type { BrainMemory } from "./yie-score";
+
+const KOMP_CH_KEY = "verve_kompetitor_v1";
 
 export const NOTIF_KEY = "verve_notif_harian_v1";
 export const NOTIF_LAST_KEY = "verve_notif_last_v1";
@@ -70,7 +73,25 @@ export async function cekNotifikasiHarian(brain: BrainMemory): Promise<NotifResu
       merged = { ...brain, results: mergeSyncResults(brain.results || [], r.merged) };
       persistBrain(merged);
     }
-    const body = buatPesanHarian(merged, r.ok);
+    let body = buatPesanHarian(merged, r.ok);
+    // 🛰️ v19.7: AUTO-ALERT KOMPETITOR — kalau ada upload baru sejak terakhir dilihat,
+    // masuk ke notifikasi harian (tidak perlu buka app).
+    try {
+      const ch = JSON.parse(localStorage.getItem(KOMP_CH_KEY) || "[]");
+      if (Array.isArray(ch) && ch.length) {
+        const ids = ch.map((k: { id: string }) => k.id).join("|");
+        const fr = await fetch(`/api/competitor-rss?ids=${encodeURIComponent(ids)}`);
+        const fj = await fr.json();
+        if (fj?.ok && Array.isArray(fj.feeds)) {
+          const seen = JSON.parse(localStorage.getItem(KOMP_SEEN_KEY) || "{}");
+          const baru = deteksiUploadBaru(fj.feeds, seen);
+          localStorage.setItem(KOMP_SEEN_KEY, JSON.stringify(tandaiTerlihat(fj.feeds, seen)));
+          if (baru.length) {
+            body += `\n🛰️ Kompetitor baru upload: "${baru[0].title}" (${waktuLalu(baru[0].publishedAt)})${baru.length > 1 ? ` +${baru.length - 1} lagi` : ""}.`;
+          }
+        }
+      }
+    } catch { /* kompetitor opsional — jangan gagalkan notif utama */ }
     new Notification("🔔 VERVE — Laporan Otak Harian", { body, tag: "verve-daily" });
     markNotifSent();
     return { ok: true, title: "VERVE", body };
