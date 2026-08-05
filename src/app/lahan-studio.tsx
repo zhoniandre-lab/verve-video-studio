@@ -1981,7 +1981,8 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 {kompFeeds.map((f) => (
                   <div key={f.channelId} style={{ background: "var(--v6-card)", border: "1px solid var(--v6-line)", borderRadius: 12, padding: "9px 11px" }}>
                     <b style={{ fontSize: 12 }}>📺 {f.channelName || f.channelId}</b>
-                    {f.error ? <p className="lh-note" style={{ color: "#e8a15a", marginTop: 4 }}>{f.error}</p> : (
+                    {f.note && <span style={{ fontSize: 9, opacity: .55, marginLeft: 6 }}>🛟 {f.note}</span>}
+                    {f.error ? <p className="lh-note" style={{ color: "#e8a15a", marginTop: 4 }}>⚠️ {f.error}</p> : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
                         {f.items.slice(0, 5).map((it) => {
                           const sim = simJudul(it.title, brain);

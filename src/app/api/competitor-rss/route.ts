@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
-import { extractChannelId, parseYtRss, type KompFeed } from "@/lib/brain/competitor-rss";
+import { channelNameFromPage, extractChannelId, parseYtRss, parseYtVideosPage, type KompFeed } from "@/lib/brain/competitor-rss";
 
 /**
  * 🛰️ VERVE KOMPETITOR RSS v19.6 — proxy RSS publik YouTube (gratis, tanpa API key).
  * GET  /api/competitor-rss?ids=UC1|UC2  → scan upload terbaru tiap channel (cache 10 mnt)
  * POST /api/competitor-rss              → resolve URL channel (@handle /c/ /channel/) → ID
+ *
+ * 🛟 v19.8.2: RSS YouTube kadang 404 untuk sebagian channel (quirk YouTube).
+ * Kalau RSS gagal → FALLBACK: scrap halaman /videos channel (ytInitialData,
+ * compactVideoRenderer) — tetap tanpa API key.
  */
 
 export const runtime = "nodejs";
@@ -24,6 +28,34 @@ async function fetchText(url: string, timeoutMs = 12_000): Promise<string> {
   return r.text();
 }
 
+/** Ambil upload terbaru: RSS dulu, kalau gagal → scrap halaman /videos. */
+async function ambilUploadChannel(id: string): Promise<KompFeed> {
+  // 1) RSS — cepat & ringan
+  try {
+    const xml = await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${id}`);
+    const name = (xml.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.trim() || "";
+    return { channelId: id, channelName: name || undefined, items: parseYtRss(xml, 8), source: "rss" };
+  } catch (e) {
+    const rssErr = e instanceof Error ? e.message : "RSS gagal";
+    // 2) Fallback: halaman /videos (RSS 404 untuk sebagian channel)
+    try {
+      const html = await fetchText(`https://www.youtube.com/channel/${id}/videos`, 18_000);
+      const items = parseYtVideosPage(html, 8);
+      const name = channelNameFromPage(html) || undefined;
+      if (items.length) {
+        return { channelId: id, channelName: name, items, source: "scrape", note: "RSS tidak tersedia untuk channel ini — pakai fallback halaman." };
+      }
+      return { channelId: id, channelName: name, items: [], source: "scrape", error: `Belum ada video terbaca (RSS: ${rssErr})` };
+    } catch (e2) {
+      const msg2 = e2 instanceof Error ? e2.message : "Fallback gagal";
+      const friendly = /fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|429/i.test(`${rssErr} ${msg2}`)
+        ? "Koneksi ke YouTube gagal/diblokir — coba lagi nanti."
+        : `${rssErr}`;
+      return { channelId: id, items: [], source: "rss", error: friendly };
+    }
+  }
+}
+
 export async function GET(req: Request) {
   const u = new URL(req.url);
   const raw = String(u.searchParams.get("ids") || "");
@@ -36,23 +68,13 @@ export async function GET(req: Request) {
     return NextResponse.json(cache.body, { headers: { "Cache-Control": "no-store" } });
   }
 
-  const feeds: KompFeed[] = await Promise.all(
-    ids.map(async (id) => {
-      try {
-        const xml = await fetchText(`https://www.youtube.com/feeds/videos.xml?channel_id=${id}`);
-        const name = (xml.match(/<title>([\s\S]*?)<\/title>/) || [])[1]?.trim() || "";
-        return { channelId: id, channelName: name || undefined, items: parseYtRss(xml, 8) };
-      } catch (e) {
-        return { channelId: id, items: [], error: e instanceof Error ? e.message : "Gagal ambil RSS" };
-      }
-    })
-  );
+  const feeds: KompFeed[] = await Promise.all(ids.map((id) => ambilUploadChannel(id)));
 
   const body = {
     ok: true,
     count: feeds.filter((f) => f.items.length).length,
     feeds,
-    note: "Data dari RSS publik YouTube (read-only, tanpa kuota API). Cache 10 menit.",
+    note: "Data dari RSS publik YouTube + fallback halaman (read-only, tanpa kuota API). Cache 10 menit.",
   };
   cache = { at: now, key, body };
   return NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });

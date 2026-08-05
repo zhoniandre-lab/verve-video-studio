@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🛟 v19.8.2 — FALLBACK SCRAPE SAAT RSS KOMPETITOR 404
+* **Masalah (screenshot user):** channel "DJ KINAR" aktif & upload 1 hari lalu (terlihat di app YouTube), tapi Radar Kompetitor bilang "Belum ada upload baru" + "HTTP 404". Ternyata RSS YouTube (`feeds/videos.xml`) memang **404 untuk sebagian channel** (quirk YouTube) walau channel-nya normal.
+* **Solusi:** fallback otomatis di `/api/competitor-rss`:
+  1. Coba **RSS** dulu (cepat & ringan).
+  2. Kalau gagal → **scrape halaman `youtube.com/channel/{ID}/videos`** (ytInitialData → `compactVideoRenderer`: videoId + judul + waktu relatif "1 day ago" → timestamp). Tetap tanpa API key.
+  3. UI menampilkan catatan jujur "🛟 RSS tidak tersedia — pakai fallback halaman" + nama channel.
+* **Teruji live:** DJ KINAR (RSS 404) → kini kebaca 8 upload terbaru termasuk video "1 hari lalu". tsc 0; build 0; 30 suite hijau (test baru: parse halaman + relTimeToTs).
+
+
 ### 🔧 v19.8.1 — FIX "fetch failed" DI RADAR KOMPETITOR (link video & pesan ramah)
 * **Masalah (screenshot user):** tempel link VIDEO (`youtu.be/...`) ke kolom Radar Kompetitor → muncul error merah mentah "fetch failed". Dua biang: (1) `youtu.be` bukan `youtube.com` → URL jadi rusak saat resolve; (2) fetch ke halaman video sering diblokir/throttle → error bawaan Node tampil mentah.
 * **Solusi:**

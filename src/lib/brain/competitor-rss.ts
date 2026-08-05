@@ -39,6 +39,8 @@ export type KompFeed = {
   channelName?: string;
   items: KompItem[];
   error?: string;
+  source?: "rss" | "scrape";
+  note?: string;
 };
 
 export type KompChannel = { id: string; name: string; addedAt: number };
@@ -111,6 +113,63 @@ export function waktuLalu(ts: number): string {
   if (jam < 24) return `${jam} jam lalu`;
   const hari = Math.floor(jam / 24);
   return `${hari} hari lalu`;
+}
+
+/* ================= FALLBACK SCRAPE HALAMAN /videos (saat RSS 404) ================= */
+
+/** Ubah teks relatif YouTube ("1 day ago", "2 weeks ago"…) → timestamp perkiraan. */
+export function relTimeToTs(text: string): number {
+  const t = String(text || "").toLowerCase();
+  const num = Number((t.match(/(\d+)/) || [])[1] || 1);
+  const now = Date.now();
+  if (t.includes("minute")) return now - num * 60e3;
+  if (t.includes("hour")) return now - num * 36e5;
+  if (t.includes("day")) return now - num * 864e5;
+  if (t.includes("week")) return now - num * 7 * 864e5;
+  if (t.includes("month")) return now - num * 30 * 864e5;
+  if (t.includes("year")) return now - num * 365 * 864e5;
+  return now;
+}
+
+/**
+ * Ekstrak daftar video dari HTML halaman `youtube.com/channel/ID/videos`.
+ * YouTube tidak selalu menyediakan RSS (404 untuk sebagian channel) — halaman
+ * ini adalah cadangan andal. Murni regex per-blok compactVideoRenderer.
+ */
+export function parseYtVideosPage(html: string, limit = 10): KompItem[] {
+  let s = String(html || "")
+    .replace(/\\x22/g, '"')
+    .replace(/\\x2f/g, "/")
+    .replace(/\\x5b/g, "[")
+    .replace(/\\x5d/g, "]")
+    .replace(/\\x7b/g, "{")
+    .replace(/\\x7d/g, "}")
+    .replace(/\\u0026/g, "&")
+    .replace(/\\n/g, "");
+  const chunks = s.split('"compactVideoRenderer":{').slice(1);
+  const out: KompItem[] = [];
+  for (const c of chunks) {
+    const vid = c.match(/"videoId":"([\w-]{11})"/);
+    const title = c.match(/"title":\{"runs":\[\{"text":"([^"]{2,150})"/);
+    const time = c.match(/"publishedTimeText":\{"runs":\[\{"text":"([^"]+)"/);
+    if (!vid || !title) continue;
+    const ts = time ? relTimeToTs(time[1]) : Date.now();
+    out.push({
+      title: decodeXml(title[1]).replace(/\\\//g, "/").trim(),
+      videoId: vid[1],
+      url: `https://www.youtube.com/watch?v=${vid[1]}`,
+      published: new Date(ts).toISOString(),
+      publishedAt: ts,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Nama channel dari halaman apa pun (og:title / microformat). */
+export function channelNameFromPage(html: string): string {
+  const m = html.match(/<meta property="og:title" content="([^"]+)"/);
+  return (m?.[1] || "").replace(/\s*-\s*YouTube$/, "").trim();
 }
 
 /** Ringkasan teks hasil scan — siap salin/share. */

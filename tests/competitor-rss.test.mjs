@@ -118,7 +118,28 @@ const SAMPLE = `<?xml version="1.0"?>
   T("frasa 'sedang naik' terdeteksi", p.naik.length > 0, p.naik.map((x) => x.phrase).join(","));
 }
 
-/* ---------- 7. Bandingkan judulmu vs lawan ---------- */
+/* ---------- 7. Fallback scrape halaman /videos (RSS 404) ---------- */
+{
+  const SAMPLE_HTML = `<html><head><meta property="og:title" content="DJ KINAR - YouTube"></head><body>
+var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\\x22videoId\\x22:\\x227Vxltc_Ol6w\\x22,\\x22title\\x22:\\x7b\\x22runs\\x22:\\x5b\\x7b\\x22text\\x22:\\x22BAK SERUMPUN SUMPAH JANJI BERDUA\\x22\\x7d\\x5d\\x7d,\\x22publishedTimeText\\x22:\\x7b\\x22runs\\x22:\\x5b\\x7b\\x22text\\x22:\\x221 day ago\\x22\\x7d\\x5d\\x7d,\\x22viewCountText\\x22:\\x7b\\x22runs\\x22:\\x5b\\x7b\\x22text\\x22:\\x22818 views\\x22\\x7d\\x5d\\x7d\\x7d\\x7d';
+</body></html>`;
+  const items = K.parseYtVideosPage(SAMPLE_HTML, 5);
+  T("scrape: 1 video ke-extract", items.length === 1, `dapat ${items.length}`);
+  T("scrape: judul & id benar", items[0].videoId === "7Vxltc_Ol6w" && items[0].title.includes("BAK SERUMPUN"));
+  T("scrape: waktu '1 day ago' diterjemahkan", Math.abs(items[0].publishedAt - (Date.now() - 864e5)) < 6 * 36e5, `${Date.now() - items[0].publishedAt} ms lalu`);
+  T("scrape: halaman kosong → aman", K.parseYtVideosPage("", 5).length === 0);
+  T("nama channel dari og:title", K.channelNameFromPage('<meta property="og:title" content="DJ KINAR - YouTube">') === "DJ KINAR");
+}
+
+/* ---------- 8. relTimeToTs ---------- */
+{
+  const now = Date.now();
+  T("rel '2 weeks ago' ≈ 14 hari", Math.abs(K.relTimeToTs("2 weeks ago") - (now - 14 * 864e5)) < 36e5);
+  T("rel '1 month ago' ≈ 30 hari", Math.abs(K.relTimeToTs("1 month ago") - (now - 30 * 864e5)) < 36e5);
+  T("rel '3 hours ago' ≈ 3 jam", Math.abs(K.relTimeToTs("3 hours ago") - (now - 3 * 36e5)) < 36e5);
+}
+
+/* ---------- 9. Bandingkan judulmu vs lawan ---------- */
 {
   const brain = { researches: [], results: [
     { title: "5 Kisah Ibu yang Mengharukan", ctr: 7.0, time: Date.now() - 5 * 864e5 },
