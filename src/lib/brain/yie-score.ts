@@ -4,7 +4,7 @@
  * ke TypeScript murni (tanpa DOM). Prinsip: AI TIDAK MENGARANG ANGKA —
  * semua skor punya `reasons[]` yang bisa diaudit.
  *
- * Dipakai oleh Lahan Awalan (niche Cerita Jadi Lagu v1, siap merambah).
+ * Dipakai oleh Lahan Awalan (semua niche).
  */
 
 /* ================= UTIL DASAR ================= */
@@ -671,8 +671,8 @@ function candidateFromPattern(p: TitlePattern, a: Angle): string[] {
     if (p.id === "LOSS_BEFORE_BIRTH" || it.deathBeforeBirth) return ["Ibu, Engkau Pergi Sebelum Aku Lahir", "Aku Lahir Tanpa Sempat Mengenal Ibu"];
     if (p.id === "THANKS_TARGET" || it.bestMother) return ["Terima Kasih Ibu, Engkau yang Terbaik", "Lagu untuk Ibu Terbaik dalam Hidupku"];
     if (p.id === "APOLOGY_TARGET" || it.apology) return ["Maaf Ibu, Aku Terlambat Mengerti"];
-    if (p.id === "LONGING_TARGET" || it.longing) return ["Ibu Aku Rindu | Cerita Jadi Lagu", "Rindu Ibu yang Tak Pernah Hilang"];
-    if (p.id === "SONG_STORY") return [`${cap(a.keyword)} | Cerita Jadi Lagu`];
+    if (p.id === "LONGING_TARGET" || it.longing) return ["Ibu Aku Rindu | Kisah & Lagu", "Rindu Ibu yang Tak Pernah Hilang"];
+    if (p.id === "SONG_STORY") return [`${cap(a.keyword)} | Kisah & Lagu`];
     return ["Pesan Terakhir yang Tak Pernah Terbaca"];
   }
   return [];
@@ -690,12 +690,12 @@ function titleBankFamilyIntent(a: Angle): string[] {
   if (it.deathBeforeBirth) return [
     "Ibu, Engkau Pergi Sebelum Aku Lahir", "Aku Lahir Tanpa Sempat Mengenal Ibu",
     "Lagu untuk Ibu yang Tak Pernah Sempat Kupeluk", "Sebelum Aku Lahir, Ibu Sudah Pergi",
-    "Doa Anak untuk Ibu yang Tak Pernah Ia Kenal", "Cerita Jadi Lagu: Ibu yang Pergi Sebelum Aku Lahir",
+    "Doa Anak untuk Ibu yang Tak Pernah Ia Kenal", "Kisah & Lagu: Ibu yang Pergi Sebelum Aku Lahir",
   ];
   if (it.bestMother) return [
     "Ibu, Engkau yang Terbaik", "Terima Kasih Ibu, Engkau yang Terbaik",
     "Lagu untuk Ibu Terbaik dalam Hidupku", "Ibu Terbaik, Doamu Selalu Menjagaku",
-    "Cerita Jadi Lagu: Ibu, Engkau yang Terbaik", "Untuk Ibu yang Selalu Menjadi Rumah",
+    "Kisah & Lagu: Ibu, Engkau yang Terbaik", "Untuk Ibu yang Selalu Menjadi Rumah",
   ];
   if (it.apology) return [
     "Maaf Ibu, Aku Terlambat Mengerti", "Ibu, Maafkan Aku yang Pernah Menyakitimu",
@@ -716,7 +716,7 @@ function keywordBasedVariants(kw: string, id: string, y: string | number, a: Ang
   const it = keywordIntent(a);
   if (id === "family" && it.deathBeforeBirth) return ["Ibu Pergi Sebelum Aku Lahir", "Aku Tak Pernah Sempat Memanggilmu Ibu", "Lagu Anak yang Tak Pernah Mengenal Ibunya"];
   if (id === "family" && it.bestMother) return ["Ibu Engkau yang Terbaik", "Terima Kasih Untuk Ibu Terbaik", "Lagu Untuk Ibu Terbaik"];
-  if (id === "family" && it.longing) return [`${cap(a.keyword)} | Cerita Jadi Lagu`, "Lagu Rindu yang Bikin Nangis"];
+  if (id === "family" && it.longing) return [`${cap(a.keyword)} | Kisah & Lagu`, "Lagu Rindu yang Bikin Nangis"];
   if (id === "dj") return [`DJ ${y} Full Bass`, `DJ ${y} Nonstop`, `DJ ${y} Viral TikTok`];
   if (id === "horror") return ["Cerita Hantu Rumah Kosong", "Suara Misterius Tengah Malam", "Jangan Buka Pintu Malam Hari"];
   return [];

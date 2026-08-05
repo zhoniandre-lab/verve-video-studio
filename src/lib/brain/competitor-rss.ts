@@ -404,7 +404,7 @@ export function angkaPopulerDariJudul(rows: KompTitleRow[]): string[] {
  * 🧠 v19.8.5: Ambil INTI judul dari judul user (buang label niche "| Cerita Jadi
  * Lagu" & kata sambung di awal) → buat judul saran yang NATURAL sesuai niche,
  * bukan menyalin judul panjang mentah.
- * Contoh: "Ibu Engkau Yang Terbaik | Cerita Jadi Lagu | Dengarkan Sampai Habis"
+ * Contoh: "Ibu Engkau Yang Terbaik | Kisah & Lagu | Dengarkan Sampai Habis"
  *   → penuh: "Ibu Engkau Yang Terbaik" · inti1: "Ibu"
  */
 export function intiJudulUntukSerang(title: string): { penuh: string; inti1: string } {
@@ -434,14 +434,14 @@ export function serangBalikJudul(lawanTitle: string, keyword: string, brain: Bra
     ? (batch === 0
       ? [
           `${penuh} - ${frasaViral}`,
-          `${penuh} - ${frasaViral} | Cerita Jadi Lagu`,
+          `${penuh} - ${frasaViral} | Kisah & Lagu`,
           `Rindu ${inti1} - ${frasaViral}`,
           `${angka[0]} Kisah ${inti1} - ${frasaViral}`,
         ]
       : [
           `${EMO[(batch - 1) % EMO.length]} ${inti1} - ${frasaViral}`,
           `${PENS[(batch - 1) % PENS.length]} ${inti1} - ${frasaViral}`,
-          `${EMO[(batch + 1) % EMO.length]} ${inti1} - ${frasaViral} | Cerita Jadi Lagu`,
+          `${EMO[(batch + 1) % EMO.length]} ${inti1} - ${frasaViral} | Kisah & Lagu`,
           `${angka[0]} Kisah ${inti1} yang Menyentuh - ${frasaViral}`,
         ])
     : (batch === 0

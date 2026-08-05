@@ -451,7 +451,7 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
           <div className="v6-hero-card is-lahan">
             <div className="glow-orb" style={{ background: "radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%)" }} />
             <span className="badge" style={{ background: "rgba(25, 194, 184, 0.16)", borderColor: "rgba(25, 194, 184, 0.3)", color: "#8ff0e4" }}>🌱 LAHAN AWALAN</span>
-            <h2 className="title">Cerita Jadi Lagu: Riset & Judul AI</h2>
+            <h2 className="title">Kisah & Lagu: Riset & Judul AI</h2>
             <p className="sub">Riset YouTube nyata, skor judul juara, visual karakter AI konsisten.</p>
             <button className="action" style={{ background: "var(--v6-teal)" }} onClick={() => go("lahan")}>Mulai ›</button>
           </div>
@@ -2728,7 +2728,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       dirPush("sys", "🎬 Render dimulai — CPU HP yang bekerja. Selesai → tombol ⬇ Download menyala.");
       void doRender();
     } else if (o.op === "auto_caption") {
-      // 🛡 v11.5 SUMBER PINTAR: proyek Cerita Jadi Lagu = lagu + lirik, tanpa suara TTS.
+      // 🛡 v11.5 SUMBER PINTAR: proyek lagu = lagu + lirik, tanpa suara TTS.
       // Dulu chat memanggil apa adanya (sumber 'suara') → ditolak 'Belum ada suara'. Sekarang memilih sendiri.
       const from = (mLyrics || "").trim() && musicUrl ? "lirik" : musicUrl ? "musik" : "suara";
       dirPush("sys", from === "lirik"

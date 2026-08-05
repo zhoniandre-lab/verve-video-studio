@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * LAHAN AWALAN v2 — mesin produksi AI VERVE (niche: Cerita Jadi Lagu).
+ * LAHAN AWALAN v2 — mesin produksi AI VERVE (semua niche).
  * Alur: Niat → Sudut → Riset → Judul → Visual (prompt engine) → Cerita → Adegan.
  *
  * Otak: VERVE Brain (src/lib/brain/*) — skor dari HITUNGAN NYATA, bukan ngarang.
@@ -23,6 +23,7 @@ import {
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
 import { NICHES, isSongNiche, nicheAiLabel, nicheById, nicheLabel, wizardSteps } from "@/lib/brain/niche";
+import { resetJikaPerangkatBeda, tandaiPerangkat, deviceSama } from "@/lib/device-scope";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
 import { ambilSnapshotTrend, bandingkanGelombang, cocokNiche, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
 import { kompetitorVelocity, type KompItem } from "@/lib/brain/competitor-rss";
@@ -234,9 +235,13 @@ function injectCharacter(sceneVisual: string, chars: CharCard[], gaya: string): 
 export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit: () => void; gotoEditor?: (id?: string, cmd?: { tool?: string; newProject?: number; applyAdjust?: number }) => void; gotoThumb?: () => void }) {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
-  // 🎯 v19.20 SEMUA NICHE: pilihan niche pengguna (default Cerita Jadi Lagu, bisa ganti)
-  const [nicheId, setNicheId] = useState<string>(() => { try { return localStorage.getItem("verve_lahan_niche_v1") || "story_song"; } catch { return "story_song"; } });
-  const [nicheCustom, setNicheCustom] = useState<string>(() => { try { return localStorage.getItem("verve_lahan_niche_custom_v1") || ""; } catch { return ""; } });
+  // 📱 v19.23 ANTI-INTIP: kalau buka di HP/browser BEDA → semua data pribadi di-reset ke default
+  useEffect(() => { resetJikaPerangkatBeda(); tandaiPerangkat(); }, []);
+  // 🎯 v19.20 SEMUA NICHE: pilihan niche pengguna (default Kisah & Lagu, bisa ganti)
+  const [nicheId, setNicheId] = useState<string>(() => {
+    try { return deviceSama() ? (localStorage.getItem("verve_lahan_niche_v1") || "story_song") : "story_song"; } catch { return "story_song"; }
+  });
+  const [nicheCustom, setNicheCustom] = useState<string>(() => { try { return deviceSama() ? (localStorage.getItem("verve_lahan_niche_custom_v1") || "") : ""; } catch { return ""; } });
   const nicheDef = nicheById(nicheId);
   const nicheAI = nicheAiLabel(nicheId, nicheCustom);
   const songNiche = isSongNiche(nicheId); // 🎵 v19.21: alur lagu vs audio
@@ -671,7 +676,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   /* ---------- intent audiens (v19.20: ikut niche pilihan; custom = deteksi dari topik) ---------- */
   const intentId = nicheId === "custom"
     ? (topic.trim() ? detectAudienceIntent(topic) : "general")
-    : (topic.trim() ? (nicheId === "story_song" ? detectAudienceIntent(topic + " cerita jadi lagu") : nicheId) : nicheId);
+    : (topic.trim() ? (nicheId === "story_song" ? detectAudienceIntent(topic) : nicheId) : nicheId);
   const intentEff = intentId === "general" ? "story_song" : intentId;
   const card = audienceCard(intentEff);
 

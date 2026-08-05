@@ -1,7 +1,7 @@
 /**
  * VERVE AUDIENCE BRAIN v1 — kartu audiens berbasis aturan (tanpa API, tanpa ngarang).
  * Diport dari audience-brain YIE v23. story_song ditaruh paling depan karena
- * Lahan Awalan fokus niche "Cerita Jadi Lagu".
+ * Lahan Awalan fokus niche emosional.
  *
  * Aturan produk: modul ini TIDAK mengarang metrik YouTube. Ia memberi konteks
  * audiens, CTA, saran thumbnail, jam upload, dan risiko — semuanya heuristik
@@ -232,7 +232,7 @@ export function buildContentIdeas(intentId: string, seed: string): ContentIdea[]
 
   if (intentId === "story_song" || intentId === "family") {
     add("rindu/penyesalan kepada orang tua", "buat konten yang memberi ruang emosi", `Cerita emosional dari sudut pandang anak/orang tua: ${base}`, "Maaf Ibu, Aku Terlambat Mengerti", "wajah menangis, cahaya hangat, teks TERLAMBAT MINTA MAAF", cfg.ctas[0], 92);
-    add("butuh lagu sedih yang relate", "pakai hook lagu + cerita", `${base} dibuat sebagai cerita jadi lagu`, `${base} | Cerita Jadi Lagu`, "cover art emosional, ruang teks kanan", cfg.ctas[1] || cfg.ctas[0], 88);
+    add("butuh lagu sedih yang relate", "pakai hook lagu + cerita", `${base} dibuat sebagai cerita jadi lagu`, `${base} | Kisah & Lagu`, "cover art emosional, ruang teks kanan", cfg.ctas[1] || cfg.ctas[0], 88);
   } else if (intentId === "horror") {
     add("ingin sensasi takut/penasaran", "bangun misteri dari awal", `Cerita horor dengan opening suara/pintu: ${base}`, "Jangan Buka Pintu Setelah Tengah Malam", "pintu gelap, siluet, teks JANGAN BUKA", cfg.ctas[0], 91);
     add("mencari kisah seram singkat", "buat twist akhir", `${base} dengan twist di 30 detik terakhir`, "Suara Itu Datang dari Rumah Kosong", "rumah kosong, cahaya biru dingin", cfg.ctas[1], 86);

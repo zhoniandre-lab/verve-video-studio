@@ -6,7 +6,7 @@
  *
  * Fungsi di sini PURE & offline (parser + skor) — route /api/trends yang fetch.
  * Skor relevansi memakai kamus audiens VERVE (audience.ts): trend yang cocok
- * dengan niche "cerita jadi lagu" ditandai 💔 Emosional — bisa langsung jadi lagu.
+ * dengan niche pilihan ditandai — relevansi otomatis.
  *
  * 🧠 v19.9 ILMU BARU — "RADAR GELOMBANG" (pola OSINT monitoring):
  *   otak menyimpan snapshot trend tiap hari (localStorage), lalu membandingkan
@@ -29,7 +29,7 @@ export type TrendTags = {
   emoji: string;
   label: string;
   skor: number; // 0 = umum, makin tinggi makin relevan dgn niche
-  cocokLagu: boolean; // kandidat langsung buat "cerita jadi lagu"
+  cocokLagu: boolean; // kandidat langsung jadi konten
 };
 
 function decodeXml(s: string): string {
@@ -130,7 +130,7 @@ export function cocokNiche(title: string, nicheId: string): boolean {
 /* ================= SKOR RELEVANSI NICHE ================= */
 
 /**
- * Skor relevansi trend terhadap niche VERVE (cerita jadi lagu & kawan-kawan).
+ * Skor relevansi trend terhadap niche VERVE.
  * Pakai kamus INTENTS dari audience.ts + kamus emosi — tanpa ngarang.
  */
 export function skorTrend(title: string): TrendTags {

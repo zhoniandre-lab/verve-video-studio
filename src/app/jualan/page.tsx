@@ -13,7 +13,7 @@ type BrainMemory = { researches?: unknown[]; results?: { title?: string; ctr?: n
 const FITUR = [
   { ic: "🧠", t: "Otak yang Belajar Sendiri", d: "Feedback loop otomatis: performa video channel ditarik dari YouTube (read-only) dan diubah jadi pola. Judul yang tembus makin diprioritaskan, yang gagal otomatis dihukum. Tanpa isi manual." },
   { ic: "🎬", t: "Editor Kelas CapCut di Browser", d: "Potong, timeline, lirik karaoke, transisi sinematik, visualizer musik, thumbnail — semua jalan di HP, tanpa install. PWA offline-ready." },
-  { ic: "🎵", t: "Cerita Jadi Lagu AI", d: "Ketik cerita → judul juara → naskah → adegan bergambar → lagu AI lengkap dengan lirik yang sinkron ke ketukan. Satu alur utuh dari nol sampai video jadi." },
+  { ic: "🎵", t: "Kisah Jadi Konten AI", d: "Ketik cerita/ide → judul juara → naskah → adegan bergambar → audio AI lengkap. Satu alur utuh dari nol sampai video jadi." },
   { ic: "🏆", t: "Mesin Judul Juara", d: "Setiap judul diskor 6 dimensi (Search, Browse, Unik, Gap, Hook, Kualitas) dengan alasan yang bisa diaudit. Bukan kotak hitam — semua angka bisa diperiksa." },
   { ic: "🩺", t: "Dokter Channel (Growth Doctor)", d: "Tempel angka/URL/screenshot YouTube Studio → VERVE jawab Kenapa sepi, Kok bisa, Seharusnya apa, lalu kasih aksi konkret + eksperimen yang bisa diukur." },
   { ic: "👤", t: "Karakter Konsisten 90–95%", d: "Kartu karakter + kalimat identitas beku disuntik ke tiap prompt gambar. Wajah, pakaian, suasana SAMA dari adegan 1 sampai akhir — ciri video mahal." },
@@ -139,7 +139,7 @@ export default function JualanPage() {
       <section className={styles.hero}>
         <div className={styles.badge}>🧠 AI yang belajar dari CHANNEL KAMU — bukan template asal</div>
         <h1>Studio Video AI dengan <span>Otak yang Belajar Sendiri</span></h1>
-        <p>Dari cerita jadi lagu, adegan, sampai video jadi — dengan mesin judul yang makin pintar tiap kali channelmu dapat view. Semua di browser HP, tanpa install.</p>
+        <p>Dari cerita/ide, adegan, sampai video jadi — dengan mesin judul yang makin pintar tiap kali channelmu dapat view. Semua di browser HP, tanpa install.</p>
         <div className={styles.heroCtas}>
           <a className={styles.btnPrimary} href="/">🚀 Coba Sekarang</a>
           <a className={styles.btnGhost} href="#fitur">Lihat Fitur</a>
@@ -244,7 +244,7 @@ export default function JualanPage() {
       {/* ── CTA akhir ── */}
       <section className={styles.cta}>
         <h2>Mau lihat langsung dari tangan sendiri?</h2>
-        <p>Buka app, buat satu cerita jadi lagu, hubungkan YouTube, dan lihat otaknya makin pintar tiap minggu.</p>
+        <p>Buka app, buat satu video, hubungkan YouTube, dan lihat otaknya makin pintar tiap minggu.</p>
         <a className={styles.btnPrimary} href="/">🎬 Buka VERVE</a>
         <p className={styles.sell}>💎 Tertarik lisensi / white-label / demo khusus? Hubungi pemilik — harga menyesuaikan kebutuhan.</p>
       </section>

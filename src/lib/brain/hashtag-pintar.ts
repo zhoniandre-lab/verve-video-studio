@@ -32,7 +32,7 @@ export type HashtagPaket = {
 };
 
 /**
- * Susun paket hashtag: niche (cerita jadi lagu) + kata kunci judul + trend hangat + umum.
+ * Susun paket hashtag: niche terpilih + kata kunci judul + trend hangat + umum.
  */
 export function hashtagPintar(judul: string, keyword: string, trend?: string, nicheId = "story_song"): HashtagPaket {
   const out: string[] = [];
@@ -42,7 +42,7 @@ export function hashtagPintar(judul: string, keyword: string, trend?: string, ni
   };
 
   // 1) Niche tetap (v19.20: ikut niche pilihan)
-  (nicheById(nicheId).tags || ["ceritajadilagu", "lagusedih", "laguviral"]).forEach(push);
+  (nicheById(nicheId).tags || ["kisahnyata", "kisahmenyentuh", "laguemosional"]).forEach(push);
   // 2) Kata kunci dari judul (2-3 tag)
   tok(judul).slice(0, 3).forEach((w) => push(w));
   // 3) Keyword riset
@@ -54,7 +54,7 @@ export function hashtagPintar(judul: string, keyword: string, trend?: string, ni
 
   const tags = out.slice(0, 8);
   const alasan = tags.length
-    ? `6-8 tag campuran: niche (cerita jadi lagu) + kata kunci judul + trend + umum — pola TikTok Strategist.`
+    ? `6-8 tag campuran: niche terpilih + kata kunci judul + trend + umum — pola TikTok Strategist.`
     : "Belum ada bahan — isi judul dulu.";
   return { tags, alasan };
 }

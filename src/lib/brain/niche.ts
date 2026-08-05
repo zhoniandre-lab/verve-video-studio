@@ -1,5 +1,5 @@
 /**
- * 🎯 VERVE NICHE v19.20 — DUKUNGAN SEMUA NICHE (nggak terpaku "Cerita Jadi Lagu").
+ * 🎯 VERVE NICHE v19.20 — DUKUNGAN SEMUA NICHE (nggak terpaku satu niche).
  * Pengguna bebas pilih niche di Lahan (step 1); seluruh alur mengikuti pilihan:
  * prompt AI, riset, trend, judul saran, hashtag. Kustom = tulis niche sendiri.
  * Murni klien & offline.
@@ -18,7 +18,7 @@ export type NicheDef = {
 };
 
 export const NICHES: NicheDef[] = [
-  { id: "story_song", label: "Cerita Jadi Lagu", aiLabel: "cerita jadi lagu", emoji: "🎵", desc: "Lagu emosional dari cerita", tags: ["ceritajadilagu", "lagusedih", "laguviral"], contoh: ["rindu ibu cerita jadi lagu", "maaf ibu aku terlambat", "lagu untuk ayah tersayang", "ibu engkau yang terbaik"] },
+  { id: "story_song", label: "Kisah & Lagu", aiLabel: "kisah emosional yang menyentuh", emoji: "🎵", desc: "Kisah emosional yang menyentuh", tags: ["kisahnyata", "kisahmenyentuh", "laguemosional"], contoh: ["kisah ibu yang mengharukan", "maaf yang terlambat", "perjuangan seorang ayah", "rindu yang tak tersampaikan"] },
   { id: "family", label: "Keluarga", aiLabel: "kisah keluarga", emoji: "👨‍👩‍👧", desc: "Kisah keluarga mengharukan", tags: ["kisahkeluarga", "keluargaharu", "kisahnyata"], contoh: ["kisah ibu single parent", "ayah pulang setelah bertahun-tahun", "anak mencari orang tuanya", "kehangatan keluarga sederhana"] },
   { id: "horror", label: "Horor / Mistis", aiLabel: "cerita horor", emoji: "👻", desc: "Cerita horor & mistis", tags: ["ceritahoror", "mistis", "scarystory"], contoh: ["hantu di rumah kosong", "kuntilanak di kebun belakang", "mistis kamar kos", "pocong di jalan desa"] },
   { id: "dj", label: "DJ / Remix", aiLabel: "musik dj remix", emoji: "🎧", desc: "Musik DJ & remix", tags: ["djremix", "fullbass", "musikviral"], contoh: ["dj remix viral terbaru", "full bass nonstop", "dj slow sedih", "remix lagu indonesia"] },

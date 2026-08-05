@@ -61,7 +61,7 @@ console.log("🪝 Menguji Hook Engine + Hashtag Pintar");
 {
   const p = HP.hashtagPintar("Ibu Engkau Yang Terbaik Cerita Jadi Lagu", "rindu ibu", "trend viral");
   T("6-8 hashtag keluar", p.tags.length >= 6 && p.tags.length <= 8, `${p.tags.length} tag`);
-  T("ada tag niche (ceritajadilagu)", p.tags.includes("ceritajadilagu"));
+  T("ada tag niche (kisahnyata)", p.tags.includes("kisahnyata") || p.tags.includes("kisahmenyentuh") || p.tags.includes("laguemosional"));
   T("ada tag dari judul (ibu/engkau)", p.tags.some((t) => t.includes("ibu") || t.includes("engkau")), p.tags.join(" "));
   T("semua tag valid (huruf kecil, tanpa #)", p.tags.every((t) => /^[a-z0-9]{3,24}$/.test(t)), p.tags.join(" "));
   T("tidak ada duplikat", new Set(p.tags).size === p.tags.length);

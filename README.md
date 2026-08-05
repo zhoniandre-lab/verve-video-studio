@@ -17,6 +17,14 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔒📱 v19.23 — LABEL NETRAL "KISAH & LAGU" (anti dicuri niche) + RESET PER PERANGKAT
+* **Masalah (feedback user):** (1) tulisan "Cerita Jadi Lagu" di mana-mana bikin orang tahu niche aslinya — takut niche dicuri; (2) buka HP berbeda harus kembali default (data pribadi jangan bisa diintip orang).
+* **Solusi:**
+  1. **Label publik diganti "Kisah & Lagu"** (netral, nggak ketahuan niche spesifik): niche.ts label, title-guru template "| Kisah & Lagu", serang-balik, jualan, yie-score kandidat, hashtag tags (kisahnyata/kisahmenyentuh/laguemosional). Prompt AI internal tetap.
+  2. **`device-scope.ts` — reset per perangkat**: sidik perangkat (UA+bahasa+platform+timezone) → kalau buka di HP/browser BEDA, semua data pribadi (niche, preset spectrum, posisi, tema, sync) DI-RESET ke default; perangkat sama → data dipertahankan. Terpasang di Lahan.
+* **Test baru** `tests/device-scope.test.mjs` (5 cek) — 33 suite hijau; tsc 0; build 0.
+
+
 ### 🎨⚔️ v19.22 — GAYA VISUAL NETRAL + SERANG BALIK IKUT NICHE + TOMBOL LEWATI AUDIO
 * **Masalah (screenshot user):** step 5 "Mesin visual" masih gaya lagu ("mood haru", "anime sedih"); Serang Balik masih template lagu ("Rindu Aksi...", "Doa Terakhir... Cerita Jadi Lagu") padahal niche berita/kustom; step 8 non-lagu tidak bisa dipilih/dilewati.
 * **Perbaikan (dari akar, bukan luarnya):**

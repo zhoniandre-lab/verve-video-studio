@@ -1,6 +1,6 @@
 /**
  * 🎯 VERVE TITLE GURU v19.20 — otak MENULIS judul baru dari pola yang TERBUKTI
- * tembus di channel sendiri + sesuai NICHE pilihan (Cerita Jadi Lagu, Horor, DJ,
+ * tembus di channel sendiri + sesuai NICHE pilihan (Kisah & Lagu, Horor, DJ,
  * Tutorial, Keluarga, Religi, Kustom). Lalu menyaringnya:
  *   - jangan mirip judul yang pernah GAGAL (CTR <3% dalam 14 hari)
  *   - jangan kembar dengan judul yang sudah dipakai
@@ -18,8 +18,8 @@ type Template = { label: string; needs: string[]; make: (kw: string, seed: numbe
 
 const ANGKA = ["3", "5", "7"];
 
-/* ===== Template default / Cerita Jadi Lagu (perilaku lama tetap utuh) ===== */
-const TEMPLATES_STORY: Template[] = [
+/* ===== Template default / Kisah & Lagu ===== */
+const TEMPLATES_KISAH: Template[] = [
   { label: "angka", needs: ["angka"], make: (kw) => `${ANGKA[0]} ${kw} yang Bikin Nangis` },
   { label: "angka", needs: ["angka"], make: (kw) => `${ANGKA[1]} ${kw} Paling Menyentuh` },
   { label: "angka", needs: ["angka"], make: (_kw, seed) => `${ANGKA[seed % 3]} Kisah ${_kw} yang Tak Terlupakan` },
@@ -30,7 +30,7 @@ const TEMPLATES_STORY: Template[] = [
   { label: "emosi", needs: ["emosi"], make: (kw) => `Air Mata ${kw} di Malam Hari` },
   { label: "emosi", needs: ["emosi"], make: (kw) => `Maaf, ${kw} — Aku Baru Sadar` },
   { label: "emosi", needs: ["emosi"], make: (kw) => `Doa Terakhir untuk ${kw}` },
-  { label: "ceritaLagu", needs: ["ceritaLagu"], make: (kw) => `${kw} | Cerita Jadi Lagu` },
+  { label: "ceritaLagu", needs: ["ceritaLagu"], make: (kw) => `${kw} | Kisah & Lagu` },
   { label: "ceritaLagu", needs: ["ceritaLagu"], make: (kw) => `Lagu Sedih tentang ${kw}` },
   { label: "tanya", needs: ["tanya"], make: (kw) => `Kenapa ${kw} Selalu Bikin Haru?` },
   { label: "tanya", needs: ["tanya"], make: (kw) => `Apa yang Terjadi pada ${kw}?` },
@@ -96,7 +96,7 @@ const TEMPLATES_CUSTOM: Template[] = [
 ];
 
 const NICHE_TEMPLATES: Record<string, Template[]> = {
-  story_song: TEMPLATES_STORY,
+  story_song: TEMPLATES_KISAH,
   family: TEMPLATES_FAMILY,
   horror: TEMPLATES_HORROR,
   dj: TEMPLATES_DJ,
@@ -125,7 +125,7 @@ export function suggestTitlesFromBrain(keyword: string, brain: BrainMemory, n = 
     (r) => r.ctr != null && r.ctr !== "" && Number(r.ctr) < 3 && Date.now() - (+r.time! || 0) < 14 * 864e5
   );
   const existing = brain.results || [];
-  const templates = NICHE_TEMPLATES[nicheId] || TEMPLATES_STORY;
+  const templates = NICHE_TEMPLATES[nicheId] || TEMPLATES_KISAH;
   const niche = nicheById(nicheId);
 
   const seen = new Set<string>();
