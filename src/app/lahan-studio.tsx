@@ -27,7 +27,7 @@ import { skorTrend, type TrendItem } from "@/lib/brain/trend-radar";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
-import { analisisPolaKompetitor, bandingkanJudul, butuhResolve, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, serangBalikJudul, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type HasilSerang, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
+import { analisisPolaKompetitor, angkaPopulerDariJudul, bandingkanJudul, butuhResolve, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, serangBalikJudul, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type HasilSerang, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
 import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
@@ -441,14 +441,16 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     setBanding(bandingkanJudul(lawanTitle, judulSaya, brain));
     setSerang(null);
   }
-  /* ⚔️ v19.8.3: SERANG BALIK — otak bikin judul pengganti yang menyerang judul lawan */
+  /* ⚔️ v19.8.3/19.8.4: SERANG BALIK — judul penyerang berbasis DATA judul lawan */
   function serangBalik() {
     const lawan = banding?.b.title;
     if (!lawan) { setKompMsg("Klik ⚖️ di salah satu judul lawan dulu ya bro."); return; }
     const kw = topic.trim() || selTitle || (brain.results?.[0]?.title || "");
-    const hasil = serangBalikJudul(lawan, kw, brain, 3);
+    // 🧠 v19.8.4: angka diambil dari DATA judul lawan (bukan template tebakan)
+    const angka = angkaPopulerDariJudul(kompTitles);
+    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka);
     setSerang(hasil);
-    flash("⚔️ Saran judul penyerang jadi — pilih yang paling kuat!");
+    flash(angka.length ? `⚔️ Saran jadi — angka ${angka.join(", ")} diambil dari judul lawan!` : "⚔️ Saran judul penyerang jadi — pilih yang paling kuat!");
   }
   function pakaiJudulSerang(t: string) {
     setSelTitle(t);
@@ -2052,6 +2054,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                   <button className="lh-mini" onClick={serangBalik} style={{ padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }}>
                     ⚔️ Serang Balik — bikin judul yang mengalahkannya
                   </button>
+                  <p className="lh-note" style={{ marginTop: 6 }}>Jujur: frasa viral & angka di judul saran diambil dari <b>data judul lawan</b> yang terkumpul (bukan tebakan) — di-score mesin otak vs judul lawan sebelum kamu pakai.</p>
                   {!!serang?.length && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
                       {serang.map((s) => (

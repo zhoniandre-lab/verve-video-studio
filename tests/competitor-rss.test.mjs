@@ -139,7 +139,7 @@ var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\
   T("rel '3 hours ago' ≈ 3 jam", Math.abs(K.relTimeToTs("3 hours ago") - (now - 3 * 36e5)) < 36e5);
 }
 
-/* ---------- 9. Serang Balik (v19.8.3) ---------- */
+/* ---------- 9. Serang Balik (v19.8.3/19.8.4) ---------- */
 {
   const lawan = "BAK SERUMPUN SUMPAH JANJI BERDUA - MIMPI MANIS / COVER PALING MERDU VIRAL TIKTOK TERBARU 2026";
   const frasa = K.ambilFrasaViral(lawan);
@@ -153,6 +153,20 @@ var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\
   T("ada info menang & skor", s.every((x) => x.saran.a.skor > 0 && typeof x.menang === "boolean"));
   T("tidak ada saran kembar", new Set(s.map((x) => x.saran.a.title.toLowerCase())).size === s.length);
   T("judul lawan jadi sisi b di semua", s.every((x) => x.saran.b.title === lawan));
+
+  // v19.8.4: angka diambil dari DATA judul lawan (bukan template)
+  const rows = [
+    { title: "5 Kisah Ibu yang Mengharukan", publishedAt: Date.now(), channelId: "UC1" },
+    { title: "5 Doa untuk Ayah Tersayang", publishedAt: Date.now(), channelId: "UC1" },
+    { title: "3 Kisah Keluarga di Malam Hari", publishedAt: Date.now(), channelId: "UC2" },
+    { title: "7 Hal yang Tak Terlupakan", publishedAt: Date.now(), channelId: "UC2" },
+    { title: "Update Viral TikTok Terbaru 2026", publishedAt: Date.now(), channelId: "UC3" }, // tahun TIDAK dihitung
+  ];
+  const angka = K.angkaPopulerDariJudul(rows);
+  T("angka populer dari data judul lawan (5 terbanyak)", angka[0] === "5" && angka.includes("3") && angka.includes("7"), angka.join(","));
+  T("tahun (2026) tidak ikut", !angka.includes("2026"), angka.join(","));
+  const s2 = K.serangBalikJudul(lawan, "Ibu", brain, 3, angka);
+  T("saran memakai angka dari data lawan", s2.some((x) => x.saran.a.title.startsWith("5 ") || x.saran.a.title.startsWith("3 ") || x.saran.a.title.startsWith("7 ")), s2.map((x) => x.saran.a.title.slice(0, 20)).join(" | "));
 }
 
 /* ---------- 10. Bandingkan judulmu vs lawan ---------- */

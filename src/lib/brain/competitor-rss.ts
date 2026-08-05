@@ -357,18 +357,40 @@ export function ambilFrasaViral(title: string): string {
 }
 
 /**
+ * 🎯 v19.8.4: Ambil ANGKA yang paling sering dipakai di judul kompetitor
+ * (bukan tebakan template!). Tahun (2026) & angka besar dibuang.
+ * Contoh: judul lawan "5 Kisah...", "3 Doa...", "7 Hal..." → ["5","3","7"].
+ */
+export function angkaPopulerDariJudul(rows: KompTitleRow[]): string[] {
+  const cnt: Record<string, number> = {};
+  (rows || []).forEach((r) => {
+    const m = String(r.title || "").match(/\d+/g) || [];
+    m.forEach((n) => {
+      const v = Number(n);
+      if (v >= 1 && v <= 99) cnt[n] = (cnt[n] || 0) + 1;
+    });
+  });
+  return Object.entries(cnt)
+    .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]))
+    .slice(0, 3)
+    .map(([n]) => n);
+}
+
+/**
  * ⚔️ Buat 3 judul rekomendasi yang MENYERANG judul lawan:
- * meminjam pola yang sedang menang di lawan (frasa viral) + menggabungkannya
+ * meminjam pola yang sedang menang di lawan (frasa viral + ANGKA yang paling
+ * sering mereka pakai — dari data, bukan template) + menggabungkannya
  * dengan keyword/angle-mu, lalu di-score mesin otak vs judul lawan.
  */
-export function serangBalikJudul(lawanTitle: string, keyword: string, brain: BrainMemory, n = 3): HasilSerang[] {
+export function serangBalikJudul(lawanTitle: string, keyword: string, brain: BrainMemory, n = 3, angkaPopuler?: string[]): HasilSerang[] {
   const kw = cap(String(keyword || "").trim()) || "Kisah";
   const frasaViral = ambilFrasaViral(lawanTitle) || "Viral TikTok Terbaru 2026";
-  const angka = ["3", "5", "7"];
+  // 🧠 v19.8.4: angka dari DATA judul lawan kalau ada; fallback hanya kalau belum ada data
+  const angka = (angkaPopuler && angkaPopuler.length ? angkaPopuler : ["3", "5", "7"]);
   const tpls: string[] = [
     `${angka[0]} ${kw} - ${frasaViral}`,
     `${kw} ${frasaViral} | Cerita Jadi Lagu`,
-    `${angka[1]} Kisah ${kw} - ${frasaViral}`,
+    `${angka[1] || angka[0]} Kisah ${kw} - ${frasaViral}`,
     `${kw} ${frasaViral} - Lagu Paling Menyentuh`,
   ];
   const seen = new Set<string>();

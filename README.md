@@ -17,6 +17,12 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎯 v19.8.4 — SERANG BALIK JUJUR: ANGKA JUGA DIAMBIL DARI DATA JUDUL LAWAN
+* **Masalah (feedback user):** angka "3"/"5" di judul saran Serang Balik itu TEMPLATE hardcode, bukan dari data — melanggar prinsip repo "AI tidak mengarang angka".
+* **Solusi:** `angkaPopulerDariJudul()` — hitung angka yang PALING SERING dipakai di judul kompetitor yang terkumpul (tahun 2026 & angka besar dibuang), lalu `serangBalikJudul` memakainya (fallback template hanya kalau belum ada data). UI menampilkan catatan jujur: "frasa viral & angka di judul saran diambil dari data judul lawan (bukan tebakan)" + flash angka yang dipakai.
+* **Test** +3 cek (angka populer dari data, tahun dibuang, saran pakai angka data) — seluruh 30 suite hijau; tsc 0; build 0.
+
+
 ### ⚔️ v19.8.3 — DUEL JUDUL DIPERJELAS + FITUR "SERANG BALIK" (judul penyerang vs lawan)
 * **Masalah (screenshot user):** panel Duel Judul membingungkan — lawan diskor 11 vs judulmu 9, tapi verdict bilang "Imbang". Biang: logika `skorA > skorB + 2` menganggap selisih ≤2 selalu seri walau salah satu unggul. User juga minta fitur "bikin judul rekomendasi buat serang judul lawan".
 * **Solusi:**
