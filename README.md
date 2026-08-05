@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🖼️ v19.8.7 — JEMBATAN LAHAN → OTAK THUMBNAIL (judul juara langsung jadi thumbnail)
+* **Masalah (riset + feedback user):** Otak Thumbnail sudah ada (Thumb Studio: 3 varian latar, badge CTR, prompt dari Lahan via `bangunPromptDariLahan`), TAPI alur Lahan tidak punya tombol ke sana — user harus keluar Lahan → home → cari Thumbnail manual. Padahal thumbnail = penentu CTR (views = impressions × CTR; CTR ditentukan judul + thumbnail).
+* **Solusi:**
+  1. Prop baru `gotoThumb` di LahanStudio (dari page.tsx → setScreen("thumbnail")).
+  2. **Step 4 (Judul Juara)**: setelah judul dikunci → tombol **🖼️ Thumbnail** di samping "Lanjut: Rancang Visual" — sekali tap langsung ke Thumb Studio; tombol "🪄 Susun dari Lahan" di sana otomatis pakai judul + gaya visual + kunci karakter yang baru dipilih.
+  3. **Panel Duel/Serang Balik**: saat ada judul **MENANG BESAR** → tombol **"🖼️ Pakai & Bikin Thumbnail-nya"** — judul pemenang dikunci ke otak lalu langsung ke Thumb Studio.
+* **Alur jadi utuh:** Niat → Sudut → Riset → Judul Juara (duel/serang) → 🖼️ Thumbnail → Visual → Cerita → Lagu → Edit → Render → Upload.
+* tsc 0; build 0; 29 suite hijau.
+
+
 ### 🔁 v19.8.6 — GENERATE LAGI: otak terus nyoba varian sampai MENANG BESAR dari lawan
 * **Masalah (screenshot user):** hasil Serang Balik kadang 1 menang tapi 2 masih kalah — user mau bisa "generate lagi" sampai nemu yang menang besar.
 * **Solusi:**

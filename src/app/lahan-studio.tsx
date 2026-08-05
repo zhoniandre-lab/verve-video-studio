@@ -224,7 +224,7 @@ function injectCharacter(sceneVisual: string, chars: CharCard[], gaya: string): 
   );
 }
 
-export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void; gotoEditor?: (id?: string, cmd?: { tool?: string; newProject?: number; applyAdjust?: number }) => void }) {
+export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit: () => void; gotoEditor?: (id?: string, cmd?: { tool?: string; newProject?: number; applyAdjust?: number }) => void; gotoThumb?: () => void }) {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
   const [angles, setAngles] = useState<string[]>([]);
@@ -2089,9 +2089,16 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                     const menangBesar = serang.find((x) => x.menang && x.selisih >= 3);
                     const adaMenang = serang.some((x) => x.menang);
                     return (
-                      <p className="lh-note" style={{ marginTop: 8, color: menangBesar ? "var(--v6-teal)" : adaMenang ? "#f59e0b" : "rgba(255,255,255,.55)", fontWeight: 700 }}>
-                        {menangBesar ? `🏆 Ada yang MENANG BESAR (+${menangBesar.selisih} poin): "${menangBesar.saran.a.title}"` : adaMenang ? `⚔️ Sudah ada yang menang — generate lagi buat cari yang menang lebih besar!` : `Belum ada yang menang vs lawan (skor terbaik ${Math.max(...serang.map((x) => x.saran.a.skor))}). Coba generate lagi — tiap putaran varian baru.`}
-                      </p>
+                      <>
+                        <p className="lh-note" style={{ marginTop: 8, color: menangBesar ? "var(--v6-teal)" : adaMenang ? "#f59e0b" : "rgba(255,255,255,.55)", fontWeight: 700 }}>
+                          {menangBesar ? `🏆 Ada yang MENANG BESAR (+${menangBesar.selisih} poin): "${menangBesar.saran.a.title}"` : adaMenang ? `⚔️ Sudah ada yang menang — generate lagi buat cari yang menang lebih besar!` : `Belum ada yang menang vs lawan (skor terbaik ${Math.max(...serang.map((x) => x.saran.a.skor))}). Coba generate lagi — tiap putaran varian baru.`}
+                        </p>
+                        {menangBesar && (
+                          <button className="lh-mini" style={{ marginTop: 6, padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={() => { pakaiJudulSerang(menangBesar.saran.a.title); gotoThumb?.(); }}>
+                            🖼️ Pakai & Bikin Thumbnail-nya
+                          </button>
+                        )}
+                      </>
                     );
                   })()}
                   <p className="lh-note" style={{ marginTop: 6 }}>Jujur: frasa viral & angka di judul saran diambil dari <b>data judul lawan</b> yang terkumpul (bukan tebakan) — di-score mesin otak vs judul lawan sebelum kamu pakai.</p>
@@ -2360,7 +2367,12 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             )}
           </div>
           {selTitle && (
-            <button className="lh-btn" onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="lh-btn" style={{ flex: 2 }} onClick={() => setStep(5)}>Lanjut: Rancang Visual 🎨</button>
+              <button className="lh-btn sec" style={{ flex: 1, borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }} onClick={() => gotoThumb?.()}>
+                🖼️ Thumbnail
+              </button>
+            </div>
           )}
         </>
       )}

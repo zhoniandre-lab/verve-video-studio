@@ -380,7 +380,7 @@ export default function Page() {
         {screen === "saya" && <SayaPage refresh={refreshDrafts} />}
         {screen === "editor" && <EditorScreen onExit={() => { setScreen("home"); }} openDraftId={openDraft} cmd={editorCmd} onSaved={refreshDrafts} />}
         {screen === "spectrum" && <SpectrumStudio onExit={() => setScreen("home")} />}
-        {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} />}
+        {screen === "lahan" && <LahanStudio onExit={() => setScreen("home")} gotoEditor={gotoEditor} gotoThumb={() => setScreen("thumbnail")} />}
         {screen === "growth" && <GrowthDoctor onExit={() => setScreen("home")} />}
         {screen === "thumbnail" && <ThumbStudio onExit={() => setScreen("home")} />}
         {screen === "editfoto" && <EditFotoPage onExit={() => setScreen("home")} />}
