@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### ⚔️ v19.8.3 — DUEL JUDUL DIPERJELAS + FITUR "SERANG BALIK" (judul penyerang vs lawan)
+* **Masalah (screenshot user):** panel Duel Judul membingungkan — lawan diskor 11 vs judulmu 9, tapi verdict bilang "Imbang". Biang: logika `skorA > skorB + 2` menganggap selisih ≤2 selalu seri walau salah satu unggul. User juga minta fitur "bikin judul rekomendasi buat serang judul lawan".
+* **Solusi:**
+  1. **Verdict jujur** — pemenang dihitung langsung (unggul tipis ±1-2 vs unggul jelas >2): "Lawan unggul tipis (+2) — masih bisa disalip: coba ⚔️ Serang Balik."
+  2. **Keterangan panel** — "KIRI = judul yang kamu kunci · KANAN = video terbaru lawan (klik buka)".
+  3. **⚔️ Serang Balik** (`serangBalikJudul` + `ambilFrasaViral`) — otak meminjam frasa yang sedang menang di judul lawan (mis. "Viral TikTok Terbaru") + menggabungkan dengan keyword/angle-mu → 3 judul penyerang, di-score vs judul lawan, badge MENANG/KALAH, tombol "Pakai →" langsung kunci ke otak.
+* **Test** +5 cek (frasa viral + serang balik) — seluruh 30 suite hijau; tsc 0; build 0.
+
+
 ### 🛟 v19.8.2 — FALLBACK SCRAPE SAAT RSS KOMPETITOR 404
 * **Masalah (screenshot user):** channel "DJ KINAR" aktif & upload 1 hari lalu (terlihat di app YouTube), tapi Radar Kompetitor bilang "Belum ada upload baru" + "HTTP 404". Ternyata RSS YouTube (`feeds/videos.xml`) memang **404 untuk sebagian channel** (quirk YouTube) walau channel-nya normal.
 * **Solusi:** fallback otomatis di `/api/competitor-rss`:

@@ -139,7 +139,23 @@ var ytInitialData = '\\x7b\\x22x\\x22:\\x7b\\x22compactVideoRenderer\\x22:\\x7b\
   T("rel '3 hours ago' ≈ 3 jam", Math.abs(K.relTimeToTs("3 hours ago") - (now - 3 * 36e5)) < 36e5);
 }
 
-/* ---------- 9. Bandingkan judulmu vs lawan ---------- */
+/* ---------- 9. Serang Balik (v19.8.3) ---------- */
+{
+  const lawan = "BAK SERUMPUN SUMPAH JANJI BERDUA - MIMPI MANIS / COVER PALING MERDU VIRAL TIKTOK TERBARU 2026";
+  const frasa = K.ambilFrasaViral(lawan);
+  T("frasa viral diekstrak dari judul lawan", frasa.length > 0 && /viral/i.test(frasa), frasa);
+  const brain = { researches: [], results: [
+    { title: "Ibu Engkau Yang Terbaik Cerita Jadi Lagu", ctr: 5.0, time: Date.now() - 5 * 864e5 },
+  ]};
+  const s = K.serangBalikJudul(lawan, "Ibu", brain, 3);
+  T("serang balik keluar 3 saran", s.length === 3, `dapat ${s.length}`);
+  T("semua saran pakai frasa viral lawan", s.every((x) => /viral|tiktok|2026/i.test(x.saran.a.title)), s.map((x) => x.saran.a.title.slice(0, 40)).join(" | "));
+  T("ada info menang & skor", s.every((x) => x.saran.a.skor > 0 && typeof x.menang === "boolean"));
+  T("tidak ada saran kembar", new Set(s.map((x) => x.saran.a.title.toLowerCase())).size === s.length);
+  T("judul lawan jadi sisi b di semua", s.every((x) => x.saran.b.title === lawan));
+}
+
+/* ---------- 10. Bandingkan judulmu vs lawan ---------- */
 {
   const brain = { researches: [], results: [
     { title: "5 Kisah Ibu yang Mengharukan", ctr: 7.0, time: Date.now() - 5 * 864e5 },

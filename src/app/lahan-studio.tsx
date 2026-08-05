@@ -27,7 +27,7 @@ import { skorTrend, type TrendItem } from "@/lib/brain/trend-radar";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
-import { analisisPolaKompetitor, bandingkanJudul, butuhResolve, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
+import { analisisPolaKompetitor, bandingkanJudul, butuhResolve, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, serangBalikJudul, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type HasilSerang, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
 import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
@@ -362,6 +362,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
   });
   const [kompPola, setKompPola] = useState<PolaKompetitor | null>(null);
   const [banding, setBanding] = useState<HasilBanding | null>(null);
+  const [serang, setSerang] = useState<HasilSerang[] | null>(null);
   function simpanKomp(next: KompChannel[]) {
     setKompCh(next);
     try { localStorage.setItem(KOMP_KEY, JSON.stringify(next)); } catch { /* penuh? abaikan */ }
@@ -438,6 +439,24 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
     const judulSaya = selTitle || (brain.results?.[0]?.title) || topic.trim() || "";
     if (!judulSaya) { setKompMsg("Kunci judul dulu di langkah 4 (atau isi topik) biar bisa dibandingkan."); return; }
     setBanding(bandingkanJudul(lawanTitle, judulSaya, brain));
+    setSerang(null);
+  }
+  /* ⚔️ v19.8.3: SERANG BALIK — otak bikin judul pengganti yang menyerang judul lawan */
+  function serangBalik() {
+    const lawan = banding?.b.title;
+    if (!lawan) { setKompMsg("Klik ⚖️ di salah satu judul lawan dulu ya bro."); return; }
+    const kw = topic.trim() || selTitle || (brain.results?.[0]?.title || "");
+    const hasil = serangBalikJudul(lawan, kw, brain, 3);
+    setSerang(hasil);
+    flash("⚔️ Saran judul penyerang jadi — pilih yang paling kuat!");
+  }
+  function pakaiJudulSerang(t: string) {
+    setSelTitle(t);
+    saveBrain((b) => ({
+      ...b,
+      results: [{ title: t, time: Date.now() }, ...b.results.filter((r) => normTitleKey(r.title) !== normTitleKey(t))].slice(0, 200),
+    }));
+    flash("⚔️ Judul serangan dipakai — tercatat di otak 🧠");
   }
 
   // 🧠 v13.1: KABEL TULIS otak — simpan ke HP (localStorage) + brankas Supabase (gagal brankas = abaikan, HP tetap jalan)
@@ -2011,6 +2030,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             {banding && (
               <div style={{ marginTop: 10, background: "rgba(25,194,184,.06)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 12, padding: "10px 12px" }}>
                 <b style={{ fontSize: 12 }}>⚖️ Duel judul</b>
+                <div style={{ fontSize: 9.5, opacity: .6, marginTop: 2 }}>KIRI = judul yang kamu kunci · KANAN = video terbaru lawan (klik judulnya untuk buka). Mesin otak: prediksi CTR + fitur judul (angka/emosi/panjang).</div>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <div style={{ flex: 1, background: "rgba(25,194,184,.08)", border: "1px solid rgba(25,194,184,.3)", borderRadius: 10, padding: 8 }}>
                     <span style={{ fontSize: 9, opacity: .6 }}>JUDULMU</span>
@@ -2026,6 +2046,29 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
                 </div>
                 <div style={{ fontSize: 11, marginTop: 8, color: banding.pemenang === "a" ? "var(--v6-teal)" : banding.pemenang === "b" ? "#e85c5c" : "#f59e0b", fontWeight: 700 }}>
                   {banding.pemenang === "a" ? "🏆 " : banding.pemenang === "b" ? "🛡️ " : "⚖️ "}{banding.alasan}
+                </div>
+                {/* ⚔️ v19.8.3: SERANG BALIK — judul rekomendasi yang menyerang lawan */}
+                <div style={{ marginTop: 10, borderTop: "1px dashed rgba(255,255,255,.12)", paddingTop: 8 }}>
+                  <button className="lh-mini" onClick={serangBalik} style={{ padding: "7px 12px", borderColor: "rgba(245,158,11,.5)", color: "#f59e0b", background: "rgba(245,158,11,.08)" }}>
+                    ⚔️ Serang Balik — bikin judul yang mengalahkannya
+                  </button>
+                  {!!serang?.length && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                      {serang.map((s) => (
+                        <div key={s.saran.a.title} style={{ display: "flex", gap: 8, alignItems: "center", background: "var(--v6-card)", border: s.menang ? "1px solid rgba(25,194,184,.5)" : "1px solid var(--v6-line)", borderRadius: 10, padding: "8px 10px" }}>
+                          <span style={{ fontSize: 15 }}>{s.menang ? "⚔️" : "🗡️"}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700 }}>{s.saran.a.title}</div>
+                            <div style={{ fontSize: 9.5, opacity: .7, marginTop: 2 }}>
+                              Skor <b style={{ color: s.menang ? "var(--v6-teal)" : "#f59e0b" }}>{s.saran.a.skor}</b> vs lawan {s.saran.b.skor} · pred CTR ~{s.saran.a.predCtr}% · {s.saran.a.kata} kata
+                              {s.menang ? <b style={{ color: "var(--v6-teal)" }}> — MENANG vs lawan</b> : <b style={{ color: "#e8a15a" }}> — masih kalah, coba varian lain</b>}
+                            </div>
+                          </div>
+                          <button className="lh-mini ok" onClick={() => pakaiJudulSerang(s.saran.a.title)} style={{ padding: "5px 10px", fontSize: 10 }}>Pakai →</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

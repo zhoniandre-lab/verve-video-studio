@@ -316,11 +316,20 @@ export function bandingkanJudul(a: string, b: string, brain: BrainMemory): Hasil
   const ia = info(a), ib = info(b);
   const skorA = Math.round(predA.est + (ia.angka ? 6 : 0) + (ia.emosi ? 5 : 0) + (ia.pendek ? 4 : 0));
   const skorB = Math.round(predB.est + (ib.angka ? 6 : 0) + (ib.emosi ? 5 : 0) + (ib.pendek ? 4 : 0));
-  const pemenang: HasilBanding["pemenang"] = skorA > skorB + 2 ? "a" : skorB > skorA + 2 ? "b" : "seri";
+  const selisih = Math.abs(skorA - skorB);
+  // 🐛 FIX v19.8.3: dulu selisih ≤2 selalu "seri" walau salah satu unggul → membingungkan.
+  // Sekarang pemenang jujur: unggul tipis (±1-2) vs unggul jelas (>2).
+  const pemenang: HasilBanding["pemenang"] = skorA > skorB ? "a" : skorB > skorA ? "b" : "seri";
   const alasan =
-    pemenang === "a" ? `Judulmu lebih kuat (+${skorA - skorB} poin) — gas!` :
-    pemenang === "b" ? `Judul lawan lebih kuat (+${skorB - skorA} poin) — ambil angle beda.` :
-    "Imbang — bedakan angle biar beda kelas dari lawan.";
+    pemenang === "a"
+      ? selisih <= 2
+        ? `Judulmu unggul tipis (+${selisih}) — gas, tapi tetap bedakan angle.`
+        : `Judulmu lebih kuat (+${selisih} poin) — gas!`
+      : pemenang === "b"
+        ? selisih <= 2
+          ? `Lawan unggul tipis (+${selisih}) — masih bisa disalip: coba ⚔️ Serang Balik.`
+          : `Judul lawan lebih kuat (+${selisih} poin) — ⚔️ Serang Balik atau ambil angle beda.`
+        : "Imbang (skor sama) — bedakan angle biar beda kelas dari lawan.";
   return {
     a: { title: a, skor: skorA, ...ia, predCtr: predA.est },
     b: { title: b, skor: skorB, ...ib, predCtr: predB.est },
@@ -328,4 +337,48 @@ export function bandingkanJudul(a: string, b: string, brain: BrainMemory): Hasil
     pemenang,
     alasan,
   };
+}
+
+/* ================= v19.8.3: SERANG BALIK (⚔️) — rekomendasi judul pengganti ================= */
+
+export type HasilSerang = {
+  saran: HasilBanding; // a = judul rekomendasi, b = judul lawan
+  menang: boolean;
+  selisih: number;
+};
+
+const KATA_VIRAL = new Set(["viral", "tiktok", "terbaru", "2026", "2025", "paling", "cover", "remix", "slowed", "full", "sound", "trend", "lagu"]);
+
+/** Ambil frasa "viral" dari judul lawan (mis. "Viral TikTok Terbaru 2026") — pola yang lagi laku. */
+export function ambilFrasaViral(title: string): string {
+  const found = tok(String(title || "")).filter((w) => KATA_VIRAL.has(w.toLowerCase()));
+  if (found.length >= 2) return cap(found.slice(0, 4).join(" "));
+  return "";
+}
+
+/**
+ * ⚔️ Buat 3 judul rekomendasi yang MENYERANG judul lawan:
+ * meminjam pola yang sedang menang di lawan (frasa viral) + menggabungkannya
+ * dengan keyword/angle-mu, lalu di-score mesin otak vs judul lawan.
+ */
+export function serangBalikJudul(lawanTitle: string, keyword: string, brain: BrainMemory, n = 3): HasilSerang[] {
+  const kw = cap(String(keyword || "").trim()) || "Kisah";
+  const frasaViral = ambilFrasaViral(lawanTitle) || "Viral TikTok Terbaru 2026";
+  const angka = ["3", "5", "7"];
+  const tpls: string[] = [
+    `${angka[0]} ${kw} - ${frasaViral}`,
+    `${kw} ${frasaViral} | Cerita Jadi Lagu`,
+    `${angka[1]} Kisah ${kw} - ${frasaViral}`,
+    `${kw} ${frasaViral} - Lagu Paling Menyentuh`,
+  ];
+  const seen = new Set<string>();
+  const out: HasilSerang[] = [];
+  for (const t of tpls) {
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const h = bandingkanJudul(t, lawanTitle, brain);
+    out.push({ saran: h, menang: h.pemenang === "a", selisih: Math.abs(h.a.skor - h.b.skor) });
+  }
+  return out.sort((x, y) => y.saran.a.skor - x.saran.a.skor).slice(0, n);
 }
