@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔧 v19.8.1 — FIX "fetch failed" DI RADAR KOMPETITOR (link video & pesan ramah)
+* **Masalah (screenshot user):** tempel link VIDEO (`youtu.be/...`) ke kolom Radar Kompetitor → muncul error merah mentah "fetch failed". Dua biang: (1) `youtu.be` bukan `youtube.com` → URL jadi rusak saat resolve; (2) fetch ke halaman video sering diblokir/throttle → error bawaan Node tampil mentah.
+* **Solusi:**
+  1. **oEmbed-first**: link video sekarang di-resolve via endpoint oEmbed RESMI YouTube (ringan, jarang diblokir) → langsung dapat nama + URL channel; fallback scrap halaman dengan URL yang benar (`fullUrl` fix concat).
+  2. **Nama channel benar**: halaman video pakai `ownerChannelName`, @handle pakai `externalId`/og:title.
+  3. **Pesan ramah**: video private/hapus → "Video tidak ditemukan (private/dihapus?)..."; koneksi gagal → "Koneksi ke YouTube gagal/diblokir — coba lagi nanti atau pakai link /channel/UC... langsung." (bukan "fetch failed" mentah).
+* **Teruji live**: video ada → MrBeast ✓; video 404 → pesan jelas ✓; @handle → ✓. tsc 0; build 0; 29 suite hijau.
+
+
 ### 🧭 v19.8 — ALUR LAHAN DISATUKAN: INSPIRASI NYAMBUNG, RADAR PINDAH KE RISET
 * **Masalah (feedback user):** Trend Radar & Radar Kompetitor RSS di step 1 (Niat & Topik) terasa terpisah & tidak nyambung dengan niche & alur produksi.
 * **Solusi (selaras konvensi v29.0/29.1 — langkah bertujuan jelas, bahan dari data):**

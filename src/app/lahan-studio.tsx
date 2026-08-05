@@ -375,6 +375,10 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       let id = extractChannelId(input) || "";
       let name = "";
       if (!id) {
+        // 🧭 v19.8: kalau ini link video, bilang dulu — sistem akan cari channel pemiliknya
+        if (/(watch\?v=|youtu\.be\/|shorts\/)/i.test(input)) {
+          setKompMsg("🔎 Itu link video — saya cari channel pemiliknya dari halamannya…");
+        }
         const r = await fetch("/api/competitor-rss", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: input }) });
         const j = await r.json();
         if (!r.ok || !j?.ok) throw new Error(j?.error || "Gagal resolve");
@@ -386,7 +390,12 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
       setKompUrl("");
       flash(`🛰️ "${name || id}" masuk radar!`);
     } catch (e) {
-      setKompMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal tambah channel"}`);
+      const raw = e instanceof Error ? e.message : String(e);
+      // Jujur & ramah: "fetch failed" bawaan browser/server dibungkus pesan jelas
+      const msg = /fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|Failed to fetch/i.test(raw)
+        ? "⚠️ Koneksi ke YouTube gagal (jaringan/diblokir). Coba lagi nanti, atau pakai link youtube.com/channel/UC... langsung."
+        : `⚠️ ${raw}`;
+      setKompMsg(msg);
     } finally {
       setKompBusy(false);
     }
@@ -1947,7 +1956,7 @@ export default function LahanStudio({ onExit, gotoEditor }: { onExit: () => void
             <div className="lh-h1">🛰️ Radar Kompetitor — pantauan live lawanmu <span style={{ fontSize: 9, background: "rgba(25,194,184,.15)", color: "var(--v6-teal)", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>PELENGKAP RISET</span></div>
             <p className="lh-sub">Riset di atas = <b>potret statis</b> (hasil pencarian). Radar ini = <b>pantauan hidup</b>: begitu lawan upload, otak tahu judulnya & cek <b>mirip nggak dengan judulmu</b>. <b>Gratis via RSS, tanpa nyentuh kuota API risetmu.</b> Data pola lawan dipakai saat riset ulang & duel judul.</p>
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <input className="lh-sel" style={{ flex: 1 }} placeholder="Link channel: youtube.com/@nama atau /channel/UC..." value={kompUrl} onChange={(e) => setKompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void tambahKomp(); }} />
+              <input className="lh-sel" style={{ flex: 1 }} placeholder="Link channel (@nama / UC...) — link video juga bisa" value={kompUrl} onChange={(e) => setKompUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void tambahKomp(); }} />
               <button className="lh-mini ok" onClick={tambahKomp} disabled={kompBusy} style={{ padding: "7px 12px" }}>+ Pantau</button>
             </div>
             {!!kompCh.length && (

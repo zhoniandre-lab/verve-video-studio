@@ -73,17 +73,77 @@ export async function POST(req: Request) {
   if (!/youtube\.com|youtu\.be/i.test(url)) {
     return NextResponse.json({ ok: false, error: "Bukan URL YouTube — tempel link channel (contoh: youtube.com/@nama)." }, { status: 400 });
   }
+  const isVideo = /(watch\?v=|youtu\.be\/|shorts\/)/i.test(url);
+  // 🐛 FIX: jangan concat URL — youtu.be bukan youtube.com, dulu jadi URL rusak
+  const fullUrl = /youtube\.com|youtu\.be/i.test(url) ? url : `https://www.youtube.com${url}`;
+
+  // 🧭 v19.8: link video → coba oEmbed RESMI dulu (ringan, jarang diblokir, langsung
+  // kasih nama channel + URL channel). Jauh lebih andal daripada scrap halaman video.
+  if (isVideo) {
+    try {
+      const oe = new URL("https://www.youtube.com/oembed");
+      oe.searchParams.set("url", url);
+      oe.searchParams.set("format", "json");
+      const r = await fetch(oe.toString(), { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(10_000) });
+      if (r.ok) {
+        const data = await r.json();
+        const authorUrl = String(data?.author_url || "");
+        const name = String(data?.author_name || "").trim();
+        const idM = authorUrl.match(/\/channel\/(UC[\w-]{22})/);
+        if (idM) return NextResponse.json({ ok: true, channelId: idM[1], name, resolved: true });
+        if (/youtube\.com\/@/.test(authorUrl)) {
+          // author_url berupa @handle → resolve lewat halaman handle (ringan)
+          try {
+            const html = await fetchText(authorUrl, 15_000);
+            const m = html.match(/"externalId":"(UC[\w-]{22})"/);
+            if (m) return NextResponse.json({ ok: true, channelId: m[1], name, resolved: true });
+          } catch {
+            return NextResponse.json(
+              { ok: false, error: "Channel pemilik video ketemu tapi gagal di-resolve — coba tempel link youtube.com/channel/UC... langsung." },
+              { status: 502 }
+            );
+          }
+        }
+      } else {
+        return NextResponse.json(
+          { ok: false, error: "Video tidak ditemukan (private/dihapus?). Tempel link channel langsung: youtube.com/@nama atau /channel/UC..." },
+          { status: 404 }
+        );
+      }
+    } catch { /* oEmbed gagal → lanjut scrap halaman */ }
+  }
+
   try {
-    // Resolve @handle /c/ /user/ → channel ID dari meta halaman (tanpa API key).
-    const html = await fetchText(url.includes("youtube.com") ? url : `https://www.youtube.com${url}`, 15_000);
-    const m = html.match(/"externalId":"(UC[\w-]+)"/)
-      || html.match(/<meta itemprop="identifier" content="(UC[\w-]+)"/)
-      || html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]+)"/);
-    const nameM = html.match(/<meta property="og:title" content="([^"]+)"/);
-    if (!m) return NextResponse.json({ ok: false, error: "Gagal resolve channel ID — coba pakai link youtube.com/channel/UC... langsung." }, { status: 422 });
+    // Resolve @handle /c/ /user/ ATAU halaman video → channel ID dari HTML (tanpa API key).
+    // Halaman video juga memuat "channelId":"UC..." milik pemilik video.
+    const html = await fetchText(fullUrl, 15_000);
+    const m = html.match(/"externalId":"(UC[\w-]{22})"/)
+      || html.match(/"channelId":"(UC[\w-]{22})"/)
+      || html.match(/<meta itemprop="identifier" content="(UC[\w-]{22})"/)
+      || html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]{22})"/);
+    // Nama channel: di halaman video ada "ownerChannelName"; @handle pakai og:title.
+    const nameM = html.match(/"ownerChannelName":"([^"]+)"/)
+      || html.match(/"author":"([^"]+)"/)
+      || html.match(/<meta property="og:title" content="([^"]+)"/);
+    if (!m) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: isVideo
+            ? "Link video ketemu, tapi channel pemiliknya tidak terbaca — coba tempel link youtube.com/channel/UC... atau youtube.com/@nama langsung."
+            : "Gagal resolve channel ID — coba pakai link youtube.com/channel/UC... langsung.",
+        },
+        { status: 422 }
+      );
+    }
     const name = (nameM?.[1] || "").replace(/\s*-\s*YouTube$/, "").trim();
     return NextResponse.json({ ok: true, channelId: m[1], name, resolved: true });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Gagal resolve" }, { status: 502 });
+    // Jujur & ramah: "fetch failed" bawaan Node dibungkus pesan yang bisa dipahami.
+    const msg = e instanceof Error ? e.message : "";
+    const friendly = /fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|429/i.test(msg)
+      ? "Koneksi ke YouTube gagal/diblokir dari server — coba lagi nanti, atau pakai link youtube.com/channel/UC... langsung."
+      : msg || "Gagal resolve";
+    return NextResponse.json({ ok: false, error: friendly }, { status: 502 });
   }
 }
