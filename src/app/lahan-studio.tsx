@@ -295,6 +295,14 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [undoSnap, setUndoSnap] = useState<DirSnap | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const [song, setSong] = useState<SongResult | null>(null);
+  // 🎙️ v19.24 NARASI TTS (niche non-lagu: horor/cerita/tutorial pakai suara narasi, bukan lagu)
+  const [ttsNarasi, setTtsNarasi] = useState("");
+  const [ttsVoice, setTtsVoice] = useState("nova");
+  const [ttsBusy, setTtsBusy] = useState(false);
+  const [ttsMsg, setTtsMsg] = useState("");
+  const [narasiUrl, setNarasiUrl] = useState("");
+  const [narasiName, setNarasiName] = useState("");
+  const [narasiDur, setNarasiDur] = useState(0);
   const [peaks, setPeaks] = useState<number[] | null>(null);
   const [polling, setPolling] = useState(false);
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "antre" });
@@ -1491,10 +1499,26 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     ].filter(Boolean).join(", ");
   }
 
+  /* 🎙️ v19.24 NARASI TTS — ubah naskah jadi suara narasi (niche non-lagu: horor/cerita/tutorial) */
+  async function buatNarasiTTS() {
+    const teks = (ttsNarasi || naskah || "").trim();
+    if (!teks) { setTtsMsg("⚠️ Tulis/isi naskah dulu (atau generate naskah di langkah 6)."); return; }
+    setTtsBusy(true); setTtsMsg("🎙️ Mengubah naskah jadi suara narasi…");
+    try {
+      const r = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: teks.slice(0, 3500), voice: ttsVoice }) });
+      const j = await r.json();
+      if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
+      setNarasiUrl(j.url); setNarasiName(`Narasi: ${(selTitle || "cerita").slice(0, 40)}`);
+      setNarasiDur(j.duration || Math.ceil(teks.length / 12));
+      setTtsMsg(`✅ Narasi jadi (±${Math.ceil(teks.length / 12)} dtk) — lanjut Gabung Video.`);
+    } catch (e) {
+      setTtsMsg(`⚠️ Gagal TTS: ${e instanceof Error ? e.message : "coba lagi"}`);
+    } finally { setTtsBusy(false); }
+  }
+
   async function launchSong(styleOverride?: string) { // 🎬 v11.0: Sutradara boleh menyuntik style revisi
     if (!selTitle) return;
-    const instrumental = vocal === "instrumental";
-    const lyr = lyrics.trim();
+    const instrumental = vocal === "instrumental";    const lyr = lyrics.trim();
     if (!instrumental && lyr.length < 30) {
       setErr({ code: "suno", msg: "Lirik masih terlalu pendek (min 30 karakter) — generate lirik AI dulu atau pilih 🎼 Instrumental." });
       return;
@@ -2746,7 +2770,32 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           {kepalaLangkah(8, songNiche ? "Panggung lagu 🎵" : "Audio & musik 🔉", songNiche ? "Lirik & ceritamu jadi lagu utuh — musik yang membawa emosi video dari detik pertama." : "Isi musik/narasi videomu (opsional) — atau kosongkan lalu lanjut ke video.")}
           <div className="lh-card">
             <div className="lh-h1">{songNiche ? "Panggung lagu 🎵" : "Audio & musik 🔉"}</div>
-            <p className="lh-sub">Judul: <b>{selTitle || "— (belum, pilih di langkah 4)"}</b> — {songNiche ? "lagu diolah Suno lewat provider pilihanmu" : "musik/narasi diolah Suno lewat provider pilihanmu (opsional — kosongkan untuk video tanpa lagu)"}. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
+            <p className="lh-sub">Judul: <b>{selTitle || "— (belum, pilih di langkah 4)"}</b> — {songNiche ? "lagu diolah Suno lewat provider pilihanmu" : "pilih SUARA NARASI (TTS) atau LAGU — atau kosongkan untuk video tanpa audio"}. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
+
+            {/* 🎙️ v19.24 NARASI TTS — khusus niche non-lagu (horor/cerita/tutorial) */}
+            {!songNiche && (
+              <div className="lh-card" style={{ borderColor: "rgba(34,197,94,.4)", marginTop: 8, background: "rgba(34,197,94,.05)" }}>
+                <div className="lh-h2">🎙️ Narasi Suara (TTS) — baca naskah jadi suara</div>
+                <p className="lh-note" style={{ marginTop: 4 }}>Cocok buat cerita horor/tutorial/dokumenter: naskahmu dibacakan narator (bukan dinyanyikan).</p>
+                <textarea className="lh-ta" rows={4} style={{ marginTop: 6 }} placeholder="Teks narasi — kosongkan = pakai naskah dari langkah 6" value={ttsNarasi} onChange={(e) => setTtsNarasi(e.target.value)} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+                  <select className="lh-sel" style={{ flex: 1, minWidth: 120 }} value={ttsVoice} onChange={(e) => setTtsVoice(e.target.value)}>
+                    {["nova", "alloy", "echo", "fable", "onyx", "shimmer"].map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <button className="lh-mini ok" disabled={ttsBusy} onClick={buatNarasiTTS} style={{ padding: "8px 14px" }}>
+                    {ttsBusy ? "⏳ Membuat suara…" : "🎙️ Generate Narasi Suara"}
+                  </button>
+                </div>
+                {!!narasiUrl && (
+                  <div className="lh-note" style={{ color: "#6ee7b7", marginTop: 6 }}>
+                    ✅ Narasi siap: {narasiName} (±{narasiDur} dtk) — <a href={narasiUrl} target="_blank" rel="noreferrer" style={{ color: "#6ee7b7" }}>dengar</a>
+                  </div>
+                )}
+                {!!ttsMsg && <p className="lh-note" style={{ color: ttsMsg.startsWith("⚠️") ? "#fbbf24" : "#6ee7b7", marginTop: 4 }}>{ttsMsg}</p>}
+                <p className="lh-note" style={{ marginTop: 4 }}>Narasi ini yang akan digabung ke video (bukan lagu). Masih bisa juga pakai lagu di bawah kalau mau.</p>
+              </div>
+            )}
+
             <div className="lh-kv">
               <span>Provider</span>
               <b>
@@ -2928,7 +2977,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             </div>
           )}
 
-          {song && board && (
+          {(song || (narasiUrl && !songNiche)) && board && (
             <button className="lh-btn" onClick={() => setStep(9)}>Gabung Jadi Video 🎬</button>
           )}
           {!songNiche && (
@@ -2950,8 +2999,8 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             <div className="lh-h1">Video utuh 🎬</div>
             <p className="lh-sub">{songNiche ? "Lagu" : "Audio"} + {doneScenes.length} adegan digabung otomatis: tiap adegan dapat ±{perScene.toFixed(1)} detik mengikuti durasi {songNiche ? "lagu" : "audio"} {fmtClock(totalDur)}. Jujur bro — pembagiannya rata; sinkron halus bisa kau poles di Studio{ songNiche ? " (ada penanda BPM)" : "" }.</p>
             <div className="lh-kv"><span>✅ Adegan</span><b>{doneScenes.length}/{board.scenes.length} bergambar</b></div>
-            <div className="lh-kv"><span>{songNiche ? "✅ Lagu" : "✅ Audio"}</span><b>{song.title || selTitle} · {song.duration ? fmtClock(Math.round(song.duration)) : "-"}</b></div>
-            <div className="lh-kv"><span>✅ Lirik karaoke</span><b>tiap adegan jadi lapisan teks sendiri di Studio</b></div>
+            <div className="lh-kv"><span>{songNiche ? "✅ Lagu" : "✅ Audio"}</span><b>{(narasiUrl && !songNiche) ? narasiName : (song.title || selTitle)} · {(narasiUrl && !songNiche) ? fmtClock(Math.round(narasiDur)) : (song.duration ? fmtClock(Math.round(song.duration)) : "-")}</b></div>
+            {songNiche ? <div className="lh-kv"><span>✅ Lirik karaoke</span><b>tiap adegan jadi lapisan teks sendiri di Studio</b></div> : <div className="lh-kv"><span>✅ Narasi</span><b>{narasiUrl ? "suara narasi siap digabung" : "belum ada (bisa lewati / isi di langkah 8)"}</b></div>}
           </div>
 
           <div className="lh-card">

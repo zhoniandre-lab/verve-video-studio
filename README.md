@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎙️ v19.24 — NARASI TTS DI LANGKAH 8 (niche non-lagu: horor/cerita/tutorial)
+* **Masalah (feedback user):** buat niche horor/cerita, user MAU pakai narasi suara (TTS) bukan lagu — tapi langkah 8 cuma Suno lagu; narasi nggak bisa diisi; ujung-ujungnya balik ke lagu; proses bolak-balik nggak jelas.
+* **Solusi (tuntas):**
+  1. **Step 8 non-lagu kini punya panel "🎙️ Narasi Suara (TTS)"** — textarea teks narasi (kosong = pakai naskah langkah 6), pilih suara (nova/alloy/echo/fable/onyx/shimmer), tombol **Generate Narasi Suara** → `/api/hcnsec/tts` → narasi siap. Bisa dengar, ada durasi.
+  2. **Step 9 adaptif**: tampilkan "✅ Narasi" (bukan maksa lagu) kalau niche non-lagu; total durasi ikut narasi.
+  3. **Tombol "Gabung Jadi Video" aktif** kalau ada lagu ATAU narasi.
+  4. Teks step 8: "pilih SUARA NARASI (TTS) atau LAGU — atau kosongkan untuk video tanpa audio".
+* tsc 0; build 0; 33 suite hijau.
+
+
 ### 🔄 v19.23.1 — FIX KOREKSI: HASIL TETAP "CERITA JADI LAGU", HANYA LABEL FITUR YANG NETRAL
 * **Koreksi user:** yang harus netral cuma NAMA FITUR/label menu (biar nggak ketahuan niche) — BUKAN hasilnya. Kalau niche-nya cerita jadi lagu, judul saran harus TETAP bisa "| Cerita Jadi Lagu".
 * **Perbaikan:**
