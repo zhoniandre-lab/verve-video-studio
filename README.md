@@ -17,6 +17,14 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🐛 v19.16.1 — FIX BUG 3D TUNNEL (logo hilang) + GAMBAR IKUT LAGU DIPERHALUS
+* **Masalah (feedback user):** (1) saat pilih style **3D Tunnel, logo tidak muncul** (style lain aman); (2) multi-gambar gerakannya "getak-getak nggak jelas, bikin pusing" — bukan ikut lagu.
+* **Akar masalah & perbaikan:**
+  1. **Bug tunnel**: blok `if (specStyle === "tunnel") { ... } else { ... }` menutup SHOCKWAVE + LOGO + EMBER di dalam branch `else` → saat tunnel dipilih, logo/shockwave/ember tidak digambar. **Fix**: tutup if/else SEBELUM shockwave → logo/shockwave/ember sekarang jalan di SEMUA style (termasuk tunnel).
+  2. **Gambar ikut lagu dihaluskan**: denyut zoom kini frekuensinya mengikuti `tempoRef` (cepat saat tempo tinggi, pelan saat syahdu) + amplitude naik saat tempo tinggi; sway dibuat lebih pelan & halus. Default: `danceZoom` 6%→3%, `multiBeat` 2→4 ketukan (~2.5 dtk) — anti pusing. UI multi-gambar diberi penjelasan jelas apa maksudnya.
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🩰 v19.16 — GAMBAR "MENARI IKUT IRAMA" + FIX LAYOUT NGE-LOMPAT SAAT MASUK LOGO
 * **Masalah (screenshot user):** (1) saat masuk/pilih logo malah berubah posisi — `setLayout` selalu memaksa `setLogoPos(L.logo)` walau user sudah geser manual. (2) multi-gambar masih kaku "gitu-gitu aja" — user mau gambar ikut alur musik: cepat saat drum/bass cepat, syahdu saat lambat.
 * **Solusi:**

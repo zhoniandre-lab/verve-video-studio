@@ -96,9 +96,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [themeId, setThemeId] = useState("");
   // 🖼️ v19.15 MODE MULTI-GAMBAR — array gambar bergantian per bar/beat
   const [multiImgs, setMultiImgs] = useState<string[]>([]);
-  const [multiBeat, setMultiBeat] = useState(2); // 🐛 v19.15.1: ganti tiap N ketukan (default 2 → nggak pusing)
+  const [multiBeat, setMultiBeat] = useState(4); // 🐛 v19.16.1: ganti tiap 4 ketukan (~2.5 dtk) — nggak pusing
   const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
-  const [danceZoom, setDanceZoom] = useState(0.06); // amplitudo zoom (0 = mati)
+  const [danceZoom, setDanceZoom] = useState(0.03); // 🐛 v19.16.1: amplitudo zoom lebih lembut (0 = mati)
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
   const tempoRef = useRef(0.5); // 🩰 estimasi energi musik 0..1 (untuk gambar "menari")
   // 🎢 v19.15 EFEK 3D TUNNEL
@@ -451,9 +451,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const fade = within < 0.25 ? within / 0.25 : 1;
       const im = imgs[idx];
       const imPrev = imgs[prevIdx];
-      // Zoom halus: denyut mengikuti tempo (bass) + "tarikan napas" pelan
-      const zoom = danceMode === "irama" ? 1 + (danceZoom || 0) * (0.5 + tempo * 0.5) * Math.max(0, Math.sin(t * (2 + tempo * 9)) ) : 1;
-      const swayX = danceMode === "irama" ? Math.sin(t * (1 + tempo * 5)) * 14 * tempo : 0; // geser kiri-kanan halus
+      // 🩰 v19.16.1 GAMBAR IKUT LAGU — denyut FREKUENSINYA mengikuti tempo:
+      // saat tempo tinggi denyut cepat & besar, saat syahdu denyut pelan & halus.
+      // (bukan gerakan acak yang bikin pusing)
+      const pulse = danceMode === "irama" ? Math.max(0, Math.sin(t * (1.1 + tempo * 4.2) * Math.PI)) : 0;
+      const zoom = danceMode === "irama" ? 1 + (danceZoom || 0) * (0.4 + 0.6 * tempo) * pulse : 1;
+      const swayX = danceMode === "irama" ? Math.sin(t * 0.4 * (0.6 + tempo)) * 9 * tempo : 0; // geser halus pelan
       const drawBg = (im2: HTMLImageElement, alpha: number, z: number, swx: number) => {
         if (!im2 || !(im2 as any).complete || !(im2 as any).naturalWidth) return;
         const iw = (im2 as any).naturalWidth, ih = (im2 as any).naturalHeight;
@@ -626,8 +629,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.stroke();
       }
       ctx.restore();
-    } else {
+    }
     // 👑 v19.13 PRO PACK: SHOCKWAVE — cincin membesar saat bass naik
+    // 🐛 FIX v19.16.1: shockwave/logo/ember DIPINDAHKAN keluar if/else —
+    // dulu terjebak di else → saat tunnel dipilih logo tidak muncul.
     if (bass > 0.52 && bass > lastBassRef.current * 1.18) {
       shockRef.current.push({ x: W / 2, y: H * 0.55, r: 50, a: 0.85 });
       if (shockRef.current.length > 6) shockRef.current.shift();
@@ -726,8 +731,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r + bass * 1.5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
-
-    } // 🎢 akhir else non-tunnel
 
     // overlay suasana
     if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
@@ -1077,16 +1080,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               ))}
             </div>
 
-            {/* 🖼️ v19.15 MODE MULTI-GAMBAR */}
-            <div className="v6-lbl">🖼️ MULTI-GAMBAR (ganti per beat — upload 2+ gambar)</div>
+            {/* 🖼️ v19.15 MODE MULTI-GAMBAR — perjelas apa maksudnya */}
+            <div className="v6-lbl">🖼️ MULTI-GAMBAR (background bergantian — 2+ gambar)</div>
             <label className="v6-cardrow">
-              <span style={{ fontSize: 20 }}>🖼️</span><div className="tt">{multiImgs.length ? `✅ ${multiImgs.length} gambar — ganti per ketukan` : "Pilih 2-6 gambar (bergantian tiap beat)"}</div><span className="arr">›</span>
+              <span style={{ fontSize: 20 }}>🖼️</span><div className="tt">{multiImgs.length ? `✅ ${multiImgs.length} gambar — ganti bergantian (ikut lagu)` : "Pilih 2-6 gambar → ganti-ganti otomatis tiap beberapa ketukan"}</div><span className="arr">›</span>
               <input type="file" accept="image/*" multiple hidden onChange={e => {
                 const fs2 = Array.from(e.target.files || []).slice(0, 6);
                 const readers = fs2.map(f => new Promise<string>((res) => { const rd = new FileReader(); rd.onload = () => res(rd.result as string); rd.readAsDataURL(f); }));
                 Promise.all(readers).then(imgs => setMultiImgs(imgs));
               }} />
             </label>
+            <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Gunanya: video nggak gitu-gitu aja — latar berganti-ganti + sedikit zoom mengikuti lagu. Spectrum tetap tampil di atasnya. Kalau nggak butuh, biarkan kosong.</p>
             {multiImgs.length > 1 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
