@@ -75,6 +75,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [bgPrompt, setBgPrompt] = useState("");
   const [bgAiBusy, setBgAiBusy] = useState(false);
   const [bgAiMsg, setBgAiMsg] = useState("");
+  // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
+  const [logoImg, setLogoImg] = useState("");
+  const logoImgRef = useRef<HTMLImageElement | null>(null);
+  const starsRef = useRef<{ x: number; y: number; r: number; ph: number }[]>([]);
+  const embersRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; ph: number }[]>([]);
+  const shockRef = useRef<{ x: number; y: number; r: number; a: number }[]>([]);
+  const lastBassRef = useRef(0);
   const [specStyle, setSpecStyle] = useState("bars");
   const [specColor, setSpecColor] = useState("#22d3ee");
   const [overlay, setOverlay] = useState("none");
@@ -106,6 +113,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const bufRef = useRef<AudioBuffer | null>(null);
   const startAtRef = useRef(0);
   const bgImgRef = useRef<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!logoImg) { logoImgRef.current = null; return; }
+    const im = new Image(); im.onload = () => { logoImgRef.current = im; }; im.src = logoImg;
+  }, [logoImg]);
   const barsRef = useRef<Float32Array>(new Float32Array(64));
   const renderRecRef = useRef<MediaRecorder | null>(null);
 
@@ -271,6 +282,32 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     gb2.addColorStop(0.5, "rgba(0,0,0,0)"); gb2.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = gb2; ctx.fillRect(0, 0, W, H);
 
+    // 👑 v19.13 AURORA — 3 gumpalan cahaya bergerak pelan + bintang berkelip (murah, tanpa shadowBlur)
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const aur = [
+      { x: W * 0.2, y: H * 0.25, r: W * 0.5, sp: 0.3, a: 0.10 + bass * 0.05 },
+      { x: W * 0.8, y: H * 0.7, r: W * 0.55, sp: 0.22, a: 0.08 + bass * 0.04 },
+      { x: W * 0.5, y: H * 0.5, r: W * 0.6, sp: 0.16, a: 0.07 },
+    ];
+    for (let i = 0; i < aur.length; i++) {
+      const A = aur[i];
+      const ax = A.x + Math.sin(t * A.sp + i * 2.1) * W * 0.08;
+      const ay = A.y + Math.cos(t * A.sp * 0.8 + i * 1.7) * H * 0.06;
+      const ag = ctx.createRadialGradient(ax, ay, 0, ax, ay, A.r);
+      ag.addColorStop(0, `rgba(${r},${g2},${b},${A.a.toFixed(3)})`);
+      ag.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
+    }
+    if (!starsRef.current.length) {
+      for (let i = 0; i < 70; i++) starsRef.current.push({ x: Math.random() * W, y: Math.random() * H * 0.7, r: Math.random() * 1.6 + 0.4, ph: Math.random() * 6.28 });
+    }
+    for (const s of starsRef.current) {
+      const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 1.5 + s.ph));
+      ctx.fillStyle = `rgba(255,255,255,${(tw * 0.6).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
     // ---- spectrum styles (🎬 v19.12: upgrade WAH — glow, reflection, gradien 3 warna, center glow) ----
     if (specStyle === "bars") {
       const bw = W / N;
@@ -290,8 +327,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.fill();
       }
       ctx.restore();
-      // bars utama + glow
-      ctx.save(); ctx.shadowBlur = 22; ctx.shadowColor = acc;
+      // bars utama + glow MURAH (lighter — tanpa shadowBlur yang bikin HP berat)
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      const glowBg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.5);
+      glowBg.addColorStop(0, `rgba(${r},${g2},${b},${(0.16 + bass * 0.18).toFixed(3)})`);
+      glowBg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glowBg; ctx.fillRect(0, 0, W, H);
+      ctx.restore();
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(3, v * H * 0.62);
         ctx.fillStyle = grad3;
@@ -300,13 +342,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         else ctx.rect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h);
         ctx.fill();
       }
-      ctx.restore();
       // lingkar bass di bawah tengah
       ctx.beginPath(); ctx.arc(W / 2, H - 46, 10 + bass * 26, 0, Math.PI * 2);
       ctx.fillStyle = acc; ctx.globalAlpha = 0.45 + bass * 0.5; ctx.fill(); ctx.globalAlpha = 1;
     } else if (specStyle === "mirror") {
       const bw = W / N; const cy = H * 0.56;
-      ctx.save(); ctx.shadowBlur = 20; ctx.shadowColor = acc;
+      ctx.save();
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(2, v * H * 0.28);
         const grd = ctx.createLinearGradient(0, cy - h, 0, cy + h);
@@ -322,7 +363,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } else if (specStyle === "circle") {
       const cx = W / 2, cy = H / 2; const R = Math.min(W, H) * 0.22;
       ctx.save(); ctx.translate(cx, cy);
-      ctx.shadowBlur = 25; ctx.shadowColor = acc; ctx.lineWidth = 3;
+      ctx.lineWidth = 3;
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const len = Math.max(2, v * R * 1.2);
         const ang = (i / N) * Math.PI * 2 - Math.PI / 2 + t * 0.15;
@@ -333,7 +374,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.fillRect(R, -Math.max(1, Math.min(W, H) * 0.007), len, Math.max(2, Math.min(W, H) * 0.014));
         ctx.restore();
       }
-      ctx.shadowBlur = 0;
       ctx.beginPath(); ctx.arc(0, 0, R * 0.9, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(${r},${g2},${b},0.5)`; ctx.lineWidth = 2; ctx.stroke();
       // center glow ikut bass (ala NCS)
@@ -346,7 +386,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.restore();
     } else if (specStyle === "wave") {
       const cy = H * 0.55;
-      ctx.save(); ctx.shadowBlur = 14; ctx.shadowColor = acc;
+      ctx.save();
       for (const [alpha, amp] of [[0.95, 1], [0.4, 1.6], [0.2, 2.3]] as any[]) {
         ctx.beginPath();
         for (let x = 0; x <= W; x += 4) {
@@ -358,7 +398,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
       ctx.restore();
     } else { // dots/partikel
-      ctx.save(); ctx.shadowBlur = 14; ctx.shadowColor = acc;
+      ctx.save();
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const ang = (i / N) * Math.PI * 2 + t * 0.25;
         const rr = Math.min(W, H) * (0.12 + v * 0.3);
@@ -371,19 +411,124 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.restore(); ctx.globalAlpha = 1;
     }
 
+    // 👑 v19.13 PRO PACK: SHOCKWAVE — cincin membesar saat bass naik
+    if (bass > 0.52 && bass > lastBassRef.current * 1.18) {
+      shockRef.current.push({ x: W / 2, y: H * 0.55, r: 50, a: 0.85 });
+      if (shockRef.current.length > 6) shockRef.current.shift();
+    }
+    lastBassRef.current = bass;
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    for (let i = shockRef.current.length - 1; i >= 0; i--) {
+      const s = shockRef.current[i];
+      s.r += H * 0.045; s.a *= 0.9;
+      if (s.a < 0.03) { shockRef.current.splice(i, 1); continue; }
+      ctx.strokeStyle = `rgba(${r},${g2},${b},${s.a.toFixed(3)})`;
+      ctx.lineWidth = Math.max(2, H * 0.02 * s.a);
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+
+    // 👑 v19.13 PRO PACK: LOGO PUSAT — denyut ikut bass + sinar cahaya berputar + ring
+    const punyaLogo = logoImgRef.current || title.trim() || mTitle.trim();
+    if (punyaLogo) {
+      const cx = W / 2, cy = H * 0.42;
+      const logoR = Math.min(W, H) * (0.11 + bass * 0.05);
+      ctx.save();
+      // sinar (god rays) berputar
+      ctx.translate(cx, cy); ctx.rotate(t * 0.5);
+      ctx.globalCompositeOperation = "lighter";
+      const RAYS = 12;
+      for (let i = 0; i < RAYS; i++) {
+        const ang0 = (i / RAYS) * Math.PI * 2;
+        ctx.save(); ctx.rotate(ang0);
+        const rg = ctx.createLinearGradient(0, 0, logoR * 3.4, 0);
+        rg.addColorStop(0, `rgba(${r},${g2},${b},${(0.30 + bass * 0.25).toFixed(3)})`);
+        rg.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = rg;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(logoR * 3.4, -logoR * 0.16);
+        ctx.lineTo(logoR * 3.4, logoR * 0.16);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+      // glow pusat
+      const lg2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, logoR * 2.2);
+      lg2.addColorStop(0, "rgba(255,255,255,0.9)");
+      lg2.addColorStop(0.18, `rgba(${r},${g2},${b},0.8)`);
+      lg2.addColorStop(0.45, `rgba(${r},${g2},${b},0.28)`);
+      lg2.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = lg2;
+      ctx.beginPath(); ctx.arc(cx, cy, logoR * 2.2, 0, Math.PI * 2); ctx.fill();
+      // ring dalam ikut beat
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 2 + bass * 3;
+      ctx.beginPath(); ctx.arc(cx, cy, logoR * (0.9 + bass * 0.18), 0, Math.PI * 2); ctx.stroke();
+      // ring luar putus-putus berputar
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(-t * 0.7);
+      ctx.strokeStyle = `rgba(${r},${g2},${b},0.55)`;
+      ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.arc(0, 0, logoR * 1.55, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      // logo gambar / teks
+      if (logoImgRef.current) {
+        const size = logoR * 1.5;
+        ctx.save();
+        ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.clip();
+        ctx.drawImage(logoImgRef.current, cx - size / 2, cy - size / 2, size, size);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        const fs = Math.min(logoR * 0.34, 54);
+        ctx.font = `900 ${fs}px 'Poppins',system-ui,sans-serif`;
+        const words = (title || mTitle).split(" ");
+        const l1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
+        const l2 = words.slice(Math.ceil(words.length / 2)).join(" ");
+        if (l2) { ctx.fillText(l1, cx, cy - fs * 0.55); ctx.fillText(l2, cx, cy + fs * 0.55); }
+        else ctx.fillText(l1, cx, cy);
+      }
+    }
+
+    // 👑 v19.13 PRO PACK: EMBER NAIK — partikel ringan (murah, tanpa shadowBlur)
+    if (!embersRef.current.length) {
+      for (let i = 0; i < 30; i++) embersRef.current.push({
+        x: Math.random() * W, y: H + Math.random() * H * 0.4,
+        vx: (Math.random() - 0.5) * 0.4, vy: -(0.25 + Math.random() * 0.5),
+        r: Math.random() * 2 + 1, ph: Math.random() * 6.28,
+      });
+    }
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    for (const e of embersRef.current) {
+      e.y += e.vy; e.x += e.vx + Math.sin(t * 1.2 + e.ph) * 0.3;
+      if (e.y < -10) { e.y = H + 10; e.x = Math.random() * W; }
+      const tw = 0.3 + 0.7 * Math.abs(Math.sin(t * 2 + e.ph));
+      ctx.fillStyle = `rgba(${r},${g2},${b},${(tw * 0.5).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r + bass * 1.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
     // overlay suasana
     if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
 
-    // judul
+    // 👑 v19.13 judul pro + info bar ala video visualizer (TRACK / EFFECT)
     if (title.trim()) {
-      ctx.font = `900 ${Math.round(H * 0.05)}px 'Poppins',system-ui,sans-serif`;
-      ctx.textAlign = "left"; ctx.textBaseline = "top";
-      ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = Math.round(H * 0.05 * 0.14); ctx.lineJoin = "round";
-      ctx.strokeText(title, W * 0.05, H * 0.05);
-      ctx.fillStyle = "#fff"; ctx.fillText(title, W * 0.05, H * 0.05);
-      ctx.font = `700 ${Math.round(H * 0.022)}px 'Poppins',sans-serif`;
-      ctx.fillStyle = `rgba(${r},${g2},${b},0.95)`;
-      ctx.fillText(`♪ ${audioName || "Music"} • VERVE Spectrum`, W * 0.05, H * 0.05 + H * 0.062);
+      ctx.textAlign = "center"; ctx.textBaseline = "top";
+      const tfs = Math.round(H * 0.055);
+      ctx.font = `900 ${tfs}px 'Poppins',system-ui,sans-serif`;
+      ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = Math.round(tfs * 0.16); ctx.lineJoin = "round";
+      ctx.strokeText(title, W / 2, H * 0.035);
+      const tg = ctx.createLinearGradient(0, H * 0.035, 0, H * 0.035 + tfs);
+      tg.addColorStop(0, "#ffffff"); tg.addColorStop(1, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
+      ctx.fillStyle = tg; ctx.fillText(title, W / 2, H * 0.035);
+      // info bar kecil (ala video pro: TRACK • EFFECT)
+      ctx.font = `700 ${Math.round(H * 0.02)}px 'Poppins',sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      const info = `TRACK: ${(mTitle || audioName || "VERVE SPECTRUM").toUpperCase()}  ·  EFFECT: ${specStyle.toUpperCase()}`;
+      ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 4; ctx.lineJoin = "round";
+      ctx.strokeText(info, W / 2, H - H * 0.03);
+      ctx.fillStyle = `rgba(${r},${g2},${b},1)`;
+      ctx.fillText(info, W / 2, H - H * 0.03);
     }
 
     // lirik karaoke
@@ -399,7 +544,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("∞ loop mulus", W - H * 0.1 - 8, 8 + H * 0.023);
     }
-  }, [bgType, bgColor, bgGrad, specStyle, overlay, title, audioName, lirikOn, capWords, tpl, rgb, seamless]);
+  }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless]);
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
@@ -710,6 +855,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
               {OVERLAYS.map(o => <button key={o.id} className={`v6-chip ${overlay === o.id ? "on" : ""}`} onClick={() => setOverlay(o.id)}>{o.label}</button>)}
             </div>
+            <div className="v6-lbl">👑 LOGO CHANNEL DI TENGAH (opsional — ala Trap Nation)</div>
+            <label className="v6-cardrow">
+              <span style={{ fontSize: 20 }}>📛</span><div className="tt">{logoImg ? "✅ Logo dipilih — ganti?" : "Upload logo (bulat) — denyut ikut bass"}</div><span className="arr">›</span>
+              <input type="file" accept="image/*" hidden onChange={e => {
+                const f = e.target.files?.[0]; if (!f) return;
+                const rd = new FileReader(); rd.onload = () => setLogoImg(rd.result as string); rd.readAsDataURL(f);
+              }} />
+            </label>
+            {!logoImg && <p style={{ fontSize: 10, opacity: .55, margin: "2px 0 0" }}>Tanpa logo → judul/teks jadi pusat berdenyut. Plus otomatis: sinar cahaya berputar, shockwave saat bass, bintang & ember.</p>}
             <div className="v6-lbl">JUDUL DI VIDEO (opsional)</div>
             <input className="v6-inp" placeholder="cth: Hujan di Jendela — 1 Hour Loop" value={title} onChange={e => setTitle(e.target.value)} />
             <button className="v6-bigcta" onClick={() => setStep(2)}>Lanjut: Lirik ›</button>
