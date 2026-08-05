@@ -189,11 +189,14 @@ const DEFAULT_CHARS: CharCard[] = [
   },
 ];
 
+// 🎨 v19.22: GAYA VISUAL NETRAL (semua niche) — bukan lagi "mood haru/anime sedih" yang lagu-centric.
 const GAYA_VISUAL = [
-  "Sinematik realistis, cahaya warm golden hour, lensa 35mm, depth of field lembut, palet hangat, mood haru",
+  "Sinematik realistis, cahaya warm golden hour, lensa 35mm, depth of field lembut, palet hangat",
   "Ilustrasi cat air emosional, tekstur kertas, sapuan lembut, palet warm pastel",
-  "Anime film sedih kualitas layar lebar, pencahayaan senja, palet warm, detail ekspresi halus",
-  "3D animasi lembut, lighting golden hour, render halus kualitas film pendek",
+  "Anime kualitas layar lebar, pencahayaan dramatis, palet kaya, detail ekspresi halus",
+  "3D animasi lembut, lighting cinematic, render halus kualitas film pendek",
+  "Dokumenter jurnalistik, pencahayaan natural, warna tajam, kesan nyata & serius",
+  "Neon & kontras tinggi, cahaya kota malam, palet cyan-magenta, energi modern",
 ];
 /** kode style untuk mesin gambar hcnsec (IMAGE_STYLES ids) */
 const GAYA_TO_STYLE = ["cinematic", "oil", "anime", "3d"];
@@ -473,7 +476,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     const kw = topic.trim() || selTitle || (brain.results?.[0]?.title || "");
     // 🧠 v19.8.4: angka diambil dari DATA judul lawan (bukan template tebakan)
     const angka = angkaPopulerDariJudul(kompTitles);
-    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka, 0);
+    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka, 0, nicheId);
     setSerang(hasil);
     setSerangBatch(0);
     flash(angka.length ? `⚔️ Saran jadi — angka ${angka.join(", ")} diambil dari judul lawan!` : "⚔️ Saran judul penyerang jadi — pilih yang paling kuat!");
@@ -485,7 +488,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     const kw = topic.trim() || selTitle || (brain.results?.[0]?.title || "");
     const angka = angkaPopulerDariJudul(kompTitles);
     const nextBatch = serangBatch + 1;
-    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka, nextBatch);
+    const hasil = serangBalikJudul(lawan, kw, brain, 3, angka, nextBatch, nicheId);
     // Gabung dengan hasil lama (jangan dobel), urut skor, tunjuk yang menang besar
     const lama = serang || [];
     const gabung = [...lama, ...hasil].filter(
@@ -2923,7 +2926,12 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           {song && board && (
             <button className="lh-btn" onClick={() => setStep(9)}>Gabung Jadi Video 🎬</button>
           )}
-          <p className="lh-note" style={{ textAlign: "center" }}>Langkah terakhir: lagu + adegan digabung otomatis → tombol <b>Masuk Studio Edit</b> (elemen terpisah ke jalurnya masing-masing).</p>
+          {!songNiche && (
+            <button className="lh-btn sec" style={{ width: "100%", marginTop: 8 }} onClick={() => setStep(9)}>
+              ⏭️ Lewati audio — video tanpa musik (adegan tetap jalan)
+            </button>
+          )}
+          <p className="lh-note" style={{ textAlign: "center" }}>Langkah terakhir: {songNiche ? "lagu" : "audio (opsional)"} + adegan digabung otomatis → tombol <b>Masuk Studio Edit</b> (elemen terpisah ke jalurnya masing-masing).</p>
         </>
       )}
 

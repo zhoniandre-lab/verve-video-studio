@@ -72,7 +72,7 @@ T("CSS gembok lama tak dipakai lagi (lh-dot:disabled boleh ada tapi tak direfere
 /* ---------- 5. Persist posisi langkah ---------- */
 T("langkah tersimpan di payload (pindah HP/refresh tak hilang)", /step, topic/.test(lahan) || /\{ step, topic/.test(lahan));
 T("langkah dipulihkan dari simpanan", /setStep\(j\.step \|\| 1\)/.test(lahan));
-T("9 langkah tetap utuh", /const STEP_LABEL = \["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"\];/.test(lahan));
+T("9 langkah tetap utuh (wizardSteps, Lagu/Audio adaptif)", /wizardSteps\(nicheId\)/.test(lahan) && /const STEP_LABEL = \["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"\];/.test(lahan));
 
 /* ---------- 6. FASE-LAHAN L2 PROFESIONAL: kepala seragam 9 langkah ---------- */
 const jmlKepala = (lahan.match(/kepalaLangkah\(\d+,/g) || []).length;
@@ -80,7 +80,7 @@ T("kepala langkah profesional terpasang di 9/9 langkah", jmlKepala === 9, `terpa
 T("definisi kepalaLangkah + peta LANGKAH_BUTUH ada", /const LANGKAH_BUTUH: Record<number, number\[\]>/.test(lahan) && /const kepalaLangkah = \(k: number, judul: string, tujuan: string\)/.test(lahan));
 T("peta bahan langkah 9 jujur: butuh adegan(7) & lagu(8)", /9: \[7, 8\]/.test(lahan));
 T("status 'bahan siap/belum terisi' ditampilkan per langkah", /bahan siap/.test(lahan) && /belum terisi/.test(lahan));
-T("chip 'butuh' melompat ke langkah prasyarat", /butuh: \{x\}\. \{STEP_LABEL\[x - 1\]\}/.test(lahan));
+T("chip 'butuh' melompat ke langkah prasyarat", /butuh: \{x\}\. \{stepLabels\[x - 1\]\}/.test(lahan));
 T("judul kosong tidak lagi tercetak blong (3 titik diganti fallback)", (lahan.match(/selTitle \|\| "— \(belum/g) || []).length >= 3);
 T("CSS kepala langkah terpasang", css.includes(".lh-stephead") && css.includes(".lh-stepnum"), "globals.css");
 

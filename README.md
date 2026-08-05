@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎨⚔️ v19.22 — GAYA VISUAL NETRAL + SERANG BALIK IKUT NICHE + TOMBOL LEWATI AUDIO
+* **Masalah (screenshot user):** step 5 "Mesin visual" masih gaya lagu ("mood haru", "anime sedih"); Serang Balik masih template lagu ("Rindu Aksi...", "Doa Terakhir... Cerita Jadi Lagu") padahal niche berita/kustom; step 8 non-lagu tidak bisa dipilih/dilewati.
+* **Perbaikan (dari akar, bukan luarnya):**
+  1. **GAYA_VISUAL NETRAL** (6 gaya): hapus "mood haru/anime sedih" → "Sinematik realistis, Dokumenter jurnalistik, Neon & kontras tinggi..." — cocok semua niche.
+  2. **Serang Balik ikut niche**: `serangBalikJudul(..., nicheId)` — niche lagu (story_song/dj/family/muslim) tetap template puitis; niche lain (horor/tutorial/kustom/berita) pakai template generik: "Ternyata...", "Cara...", "N Hal tentang...", "Jangan Nonton..." — TIDAK lagi "Rindu/Doa/Cerita Jadi Lagu" untuk semua.
+  3. **Step 8 non-lagu**: tombol **"⏭️ Lewati audio — video tanpa musik"** + note "audio (opsional)".
+* Test lahan-bebas-loncat update (stepLabels); 32 suite hijau; tsc 0; build 0.
+
+
 ### 🎵 v19.21 — ROMBAK TOTAL: WIZARD IKUT NICHE (Lagu ↔ Audio) + SEMUA TEKS NICHE-AWARE
 * **Masalah (feedback user):** masih banyak alur "cerita jadi lagu" di Lahan — step 8 "Lagu Suno", teks "lagu" di mana-mana; buat niche horor/tutorial/kustom nggak nyambung.
 * **Rombak total:**
