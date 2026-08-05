@@ -7,9 +7,9 @@
 export interface VarianThumb { id: number; nama: string; arah: string; }
 
 export const VARIAN_THUMB: VarianThumb[] = [
-  { id: 1, nama: "Wajah & Emosi", arah: "CLOSE-UP 85mm wajah penuh cerita, mata tajam menatap ke area kosong, air mata atau tekad tertahan, cahaya jendela dramatis memahat pipi, pori-pori terasa" },
-  { id: 2, nama: "Adegan Sinematik", arah: "WIDE SHOT 24mm epik golden hour, sosok kecil dalam ruang/lanskap besar, kabut tipis, cahaya masuk dramatis, skala megah seperti poster film" },
-  { id: 3, nama: "Simbol & Bukti", arah: "STILL LIFE simbolik satu objek penuh makna (foto berbingkai/surat lama/barang kenangan/sepatu usang) dibakar cahaya jendela, bayangan panjang, TANPA manusia" },
+  { id: 1, nama: "Wajah & Emosi", arah: "CLOSE-UP 85mm wajah penuh cerita, mata tajam menatap ke area kosong, air mata atau tekad tertahan, cahaya jendela dramatis memahat pipi, pori-pori terasa, rim light emas hangat membingkai rambut, bayangan lembut sisi gelap, latar bokeh dangkal, ekspresi menggantung antara haru dan tegar" },
+  { id: 2, nama: "Adegan Sinematik", arah: "WIDE SHOT 24mm epik golden hour, sosok kecil dalam ruang/lanskap besar, kabut tipis menyelimuti, cahaya matahari masuk dramatis menembus awan, skala megah seperti poster film, langit jingga-ungu gradasi, siluet hangat, kedalaman atmosferis yang terasa" },
+  { id: 3, nama: "Simbol & Bukti", arah: "STILL LIFE simbolik satu objek penuh makna (foto berbingkai/surat lama/barang kenangan/sepatu usang) dibakar cahaya jendela sore, bayangan panjang, TANPA manusia, tekstur tua terasa (debu, serat kertas, kayu lapuk), debu melayang di berkas cahaya, nuansa melankolis yang menyengat" },
 ];
 
 /** Font tampilan untuk teks thumbnail — semua SUDAH dimuat aplikasi di layout (gratis, OFL). */
@@ -94,9 +94,18 @@ export function gayaNiche(niche: string): string {
 export function promptLatarThumb(judul: string, niche: string, varian: number): string {
   const v = VARIAN_THUMB.find((x) => x.id === varian) || VARIAN_THUMB[0];
   const tema = String(judul || "").replace(/["\n\r]+/g, " ").trim().slice(0, 90) || "topik menarik";
+  // 🎬 v19.10.1: lapisan "sinematik" yang kaya — biar gambar AI keluar kayak punya
+  // ChatGPT/DALL-E (lighting dramatis + mood + palet warna + atmosfer + tekstur),
+  // BUKAN sekadar "background photo" generik.
+  const SINEMATIK = [
+    "Cinematic portrait lighting: single warm window light sculpting the face, soft golden rim light, deep emotional mood, color palette warm amber + deep teal shadows, atmosphere intimate and heart-touching, subtle film grain, razor-sharp focus on the eyes, 8K cinematic quality",
+    "Epic movie lighting: golden hour sun flare, volumetric god rays through mist, mood grand and nostalgic, color palette burnt orange + violet sky, atmosphere vast and cinematic, subtle film grain, ultra-detailed landscape, 8K cinematic quality",
+    "Moody still-life lighting: single shaft of warm window light on the object, long shadows, mood melancholic and nostalgic, color palette sepia + amber + soft shadow blue, atmosphere quiet and emotional, visible dust particles in the light beam, film grain, 8K cinematic quality",
+  ];
   return [
-    `Ultra high-CTR YouTube thumbnail background photo, 16:9 widescreen.`,
+    `Ultra high-CTR YouTube thumbnail photo, 16:9 widescreen, cinematic film still, shot on professional camera.`,
     `Subject scene: "${tema}", gaya visual: ${gayaNiche(niche)}.`,
+    `Sinematik: ${SINEMATIK[varian >= 1 && varian <= 3 ? varian - 1 : 0]}.`,
     `Komposisi: ${v.arah}.`,
     `ATURAN KERAS: subjek utama di KANAN frame, KOSONGKAN 40% area KIRI untuk teks nanti, ` +
     `kontras sangat tinggi, warna jenuh berani, fokus tajam di subjek, bokeh latar, kualitas majalah.`,

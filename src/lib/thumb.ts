@@ -94,11 +94,11 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
   const gx0 = leftDark ? 0 : W, gx1 = leftDark ? W * 0.8 : W * 0.2;
   const g = ctx.createLinearGradient(gx0, 0, gx1, 0);
   g.addColorStop(0, `rgba(4,7,14,${scrimA.toFixed(3)})`);
-  g.addColorStop(0.55, `rgba(4,7,14,${(scrimA * 0.55).toFixed(3)})`);
+  g.addColorStop(0.55, `rgba(4,7,14,${(scrimA * 0.7).toFixed(3)})`); // v19.10.1: scrim lebih pekat biar teks nempel di gambar terang
   g.addColorStop(1, "rgba(4,7,14,0)");
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   const gb = ctx.createLinearGradient(0, H * 0.55, 0, H);
-  gb.addColorStop(0, "rgba(4,7,14,0)"); gb.addColorStop(1, "rgba(4,7,14,0.72)");
+  gb.addColorStop(0, "rgba(4,7,14,0)"); gb.addColorStop(1, "rgba(4,7,14,0.78)"); // v19.10.1: dasar bawah lebih pekat
   ctx.fillStyle = gb; ctx.fillRect(0, 0, W, H);
 
   const align: CanvasTextAlign = anchor ? "center" : leftDark ? "left" : "right";
@@ -114,6 +114,9 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
   const kx = leftDark ? W * 0.045 : W * 0.955 - kw - H * 0.07;
   ctx.fillStyle = "#e11d48";
   rr(ctx, kx, H * 0.055, kw + H * 0.07, H * 0.088, H * 0.044); ctx.fill();
+  // v19.10.1: stroke hitam tipis di badge — nempel di gambar terang, nggak "mengambang"
+  ctx.strokeStyle = "rgba(4,7,14,0.85)"; ctx.lineWidth = Math.max(3, H * 0.008); ctx.lineJoin = "round";
+  rr(ctx, kx, H * 0.055, kw + H * 0.07, H * 0.088, H * 0.044); ctx.stroke();
   ctx.fillStyle = "#fff";
   ctx.fillText(kick, kx + H * 0.035, H * 0.055 + H * 0.047);
 
@@ -130,12 +133,19 @@ export function drawAutoThumb(ctx: CanvasRenderingContext2D, W: number, H: numbe
   const emoHit = words.some((w) => EMO.has(w.toLowerCase()));
   let y = (anchor ? anchor.y * H : H - H * 0.06) - (words.length - 1) * fs * 1.06;
   words.forEach((w, i) => {
-    ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = fs * 0.16; ctx.shadowOffsetY = fs * 0.045;
-    ctx.strokeStyle = "#0b0f1a"; ctx.lineWidth = fs * 0.14;
+    // v19.10.1: stroke & shadow lebih tegas — teks "nancap" di gambar terang & feed
+    ctx.shadowColor = "rgba(0,0,0,0.75)"; ctx.shadowBlur = fs * 0.24; ctx.shadowOffsetY = fs * 0.06;
+    ctx.strokeStyle = "#0b0f1a"; ctx.lineWidth = fs * 0.17;
     ctx.strokeText(w, tx, y);
     ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-    // dua nada: kata pertama kuning-urgensi, sisanya putih-bersih (hierarki mata)
-    ctx.fillStyle = i === 0 ? "#ffd60a" : "#ffffff";
+    // dua nada: kata pertama GRADIENT kuning→oranye (urgensi menyala), sisanya putih-bersih
+    if (i === 0) {
+      const gy = ctx.createLinearGradient(tx, y - fs, tx, y);
+      gy.addColorStop(0, "#ffe600"); gy.addColorStop(0.55, "#ffb300"); gy.addColorStop(1, "#ff8c00");
+      ctx.fillStyle = gy;
+    } else {
+      ctx.fillStyle = "#ffffff";
+    }
     ctx.fillText(w, tx, y);
     y += fs * 1.06;
   });

@@ -17,6 +17,14 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎬 v19.10.1 — THUMBNAIL MAKIN "WAH": SINEMATIK + TEKS NANCAP (feedback: gitu-gitu aja)
+* **Masalah (feedback user):** hasil Thumb Studio terasa monoton — gambar "gitu-gitu aja", teks kurang tegas, beda dari hasil AI image modern.
+* **Solusi (2 lapis):**
+  1. **Gambar** (`thumbstudio.ts`): `VARIAN_THUMB` diperkaya (rim light emas, bokeh dangkal, debu di berkas cahaya, tekstur tua…) + `promptLatarThumb` kini punya lapisan **Sinematik** per varian (lighting dramatis + mood + palet warna amber/teal/oranye-violet/sepia + atmosfer + film grain + 8K) — prompt kayak punya ChatGPT/DALL-E, bukan "background photo" generik. Semua aturan keras lama dipertahankan (16:9, ruang kosong kiri 40%, DILARANG teks, PURE photographic).
+  2. **Teks** (`thumb.ts`): scrim sisi teks lebih pekat (0.55→0.7), dasar bawah 0.72→0.78, stroke kata 0.14→0.17 + shadow lebih besar (0.75/0.24/0.06) — teks "nancap" di gambar terang; kata pertama kini GRADIENT kuning→oranye (urgensi menyala); badge merah dapat stroke hitam tipis biar nempel.
+* **Test**: thumb-studio tetap 58/58; seluruh 30 suite hijau; tsc 0; build 0.
+
+
 ### 🪝#️⃣ v19.10 — HOOK ENGINE (3 detik pertama) + HASHTAG PINTAR
 * **Ilmu dari repo agency-agents (139k★)** — agen "Short-Video Editing Coach" & "TikTok Strategist": (1) visual hook WAJIB muncul dalam 3 detik pertama (close-up / extreme close-up + emosi); (2) mix 5-8 hashtag: trending + niche + kata kunci + umum.
 * **Fitur baru:**
