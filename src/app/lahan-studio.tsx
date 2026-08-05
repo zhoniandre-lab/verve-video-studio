@@ -22,7 +22,7 @@ import {
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
-import { NICHES, nicheAiLabel, nicheById, nicheLabel } from "@/lib/brain/niche";
+import { NICHES, isSongNiche, nicheAiLabel, nicheById, nicheLabel, wizardSteps } from "@/lib/brain/niche";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
 import { ambilSnapshotTrend, bandingkanGelombang, cocokNiche, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
 import { kompetitorVelocity, type KompItem } from "@/lib/brain/competitor-rss";
@@ -236,6 +236,8 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [nicheCustom, setNicheCustom] = useState<string>(() => { try { return localStorage.getItem("verve_lahan_niche_custom_v1") || ""; } catch { return ""; } });
   const nicheDef = nicheById(nicheId);
   const nicheAI = nicheAiLabel(nicheId, nicheCustom);
+  const songNiche = isSongNiche(nicheId); // 🎵 v19.21: alur lagu vs audio
+  const stepLabels = useMemo(() => wizardSteps(nicheId), [nicheId]);
   function gantiNiche(id: string) {
     setNicheId(id);
     try { localStorage.setItem("verve_lahan_niche_v1", id); } catch { /* abaikan */ }
@@ -1271,7 +1273,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     const pd = await r.json().catch(() => ({}));
     const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
     if (url) {
-      finishSong({ url, title: pd.title || selTitle || "Lagu AI", duration: pd.duration, image: pd.image_url });
+      finishSong({ url, title: pd.title || selTitle || (songNiche ? "Lagu AI" : "Audio AI"), duration: pd.duration, image: pd.image_url });
       return "done";
     }
     if (pd.status === "error" || pd.error) throw new Error(pd.error || "Provider gagal generate");
@@ -1752,7 +1754,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       <div className="lh-chips">
         {kebutuhan.map((k) => (
           <button key={k} className={`lh-chip ${langkahSiap[k - 1] ? "ok" : "kurang"}`} onClick={() => setStep(k)}>
-            {langkahSiap[k - 1] ? "✅" : "⬜"} {k}. {STEP_LABEL[k - 1]}
+            {langkahSiap[k - 1] ? "✅" : "⬜"} {k}. {stepLabels[k - 1]}
           </button>
         ))}
       </div>
@@ -1775,7 +1777,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
         {kurang.length > 0 && (
           <div className="lh-chips" style={{ marginTop: 7 }}>
             {kurang.map((x) => (
-              <button key={x} className="lh-chip kurang" onClick={() => setStep(x)}>⬜ butuh: {x}. {STEP_LABEL[x - 1]}</button>
+              <button key={x} className="lh-chip kurang" onClick={() => setStep(x)}>⬜ butuh: {x}. {stepLabels[x - 1]}</button>
             ))}
           </div>
         )}
@@ -1799,7 +1801,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
           Titik = status DATA (jujur): ✓ siap · angka = belum terisi tapi TETAP boleh dibuka. */}
       <div className="lh-steps-wrap">
         <div className="lh-steps">
-          {STEP_LABEL.map((lb, i) => {
+          {stepLabels.map((lb, i) => {
             const k = i + 1;
             const on = step === k;
             const done = langkahSiap[i] && !on;
@@ -1851,7 +1853,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
             />
-            <Ngomong onText={(t) => setTopic((v) => (v ? v + " " : "") + t)} hint="niat cerita lagu Indonesia: rindu ibu, sedih, perjuangan, keluarga, cinta, kampung halaman, doa" title="🎤 Ngomong niat ceritamu — teks terisi otomatis" /> {/* v14.5 */}
+            <Ngomong onText={(t) => setTopic((v) => (v ? v + " " : "") + t)} hint={`niat ${nicheAI || nicheDef.label}: ${nicheDef.contoh.slice(0, 3).join(", ")}`} title="🎤 Ngomong niat ceritamu — teks terisi otomatis" /> {/* v14.5 */}
             <div className="lh-chips">
               {nicheDef.contoh.map((p) => (
                 <button key={p} className="lh-chip" onClick={() => setTopic(p)}>{p}</button>
@@ -1889,7 +1891,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                     const active = thumbTrend?.title === t.title;
                     const g = gelombang?.find((x) => x.title === t.title);
                     return (
-                      <div key={t.title} style={{ background: "var(--v6-card)", border: active ? "2px solid rgba(245,158,11,.6)" : tg.cocokLagu ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, overflow: "hidden" }}>
+                      <div key={t.title} style={{ background: "var(--v6-card)", border: active ? "2px solid rgba(245,158,11,.6)" : cocokNiche(t.title, nicheId) ? "1px solid rgba(245,158,11,.4)" : "1px solid var(--v6-line)", borderRadius: 10, overflow: "hidden" }}>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px" }}>
                           <button onClick={() => pakaiTrend(t.title)} style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, textAlign: "left", background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: 0 }}>
                             <span style={{ fontSize: 16 }}>{tg.emoji}</span>
@@ -2260,7 +2262,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       {step === 4 && !angle && kartuKurang("Hitung Judul Juara 🏆", [1, 2], "Mesin judul minum dari sudut yang kamu pilih & risetnya.")}
       {step === 4 && angle && (
         <>
-          {kepalaLangkah(4, "Judul juara 🏆", "Tiap kandidat judul diskor dari hasil risetmu — yang kaupilih jadi kompas visual, naskah, dan lagu.")}
+          {kepalaLangkah(4, "Judul juara 🏆", songNiche ? "Tiap kandidat judul diskor dari hasil risetmu — yang kaupilih jadi kompas visual, naskah, dan lagu." : "Tiap kandidat judul diskor dari hasil risetmu — yang kaupilih jadi kompas visual & naskah.")}
           <div className="lh-card">
             <div className="lh-h1">Pilih judul juara 🏆</div>
             <p className="lh-sub">Semua kandidat diskor mesin vs pola & kemiripan kompetitor. Buka “audit” untuk lihat hitungannya — transparan, bukan kotak hitam.</p>
@@ -2733,10 +2735,10 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       {/* ============ LANGKAH 8: LAGU (SUNO) ============ */}
       {step === 8 && (
         <>
-          {kepalaLangkah(8, "Panggung lagu 🎵", "Lirik & ceritamu jadi lagu utuh — musik yang membawa emosi video dari detik pertama.")}
+          {kepalaLangkah(8, songNiche ? "Panggung lagu 🎵" : "Audio & musik 🔉", songNiche ? "Lirik & ceritamu jadi lagu utuh — musik yang membawa emosi video dari detik pertama." : "Isi musik/narasi videomu (opsional) — atau kosongkan lalu lanjut ke video.")}
           <div className="lh-card">
-            <div className="lh-h1">Panggung lagu 🎵</div>
-            <p className="lh-sub">Judul: <b>{selTitle || "— (belum, pilih di langkah 4)"}</b> — lagu diolah Suno lewat provider pilihanmu. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
+            <div className="lh-h1">{songNiche ? "Panggung lagu 🎵" : "Audio & musik 🔉"}</div>
+            <p className="lh-sub">Judul: <b>{selTitle || "— (belum, pilih di langkah 4)"}</b> — {songNiche ? "lagu diolah Suno lewat provider pilihanmu" : "musik/narasi diolah Suno lewat provider pilihanmu (opsional — kosongkan untuk video tanpa lagu)"}. API key disimpan <b>di HP-mu saja</b> (localStorage), bukan di server.</p>
             <div className="lh-kv">
               <span>Provider</span>
               <b>
@@ -2863,7 +2865,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             <p className="lh-note">🎼 Style akhir yang dikirim: <b>{composeFinalStyle().slice(0, 240)}</b></p>
             <p className="lh-note">ℹ️ ±12 kredit Kie per generate · tulisan manualmu SELALU di urutan depan · gender vokal + lawan gender terlarang ikut tertanam (v10.2).</p>
             <button className="lh-btn" disabled={polling || busy === "song"} onClick={() => void launchSong()}>
-              {busy === "song" ? "⏳ Mengirim ke dapur lagu..." : "🎵 Generate Lagu"}
+              {busy === "song" ? "⏳ Mengirim ke dapur musik..." : (songNiche ? "🎵 Generate Lagu" : "🎵 Generate Musik")}
             </button>
             {vocal !== "instrumental" && lyrics.trim().length < 30 && (
               <p className="lh-note">⚠️ Lirik masih terlalu pendek (min 30 karakter) — generate lirik AI/tulis sendiri dulu, atau pilih 🎼 Instrumental.</p>
@@ -2930,12 +2932,12 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       {step === 9 && !(board && song) && kartuKurang("Gabung Jadi Video 🎬", [6, 7, 8], "Video digabung dari adegan bergambar + lagu jadi. Keduanya lahir di:")}
       {step === 9 && board && song && (
         <>
-          {kepalaLangkah(9, "Video utuh 🎬", "Lagu + adegan digabung otomatis dengan pembagian durasi rata — poles halusnya lanjut di Studio Edit.")}
+          {kepalaLangkah(9, "Video utuh 🎬", songNiche ? "Lagu + adegan digabung otomatis dengan pembagian durasi rata — poles halusnya lanjut di Studio Edit." : "Audio + adegan digabung otomatis dengan pembagian durasi rata — poles halusnya lanjut di Studio Edit.")}
           <div className="lh-card">
             <div className="lh-h1">Video utuh 🎬</div>
-            <p className="lh-sub">Lagu + {doneScenes.length} adegan digabung otomatis: tiap adegan dapat ±{perScene.toFixed(1)} detik mengikuti durasi lagu {fmtClock(totalDur)}. Jujur bro — pembagiannya rata; sinkron halus per ketukan/emosi bisa kau poles di Studio (ada penanda BPM).</p>
+            <p className="lh-sub">{songNiche ? "Lagu" : "Audio"} + {doneScenes.length} adegan digabung otomatis: tiap adegan dapat ±{perScene.toFixed(1)} detik mengikuti durasi {songNiche ? "lagu" : "audio"} {fmtClock(totalDur)}. Jujur bro — pembagiannya rata; sinkron halus bisa kau poles di Studio{ songNiche ? " (ada penanda BPM)" : "" }.</p>
             <div className="lh-kv"><span>✅ Adegan</span><b>{doneScenes.length}/{board.scenes.length} bergambar</b></div>
-            <div className="lh-kv"><span>✅ Lagu</span><b>{song.title || selTitle} · {song.duration ? fmtClock(Math.round(song.duration)) : "-"}</b></div>
+            <div className="lh-kv"><span>{songNiche ? "✅ Lagu" : "✅ Audio"}</span><b>{song.title || selTitle} · {song.duration ? fmtClock(Math.round(song.duration)) : "-"}</b></div>
             <div className="lh-kv"><span>✅ Lirik karaoke</span><b>tiap adegan jadi lapisan teks sendiri di Studio</b></div>
           </div>
 

@@ -41,3 +41,15 @@ export function nicheAiLabel(id: string, customLabel: string): string {
   if (id === "custom") return (customLabel || "topik").trim().toLowerCase();
   return d.aiLabel;
 }
+
+/** 🎵 v19.21: niche yang alurnya "cerita → lagu" (Suno penuh) vs yang lain (audio/narasi). */
+export function isSongNiche(id: string): boolean {
+  return id === "story_song" || id === "dj" || id === "family" || id === "muslim";
+}
+
+/** Langkah wizard per niche — langkah 8 = "Lagu" (song) atau "Audio" (lainnya). */
+export function wizardSteps(id: string): string[] {
+  const base = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"];
+  if (!isSongNiche(id)) base[7] = "Audio";
+  return base;
+}

@@ -17,6 +17,16 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎵 v19.21 — ROMBAK TOTAL: WIZARD IKUT NICHE (Lagu ↔ Audio) + SEMUA TEKS NICHE-AWARE
+* **Masalah (feedback user):** masih banyak alur "cerita jadi lagu" di Lahan — step 8 "Lagu Suno", teks "lagu" di mana-mana; buat niche horor/tutorial/kustom nggak nyambung.
+* **Rombak total:**
+  1. `niche.ts`: `isSongNiche()` (story_song/dj/family/muslim = alur lagu; lainnya = audio) + `wizardSteps()` — **step 8 jadi "Audio"** untuk niche non-lagu.
+  2. **Step label dinamis**: rel langkah 8 = "Lagu 🎵" atau "Audio 🔉" sesuai niche.
+  3. **Semua teks kondisional**: kepalaLangkah 4/8/9, h1 & sub step 8, tombol "Generate Lagu/Musik", step 9 ("Lagu/Audio + adegan", "✅ Lagu/Audio"), default judul hasil ("Lagu AI"/"Audio AI").
+  4. **Ngomong hint step 1** ikut niche; **border trend** pakai `cocokNiche` (bukan cocokLagu).
+* Test niche +4 cek; tsc 0; build 0; 32 suite hijau.
+
+
 ### 🎯 v19.20 — SEMUA NICHE BISA: PILIH NICHE DI LAHAN + TITLE GURU NICHE-AWARE
 * **Ide (pertanyaan user):** VERVE nggak boleh terpaku "Cerita Jadi Lagu" — pengguna beda-beda nichenya; harus bisa merambah semua niche.
 * **Yang baru:**

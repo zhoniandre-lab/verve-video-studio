@@ -59,6 +59,11 @@ console.log("🎯 Menguji dukungan semua niche");
   T2("NICHES berisi 7 pilihan termasuk custom", N.NICHES.length === 7 && N.NICHES[6].id === "custom");
   T2("nicheById default ke story_song", N.nicheById("ngaco").id === "story_song");
   T2("nicheAiLabel custom pakai label user", N.nicheAiLabel("custom", "Otomotif") === "otomotif");
+  T2("isSongNiche story_song/dj/family/muslim = true", N.isSongNiche("story_song") && N.isSongNiche("dj") && N.isSongNiche("family") && N.isSongNiche("muslim"));
+  T2("isSongNiche tutorial/horor/custom = false", !N.isSongNiche("tutorial") && !N.isSongNiche("horor") && !N.isSongNiche("custom"));
+  const steps = N.wizardSteps("horror");
+  T2("wizardSteps horor: langkah 8 = Audio", steps[7] === "Audio" && steps[0] === "Niat");
+  T2("wizardSteps story_song: langkah 8 = Lagu", N.wizardSteps("story_song")[7] === "Lagu");
 }
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI NICHE GAGAL`); process.exit(1); }
