@@ -17,6 +17,20 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🐛 v19.15.1 — FIX TOTAL PENGATURAN SPECTRUM (deps useCallback + multi-gambar + drag)
+* **Masalah (feedback user):** banyak pengaturan nggak berfungsi; gambar ikut beat bikin pusing (ganti tiap ketukan tanpa henti); pas tambah gambar spectrum jadi nggak keliatan; logo/judul nggak bisa digeser jari.
+* **Akar masalah (ditelusuri):**
+  1. `drawScene` useCallback dependency TIDAK memuat `barCount/logoPos/titlePos/logoScale/rotSpeed/glowInt/beatMode/layoutId/tunnelSpeed/tunnelDepth/multiImgs` → semua slider & drag nggak ngefek di preview (stale closure). Ini juga kena jalur EKSPOR (pakai drawScene sama).
+  2. Multi-gambar digambar SETELAH bars (di atas) → spectrum ketutup.
+  3. Drag butuh toggle mode + `setPointerCapture` tanpa try → sering gagal di HP.
+* **Perbaikan:**
+  1. Semua param ditambah ke dependency array → slider & drag langsung ngefek (preview + ekspor).
+  2. Multi-gambar jadi BACKGROUND (sebelum bars) + scrim tipis + **crossfade** + **ganti tiap N ketukan** (slider 1/2/4/8; default 2) → anti pusing, spectrum tetap keliatan.
+  3. **Drag LANGSUNG** (hit-test 12% dari posisi logo/judul) — tanpa toggle, langsung seret jari; `setPointerCapture` dibungkus try.
+  4. Layout kini juga memindahkan judul (titleY); glowInt ikut dipakai glow bars.
+* tsc 0; build 0; 30 suite hijau.
+
+
 ### 🎨🎢💾 v19.15 — TEMA WARNA + MULTI-GAMBAR + 3D TUNNEL + SIMPAN PRESET
 * **Fitur baru (semua di Spectrum Studio step 2):**
   1. **🎨 TEMA WARNA SIAP-PAKAI** — 6 preset ala channel visualizer terkenal: 🔥 Trap Nation Emas, 💫 NCS Biru, 🌆 Synthwave Pink-Cyan, 🎧 Monstercat Ungu, ⚡ Neon Hijau, ❤️‍🔥 Bara Merah — satu tap set warna + gradasi.

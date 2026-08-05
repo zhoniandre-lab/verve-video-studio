@@ -96,6 +96,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [themeId, setThemeId] = useState("");
   // 🖼️ v19.15 MODE MULTI-GAMBAR — array gambar bergantian per bar/beat
   const [multiImgs, setMultiImgs] = useState<string[]>([]);
+  const [multiBeat, setMultiBeat] = useState(2); // 🐛 v19.15.1: ganti tiap N ketukan (default 2 → nggak pusing)
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
   // 🎢 v19.15 EFEK 3D TUNNEL
   const [tunnelSpeed, setTunnelSpeed] = useState(1);
@@ -104,7 +105,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [presetName, setPresetName] = useState("");
   const [presetMsg, setPresetMsg] = useState("");
   const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" } | null>(null);
   // Layout preset — posisi logo & judul (fraksi)
   const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
     "logo-tengah": { logo: { x: 0.5, y: 0.42 }, titleY: 0.035, titleScale: 1 },
@@ -117,7 +118,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   function setLayout(id: string) {
     setLayoutId(id);
     const L = LAYOUTS[id];
-    if (L) { setLogoPos(L.logo); try { localStorage.setItem("verve_spektrum_layout", id); } catch {} }
+    if (L) { setLogoPos(L.logo); setTitlePos({ x: 0.5, y: L.titleY }); try { localStorage.setItem("verve_spektrum_layout", id); } catch {} }
   }
   const [specStyle, setSpecStyle] = useState("bars");
   const [specColor, setSpecColor] = useState("#22d3ee");
@@ -419,6 +420,32 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     ctx.restore();
 
+    // 🖼️ v19.15.1 MULTI-GAMBAR sebagai BACKGROUND (DI BAWAH bars — spectrum tetap keliatan)
+    // + crossfade halus + ganti tiap N ketukan (anti pusing)
+    if (multiImgsRef.current.length >= 2) {
+      const beatLen = 60 / 96; // asumsi 96 BPM
+      const period = beatLen * Math.max(1, multiBeat);
+      const idx = Math.floor(t / period) % multiImgsRef.current.length;
+      const prevIdx = (idx - 1 + multiImgsRef.current.length) % multiImgsRef.current.length;
+      const within = (t % period) / period;
+      const fade = within < 0.25 ? within / 0.25 : 1; // fade-in 25% pertama
+      const im = multiImgsRef.current[idx];
+      const imPrev = multiImgsRef.current[prevIdx];
+      const drawBg = (im2: HTMLImageElement, alpha: number) => {
+        if (!im2 || !(im2 as any).complete || !(im2 as any).naturalWidth) return;
+        const ir = (im2 as any).naturalWidth / (im2 as any).naturalHeight, cr = W / H;
+        let sw = (im2 as any).naturalWidth, sh = (im2 as any).naturalHeight, sx = 0, sy = 0;
+        if (ir > cr) { sw = (im2 as any).naturalHeight * cr; sx = ((im2 as any).naturalWidth - sw) / 2; }
+        else { sh = (im2 as any).naturalWidth / cr; sy = ((im2 as any).naturalHeight - sh) / 2; }
+        ctx.save(); ctx.globalAlpha = alpha;
+        ctx.drawImage(im2, sx, sy, sw, sh, 0, 0, W, H);
+        ctx.restore();
+      };
+      drawBg(imPrev, (1 - fade) * 0.55);
+      drawBg(im, 0.55 * fade + 0.45);
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H); // scrim tipis — bars tetap jelas
+    }
+
     // ---- spectrum styles (🎬 v19.12: upgrade WAH — glow, reflection, gradien 3 warna, center glow) ----
     if (specStyle === "bars") {
       const bw = W / N;
@@ -441,7 +468,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       // bars utama + glow MURAH (lighter — tanpa shadowBlur yang bikin HP berat)
       ctx.save(); ctx.globalCompositeOperation = "lighter";
       const glowBg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.5);
-      glowBg.addColorStop(0, `rgba(${r},${g2},${b},${(0.16 + bass * 0.18).toFixed(3)})`);
+      glowBg.addColorStop(0, `rgba(${r},${g2},${b},${((0.16 + bass * 0.18) * glowInt).toFixed(3)})`);
       glowBg.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = glowBg; ctx.fillRect(0, 0, W, H);
       ctx.restore();
@@ -677,23 +704,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     } // 🎢 akhir else non-tunnel
 
-    // 🖼️ v19.15 MULTI-GAMBAR: ganti-ganti gambar per beat (kalau user upload beberapa)
-    if (multiImgsRef.current.length >= 2) {
-      const idx = Math.floor(t / (60 / 96)) % multiImgsRef.current.length; // ganti tiap ketukan (96 BPM)
-      const im = multiImgsRef.current[idx];
-      if (im && (im as any).complete && (im as any).naturalWidth > 0) {
-        const ir = (im as any).naturalWidth / (im as any).naturalHeight, cr = W / H;
-        let sw = (im as any).naturalWidth, sh = (im as any).naturalHeight, sx = 0, sy = 0;
-        if (ir > cr) { sw = (im as any).naturalHeight * cr; sx = ((im as any).naturalWidth - sw) / 2; }
-        else { sh = (im as any).naturalWidth / cr; sy = ((im as any).naturalHeight - sh) / 2; }
-        ctx.save();
-        ctx.globalAlpha = 0.85;
-        ctx.drawImage(im, sx, sy, sw, sh, 0, 0, W, H);
-        ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, W, H);
-        ctx.restore();
-      }
-    }
-
     // overlay suasana
     if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
 
@@ -733,7 +743,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("∞ loop mulus", W - H * 0.1 - 8, 8 + H * 0.023);
     }
-  }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless]);
+  }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless,
+    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
@@ -934,17 +945,28 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <canvas ref={cvRef} width={dim.w} height={dim.h}
               style={{ width: "100%", borderRadius: 14, border: dragMode ? "2px solid rgba(139,92,246,.7)" : "1px solid rgba(255,255,255,.14)", background: "#000", aspectRatio: `${dim.w}/${dim.h}`, touchAction: "none", cursor: dragMode ? "crosshair" : "default" }}
               onPointerDown={(e) => {
-                if (!dragMode) return;
+                // 🐛 FIX v19.15.1: drag LANGSUNG tanpa toggle — hit-test posisi logo & judul
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
-                dragRef.current = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
-                (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+                const x = (e.clientX - r.left) / r.width;
+                const y = (e.clientY - r.top) / r.height;
+                const tol = 0.12; // jarak sentuh yang dianggap "kena"
+                const dLogo = Math.hypot(x - logoPos.x, y - logoPos.y);
+                const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
+                if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
+                  dragRef.current = { x, y, target: "logo" as const };
+                } else if (dTitle <= tol && title.trim()) {
+                  dragRef.current = { x, y, target: "judul" as const };
+                } else {
+                  dragRef.current = null;
+                }
+                try { (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); } catch { /* aman */ }
               }}
               onPointerMove={(e) => {
-                if (!dragMode || !dragRef.current) return;
+                if (!dragRef.current) return;
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
                 const x = Math.min(0.95, Math.max(0.05, (e.clientX - r.left) / r.width));
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
-                if (dragMode === "logo") setLogoPos({ x, y });
+                if (dragRef.current.target === "logo") setLogoPos({ x, y });
                 else setTitlePos({ x, y });
               }}
               onPointerUp={() => { dragRef.current = null; }}
@@ -1011,12 +1033,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 </button>
               ))}
             </div>
-            <div className="v6-lbl">✋ GESER POSISI (sentuh & seret di preview)</div>
-            <div className="v6-chips" style={{ padding: 0 }}>
-              <button className={`v6-chip ${dragMode === "logo" ? "on" : ""}`} onClick={() => setDragMode(dragMode === "logo" ? null : "logo")}>👑 Geser Logo</button>
-              <button className={`v6-chip ${dragMode === "judul" ? "on" : ""}`} onClick={() => setDragMode(dragMode === "judul" ? null : "judul")}>🅰 Geser Judul</button>
-              {dragMode && <button className="v6-chip" onClick={() => setDragMode(null)}>✅ Selesai</button>}
-            </div>
+            <div className="v6-lbl">✋ GESER POSISI (🐛 FIX: langsung seret di preview — sentuh logo/judul, geser)</div>
+            <p style={{ fontSize: 10, opacity: .6, margin: "0 0 4px" }}>Nggak perlu mode lagi — sentuh & seret logo/judul langsung di preview. Logo & judul bisa dipindah bebas kiri/kanan/atas/bawah.</p>
             <div className="v6-lbl">🖼 GAMBAR IKUT BEAT</div>
             <div className="v6-chips" style={{ padding: 0 }}>
               {[["denyut", "💓 Denyut"], ["membesar", "📈 Membesar"], ["statis", "🚫 Statis"]].map(([id, lb]) => (
@@ -1044,9 +1062,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               }} />
             </label>
             {multiImgs.length > 1 && (
-              <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
-                <span style={{ fontSize: 10, opacity: .6, flex: 1 }}>Gambar ganti tiap ketukan (96 BPM). Posisi bisa diatur geser di atas.</span>
-                <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontSize: 10, opacity: .6, flex: 1 }}>Ganti tiap:</span>
+                  <select value={multiBeat} onChange={(e) => setMultiBeat(Number(e.target.value))} style={{ background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "4px 8px", fontSize: 11 }}>
+                    {[1, 2, 4, 8].map((n) => <option key={n} value={n}>⏱ {n} ketukan (≈{((60 / 96) * n).toFixed(1)} dtk)</option>)}
+                  </select>
+                  <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
+                </div>
+                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: gambar jadi BACKGROUND + crossfade — spectrum tetap keliatan, ganti lebih pelan biar nggak pusing.</p>
               </div>
             )}
 
