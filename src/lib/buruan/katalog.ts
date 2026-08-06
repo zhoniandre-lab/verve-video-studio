@@ -3,13 +3,13 @@
    Daftar penyedia AI yang kasih kredit GRATIS secara sah + tutorial
    langkah-demi-langkah cara klaim. Disusun manual biar presisi.
    ===================================================================== */
-import type { BuruanItem, KategoriId, JenisGratis, LangkahTutorial, Integrasi } from "./types";
+import type { BuruanItem, KategoriId, JenisGratis, LangkahTutorial, Integrasi, TingkatStabil } from "./types";
 
 interface Kasar {
   id: string; nama: string; url: string; kategori: KategoriId; gratis: string;
   jenis: JenisGratis; syarat: string; berlaku?: string; mudah: number;
   baseUrl?: string; contohModel?: string; desc: string;
-  integrasi?: Integrasi; keyUrl?: string;
+  integrasi?: Integrasi; keyUrl?: string; stabil?: TingkatStabil;
   tutorial: LangkahTutorial[]; sumber: string;
   tags?: string[];
 }
@@ -142,13 +142,29 @@ const KATALOG_ASLI: Kasar[] = [
   // ---------------- GAMBAR → VIDEO ----------------
   K({
     id: "hailuo", nama: "Hailuo AI (MiniMax)", url: "https://hailuoai.video", kategori: "gambar-video",
-    gratis: "Kredit harian gratis (beberapa video/hari)", jenis: "harian",
-    syarat: "Email doang", mudah: 5,
-    desc: "Image-to-video & text-to-video populer. Kredit di-refresh tiap hari — cocok produksi rutin.",
+    gratis: "⚠️ TIDAK STABIL — daily credits PERNAH DIHAPUS (2025). Kadang cuma dapet kalau akun baru.", jenis: "harian",
+    syarat: "Email doang (Google bisa)", mudah: 2, stabil: "ubah",
+    tags: ["gambar bergerak", "kadang tidak gratis"],
+    desc: "Image-to-video populer & kencang. TAPI kebijakan free tier-nya sering berubah — banyak pengguna lapor daily credits hilang. Cek dulu apakah akunmu dapat kredit sebelum andal.",
     tutorial: [
-      { t: "Buka https://hailuoai.video — daftar dengan email." },
-      { t: "Tiap hari login → klaim kredit harian (biasanya otomatis)." },
-      { t: "Upload gambar / ketik prompt → generate → download videonya → pakai di Verve." },
+      { t: "Buka https://hailuoai.video — daftar (Google/email)." },
+      { t: "CEK DULU: login → lihat apakah ada kredit. Kalau 0, berarti lagi nggak ngasih (bukan salah kamu)." },
+      { t: "Kalau ada → upload gambar → generate → download (ada watermark di free)." },
+      { t: "Alternatif yang lebih stabil: Seedance / Kling / PixVerse / Viggle (lihat daftar)." },
+    ],
+  }),
+  /* 🎬 v19.35.3: Seedance — terverifikasi masih gratis (2026) */
+  K({
+    id: "seedance", nama: "Seedance (ByteDance)", url: "https://seedance.ai", kategori: "gambar-video",
+    gratis: "100 kredit/hari (di-refresh), 1080p TANPA watermark", jenis: "harian",
+    syarat: "Email doang", mudah: 5, stabil: "stabil",
+    tags: ["gambar bergerak", "tanpa watermark", "1080p", "text-to-video"],
+    desc: "Model video ByteDance — salah satu free tier TERBAIK 2026: 100 kredit harian, hasil 1080p dan TANPA watermark. Ini yang paling layak dicoba dulu.",
+    tutorial: [
+      { t: "Buka https://seedance.ai — daftar dengan email (tanpa kartu)." },
+      { t: "Login → klaim 100 kredit harian (biasanya otomatis di dashboard)." },
+      { t: "Pilih Image to Video → upload gambar → atur gerakan → Generate." },
+      { t: "Download (1080p, tanpa watermark) → upload di Verve (AutoCut) → edit & render." },
     ],
   }),
   K({
@@ -164,13 +180,14 @@ const KATALOG_ASLI: Kasar[] = [
   }),
   K({
     id: "kling", nama: "Kling AI", url: "https://klingai.com", kategori: "gambar-video",
-    gratis: "Kredit gratis tiap login (beberapa generate/hari)", jenis: "harian",
-    syarat: "Email/HP", mudah: 4,
-    desc: "Video AI dari gambar dengan kualitas tinggi (Kling 1.6/2.x). Ada kredit gratis harian.",
+    gratis: "Kredit harian (di-refresh) — ada watermark di free", jenis: "harian",
+    syarat: "Email/HP", mudah: 4, stabil: "stabil",
+    tags: ["gambar bergerak", "watermark"],
+    desc: "Video AI dari gambar, kualitas tinggi (Kling 2.x). Kredit harian masih berjalan (terverifikasi 2026) — cocok buat tes & iterasi rutin.",
     tutorial: [
-      { t: "Buka https://klingai.com — daftar." },
-      { t: "Login tiap hari → klaim kredit harian." },
-      { t: "Image-to-Video → upload gambar → generate → download." },
+      { t: "Buka https://klingai.com — daftar (email/HP)." },
+      { t: "Login tiap hari → kredit harian masuk (cek dashboard)." },
+      { t: "Image-to-Video → upload gambar → generate → download (ada watermark di free)." },
     ],
   }),
   K({
@@ -219,9 +236,10 @@ const KATALOG_ASLI: Kasar[] = [
   }),
   K({
     id: "pixverse", nama: "PixVerse", url: "https://pixverse.ai", kategori: "gambar-video",
-    gratis: "Kredit harian (beberapa job video)", jenis: "harian",
-    syarat: "Email/Google doang", mudah: 5, tags: ["gambar bergerak", "text-to-video", "efek"],
-    desc: "Image & text to video dengan kontrol gerakan kamera + gaya. Free tier dapat job harian.",
+    gratis: "Kredit harian (beberapa job video) — tanpa watermark di free", jenis: "harian",
+    syarat: "Email/Google doang", mudah: 5, stabil: "stabil",
+    tags: ["gambar bergerak", "text-to-video", "efek", "tanpa watermark"],
+    desc: "Image & text to video dengan kontrol gerakan kamera + gaya. Kredit harian jalan (2026) — salah satu yang paling konsisten.",
     tutorial: [
       { t: "Buka https://pixverse.ai — daftar (Google bisa)." },
       { t: "Pilih 'Image to Video' / 'Text to Video' → prompt + upload → Generate." },
@@ -230,13 +248,13 @@ const KATALOG_ASLI: Kasar[] = [
   }),
   K({
     id: "viggle", nama: "Viggle AI", url: "https://viggle.ai", kategori: "gambar-video",
-    gratis: "Kredit harian (animasi karakter dari gambar)", jenis: "harian",
-    syarat: "Email doang", mudah: 5, tags: ["gambar bergerak", "karakter", "animasi", "mix"],
-    desc: "Spesialis ANIMASI KARAKTER: tempel karakter ke video gerakan (mix) atau gerakin gambar statis. Gratis harian.",
+    gratis: "5 video/hari gratis, tanpa kartu — terverifikasi 2026", jenis: "harian",
+    syarat: "Email doang", mudah: 5, stabil: "stabil", tags: ["gambar bergerak", "karakter", "animasi", "mix"],
+    desc: "Spesialis ANIMASI KARAKTER: tempel karakter ke video gerakan (mix) atau gerakin gambar statis. 5 video/hari gratis, tanpa kartu.",
     tutorial: [
       { t: "Buka https://viggle.ai — daftar." },
       { t: "Pilih 'Mix' (karakter masuk video gerakan) atau 'Animate' (gerakin gambar sendiri)." },
-      { t: "Upload gambar → pilih gerakan → Generate → download." },
+      { t: "Upload gambar → pilih gerakan → Generate (sampai 5/hari gratis) → download." },
       { t: "Sempurnakan hasilnya di Verve (AutoCut, zoom, keterangan)." },
     ],
   }),
@@ -439,6 +457,8 @@ export function katalogKurasi(now = Date.now()): BuruanItem[] {
     ...k,
     // 🐛 v19.35.2: integrasi default — punya baseUrl OpenAI-compatible = api-key, selain itu ui
     integrasi: k.integrasi || (k.baseUrl ? "api-key" : "ui"),
+    // 🛡 v19.35.3: stabilitas default "stabil" (kurasi sudah diverifikasi saat ditulis)
+    stabil: k.stabil || "stabil",
     tags: k.kategori === "gambar-video"
       ? Array.from(new Set([...(k.tags || []), "gambar bergerak", "video ai"]))
       : k.tags,

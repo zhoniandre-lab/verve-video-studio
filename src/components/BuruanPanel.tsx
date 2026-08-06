@@ -6,7 +6,7 @@
    Data dari /api/buruan (kurasi + sinkron repo komunitas).
    ===================================================================== */
 import { useEffect, useMemo, useState } from "react";
-import { KATEGORI, BURUAN_KEY_STATUS, BURUAN_KEY_SEEN, STATUS_LABEL } from "@/lib/buruan/types";
+import { KATEGORI, BURUAN_KEY_STATUS, BURUAN_KEY_SEEN, BURUAN_KEY_LAPOR, STATUS_LABEL, STABIL_LABEL, tandaiLapor, hapusLapor } from "@/lib/buruan/types";
 import type { BuruanItem, KategoriId, StatusBuruan } from "@/lib/buruan/types";
 
 const JENIS_LABEL: Record<string, string> = {
@@ -60,10 +60,17 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
   const [keyIsi, setKeyIsi] = useState("");
   const [modelIsi, setModelIsi] = useState("");
   const [tesInfo, setTesInfo] = useState("");
+  // 🛡 v19.35.3: laporan "sudah tidak gratis" + filter hanya yang terverifikasi
+  const [laporMap, setLaporMap] = useState<Record<string, number>>({});
+  const [hanyaStabil, setHanyaStabil] = useState(true);
 
+  function bacaLapor(): Record<string, number> {
+    try { return JSON.parse(localStorage.getItem(BURUAN_KEY_LAPOR) || "{}"); } catch { return {}; }
+  }
   useEffect(() => {
     setStatusMap(bacaStatus());
     try { setSeen(JSON.parse(localStorage.getItem(BURUAN_KEY_SEEN) || "[]") as string[]); } catch { setSeen([]); }
+    setLaporMap(bacaLapor());
     muat(false);
   }, []);
 
@@ -96,11 +103,13 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
     const qq = q.trim().toLowerCase();
     return items.filter((i) => {
       if (kat && i.kategori !== kat) return false;
+      // 🛡 v19.35.3: sembunyikan yang dilaporkan mati & yang "sering berubah" (default)
+      if (hanyaStabil && (laporMap[i.id] || i.stabil === "ubah")) return false;
       if (!qq) return true;
       const tags = (i.tags || []).join(" ");
       return (i.nama + " " + i.desc + " " + i.gratis + " " + tags).toLowerCase().includes(qq);
     });
-  }, [items, q, kat]);
+  }, [items, q, kat, hanyaStabil, laporMap]);
 
   /* 🎯 Panduan cepat per kebutuhan — pilih "mau bikin apa" → langsung set pencarian */
   const PANDUAN = [
@@ -116,6 +125,18 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
     const next = { ...statusMap, [id]: s };
     setStatusMap(next);
     try { localStorage.setItem(BURUAN_KEY_STATUS, JSON.stringify(next)); } catch {}
+  }
+
+  /* 🛡 v19.35.3: lapor "sudah tidak gratis" / batalkan laporan */
+  function laporMati(id: string) {
+    const next = tandaiLapor(laporMap, id);
+    setLaporMap(next);
+    try { localStorage.setItem(BURUAN_KEY_LAPOR, JSON.stringify(next)); } catch {}
+  }
+  function batalkanLapor(id: string) {
+    const next = hapusLapor(laporMap, id);
+    setLaporMap(next);
+    try { localStorage.setItem(BURUAN_KEY_LAPOR, JSON.stringify(next)); } catch {}
   }
 
   /* 🔑 Simpan ke Dompet Bansos — chat → verve_bansos_chat_v1; video → verve_video_providers_v1 */
@@ -177,6 +198,9 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
             <b style={{ color: "#4ade80", fontSize: 13 }}>{"⭐".repeat(i.mudah)}{"☆".repeat(5 - i.mudah)}</b>
           </div>
           <div className="v6-note" style={{ marginTop: 8, borderColor: "rgba(34,197,94,.4)", color: "#a7f3d0" }}>{intl.badge} · {intl.label}</div>
+          <div className="v6-note" style={{ marginTop: 4, fontSize: 11, borderColor: i.stabil === "ubah" ? "rgba(251,191,36,.5)" : "rgba(34,197,94,.4)", color: i.stabil === "ubah" ? "#fde68a" : "#a7f3d0" }}>
+            {STABIL_LABEL[i.stabil] || STABIL_LABEL.cek}{!!laporMap[i.id] && " · 💀 Dilaporkan pengguna: sudah tidak gratis"}
+          </div>
           <div className="v6-note" style={{ marginTop: 6 }}>🎁 {i.gratis}</div>
           <p style={{ fontSize: 11.5, color: "#cbd5e1", lineHeight: 1.5 }}>{i.desc}</p>
           {i.baseUrl && (
@@ -225,6 +249,9 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
               <button key={s} className={`v6-chip ${st === s ? "on" : ""}`} onClick={() => setStatus(i.id, s)}>{STATUS_LABEL[s]}</button>
             ))}
           </div>
+          {!!laporMap[i.id]
+            ? <button className="v6-chip" style={{ marginTop: 8, borderColor: "rgba(251,191,36,.5)", color: "#fde68a" }} onClick={() => batalkanLapor(i.id)}>↩️ Batalkan laporan (ternyata masih jalan)</button>
+            : <button className="v6-chip" style={{ marginTop: 8, borderColor: "rgba(239,68,68,.5)", color: "#fca5a5" }} onClick={() => laporMati(i.id)}>🚩 Lapor: sudah tidak gratis (biar yang lain nggak kecewa)</button>}
           <p style={{ fontSize: 10, opacity: .6, margin: "8px 0 0" }}>Sumber: {i.sumber} · dicek {new Date(i.dicek).toLocaleString()}</p>
         </div>
       </div>
@@ -265,6 +292,15 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
             <button key={k.id} className={`v6-chip ${kat === k.id ? "on" : ""}`} onClick={() => setKat(k.id)}>{k.emoji} {k.label}</button>
           ))}
         </div>
+        {/* 🛡 v19.35.3: filter — hanya yang terverifikasi masih gratis */}
+        <div className="v6-cardrow" style={{ marginTop: 6, padding: "8px 10px" }} onClick={() => setHanyaStabil(!hanyaStabil)}>
+          <span style={{ fontSize: 16 }}>🛡</span>
+          <div className="tt">
+            <b style={{ fontSize: 12 }}>Hanya yang terverifikasi masih gratis</b>
+            <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Sembunyikan yang ⚠️ sering berubah & 💀 dilaporkan mati (matikan kalau mau lihat semua)</div>
+          </div>
+          <button className={`v6-toggle ${hanyaStabil ? "on" : ""}`} />
+        </div>
         {!!msg && <div className="v6-risk" onClick={() => setMsg("")}>{msg} ✕</div>}
         {!!info && <div className="v6-okbox" style={{ fontSize: 12 }}>{info}</div>}
         {!!sumberOk.length && (
@@ -283,7 +319,11 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                   <b style={{ color: "#fbbf24", fontSize: 11 }}>{"⭐".repeat(i.mudah)}{"☆".repeat(5 - i.mudah)}</b>
-                  {!seen.includes(i.id) && <span style={{ background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>NEW</span>}
+                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    {!!laporMap[i.id] && <span style={{ background: "#7f1d1d", color: "#fecaca", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>💀 Dilaporkan</span>}
+                    {i.stabil === "ubah" && <span title="Kebijakan sering berubah" style={{ fontSize: 10 }}>⚠️</span>}
+                    {!seen.includes(i.id) && <span style={{ background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>NEW</span>}
+                  </div>
                   <span className="arr">›</span>
                 </div>
               </div>

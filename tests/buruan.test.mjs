@@ -31,6 +31,14 @@ T("semua item kurasi punya integrasi valid", kurasi.every((i) => ["api-key", "ap
 T("item chat (api-key) punya keyUrl https — tombol langsung ke halaman API key", kurasi.filter((i) => i.integrasi === "api-key").every((i) => /^https:\/\//.test(i.keyUrl || "")), `${kurasi.filter((i) => i.integrasi === "api-key").length} item api-key`);
 T("provider video UI punya integrasi ui", kurasi.filter((i) => i.id === "hailuo" || i.id === "kling" || i.id === "viggle").every((i) => i.integrasi === "ui"));
 T("ElevenLabs & NVIDIA video = api", kurasi.filter((i) => i.id === "elevenlabs" || i.id === "nvidia-video").every((i) => i.integrasi === "api"));
+/* 🛡 v19.35.3: stabilitas & laporan */
+const { tandaiLapor, hapusLapor, STABIL_LABEL } = await import(enc(transpile("../src/lib/buruan/types.ts")));
+T("semua item punya stabil valid", kurasi.every((i) => ["stabil", "ubah", "cek"].includes(i.stabil)));
+T("Hailuo ditandai 'ubah' (jujur — daily credits pernah dihapus)", kurasi.find((i) => i.id === "hailuo")?.stabil === "ubah");
+T("Seedance (baru) stabil & gratis tanpa watermark", kurasi.find((i) => i.id === "seedance")?.stabil === "stabil" && (kurasi.find((i) => i.id === "seedance")?.gratis || "").includes("TANPA watermark"));
+T("tandaiLapor menambah timestamp", !!tandaiLapor({}, "x")["x"]);
+T("hapusLapor menghapus", !("x" in hapusLapor({ x: 1 }, "x")));
+T("STABIL_LABEL lengkap", STABIL_LABEL.stabil && STABIL_LABEL.ubah && STABIL_LABEL.cek);
 
 /* 2. pisahLink */
 const pl = pisahLink("- [Groq](https://groq.com) - inferensi ngebut");

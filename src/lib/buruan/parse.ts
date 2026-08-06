@@ -270,6 +270,8 @@ export function mentahKeItem(m: Mentah, now = Date.now()): BuruanItem {
     id, nama: m.nama, url: m.url, kategori: m.kategori, gratis: m.gratis, jenis: m.jenis,
     syarat: m.syarat, mudah: m.mudah, desc: m.desc, baseUrl: m.baseUrl,
     integrasi: m.baseUrl ? "api-key" : "ui",
+    // 🛡 v19.35.3: item dari sumber eksternal BELUM diverifikasi → "cek"
+    stabil: "cek",
     tutorial: m.url
       ? [{ t: `Buka situs (tombol di atas) — daftar & klaim gratisnya sesuai petunjuk situs.` }, { t: `Kalau OpenAI-compatible & dapat API key → simpan ke Dompet Bansos Verve.` }]
       : [{ t: `Cari tahu lewat nama "${m.nama}" di mesin pencari — dapatkan tautan resminya.` }],

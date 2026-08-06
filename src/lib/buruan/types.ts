@@ -23,6 +23,12 @@ export type StatusBuruan = "baru" | "coba" | "berhasil" | "mati";
  *  - "ui"      → tool situs (bikin & download di situsnya, lalu import hasilnya ke Verve) */
 export type Integrasi = "api-key" | "api" | "ui";
 
+/** 🛡 v19.35.3: tingkat kepercayaan "gratis"-nya (jujur, bukan klaim).
+ *  - "stabil" → masih dikonfirmasi jalan (daily/monthly refresh) saat ini
+ *  - "ubah"   → kebijakan sering berubah / pernah dihapus (mis. Hailuo daily credits)
+ *  - "cek"    → belum sempat diverifikasi ulang */
+export type TingkatStabil = "stabil" | "ubah" | "cek";
+
 export interface LangkahTutorial {
   /** teks langkah; {LINK} diganti tombol buka situs */
   t: string;
@@ -50,6 +56,8 @@ export interface BuruanItem {
   desc: string;
   /** cara pakai di Verve (api-key / api / ui) */
   integrasi: Integrasi;
+  /** 🛡 tingkat kepercayaan "gratis"-nya (stabil/ubah/cek) */
+  stabil: TingkatStabil;
   /** tautan LANGSUNG ke halaman buat/lihat API key (kalau punya) */
   keyUrl?: string;
   /** kata kunci tambahan buat pencarian (mis. "gambar bergerak", "animasi", "avatar") */
@@ -64,8 +72,27 @@ export interface BuruanItem {
 
 export const BURUAN_KEY_STATUS = "verve_buruan_status_v1";
 export const BURUAN_KEY_SEEN = "verve_buruan_seen_v1";
+export const BURUAN_KEY_LAPOR = "verve_buruan_lapor_v1"; // { id: timestamp } — user lapor "sudah tidak gratis"
 
 /** Nama status untuk badge */
 export const STATUS_LABEL: Record<StatusBuruan, string> = {
   baru: "🆕 Baru", coba: "🔁 Dicoba", berhasil: "✅ Berhasil", mati: "💀 Mati",
 };
+
+/** Label tingkat stabilitas */
+export const STABIL_LABEL: Record<TingkatStabil, string> = {
+  stabil: "✅ Terverifikasi masih gratis",
+  ubah: "⚠️ Sering berubah — cek dulu sebelum daftar",
+  cek: "🔍 Perlu dicek",
+};
+
+/** Murni (diuji di tests/): tandai laporan "sudah tidak gratis" */
+export function tandaiLapor(lapor: Record<string, number>, id: string): Record<string, number> {
+  return { ...lapor, [id]: Date.now() };
+}
+/** Murni (diuji di tests/): batalkan laporan */
+export function hapusLapor(lapor: Record<string, number>, id: string): Record<string, number> {
+  const n = { ...lapor };
+  delete n[id];
+  return n;
+}
