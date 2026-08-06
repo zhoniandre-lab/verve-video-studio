@@ -13,6 +13,9 @@ import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (s
 import { cariKlimaksBuffer, energiPerDetik, hitungPuncak } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
 import { buildAudioChain } from "@/lib/audio-chain"; // 🎚 v19.33: rantai EQ/kompresor shared (live + offline)
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline"; // ⚡ v19.33: mesin render KUAT (WebCodecs, anti-kepotong)
+import { deteksiBeats, bpmDariBeats } from "@/lib/beats"; // 🥁 v19.36: deteksi beat & BPM (bikin speaker & timeline nempel irama)
+import { gambarSpeaker, hitungFeatSpeaker } from "@/lib/speaker"; // 📣 v19.36: speaker reaktif realistis (cone pulse, getar, glow, beat)
+import type { FeatSpeaker } from "@/lib/speaker";
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -39,6 +42,18 @@ const SPEC_STYLES = [
   { id: "wave", label: "🌊 Gelombang", desc: "Garis ombak lembut" },
   { id: "dots", label: "✨ Partikel", desc: "Bintik mengambang" },
   { id: "tunnel", label: "🎢 3D Tunnel", desc: "Terowongan perspektif (v19.15)" },
+  { id: "bars-h", label: "↔ Horizontal", desc: "Bar dari kiri (v19.36)" },
+  { id: "line", label: "➖ Line", desc: "Garis mulus + glow (v19.36)" },
+  { id: "waveform", label: "〰️ Waveform", desc: "Simetris tengah (v19.36)" },
+];
+/** 🧩 v19.36: definisi lapisan (order gambar: bawah → atas) */
+const LAYER_DEFS = [
+  { id: "spektrum", label: "📊 Spectrum" },
+  { id: "speaker", label: "📣 Speaker" },
+  { id: "gambar", label: "🖼️ Multi-gambar" },
+  { id: "logo", label: "📛 Logo & Judul" },
+  { id: "overlay", label: "🌧️ Overlay suasana" },
+  { id: "partikel", label: "✨ Partikel (ember)" },
 ];
 const BG_GRADS = [
   { id: "g0", css: ["#05070f", "#0e7490"], label: "Samudra Malam" },
@@ -105,6 +120,30 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [multiBeat, setMultiBeat] = useState(4); // 🐛 v19.16.1: ganti tiap 4 ketukan (~2.5 dtk) — nggak pusing
   const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
   const [danceZoom, setDanceZoom] = useState(0.03); // 🐛 v19.16.1: amplitudo zoom lebih lembut (0 = mati)
+  // 📣 v19.36 SPEAKER REAKTIF — objek bersuara: cone pulse ikut bass, getar, glow, rotasi, beat ring
+  const [speakerOn, setSpeakerOn] = useState(false);
+  const [speakerTipe, setSpeakerTipe] = useState<"woofer" | "fullrange" | "subwoofer" | "custom">("fullrange");
+  const [speakerSize, setSpeakerSize] = useState(0.34);
+  const [speakerPos, setSpeakerPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  const [speakerWarna, setSpeakerWarna] = useState("#1e293b");
+  const [speakerGlow, setSpeakerGlow] = useState(1);
+  const [speakerGetar, setSpeakerGetar] = useState(0.6);
+  const [speakerRot, setSpeakerRot] = useState(0.4);
+  const [speakerImg, setSpeakerImg] = useState("");
+  const speakerImgRef = useRef<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!speakerImg) { speakerImgRef.current = null; return; }
+    const im = new Image(); im.onload = () => { speakerImgRef.current = im; }; im.src = speakerImg;
+  }, [speakerImg]);
+  // 🧩 v19.36 LAPISAN — visibilitas & transparansi tiap elemen + urutan speaker
+  const [layerVis, setLayerVis] = useState<Record<string, boolean>>({ spektrum: true, speaker: true, gambar: true, logo: true, overlay: true, partikel: true });
+  const [layerOp, setLayerOp] = useState<Record<string, number>>({});
+  const [speakerZ, setSpeakerZ] = useState(1); // 0=belakang spectrum · 1=depan spectrum · 2=paling depan
+  // 🥁 v19.36 BEAT & BPM — dari analisis audio (dipakai speaker & timeline)
+  const [beatsArr, setBeatsArr] = useState<number[]>([]);
+  const [bpmN, setBpmN] = useState(0);
+  const beatsRef = useRef<number[]>([]);
+  const featRef = useRef<{ peaks: number[] } | null>(null);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
   const tempoRef = useRef(0.5); // 🩰 estimasi energi musik 0..1 (untuk gambar "menari")
   // 🎢 v19.15 EFEK 3D TUNNEL
@@ -114,7 +153,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [presetName, setPresetName] = useState("");
   const [presetMsg, setPresetMsg] = useState("");
   const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
-  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" | "speaker" } | null>(null);
   // Layout preset — posisi logo & judul (fraksi)
   const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
     "logo-tengah": { logo: { x: 0.5, y: 0.42 }, titleY: 0.035, titleScale: 1 },
@@ -257,6 +296,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         specStyle, specColor, themeId, bgType, bgGrad, bgColor, bgImg: bgImg.slice(0, 20000),
         overlay, layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
+        // 📣🧩 v19.36: speaker & lapisan ikut tersimpan di preset
+        speakerOn, speakerTipe, speakerSize, speakerPos, speakerWarna, speakerGlow, speakerGetar, speakerRot, speakerZ,
+        layerVis, layerOp,
       };
       const idx = list.findIndex((p: any) => p.nama === nama);
       if (idx >= 0) list[idx] = preset; else list.unshift(preset);
@@ -277,6 +319,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setBarCount(p.barCount || 64); setLogoScale(p.logoScale || 1); setRotSpeed(p.rotSpeed ?? 0.5); setGlowInt(p.glowInt ?? 1);
       setBeatMode(p.beatMode || "denyut"); if (Array.isArray(p.multiImgs)) setMultiImgs(p.multiImgs);
       setTunnelSpeed(p.tunnelSpeed ?? 1); setTunnelDepth(p.tunnelDepth ?? 40);
+      // 📣🧩 v19.36: muat speaker & lapisan dari preset
+      if (p.speakerOn !== undefined) setSpeakerOn(!!p.speakerOn);
+      if (p.speakerTipe) setSpeakerTipe(p.speakerTipe);
+      if (p.speakerSize) setSpeakerSize(p.speakerSize);
+      if (p.speakerPos) setSpeakerPos(p.speakerPos);
+      if (p.speakerWarna) setSpeakerWarna(p.speakerWarna);
+      if (p.speakerGlow !== undefined) setSpeakerGlow(p.speakerGlow);
+      if (p.speakerGetar !== undefined) setSpeakerGetar(p.speakerGetar);
+      if (p.speakerRot !== undefined) setSpeakerRot(p.speakerRot);
+      if (p.speakerZ !== undefined) setSpeakerZ(p.speakerZ);
+      if (p.layerVis) setLayerVis(p.layerVis);
+      if (p.layerOp) setLayerOp(p.layerOp);
       setPresetMsg(`✅ Preset "${nama}" dimuat`);
     } catch { setPresetMsg("⚠️ Gagal muat preset"); }
   }
@@ -352,6 +406,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const k = cariKlimaksBuffer(buf, 30);
       setShortStart(Math.round(k.start * 10) / 10);
       setShortAuto(true);
+      // 🥁 v19.36: analisis BEAT & BPM (dipakai speaker reaktif & timeline beat)
+      const pk = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
+      featRef.current = { peaks: pk };
+      const bt = deteksiBeats(pk, 0.25);
+      beatsRef.current = bt;
+      setBeatsArr(bt);
+      setBpmN(bpmDariBeats(bt));
       // 🔬 v19.33: DIAGNOSTIK — berapa detik yang BENAR-BENAR terbaca browser?
       // File besar tapi durasi pendek = header durasi file rusak → render pasti pendek.
       logDiag(`Audio dimuat: terbaca=${fmtD(buf.duration)} bytes=${raw.byteLength} (${(raw.byteLength / 1048576).toFixed(1)} MB)`);
@@ -532,6 +593,44 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const bars = barsRef.current;
     const [r, g2, b] = rgb;
     const acc = `rgb(${r},${g2},${b})`;
+    // 📣 v19.36: fitur audio untuk SPEAKER — live (dari analyser) atau offline (dari peaks asli)
+    let featS: FeatSpeaker | null = null;
+    if (speakerOn) {
+      if (freq) {
+        let bb = 0, rr = 0;
+        for (let i = 0; i < 8; i++) bb += bars[i];
+        bb /= 8;
+        for (let i = 0; i < N; i++) rr += bars[i];
+        rr /= N;
+        featS = {
+          t, bass: bb, rms: rr,
+          flux: Math.max(0, Math.min(1, Math.abs(bb - lastBassRef.current) * 2)),
+          beat: bb > 0.52 && bb > lastBassRef.current * 1.18 ? 1 : 0,
+          bpm: 60 + Math.round(140 * tempoRef.current),
+        };
+      } else if (featRef.current) {
+        featS = hitungFeatSpeaker(featRef.current.peaks, beatsRef.current, t, 0.25);
+      }
+    }
+    // lapisan speaker (dipanggil sesuai urutan lapisan speakerZ)
+    const gambarSpeakerLapisan = () => {
+      if (!speakerOn || !featS || layerVis.speaker === false) return;
+      ctx.save();
+      ctx.globalAlpha = layerOp.speaker ?? 1;
+      gambarSpeaker(ctx, speakerPos.x * W, speakerPos.y * H, Math.min(W, H) * speakerSize, featS, {
+        tipe: speakerTipe,
+        colorCone: speakerWarna,
+        colorSurround: "#334155",
+        colorFrame: "#0f172a",
+        colorCap: "#64748b",
+        colorGlow: specColor, // ✨ glow ikut warna tema spectrum
+        glow: speakerGlow,
+        vibration: speakerGetar,
+        rotate: speakerRot,
+        img: speakerImgRef.current || undefined,
+      });
+      ctx.restore();
+    };
     if (!dinOnly) {
     // 🎬 v19.12: GLOW BERGERAK di background (ala Trap Nation) — bikin nggak polos
     const gb2 = ctx.createRadialGradient(W / 2 + Math.sin(t * 0.3) * W * 0.15, H * 0.32 + Math.cos(t * 0.4) * H * 0.12, 40, W / 2, H / 2, Math.max(W, H));
@@ -569,6 +668,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!bgOnly) {
     // 🩰 v19.16 MULTI-GAMBAR "MENARI IKUT IRAMA" — zoom & geser halus mengikuti energi musik
     // (cepat saat drum/bass cepat, syahdu saat lambat). Tetap background, spectrum keliatan.
+    // 🧩 v19.36: lapisan — bisa disembunyikan & diatur transparansinya
+    if (layerVis.gambar !== false) {
+    ctx.save(); ctx.globalAlpha = layerOp.gambar ?? 1;
     if (multiImgsRef.current.length >= 1) {
       const tempo = tempoRef.current; // 0..1 (energi musik sekarang) — dipakai buat timing pergantian (bukan goyang)
       const imgs = multiImgsRef.current;
@@ -601,8 +703,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       drawBg(im, 0.5 * fade + 0.5, zoom, swayX);
       ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H); // scrim tipis
     }
+    ctx.restore();
+    } // tutup lapisan gambar
 
     // ---- spectrum styles (🎬 v19.12: upgrade WAH — glow, reflection, gradien 3 warna, center glow) ----
+    if (speakerZ === 0) gambarSpeakerLapisan(); // 📣 speaker di BELAKANG spectrum
+    if (layerVis.spektrum === false) {
+      /* spectrum disembunyikan (lapisan) */
+    } else {
+    ctx.save(); ctx.globalAlpha = layerOp.spektrum ?? 1;
     if (specStyle === "bars") {
       const bw = W / N;
       const baseY = H - 8;
@@ -691,6 +800,78 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.strokeStyle = acc; ctx.globalAlpha = alpha; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
       }
       ctx.restore();
+    } else if (specStyle === "bars-h") { // ↔ v19.36: BAR HORIZONTAL dari kiri
+      const bh = H / N;
+      const gh = ctx.createLinearGradient(0, 0, W, 0);
+      gh.addColorStop(0, acc); gh.addColorStop(1, "#22d3ee");
+      ctx.save();
+      for (let i = 0; i < N; i++) {
+        const v = bars[i];
+        const w = Math.max(4, v * W * 0.55);
+        const y = i * bh + bh * 0.18, hgt = bh * 0.64;
+        ctx.fillStyle = gh;
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(6, y, w, hgt, hgt * 0.4);
+        else ctx.rect(6, y, w, hgt);
+        ctx.fill();
+        // refleksi tipis
+        ctx.globalAlpha = 0.18; ctx.fillStyle = "#fff";
+        ctx.fillRect(6 + w + 3, y + hgt * 0.25, Math.max(2, w * 0.12), hgt * 0.5);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    } else if (specStyle === "line") { // ➖ v19.36: LINE SPECTRUM mulus + glow
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      const baseY = H - 8;
+      for (const [lw, col, al] of [[10, acc, 0.22], [4, "#ffffff", 0.9], [2, acc, 1]] as any[]) {
+        ctx.beginPath();
+        for (let i = 0; i < N; i++) {
+          const x = (i / (N - 1)) * W;
+          const y = baseY - bars[i] * H * 0.42;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = col; ctx.globalAlpha = al; ctx.lineWidth = lw;
+        ctx.lineJoin = "round"; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      // refleksi bawah
+      ctx.globalAlpha = 0.22; ctx.globalCompositeOperation = "source-over";
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const x = (i / (N - 1)) * W;
+        const y = baseY + bars[i] * H * 0.18;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = acc; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    } else if (specStyle === "waveform") { // 〰️ v19.36: WAVEFORM simetris tengah (isi gradien)
+      const cy = H * 0.52;
+      ctx.save();
+      const wf = ctx.createLinearGradient(0, cy - H * 0.3, 0, cy + H * 0.3);
+      wf.addColorStop(0, "rgba(0,0,0,0)");
+      wf.addColorStop(0.5, acc);
+      wf.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = wf;
+      ctx.beginPath();
+      ctx.moveTo(0, cy);
+      for (let x = 0; x <= W; x += 3) {
+        const i = Math.floor((x / W) * (N - 1));
+        const v = bars[i];
+        const amp = v * H * 0.30;
+        const y = cy + Math.sin(x * 0.011 + t * 2.4) * amp * 0.55 + Math.sin(x * 0.027 - t * 3.2) * amp * 0.45;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, cy);
+      for (let x = W; x >= 0; x -= 3) {
+        const i = Math.floor((x / W) * (N - 1));
+        const v = bars[i];
+        const amp = v * H * 0.30;
+        const y = cy + Math.sin(x * 0.011 + t * 2.4) * amp * 0.55 + Math.sin(x * 0.027 - t * 3.2) * amp * 0.45;
+        ctx.lineTo(x, cy - (y - cy) * 0.9);
+      }
+      ctx.closePath(); ctx.fill();
+      // garis tengah
+      ctx.strokeStyle = `rgba(${r},${g2},${b},0.5)`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
+      ctx.restore();
     } else { // dots/partikel
       ctx.save();
       for (let i = 0; i < N; i++) {
@@ -758,6 +939,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
       ctx.restore();
     }
+    ctx.restore();
+    } // tutup lapisan spectrum
+    if (speakerZ === 1) gambarSpeakerLapisan(); // 📣 speaker di DEPAN spectrum (default)
     // 👑 v19.13 PRO PACK: SHOCKWAVE — cincin membesar saat bass naik
     // 🐛 FIX v19.16.1: shockwave/logo/ember DIPINDAHKAN keluar if/else —
     // dulu terjebak di else → saat tunnel dipilih logo tidak muncul.
@@ -779,6 +963,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     // 👑 v19.13/v19.14 PRO PACK: LOGO PUSAT — denyut ikut bass + sinar berputar + ring
     // 🎛️ v19.14: posisi bebas (drag), skala, kecepatan rotasi, mode ikut-beat
+    if (speakerZ === 2) gambarSpeakerLapisan(); // 📣 speaker PALING DEPAN
+    if (layerVis.logo !== false) {
+    ctx.save(); ctx.globalAlpha = layerOp.logo ?? 1;
     const punyaLogo = logoImgRef.current || title.trim() || mTitle.trim();
     if (punyaLogo) {
       const cx = logoPos.x * W, cy = logoPos.y * H;
@@ -841,8 +1028,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         else ctx.fillText(l1, cx, cy);
       }
     }
+    ctx.restore();
+    } // tutup lapisan logo
 
     // 👑 v19.13 PRO PACK: EMBER NAIK — partikel ringan (murah, tanpa shadowBlur)
+    // 🧩 v19.36: lapisan partikel — bisa disembunyikan
+    if (layerVis.partikel !== false) {
+    ctx.save(); ctx.globalAlpha = layerOp.partikel ?? 1;
     if (!embersRef.current.length) {
       for (let i = 0; i < 30; i++) embersRef.current.push({
         x: Math.random() * W, y: H + Math.random() * H * 0.4,
@@ -859,9 +1051,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r + bass * 1.5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
+    ctx.restore();
+    }
 
     // overlay suasana
-    if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
+    if (layerVis.overlay !== false && overlay !== "none") {
+      ctx.save(); ctx.globalAlpha = layerOp.overlay ?? 1;
+      paintEffect(ctx, W, H, overlay, t, true);
+      ctx.restore();
+    }
 
     // 👑 v19.13/v19.14 judul pro + info bar ala video visualizer (TRACK / EFFECT)
     // 🎛️ v19.14: posisi judul bisa di-drag bebas
@@ -1249,6 +1447,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       // garis mulai
       ctx.fillStyle = "#fff";
       ctx.fillRect(x0 - 0.75, 0, 1.5, H);
+      // 🥁 v19.36: MARKER BEAT di sepanjang timeline (garis kecil kuning)
+      ctx.fillStyle = "rgba(250,204,21,.55)";
+      for (const b of beatsArr) {
+        const bx = clampN(b / dur, 0, 1) * W;
+        ctx.fillRect(bx - 0.5, H - 14, 1, 10);
+      }
       // label status
       ctx.font = "800 9px 'Poppins',sans-serif";
       ctx.textAlign = "left"; ctx.textBaseline = "top";
@@ -1257,8 +1461,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.fillStyle = "rgba(255,255,255,.85)";
       ctx.textAlign = "right";
       ctx.fillText(`SHORT ${shortDur} dtk`, W - 6, 6);
+      // 🥁 v19.36: info beat & BPM
+      ctx.fillStyle = "rgba(250,204,21,.9)";
+      ctx.textAlign = "left";
+      ctx.fillText(`🥁 ${beatsArr.length} beat · ${bpmN || "?"} BPM`, 6, H - 13);
     }
-  }, [energiArr, shortStart, shortDur, shortAuto, duration]);
+  }, [energiArr, shortStart, shortDur, shortAuto, duration, beatsArr, bpmN]);
 
   /* ================= UI ================= */
   return (
@@ -1291,7 +1499,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const tol = 0.12; // jarak sentuh yang dianggap "kena"
                 const dLogo = Math.hypot(x - logoPos.x, y - logoPos.y);
                 const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
-                if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
+                const dSpek = speakerOn ? Math.hypot(x - speakerPos.x, y - speakerPos.y) : 9;
+                if (dSpek <= tol && (dSpek <= dLogo && dSpek <= dTitle)) {
+                  dragRef.current = { x, y, target: "speaker" as const };
+                } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
                   dragRef.current = { x, y, target: "logo" as const };
                 } else if (dTitle <= tol && title.trim()) {
                   dragRef.current = { x, y, target: "judul" as const };
@@ -1306,6 +1517,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const x = Math.min(0.95, Math.max(0.05, (e.clientX - r.left) / r.width));
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
                 if (dragRef.current.target === "logo") setLogoPos({ x, y });
+                else if (dragRef.current.target === "speaker") setSpeakerPos({ x, y });
                 else setTitlePos({ x, y });
                 try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ } // 🐛 FIX: tanda user pernah geser manual
               }}
@@ -1369,6 +1581,95 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
               {SPEC_STYLES.map(s => <button key={s.id} className={`v6-chip ${specStyle === s.id ? "on" : ""}`} onClick={() => setSpecStyle(s.id)}>{s.label}</button>)}
             </div>
+            {/* 🧬 v19.36: TEMPLATE CEPAT — satu ketukan langsung pasang kombo */}
+            <div className="v6-lbl">🧬 TEMPLATE CEPAT</div>
+            <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+              <button className="v6-chip" style={{ borderColor: "rgba(34,197,94,.5)", color: "#86efac" }} onClick={() => { setSpecStyle("bars"); setSpeakerOn(true); setSpeakerTipe("fullrange"); setSpeakerZ(1); setSpeakerPos({ x: 0.28, y: 0.42 }); }}>📣 Speaker + Bars</button>
+              <button className="v6-chip" onClick={() => { setSpecStyle("waveform"); setSpeakerOn(false); }}>〰️ Waveform</button>
+              <button className="v6-chip" onClick={() => { setSpecStyle("line"); setSpeakerOn(false); }}>➖ Line</button>
+              <button className="v6-chip" onClick={() => { setSpecStyle("bars-h"); setSpeakerOn(false); }}>↔ Horizontal</button>
+              <button className="v6-chip" onClick={() => { setSpecStyle("tunnel"); setSpeakerOn(false); }}>🎢 Tunnel</button>
+            </div>
+            {/* 📣 v19.36: SPEAKER REAKTIF */}
+            <div className="v6-cardrow" style={{ marginTop: 8 }} onClick={() => setSpeakerOn(!speakerOn)}>
+              <span style={{ fontSize: 18 }}>📣</span>
+              <div className="tt">
+                <b>Speaker reaktif (benar-benar bersuara)</b>
+                <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Cone berdenyut ikut bass · getar fisik · glow ikut pukulan · ring saat beat — bisa digeser & diatur urutannya</div>
+              </div>
+              <button className={`v6-toggle ${speakerOn ? "on" : ""}`} />
+            </div>
+            {speakerOn && (
+              <>
+                <div className="v6-lbl">TIPE SPEAKER</div>
+                <div className="v6-chips" style={{ padding: 0 }}>
+                  {[["fullrange", "🎚 Full-range"], ["woofer", "🔊 Woofer"], ["subwoofer", "🎶 Subwoofer"], ["custom", "🖼 Foto sendiri"]].map(([id, lb]) => (
+                    <button key={id} className={`v6-chip ${speakerTipe === id ? "on" : ""}`} onClick={() => setSpeakerTipe(id as any)}>{lb}</button>
+                  ))}
+                </div>
+                {speakerTipe === "custom" && (
+                  <label className="v6-cardrow">
+                    <span style={{ fontSize: 18 }}>📥</span><div className="tt">{speakerImg ? "✅ Foto speaker dipilih — ganti?" : "Upload foto speaker (PNG transparan paling bagus)"}</div><span className="arr">›</span>
+                    <input type="file" accept="image/*" hidden onChange={e => {
+                      const f = e.target.files?.[0]; if (!f) return;
+                      const rd = new FileReader(); rd.onload = () => setSpeakerImg(rd.result as string); rd.readAsDataURL(f);
+                    }} />
+                  </label>
+                )}
+                <div className="v6-lbl">✋ GESER POSISI SPEAKER (seret di preview)</div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Ukuran</span><b>{Math.round(speakerSize * 100)}%</b></div>
+                  <input type="range" min={0.12} max={0.6} step={0.01} value={speakerSize} onChange={e => setSpeakerSize(Number(e.target.value))} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Glow (ikut pukulan)</span><b>{speakerGlow.toFixed(1)}×</b></div>
+                  <input type="range" min={0} max={2} step={0.1} value={speakerGlow} onChange={e => setSpeakerGlow(Number(e.target.value))} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Getar fisik (ikut suara)</span><b>{Math.round(speakerGetar * 100)}%</b></div>
+                  <input type="range" min={0} max={1} step={0.05} value={speakerGetar} onChange={e => setSpeakerGetar(Number(e.target.value))} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Putar pelan (ikut BPM)</span><b>{Math.round(speakerRot * 100)}%</b></div>
+                  <input type="range" min={0} max={1} step={0.05} value={speakerRot} onChange={e => setSpeakerRot(Number(e.target.value))} />
+                </div>
+                <div className="v6-lbl">WARNA CONE</div>
+                <div className="v6-rows">
+                  {["#1e293b", "#111827", "#312e81", "#7f1d1d", "#064e3b", "#78350f"].map(c => (
+                    <button key={c} className={`v6-swatch ${speakerWarna === c ? "on" : ""}`} style={{ background: c }} onClick={() => setSpeakerWarna(c)} />
+                  ))}
+                  <span className="v6-swatch" style={{ background: "conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)" }}>
+                    <input type="color" value={speakerWarna} onChange={e => setSpeakerWarna(e.target.value)} />
+                  </span>
+                </div>
+              </>
+            )}
+            {/* 🧩 v19.36: LAPISAN */}
+            <div className="v6-lbl">🧩 LAPISAN (mata = tampil/sembunyi · slider = transparansi)</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {LAYER_DEFS.map(l => (
+                <div key={l.id} className="v6-cardrow" style={{ padding: "6px 10px", marginTop: 0, cursor: "default" }}>
+                  <button className="v6-chip" style={{ fontSize: 12 }} onClick={() => setLayerVis(v => ({ ...v, [l.id]: !(v[l.id] ?? true) }))}>
+                    {layerVis[l.id] ?? true ? "👁" : "🚫"}
+                  </button>
+                  <div className="tt" style={{ fontSize: 11 }}>{l.label}</div>
+                  <input type="range" min={0} max={1} step={0.05} value={layerOp[l.id] ?? 1}
+                    onChange={e => setLayerOp(o => ({ ...o, [l.id]: Number(e.target.value) }))}
+                    style={{ width: 90 }} />
+                  <b style={{ fontSize: 10, minWidth: 26, color: "#8b8b98" }}>{Math.round((layerOp[l.id] ?? 1) * 100)}%</b>
+                </div>
+              ))}
+            </div>
+            {speakerOn && (
+              <div className="v6-lbl" style={{ marginTop: 6 }}>📐 URUTAN SPEAKER</div>
+            )}
+            {speakerOn && (
+              <div className="v6-chips" style={{ padding: 0 }}>
+                {[[0, "Belakang spectrum"], [1, "Depan spectrum"], [2, "Paling depan"]].map(([z, lb]) => (
+                  <button key={z} className={`v6-chip ${speakerZ === z ? "on" : ""}`} onClick={() => setSpeakerZ(z as any)}>{lb}</button>
+                ))}
+              </div>
+            )}
             {/* 🎛️ v19.14 KUSTOMISASI PRO — layout, geser, slider, ikut-beat */}
             <div className="v6-lbl">🎛️ ATURAN / LAYOUT</div>
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
