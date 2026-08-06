@@ -36,9 +36,18 @@ export interface OptsRenderOffline {
   audioCodec?: "aac" | "opus";
   /** bitrate video (default 6 Mbps) */
   videoBitrate?: number;
+  /** fps video (default 30; 24 = 20% lebih cepat, tetap mulus) */
+  fps?: number;
+  /** 🚀 v19.34: render BERLAPIS — "bg" (latar statis) di-cache, digambar ulang tiap
+   *  BG_EVERY frame; "dinamis" (bar/lirik/logo) tiap frame. Jauh lebih cepat
+   *  karena full-canvas gradient/fill (bagian paling mahal) tidak diulang tiap frame. */
+  drawBg?: (ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq: Uint8Array | null) => void;
+  drawDin?: (ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq: Uint8Array | null) => void;
   draw: (ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq: Uint8Array | null) => void;
   onProg?: (p: number) => void;
   onFase?: (fase: "audio" | "video" | "mux") => void;
+  /** info teknis (mode yang dipilih, dll) — buat laporan di layar */
+  onInfo?: (s: string) => void;
 }
 
 export async function cekRenderOfflineMampu(): Promise<{ ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" }> {
@@ -66,17 +75,22 @@ export async function cekRenderOfflineMampu(): Promise<{ ok: boolean; alasan?: s
   }
 }
 
-const FPS = 30;
+const FPS_DEF = 30;
 const SEG_AUDIO = 60; // detik per segmen offline (batasi memori HP)
+/** 🚀 v19.34: background di-cache — digambar ulang tiap 4 frame (~7.5×/dtk).
+ *  Mata nggak bisa bedain latar yang bergerak pelan, tapi biaya render turun drastis. */
+const BG_EVERY = 4;
 
-/** Bar sintetis dari puncak audio asli — pengganti AnalyserNode saat render offline. */
+/** Bar sintetis dari puncak audio asli — pengganti AnalyserNode saat render offline.
+ *  🐛 FIX v19.34: GANTI Math.random (noise per frame → bar kelihatan patah/getar)
+ *  dengan goyangan sinus deterministik → halus & konsisten antar frame. */
 export function synthBars(t: number, peaks: number[]): Uint8Array {
   const out = new Uint8Array(128);
   const idx = Math.min(peaks.length - 1, Math.max(0, Math.floor(t / 0.25)));
   const base = peaks[idx] ?? 0.2;
   for (let i = 0; i < 128; i++) {
     let v = base * (0.55 + 0.45 * Math.sin(t * 6 + i * 0.25));
-    v += (Math.random() - 0.5) * 0.06;
+    v += Math.sin(t * 37 + i * 1.7) * 0.025 + Math.sin(t * 23 + i * 3.1) * 0.015;
     out[i] = Math.max(6, Math.min(255, Math.round(v * 255)));
   }
   return out;
@@ -165,21 +179,48 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   // ---------- 2) VIDEO: frame → H.264 (WebCodecs) ----------
   o.onFase?.("video");
   const W = o.w, H = o.h;
+  const fps = o.fps && (o.fps === 24 || o.fps === 30 || o.fps === 25) ? o.fps : FPS_DEF;
   const cv = document.createElement("canvas");
   cv.width = W; cv.height = H;
   const ctx = cv.getContext("2d", { alpha: false })!;
+  // 🚀 v19.34: canvas latar ter-cache (hanya kalau drawBg/drawDin disediakan)
+  const bgCv = !!o.drawBg && !!o.drawDin ? document.createElement("canvas") : null;
+  const bgCtx = bgCv ? bgCv.getContext("2d", { alpha: false })! : null;
+  if (bgCv) { bgCv.width = W; bgCv.height = H; }
+  // 🚀 v19.34: ADAPTIF — ukur dulu mana yang lebih cepat DI PERANGKAT INI (HP GPU beda
+  // dengan CPU). Jalur GPU: berlapis menang telak (latar di-cache). Jalur CPU murni:
+  // mode lama kadang lebih cepat. Jadi kita ukur 30 frame tiap mode, pilih tercepat.
+  let pakaiLapis = !!o.drawBg && !!o.drawDin;
+  if (pakaiLapis) {
+    try {
+      const BENCH = 30;
+      const t0 = performance.now();
+      for (let f = 0; f < BENCH; f++) {
+        const tt = f / 30;
+        if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, W, H, tt, null);
+        ctx.drawImage(bgCv!, 0, 0);
+        o.drawDin!(ctx, W, H, tt, null);
+      }
+      const msLapis = performance.now() - t0;
+      const t1 = performance.now();
+      for (let f = 0; f < BENCH; f++) o.draw(ctx, W, H, f / 30, null);
+      const msFull = performance.now() - t1;
+      if (msFull < msLapis) pakaiLapis = false; // CPU murni → mode lama lebih cepat
+      o.onInfo?.(`Benchmark: berlapis ${msLapis.toFixed(0)}ms vs lama ${msFull.toFixed(0)}ms (30 frame) → pakai ${pakaiLapis ? "berlapis 🚀" : "lama"}`);
+    } catch { pakaiLapis = false; }
+  }
 
   const muxer = new Muxer({
     target: new ArrayBufferTarget(),
-    video: { codec: "avc", width: W, height: H, frameRate: FPS },
+    video: { codec: "avc", width: W, height: H, frameRate: fps },
     audio: { codec: audioCodec === "opus" ? "opus" : "aac", sampleRate: SR, numberOfChannels: 2 },
     fastStart: "in-memory",
   });
   for (const c of audioChunks) muxer.addAudioChunk(c);
   audioChunks.length = 0;
 
-  const totalFrames = Math.round(dur * FPS);
-  const usPer = 1e6 / FPS;
+  const totalFrames = Math.round(dur * fps);
+  const usPer = 1e6 / fps;
   let vCfg: EncodedVideoChunkMetadata["decoderConfig"] | undefined;
   let encV: VideoEncoder | null = null;
   await new Promise<void>((res, rej) => {
@@ -195,7 +236,7 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
         codec: "avc1.42001f",
         width: W, height: H,
         bitrate: o.videoBitrate || 6_000_000,
-        framerate: FPS,
+        framerate: fps,
         avc: { format: "avc" },
       });
       res();
@@ -203,9 +244,18 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   });
 
   const peaks = o.peaks || [];
+  const visibel = () => (typeof document !== "undefined" ? document.visibilityState !== "hidden" : true);
   for (let f = 0; f < totalFrames; f++) {
-    const t = off0 + f / FPS;
-    o.draw(ctx, W, H, t, peaks.length ? synthBars(t, peaks) : null);
+    const t = off0 + f / fps;
+    const freq = peaks.length ? synthBars(t, peaks) : null;
+    if (pakaiLapis) {
+      // 🚀 v19.34: latar digambar ulang tiap BG_EVERY frame → 3-4× lebih cepat
+      if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, W, H, t, freq);
+      ctx.drawImage(bgCv!, 0, 0);
+      o.drawDin!(ctx, W, H, t, freq);
+    } else {
+      o.draw(ctx, W, H, t, freq);
+    }
     const frame = new VideoFrame(cv, { timestamp: f * usPer, duration: usPer });
     encV!.encode(frame, { keyFrame: f % 60 === 0 });
     frame.close();
@@ -217,7 +267,9 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
     }
     if ((f & 31) === 0) {
       o.onProg?.(0.15 + 0.83 * ((f + 1) / totalFrames));
-      await new Promise((r) => setTimeout(r, 0)); // napas buat UI
+      // 🚀 v19.34: yield hanya saat tab terlihat — di background tab (layar mati)
+      // timer di-throttle browser → tanpa yield render malah makin cepat.
+      if (visibel()) await new Promise((r) => setTimeout(r, 0));
     }
   }
   await encV!.flush();

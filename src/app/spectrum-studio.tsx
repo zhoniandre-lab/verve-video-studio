@@ -204,6 +204,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const diagRef = useRef<{ t: string; s: string }[]>([]);
   const [renderFase, setRenderFase] = useState<"audio" | "video" | "mux" | "">("");
   const [pakaiMode, setPakaiMode] = useState<"" | "offline" | "realtime">("");
+  /* 🚀 v19.34: kecepatan render — fps bisa 24 (20% lebih cepat) & estimasi waktu diukur asli */
+  const [fpsOpt, setFpsOpt] = useState<24 | 25 | 30>(30);
+  const [estSisa, setEstSisa] = useState("");
   function logDiag(s: string) {
     const row = { t: new Date().toISOString().slice(11, 19), s };
     diagRef.current = [...diagRef.current.slice(-60), row];
@@ -474,7 +477,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
   }
 
-  const drawScene = useCallback((ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq?: Uint8Array | null) => {
+  const drawScene = useCallback((ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq?: Uint8Array | null, lapis?: "semua" | "bg" | "dinamis") => {
+    // 🚀 v19.34: render BERLAPIS — "bg" (latar: gradient/glow/bintang — di-cache, murah)
+    // vs "dinamis" (bar/lirik/logo — tiap frame). Preview tetap "semua" = identik seperti dulu.
+    const bgOnly = lapis === "bg";
+    const dinOnly = lapis === "dinamis";
+    if (!dinOnly) {
     // background
     if (bgType === "img" && bgImgRef.current) {
       const im = bgImgRef.current, ir = im.naturalWidth / im.naturalHeight, cr = W / H;
@@ -494,6 +502,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.28)");
     ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    }
 
     // bars dari analyser atau dummy berdenyut
     const N = barCount; // 🎛️ v19.14: jumlah bar bisa diatur
@@ -523,6 +532,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const bars = barsRef.current;
     const [r, g2, b] = rgb;
     const acc = `rgb(${r},${g2},${b})`;
+    if (!dinOnly) {
     // 🎬 v19.12: GLOW BERGERAK di background (ala Trap Nation) — bikin nggak polos
     const gb2 = ctx.createRadialGradient(W / 2 + Math.sin(t * 0.3) * W * 0.15, H * 0.32 + Math.cos(t * 0.4) * H * 0.12, 40, W / 2, H / 2, Math.max(W, H));
     gb2.addColorStop(0, `rgba(${r},${g2},${b},${((0.10 + bass * 0.16) * glowInt).toFixed(3)})`);
@@ -554,7 +564,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
+    }
 
+    if (!bgOnly) {
     // 🩰 v19.16 MULTI-GAMBAR "MENARI IKUT IRAMA" — zoom & geser halus mengikuti energi musik
     // (cepat saat drum/bass cepat, syahdu saat lambat). Tetap background, spectrum keliatan.
     if (multiImgsRef.current.length >= 1) {
@@ -878,14 +890,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (lirikOn && capWords.length) {
       paintPreviewCaptions(ctx, W, H, capWords, t, tpl.capStyle, { yRatio: 0.8, sizeRatio: 0.05 });
     }
+    }
 
     // badge loop mulus
+    if (!dinOnly) {
     if (seamless) {
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.fillRect(W - H * 0.2 - 8, 8, H * 0.2, H * 0.045);
       ctx.fillStyle = "#9ff5ef"; ctx.font = `700 ${Math.round(H * 0.022)}px 'Poppins',sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("∞ loop mulus", W - H * 0.1 - 8, 8 + H * 0.023);
+    }
     }
   }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless,
     barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
@@ -988,7 +1003,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
      offset = detik mulai audio; dur = durasi video.
      Untuk SHORT: layout canvas 9:16 native (608×1080) → tampilan UTUH, nggak ada kepotong,
      dan waktu visual = offset + waktu lokal → lirik & denyut sinkron dengan audio. */
-  async function renderSatu(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void }): Promise<Blob> {
+  async function renderSatu(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void; fps?: number }): Promise<Blob> {
     await ensureFontsLoaded().catch(() => {});
     await mintaWakeLock(); // 🛡 layar dijaga nyala — wajib untuk render panjang di HP
     const W = opts.w, H = opts.h;
@@ -1007,7 +1022,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const d = Math.max(0.5, Math.min(opts.dur, bufRef.current!.duration - o));
     src.connect(fades ? fadeGain(actx, input, d) : input);
 
-    const vstream = (cv as any).captureStream(30);
+    const vstream = (cv as any).captureStream(opts.fps || 30);
     const stream = new MediaStream([...vstream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
     const mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm"].find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } }) || "";
     const mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : undefined);
@@ -1068,17 +1083,25 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   /* ⚡ v19.33: render KUAT (offline WebCodecs) — anti-kepotong.
      Bar sintetis dari puncak audio ASLI (bukan AnalyserNode) — visual tetap
-     ikut energi musik, tapi prosesnya murni komputasi (tahan layar mati). */
+     ikut energi musik, tapi prosesnya murni komputasi (tahan layar mati).
+     🚀 v19.34: BERLAPIS — latar di-cache (drawBg tiap 4 frame), bar/lirik tiap frame (drawDin). */
   async function renderOffline(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void; audioCodec?: "aac" | "opus" }): Promise<Blob> {
     await ensureFontsLoaded().catch(() => {});
     const buf = bufRef.current!;
     const peaks = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
+    // 🚀 v19.34: bitrate otomatis — video panjang pakai bitrate sedikit lebih rendah
+    // (tetap tajam di HP/YouTube, tapi file & memori jauh lebih ringan)
+    const vbr = opts.dur > 40 * 60 ? 3_500_000 : opts.dur > 10 * 60 ? 4_500_000 : 6_000_000;
+    logDiag(`Render offline ${opts.w}×${opts.h} · ${fpsOpt}fps · ${(vbr / 1e6).toFixed(1)} Mbps · lapis=${true}`);
     return renderOfflineVideo({
       buf, w: opts.w, h: opts.h, offset: opts.offset, dur: opts.dur,
-      eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec,
+      eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec, fps: fpsOpt, videoBitrate: vbr,
+      drawBg: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "bg"),
+      drawDin: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "dinamis"),
       draw: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq),
       onProg: opts.onProg,
       onFase: (f) => setRenderFase(f),
+      onInfo: (s) => logDiag(s),
     });
   }
 
@@ -1092,28 +1115,39 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setPakaiMode(pakai);
     logDiag(`Mode render: ${pakai} (${mampu.alasan || `WebCodecs H.264 + ${mampu.audioCodec}`}) | buffer=${fmtD(bufRef.current.duration)} target=${fmtD(total)} dual=${dualRender}`);
     // 🛡 v19.32.1: peringatan sebelum render panjang — biar user tahu & jaga layar
+    // 🚀 v19.34: mode KUAT jauh lebih cepat dari realtime — estimasi diukur otomatis
     if (total > 600) {
-      setRenderNote(`⚠️ Musik ${fmtD(total)} — render butuh waktu ±${Math.round(total / 60)} menit REAL TIME. Layar akan dijaga otomatis menyala (Wake Lock). Jangan kunci HP / pindah tab / tutup aplikasi sampai selesai.`);
+      setRenderNote(`🎬 Musik ${fmtD(total)} (~${Math.round(total / 60)} menit). Mode KUAT: render jauh lebih cepat dari realtime — estimasi muncul di layar. Untuk lebih cepat lagi bisa pilih 24 fps di atas. Boleh tinggalin HP (layar mati render tetap lanjut), tapi biarkan tab terbuka.`);
     } else if (total > 120) {
-      setRenderNote("⏳ Render jalan realtime — biarkan tab ini terbuka & layar menyala sampai selesai.");
+      setRenderNote("⏳ Mode KUAT: render lebih cepat dari realtime — estimasi muncul di layar. Boleh tinggalin HP, biarkan tab terbuka.");
     } else {
       setRenderNote("");
     }
     setRendering(true); setProgress(0); setErr("");
     setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setVideoBlob(null);
     setShortUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setShortBlob(null);
+    // 🚀 v19.34: estimasi waktu & kecepatan DIUKUR dari render yang sedang berjalan (bukan tebakan)
+    const tMulai = Date.now();
+    const buatEst = (p: number, target: number) => {
+      const el = (Date.now() - tMulai) / 1000;
+      if (p > 0.03 && el > 3) {
+        const sisa = (el / p) * (1 - p);
+        const kecepatan = el / Math.max(0.001, p * target);
+        setEstSisa(`⏱ Estimasi selesai ±${fmtD(Math.round(sisa))} · ${kecepatan.toFixed(1)}× lebih cepat dari realtime`);
+      }
+    };
     try {
       // 🎬 v19.32 DUAL RENDER: video 1 = LONG (rasio dipilih), video 2 = SHORT 9:16 native dari bagian paling seru
       setPhase("long");
       let longBlob: Blob;
       try {
         longBlob = pakai === "offline"
-          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => setProgress(dualRender ? p * 0.62 : p) })
-          : await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, onProg: p => setProgress(dualRender ? p * 0.62 : p) });
+          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => { setProgress(dualRender ? p * 0.62 : p); buatEst(p, total); } })
+          : await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => { setProgress(dualRender ? p * 0.62 : p); buatEst(p, total); } });
       } catch (e: any) {
         if (pakai === "offline") {
           logDiag(`Mode offline gagal (${e?.message || e}) → fallback realtime`);
-          longBlob = await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, onProg: p => setProgress(dualRender ? p * 0.62 : p) });
+          longBlob = await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => { setProgress(dualRender ? p * 0.62 : p); buatEst(p, total); } });
         } else throw e;
       }
       setVideoBlob(longBlob);
@@ -1133,12 +1167,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         let shortBlob: Blob;
         try {
           shortBlob = pakai === "offline"
-            ? await renderOffline({ w: 608, h: 1080, offset: o, dur: d, audioCodec: mampu.audioCodec, onProg: p => setProgress(0.62 + p * 0.38) })
-            : await renderSatu({ w: 608, h: 1080, offset: o, dur: d, onProg: p => setProgress(0.62 + p * 0.38) });
+            ? await renderOffline({ w: 608, h: 1080, offset: o, dur: d, audioCodec: mampu.audioCodec, onProg: p => { setProgress(0.62 + p * 0.38); buatEst(p, d); } })
+            : await renderSatu({ w: 608, h: 1080, offset: o, dur: d, fps: fpsOpt, onProg: p => { setProgress(0.62 + p * 0.38); buatEst(p, d); } });
         } catch (e: any) {
           if (pakai === "offline") {
             logDiag(`Mode offline short gagal (${e?.message || e}) → fallback realtime`);
-            shortBlob = await renderSatu({ w: 608, h: 1080, offset: o, dur: d, onProg: p => setProgress(0.62 + p * 0.38) });
+            shortBlob = await renderSatu({ w: 608, h: 1080, offset: o, dur: d, fps: fpsOpt, onProg: p => { setProgress(0.62 + p * 0.38); buatEst(p, d); } });
           } else throw e;
         }
         setShortBlob(shortBlob);
@@ -1152,7 +1186,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setPhase("idle");
       setRenderFase("");
       setProgress(1);
-    } catch (e: any) { setErr(e?.message || "Render gagal"); }
+      setEstSisa("");
+    } catch (e: any) { setErr(e?.message || "Render gagal"); setEstSisa(""); }
     lepasWakeLock(); // 🛡 layar boleh mati lagi setelah selesai
     setRendering(false);
   }
@@ -1663,9 +1698,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
             {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
             {!!renderNote && <div className="v6-note" style={{ borderColor: "rgba(251,191,36,.4)", color: "#fde68a" }}>{renderNote}</div>}
-            <div className="v6-note" style={{ borderColor: "rgba(34,197,94,.35)", color: "#a7f3d0", fontSize: 11 }}>
-              ⚡ Mode render: {pakaiMode === "offline" ? "KUAT (offline WebCodecs) — tahan layar mati, durasi presisi" : pakaiMode === "realtime" ? "real-time (MediaRecorder) — layar wajib menyala" : "otomatis dipilih saat render"}
+            <div className="v6-lbl">⚡ KECEPATAN RENDER</div>
+            <div className="v6-chips" style={{ padding: 0 }}>
+              {[[30, "30 fps · paling halus"], [24, "24 fps · 20% lebih cepat"]].map(([f, lb]) => (
+                <button key={f} className={`v6-chip ${fpsOpt === f ? "on" : ""}`} onClick={() => setFpsOpt(f as any)}>{lb}</button>
+              ))}
             </div>
+            <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>24 fps tetap mulus untuk visualizer & dipakai banyak channel besar — video panjang jadi jauh lebih cepat.</p>
+            <div className="v6-note" style={{ borderColor: "rgba(34,197,94,.35)", color: "#a7f3d0", fontSize: 11 }}>
+              ⚡ Mode render: {pakaiMode === "offline" ? "KUAT (offline WebCodecs) — tahan layar mati, durasi presisi, render jauh lebih cepat dari realtime" : pakaiMode === "realtime" ? "real-time (MediaRecorder) — layar wajib menyala" : "otomatis dipilih saat render"}
+            </div>
+            {!!estSisa && <div className="v6-okbox" style={{ fontSize: 12 }}>{estSisa}</div>}
             <button className="v6-bigcta" onClick={render} disabled={rendering || !audioUrl}>
               {rendering
                 ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${renderFase ? `(${renderFase === "audio" ? "audio" : renderFase === "video" ? "gambar" : "gabung"}) ` : ""}${Math.round(progress * 100)}%`
