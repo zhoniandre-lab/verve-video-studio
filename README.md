@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎨 v19.30 — BUANG TOMBOL LAMA + STYLE LAGU BEBAS DI SUNO PANEL
+* **Masalah (screenshot user):** ada DUA tombol buat lagu di Spectrum — yang atas ("✨ Buat Lagu AI") mubazir & error; di panel Suno belum ada input style bebas.
+* **Perbaikan:**
+  1. **Buang blok lama "ATAU BUAT DENGAN AI 🎵"** + fungsi `genSuno`/`poll` + state `mTask`/`mStatus` (yang error & mubazir) — sekarang cuma SATU jalan: 🎵 Buka Generate Lagu (Suno).
+  2. **🎨 STYLE LAGU (bebas)** di SunoPanel: textarea besar "tulis style apa saja" (Inggris/Indonesia) + contoh placeholder — dikirim ke Suno sebagai prompt style.
+  3. Pulihkan fungsi `render` yang tak sengaja ikut terhapus saat buang genSuno.
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### 🎵 v19.29 — GENERATE LAGU (SUNO) DI SPECTRUM STUDIO (sama persis seperti di Lahan)
 * **Permintaan user:** tambah tombol generate lagu di menu Spectrum, tampilan lengkap sama persis dengan fitur generate lagu di Lahan.
 * **Yang dibuat:**

@@ -69,8 +69,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [mGenre, setMGenre] = useState("pop ballad");
   const [mMood, setMMood] = useState("emotional, dreamy");
   const [mBusy, setMBusy] = useState(false);
-  const [mTask, setMTask] = useState("");
-  const [mStatus, setMStatus] = useState("");
   /* visual */
   const [ratio, setRatio] = useState<"16:9" | "9:16">("16:9");
   const [bgType, setBgType] = useState<"grad" | "color" | "img">("grad");
@@ -914,53 +912,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setTimeout(() => { if (shorts) { stopPlayback(); } }, Math.min(bufRef.current.duration, shorts ? 60 : bufRef.current.duration) * 1000 + 200);
   }
 
-  /* ---------- SUNO mini ---------- */
-  async function genSuno() {
-    const titleS = mTitle.trim() || "Spectrum Beat";
-    const lyr = mLyrics.trim();
-    setMBusy(true); setMStatus("memulai..."); setErr("");
-    try {
-      const key = localStorage.getItem("verve_suno_key") || "";
-      const prov = localStorage.getItem("verve_suno_provider") || "kie";
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (key) { headers["X-Suno-Key"] = key; headers["X-Suno-Provider"] = prov; }
-      const r = await fetch("/api/hcnsec/music", {
-        method: "POST", headers,
-        body: JSON.stringify({
-          title: titleS.slice(0, 80), prompt: [mGenre, mMood, "instrumental focus"].join(", "),
-          lyrics: lyr.length > 20 ? lyr : undefined, custom: lyr.length > 30,
-          genre: mGenre, tags: [mGenre, mMood].join(", "), model: "suno-v4",
-          instrumental: lyr.length <= 20, _raw_title: titleS,
-        }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok || d.error) throw new Error(d.error || d.message || `Error ${r.status}`);
-      const id = d.taskId || d.task_id || d.id;
-      if (!id) throw new Error("Server tidak memberi taskId");
-      setMTask(id); setMStatus("pending");
-      poll(id, headers);
-    } catch (e: any) { setErr(e.message); setMStatus("gagal"); }
-    setMBusy(false);
-  }
-  async function poll(id: string, headers: Record<string, string>) {
-    let tries = 0;
-    const itv = setInterval(async () => {
-      tries++;
-      try {
-        const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers, cache: "no-store" });
-        const pd = await pr.json().catch(() => ({}));
-        const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
-        if (url) {
-          clearInterval(itv); setMStatus("selesai"); setMTask("");
-          loadAudio(url, mTitle || "Lagu AI");
-        } else if (pd.status === "error" || pd.error) {
-          clearInterval(itv); setMStatus("gagal"); setErr(pd.error || "Gagal");
-        } else if (tries > 45) { clearInterval(itv); setMStatus("pending"); }
-      } catch { if (tries > 45) clearInterval(itv); }
-    }, 8000);
-  }
-
-  /* ---------- RENDER ---------- */
   async function render() {
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     stopPlayback();
@@ -1119,18 +1070,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 loadAudio(URL.createObjectURL(f), f.name.replace(/\.[^.]+$/, "").slice(0, 40));
               }} />
             </label>
-            <div className="v6-lbl" style={{ marginTop: 16 }}>ATAU BUAT DENGAN AI 🎵</div>
-            <input className="v6-inp" placeholder="Judul lagu (cth: Hujan di Jendela)" value={mTitle} onChange={e => setMTitle(e.target.value)} />
-            <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
-              {["lofi", "akustik", "piano", "cinematic", "edm", "pop ballad", "ambient"].map(g => (
-                <button key={g} className={`v6-chip ${mGenre === g ? "on" : ""}`} onClick={() => setMGenre(g)}>{g}</button>
-              ))}
-            </div>
-            <input className="v6-inp" style={{ marginTop: 6 }} placeholder="Suasana (cth: santai, hujan, fokus)" value={mMood} onChange={e => setMMood(e.target.value)} />
-            <textarea className="v6-inp v6-ta" style={{ minHeight: 70, marginTop: 6 }} placeholder="Lirik (opsional — kosongkan untuk instrumen). Kalau diisi, auto lirik karaoke nanti mengambil dari sini juga ✨"
-              value={mLyrics} onChange={e => { setMLyrics(e.target.value); if (!lyricsText) setLyricsText(e.target.value); }} />
-            <button className="v6-bigcta" onClick={genSuno} disabled={mBusy}>{mBusy ? "⏳…" : "✨ Buat lagu AI"}</button>
-            {mStatus && <div className={mStatus === "selesai" ? "v6-okbox" : "v6-risk"}>{mStatus === "selesai" ? "✅ Lagu siap & langsung terpasang!" : mStatus === "gagal" ? "❌ Gagal, coba lagi." : "⏳ Sedang diolah server (1–6 menit), polling jalan otomatis."}</div>}
             {audioUrl && <button className="v6-bigcta" style={{ background: "#22c55e" }} onClick={() => setStep(1)}>Lanjut: Visual ›</button>}
 
             {/* 🎵 v19.29: GENERATE LAGU — panel sama persis dengan di Lahan */}

@@ -304,7 +304,9 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
 
       <div className="lh-h2" style={{ marginTop: 10 }}>📝 Lirik {vocal !== "instrumental" && <button className="lh-mini" onClick={genLyrics} disabled={busy === "lyrics"}>{busy === "lyrics" ? "⏳…" : "✨ Generate lirik AI"}</button>}</div>
       <textarea className="lh-ta" rows={5} placeholder={vocal === "instrumental" ? "Instrumental — tanpa lirik" : "Lirik lagu… (min 30 karakter) — bisa di-generate otomatis"} value={lyrics} onChange={(e) => setLyrics(e.target.value)} />
-      <input className="lh-in" style={{ marginTop: 6 }} placeholder="Style manual (opsional) — kosongkan = pakai genre+mood" value={mStyle} onChange={(e) => setMStyle(e.target.value)} />
+      <div className="lh-h2" style={{ marginTop: 10 }}>🎨 STYLE LAGU (bebas — tulis apa saja)</div>
+      <textarea className="lh-ta" rows={2} placeholder="Contoh: epic orchestral, female vocal, dramatic build-up, emotional piano&#10;Atau: orkestra megah, vokal wanita, piano sendu, sedih mengharu" value={mStyle} onChange={(e) => setMStyle(e.target.value)} />
+      <p className="lh-note" style={{ marginTop: 4 }}>Kosongkan = pakai genre + mood di atas. Style ini yang dikirim ke Suno (bebas bahasa Inggris/Indonesia).</p>
 
       {!!err && <p className="lh-note" style={{ color: "#e85c5c", marginTop: 8 }}>⚠️ {err}</p>}
       {!!pollMsg && <p className="lh-note" style={{ color: "#6ee7b7", marginTop: 6 }}>{pollMsg}</p>}
