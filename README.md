@@ -17,6 +17,13 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### ↩️ v19.28 — ROLLBACK SPEKTRUM KE v19.24 (buang semua tambahan baru)
+* **Keputusan user:** hasil spektrum setelah update v19.25/26/27 "jelek sekali" — user lebih suka yang AWAL (v19.24). Semua tambahan spektrum baru (style Aurora/Galaxy/NeonRing/Hologram, gradient cache/sprite, posisi spektrum, mode bersih, pinch zoom) DI-BUANG.
+* **Yang dikembalikan:** spectrum-studio.tsx persis v19.24 (sebelum utak-atik spektrum dimulai) — kualitas & tampilan seperti yang user suka.
+* Catatan: fitur non-spektrum (niche, narasi TTS, label netral, device-scope) TIDAK terpengaruh.
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### 🔄 v19.27 — ROLLBACK VISUAL (kembalikan kualitas) + POSISI SPEKTRUM SEMUA STYLE + PINCH
 * **Masalah (feedback user):** update v19.26 bikin kualitas "lebih burik/jelek" (translate per-style bikin sebagian style aneh); mau kembalikan tampilan sebelumnya; spektrum harus bisa digeser/cubit ke mana aja (SEMUA style); logo pinch zoom sudah bagus — pertahankan.
 * **Solusi:**
