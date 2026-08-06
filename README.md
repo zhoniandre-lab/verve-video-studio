@@ -17,6 +17,15 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎵 v19.29 — GENERATE LAGU (SUNO) DI SPECTRUM STUDIO (sama persis seperti di Lahan)
+* **Permintaan user:** tambah tombol generate lagu di menu Spectrum, tampilan lengkap sama persis dengan fitur generate lagu di Lahan.
+* **Yang dibuat:**
+  1. **`src/components/SunoPanel.tsx`** — panel mandiri yang port PERSIS dari Lahan: provider (Kie/apiframe/Sunor/aimusic), API key multi-kunci + rotasi otomatis, cek kredit, model v3.5–v5.5, genre & mood, era/tempo/instrumen, vokal, generate lirik AI (`/api/hcnsec/lyrics`), generate lagu (`/api/hcnsec/music`) + polling cerdas. Hasil dikirim via callback.
+  2. **Spectrum Studio step 1 (Musik)**: bagian baru "🎵 ATAU GENERATE LAGU (Suno) — SAMA SEPERTI DI LAHAN" — input judul + tombol buka panel; hasil lagu LANGSUNG jadi audio visualizer (`onSunoSong` → loadAudio), langsung bisa lanjut Visual/Lirik/Ekspor.
+* Catatan: Lahan TIDAK disentuh (komponen baru terpisah) — fitur Lahan tetap utuh.
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### ↩️ v19.28 — ROLLBACK SPEKTRUM KE v19.24 (buang semua tambahan baru)
 * **Keputusan user:** hasil spektrum setelah update v19.25/26/27 "jelek sekali" — user lebih suka yang AWAL (v19.24). Semua tambahan spektrum baru (style Aurora/Galaxy/NeonRing/Hologram, gradient cache/sprite, posisi spektrum, mode bersih, pinch zoom) DI-BUANG.
 * **Yang dikembalikan:** spectrum-studio.tsx persis v19.24 (sebelum utak-atik spektrum dimulai) — kualitas & tampilan seperti yang user suka.

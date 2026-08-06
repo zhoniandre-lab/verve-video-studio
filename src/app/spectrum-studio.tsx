@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { paintEffect, paintPreviewCaptions, CC_TEMPLATES, ensureFontsLoaded } from "@/lib/editing";
 import type { CapWord } from "@/lib/editing";
 import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
+import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -58,6 +59,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState(0);
   /* musik */
   const [audioUrl, setAudioUrl] = useState("");
+  // 🎵 v19.29: panel generate lagu (Suno) — sama persis dengan di Lahan
+  const [showSuno, setShowSuno] = useState(false);
+  const [sunoTitle, setSunoTitle] = useState("");
   const [audioName, setAudioName] = useState("");
   const [duration, setDuration] = useState(0);
   const [mTitle, setMTitle] = useState("");
@@ -285,6 +289,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   }, [lirikOn, lyricsText, duration, lyrAuto]);
 
   /* ---------- decode audio sekali ---------- */
+  /* 🎵 v19.29: hasil generate lagu → langsung jadi audio visualizer */
+  function onSunoSong(url: string, title: string, duration?: number) {
+    setSunoTitle(title);
+    void loadAudio(url, title);
+    if (duration) setDuration(duration);
+  }
+
   async function loadAudio(url: string, name: string) {
     setErr(""); setMBusy(true);
     try {
@@ -1121,6 +1132,21 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <button className="v6-bigcta" onClick={genSuno} disabled={mBusy}>{mBusy ? "⏳…" : "✨ Buat lagu AI"}</button>
             {mStatus && <div className={mStatus === "selesai" ? "v6-okbox" : "v6-risk"}>{mStatus === "selesai" ? "✅ Lagu siap & langsung terpasang!" : mStatus === "gagal" ? "❌ Gagal, coba lagi." : "⏳ Sedang diolah server (1–6 menit), polling jalan otomatis."}</div>}
             {audioUrl && <button className="v6-bigcta" style={{ background: "#22c55e" }} onClick={() => setStep(1)}>Lanjut: Visual ›</button>}
+
+            {/* 🎵 v19.29: GENERATE LAGU — panel sama persis dengan di Lahan */}
+            <div className="v6-lbl" style={{ marginTop: 14 }}>🎵 ATAU GENERATE LAGU (Suno) — SAMA SEPERTI DI LAHAN</div>
+            <input className="v6-inp" placeholder="Judul lagu untuk generate (cth: Rindu Ibu)" value={sunoTitle} onChange={(e) => setSunoTitle(e.target.value)} />
+            <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#8b5cf6,#d946ef)", marginTop: 6 }} onClick={() => setShowSuno(!showSuno)}>
+              {showSuno ? "Tutup Panel Lagu ▴" : "🎵 Buka Generate Lagu (Suno)"}
+            </button>
+            {showSuno && (
+              <SunoPanel
+                defaultTitle={sunoTitle || mTitle || audioName || ""}
+                defaultLyrics={mLyrics}
+                onSong={onSunoSong}
+                onClose={() => setShowSuno(false)}
+              />
+            )}
           </>
         )}
 
