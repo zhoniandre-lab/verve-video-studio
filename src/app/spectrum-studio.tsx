@@ -191,6 +191,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [shortBlob, setShortBlob] = useState<Blob | null>(null);
   const [phase, setPhase] = useState<"idle" | "long" | "short">("idle"); // fase render (biar tombol jujur)
   const miniRef = useRef<HTMLCanvasElement | null>(null);
+  /* 🛡 v19.32.1: Wake Lock — jaga layar tetap nyala selama render panjang.
+     Akar masalah "video cuma 54 dtk": layar mati/kunci HP/tab pindah → browser
+     menghentikan audio & rAF → MediaRecorder berhenti → hasil terpotong. */
+  const [renderNote, setRenderNote] = useState(""); // pesan panduan sebelum/saat render
 
   const cvRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -951,12 +955,41 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setTimeout(() => { stopPlayback(); }, d * 1000 + 250);
   }
 
+  /* 🛡 v19.32.1: Wake Lock — minta layar tetap nyala selama render (dilepas otomatis di akhir) */
+  const wakeLockRef = useRef<any>(null);
+  async function mintaWakeLock() {
+    try {
+      const nav = navigator as any;
+      if (!nav.wakeLock?.request) return false;
+      wakeLockRef.current = await nav.wakeLock.request("screen");
+      return true;
+    } catch { return false; }
+  }
+  function lepasWakeLock() {
+    try { wakeLockRef.current?.release?.(); } catch {}
+    wakeLockRef.current = null;
+  }
+
+  /* 🛡 v19.32.1: ukur durasi asli hasil render — deteksi video kepotong */
+  function ukurDurasiBlob(blob: Blob): Promise<number> {
+    return new Promise((res) => {
+      let done = false;
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.onloadedmetadata = () => { if (!done) { done = true; res(v.duration); } };
+      v.onerror = () => { if (!done) { done = true; res(-1); } };
+      v.src = URL.createObjectURL(blob);
+      setTimeout(() => { if (!done) { done = true; res(-1); } }, 8000);
+    });
+  }
+
   /* 🎬 v19.32: satu sesi render (dipakai untuk Long ATAU Short).
      offset = detik mulai audio; dur = durasi video.
      Untuk SHORT: layout canvas 9:16 native (608×1080) → tampilan UTUH, nggak ada kepotong,
      dan waktu visual = offset + waktu lokal → lirik & denyut sinkron dengan audio. */
   async function renderSatu(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void }): Promise<Blob> {
     await ensureFontsLoaded().catch(() => {});
+    await mintaWakeLock(); // 🛡 layar dijaga nyala — wajib untuk render panjang di HP
     const W = opts.w, H = opts.h;
     const cv = document.createElement("canvas");
     cv.width = W; cv.height = H;
@@ -989,22 +1022,43 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     mr.start(350);
     src.start(0, o, d);
     await actx.resume().catch(() => {});
+    // 🛡 v19.32.1: untuk SHORT (render ke-2 tanpa sentuhan user) browser strict bisa menolak
+    // audio (autoplay policy) → deteksi & kasih error jelas, bukan hang/terpotong.
+    await new Promise(r => setTimeout(r, 700));
+    if (actx.state !== "running") {
+      await actx.resume().catch(() => {});
+      await new Promise(r => setTimeout(r, 500));
+    }
+    if (actx.state !== "running") {
+      try { mr.stop(); } catch {}
+      lepasWakeLock();
+      throw new Error("Browser menolak audio otomatis. Sentuh layar dulu, lalu render lagi.");
+    }
 
-    // gambar frame via rAF selama audio jalan
+    // gambar frame: rAF normal + interval CADANGAN (🛡 rAF bisa berhenti saat layar mati/tab pindah —
+    // interval tetap jalan → canvas terus update → hasil nggak kepotong)
     const barsLocal = new Uint8Array(analyser.frequencyBinCount);
+    let iv: any = null;
+    let selesai = false;
+    let lastProg = -1;
+    const gambar = (): boolean => {
+      const lt = actx.currentTime - startAt;
+      analyser.getByteFrequencyData(barsLocal as any);
+      drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal);
+      // 🐛 FIX v19.26: throttle progress — setState tiap frame bikin HP berat/stutter
+      // 🛡 v19.32.1: progress naik walau rAF mati (interval yang gambar), update hemat (≥0.4%)
+      const p = clampN(lt / d, 0, 1);
+      if (p >= 1 || Math.abs(p - lastProg) > 0.004) { lastProg = p; opts.onProg(p); }
+      if (lt >= d + 0.15 && !selesai) { selesai = true; opts.onProg(1); return true; }
+      return false;
+    };
     await new Promise<void>(res2 => {
-      let frame = 0;
-      const loop = () => {
-        const lt = actx.currentTime - startAt;
-        analyser.getByteFrequencyData(barsLocal as any);
-        drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal);
-        // 🐛 FIX v19.26: throttle progress tiap 8 frame — setState tiap frame bikin HP berat/stutter
-        if ((frame++ & 7) === 0) opts.onProg(clampN(lt / d, 0, 1));
-        if (lt >= d + 0.15) { opts.onProg(1); res2(); return; }
-        requestAnimationFrame(loop);
-      };
+      const loop = () => { if (!gambar()) requestAnimationFrame(loop); };
       loop();
+      iv = setInterval(() => { gambar(); }, 150); // cadangan ~7×/dtk
+      const cek = setInterval(() => { if (selesai) { clearInterval(cek); res2(); } }, 200);
     });
+    clearInterval(iv);
     try { src.stop(); } catch {}
     const blob = await done;
     actx.close().catch(() => {});
@@ -1014,11 +1068,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   async function render() {
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     stopPlayback();
+    const total = Math.min(bufRef.current.duration, shorts ? 59.5 : bufRef.current.duration);
+    // 🛡 v19.32.1: peringatan sebelum render panjang — biar user tahu & jaga layar
+    if (total > 600) {
+      setRenderNote(`⚠️ Musik ${fmtD(total)} — render butuh waktu ±${Math.round(total / 60)} menit REAL TIME. Layar akan dijaga otomatis menyala (Wake Lock). Jangan kunci HP / pindah tab / tutup aplikasi sampai selesai.`);
+    } else if (total > 120) {
+      setRenderNote("⏳ Render jalan realtime — biarkan tab ini terbuka & layar menyala sampai selesai.");
+    } else {
+      setRenderNote("");
+    }
     setRendering(true); setProgress(0); setErr("");
     setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setVideoBlob(null);
     setShortUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setShortBlob(null);
     try {
-      const total = Math.min(bufRef.current.duration, shorts ? 59.5 : bufRef.current.duration);
       // 🎬 v19.32 DUAL RENDER: video 1 = LONG (rasio dipilih), video 2 = SHORT 9:16 native dari bagian paling seru
       setPhase("long");
       const longBlob = await renderSatu({
@@ -1027,6 +1089,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       });
       setVideoBlob(longBlob);
       setVideoUrl(URL.createObjectURL(longBlob));
+      // 🛡 v19.32.1: verifikasi hasil — kalau kepotong (layar mati/suspend), lapor JELAS
+      const durLong = await ukurDurasiBlob(longBlob);
+      if (durLong > 0 && durLong < total - 3) {
+        setErr(`⚠️ HASIL KEPOTONG: video cuma ${fmtD(durLong)} dari ${fmtD(total)}. Layar/tab sempat berhenti (battery saver/kunci HP?). Coba render ulang & biarkan layar menyala.`);
+      }
       if (dualRender) {
         const durAudio = bufRef.current.duration;
         const o = clampN(shortStart, 0, Math.max(0, durAudio - 1));
@@ -1038,10 +1105,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         });
         setShortBlob(shortBlob);
         setShortUrl(URL.createObjectURL(shortBlob));
+        const durShort = await ukurDurasiBlob(shortBlob);
+        if (durShort > 0 && durShort < d - 2) {
+          setErr(`⚠️ SHORT KEPOTONG: cuma ${fmtD(durShort)} dari ${fmtD(d)} dtk. Coba render ulang.`);
+        }
       }
       setPhase("idle");
       setProgress(1);
     } catch (e: any) { setErr(e?.message || "Render gagal"); }
+    lepasWakeLock(); // 🛡 layar boleh mati lagi setelah selesai
     setRendering(false);
   }
   function fadeGain(actx: AudioContext, next: AudioNode, total: number): AudioNode {
@@ -1547,6 +1619,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               </>
             )}
 
+            {!!renderNote && <div className="v6-note" style={{ borderColor: "rgba(251,191,36,.4)", color: "#fde68a" }}>{renderNote}</div>}
             <button className="v6-bigcta" onClick={render} disabled={rendering || !audioUrl}>
               {rendering
                 ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${Math.round(progress * 100)}%`
