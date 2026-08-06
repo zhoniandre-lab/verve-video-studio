@@ -202,21 +202,25 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     setPolling(true);
     setErr("");
     lastTaskRef.current = id;
+    const tMulai = Date.now();
     setPollMsg("⏳ Lagu sedang diolah… (bisa 1-6 menit, tergantung provider)");
     let idx = 0;
     const tick = async () => {
       idx++;
-      setPollMsg(`⏳ Mengecek hasil… (#${idx})`);
+      // 🕐 v19.35.5: tampilkan DURASI proses yang sudah berjalan — user tahu nunggu berapa lama
+      const detik = Math.floor((Date.now() - tMulai) / 1000);
+      setPollMsg(`⏳ Mengecek hasil… (#${idx} · sudah ${Math.floor(detik / 60)}m ${String(detik % 60).padStart(2, "0")}s)`);
       try {
         const r = await checkOnce(id);
         if (r === "pending") {
           // 🛡 v19.35.4: batas polling wajar — jangan nunggu selamanya
           if (idx >= MAX_POLL) {
             setPolling(false);
-            setErr(`⏱ Provider belum selesai setelah ${Math.round((idx * 9) / 60)} menit. Lagu MUNGKIN sudah jadi di dashboard provider — cek manual via tautan di bawah, atau tap "Cek ulang".`);
+            setErr(`⏱ Provider belum selesai setelah ${Math.round((Date.now() - tMulai) / 60000)} menit. Lagu MUNGKIN sudah jadi di dashboard provider — cek manual via tautan di bawah, atau tap "Cek ulang".`);
             return;
           }
-          pollTimer.current = setTimeout(tick, Math.min(6000 + idx * 800, 15000));
+          // 🐛 FIX v19.35.5: interval lebih cepat (5s awal → 12s maks) — hasil cepat kedeteksi
+          pollTimer.current = setTimeout(tick, Math.min(5000 + idx * 700, 12000));
         }
       } catch (e) {
         setPolling(false);

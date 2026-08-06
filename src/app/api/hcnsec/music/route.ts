@@ -253,15 +253,19 @@ function normalize(d: any, provider: Provider): any {
   }
 
   // ☀️ v10.5 Sunor: buat → {data:{task_id}} · poll → {data:{status:"success"|"failure"|"running", output:{…}}}
+  // 🐛 FIX v19.35.5: wrapper Sunor standar menaruh hasil di `output.sunoData` (bukan songs/clips)!
+  // Dulu normalize cuma cek songs/clips → polling 40x "pending" padahal lagu sudah jadi.
   if (provider === "sunor") {
     const d0 = d.data || d || {};
-    if (d0.task_id && !d0.status) return { id: d0.task_id, status: "pending" };
+    if (d0.task_id && !d0.status && !d0.state) return { id: d0.task_id, status: "pending" };
+    if (d0.id && !d0.status && !d0.state) return { id: d0.id, status: "pending" };
     const st = String(d0.status || d0.state || "pending").toLowerCase();
-    if (st === "success" || st === "completed" || st === "succeeded") {
+    if (st === "success" || st === "completed" || st === "succeeded" || st === "complete") {
       const out = d0.output ?? d0.result ?? {};
-      const first: any = Array.isArray(out) ? (out[0] || {}) : (out.songs?.[0] || out.clips?.[0] || out || {});
+      const first: any = Array.isArray(out) ? (out[0] || {})
+        : (out.sunoData?.[0] || out.songs?.[0] || out.clips?.[0] || out || {});
       return {
-        id: d0.task_id || first.id || "",
+        id: d0.task_id || d0.id || first.id || "",
         status: "completed",
         audio_url: first.audio_url || first.audioUrl || first.url || first.stream_url || "",
         title: first.title || d0.title || "",
@@ -272,7 +276,7 @@ function normalize(d: any, provider: Provider): any {
     if (st === "failure" || st === "error" || st === "failed" || st === "timeout") {
       return { status: "error", error: d0.error || d0.message || d0.fail_reason || `Sunor: ${st}` };
     }
-    return { id: d0.task_id, status: "pending" };
+    return { id: d0.task_id || d0.id || "", status: "pending" };
   }
 
   // Generic suno-compatible
