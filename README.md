@@ -17,6 +17,18 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🎚️🎬 v19.26 — FIX STUTTER RENDER + POSISI SPEKTRUM + MODE BERSIH + PINCH ZOOM LOGO
+* **Masalah (feedback user):** (1) hasil render di ujung menit terakhir ada stag/lag berhenti lalu lanjut; (2) posisi spektrum kurang lengkap; (3) mau background bersih tapi spektrum jelas; (4) logo mau bisa pinch zoom.
+* **Perbaikan:**
+  1. **Fix stutter render**: `setProgress` tiap frame (30×/dtk) bikin React re-render → jank; sekarang DI-THROTTLE (tiap 8 frame). Akhir render: hapus `setTimeout(180)` gap — loop berhenti saat `t >= total+0.05` atau audio end → `mr.stop()` langsung.
+  2. **🎚️ POSISI SPEKTRUM**: Bawah / Tengah / Atas / **Bebas** (slider tinggi 12-95%) — semua style (bars/mirror/wave) ikut posisi.
+  3. **🧹 Mode Bersih**: efek latar (aurora/ember/glow) dikurangi drastis → spektrum paling jelas, background bersih.
+  4. **🎬 Cinematic Bar** (garis hitam atas-bawah ala film) + **🎞️ Film Grain** (sprite, halus) — tampilan premium.
+  5. **🔍 Pinch Zoom logo**: 2 jari cubit di preview → logo zoom in/out (0.4-3×).
+* Referensi: Avee Player (posisi & template custom) + MDN canvas perf.
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### ⚡🌌 v19.25 — SPECTRUM RINGAN + 4 STYLE PREMIUM BARU (riset MDN/W3C)
 * **Ide (feedback user):** spectrum harus RINGAN di HP mana pun (tanpa lag, render tidak rusak) TAPI tetap kualitas luar biasa & pencahayaan wah; perbanyak style "mahal".
 * **Riset referensi akurat (MDN/W3C Optimizing Canvas):** pre-render objek berulang ke offscreen canvas (sprite), HINDARI shadowBlur, cache gradient, canvas kecil di-scale CSS (GPU), alpha:false.
