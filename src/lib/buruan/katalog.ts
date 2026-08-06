@@ -3,12 +3,13 @@
    Daftar penyedia AI yang kasih kredit GRATIS secara sah + tutorial
    langkah-demi-langkah cara klaim. Disusun manual biar presisi.
    ===================================================================== */
-import type { BuruanItem, KategoriId, JenisGratis, LangkahTutorial } from "./types";
+import type { BuruanItem, KategoriId, JenisGratis, LangkahTutorial, Integrasi } from "./types";
 
 interface Kasar {
   id: string; nama: string; url: string; kategori: KategoriId; gratis: string;
   jenis: JenisGratis; syarat: string; berlaku?: string; mudah: number;
   baseUrl?: string; contohModel?: string; desc: string;
+  integrasi?: Integrasi; keyUrl?: string;
   tutorial: LangkahTutorial[]; sumber: string;
   tags?: string[];
 }
@@ -23,6 +24,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "Llama 3.3 70B & model cepat gratis (trial: 30 RPM, 14.400 req/hari)", jenis: "permanen",
     syarat: "Email doang (Google/GitHub bisa)", mudah: 5,
     baseUrl: "https://api.groq.com/openai/v1", contohModel: "llama-3.3-70b-versatile",
+    keyUrl: "https://console.groq.com/keys",
     desc: "Inferensi paling ngebut di kelasnya (LPU). Level gratisnya dipakai banyak orang buat chat/teks tanpa bayar.",
     tutorial: [
       { t: "Buka https://console.groq.com — daftar (email/Google/GitHub, bebas kartu)." },
@@ -36,6 +38,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "gpt-oss-120b & lain (5 RPM, 30K TPM, 1M token/hari)", jenis: "permanen",
     syarat: "Email doang", mudah: 5,
     baseUrl: "https://api.cerebras.ai/v1", contohModel: "gpt-oss-120b",
+    keyUrl: "https://cloud.cerebras.ai/platform/api-keys",
     desc: "Model open-source tercepat via wafer-scale engine. Free tier tanpa kartu, OpenAI-compatible.",
     tutorial: [
       { t: "Buka https://cloud.cerebras.ai — daftar dengan email." },
@@ -48,6 +51,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "100K kredit/bulan (auto-refresh) — Llama, Gemma, Phi, Qwen, dll", jenis: "bulanan",
     syarat: "Email doang", berlaku: "100K kredit per bulan", mudah: 4,
     baseUrl: "https://api-inference.huggingface.co/v1", contohModel: "meta-llama/Llama-3.1-8B-Instruct",
+    keyUrl: "https://huggingface.co/settings/tokens",
     desc: "Ribuan model komunitas via API serverless. Kredit gratis ditambah otomatis tiap bulan — tanpa kartu.",
     tutorial: [
       { t: "Buka https://huggingface.co — daftar (email doang)." },
@@ -61,6 +65,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "Llama 3.3 70B & lainnya — 40 RPM free, tanpa kartu", jenis: "permanen",
     syarat: "Email doang", mudah: 5,
     baseUrl: "https://integrate.api.nvidia.com/v1", contohModel: "meta/llama-3.3-70b-instruct",
+    keyUrl: "https://org.ngc.nvidia.com/setup/api-key",
     desc: "Endpoint API gratis NVIDIA untuk model besar populer. OpenAI-compatible & stabil.",
     tutorial: [
       { t: "Buka https://build.nvidia.com — daftar dengan email." },
@@ -73,6 +78,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "Trial key 1.000 call/bulan (non-komersial)", jenis: "bulanan",
     syarat: "Email doang", berlaku: "1.000 call per bulan", mudah: 4,
     baseUrl: "https://api.cohere.com/v2",
+    keyUrl: "https://dashboard.cohere.com/api-keys",
     desc: "Model teks enterprise. Trial API key tanpa kartu — cukup buat eksperimen & tugas ringan.",
     tutorial: [
       { t: "Buka https://dashboard.cohere.com — daftar." },
@@ -85,6 +91,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "GPT, Llama, Mistral, Gemini (rate limit per akun — 40 RPM kredit)", jenis: "permanen",
     syarat: "Akun GitHub gratis", mudah: 4,
     baseUrl: "https://models.github.ai/v1",
+    keyUrl: "https://github.com/settings/tokens",
     desc: "Model dari banyak vendor lewat 1 key GitHub. Kredit rate-limit di-refresh berkala.",
     tutorial: [
       { t: "Login GitHub (akun gratis cukup)." },
@@ -97,6 +104,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "Gemini 2.5 Flash — 15 RPM, 1M TPM tanpa kartu", jenis: "permanen",
     syarat: "Akun Google", mudah: 5,
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", contohModel: "gemini-2.5-flash",
+    keyUrl: "https://aistudio.google.com/app/apikey",
     desc: "Level gratis Gemini paling lega. Ada endpoint OpenAI-compatible resmi.",
     tutorial: [
       { t: "Buka https://aistudio.google.com — login Google." },
@@ -109,6 +117,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "$1 kredit sekali (trial)", jenis: "sekali",
     syarat: "Email doang", berlaku: "Sekali klaim", mudah: 4,
     baseUrl: "https://api.together.xyz/v1", contohModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    keyUrl: "https://www.together.ai/settings/api-keys",
     desc: "Inference cloud murah dengan kredit sambutan $1 — cukup buat tes beberapa puluh video/teks.",
     tutorial: [
       { t: "Buka https://www.together.ai — daftar." },
@@ -121,6 +130,7 @@ const KATALOG_ASLI: Kasar[] = [
     gratis: "Model :free (200+ model, tanpa kartu)", jenis: "permanen",
     syarat: "Login (Google/GitHub)", mudah: 5,
     baseUrl: "https://openrouter.ai/api/v1",
+    keyUrl: "https://openrouter.ai/settings/keys",
     desc: "Gateway 300+ model — banyak yang gratis permanen (akhiran :free). 1 key buat semua.",
     tutorial: [
       { t: "Buka https://openrouter.ai — login." },
@@ -331,6 +341,7 @@ const KATALOG_ASLI: Kasar[] = [
     id: "nvidia-video", nama: "NVIDIA NIM (Wan/Hunyuan)", url: "https://build.nvidia.com", kategori: "gambar-video",
     gratis: "Kredit API gratis di build.nvidia.com (model video open-source)", jenis: "permanen",
     syarat: "Email doang", mudah: 4, tags: ["gambar bergerak", "api", "open source"],
+    integrasi: "api", keyUrl: "https://org.ngc.nvidia.com/setup/api-key",
     desc: "Model video open-source (Wan 2.x, Hunyuan Video) bisa dipanggil gratis lewat API NVIDIA NIM.",
     tutorial: [
       { t: "Buka https://build.nvidia.com — daftar." },
@@ -399,6 +410,7 @@ const KATALOG_ASLI: Kasar[] = [
     id: "elevenlabs", nama: "ElevenLabs", url: "https://elevenlabs.io", kategori: "suara",
     gratis: "±10 menit TTS/bulan (free plan)", jenis: "bulanan",
     syarat: "Email doang", berlaku: "Per bulan", mudah: 4,
+    integrasi: "api", keyUrl: "https://elevenlabs.io/app/settings/api-keys",
     desc: "TTS paling natural. Free plan cukup buat narasi pendek tiap bulan.",
     tutorial: [
       { t: "Buka https://elevenlabs.io — daftar." },
@@ -425,6 +437,8 @@ const KATALOG_ASLI: Kasar[] = [
 export function katalogKurasi(now = Date.now()): BuruanItem[] {
   return KATALOG_ASLI.map((k) => ({
     ...k,
+    // 🐛 v19.35.2: integrasi default — punya baseUrl OpenAI-compatible = api-key, selain itu ui
+    integrasi: k.integrasi || (k.baseUrl ? "api-key" : "ui"),
     tags: k.kategori === "gambar-video"
       ? Array.from(new Set([...(k.tags || []), "gambar bergerak", "video ai"]))
       : k.tags,

@@ -17,6 +17,12 @@ export type JenisGratis = "permanen" | "harian" | "mingguan" | "bulanan" | "seka
 
 export type StatusBuruan = "baru" | "coba" | "berhasil" | "mati";
 
+/** Cara pakai di Verve:
+ *  - "api-key" → OpenAI-compatible → bisa disimpan ke Dompet Bansos (dipakai otomatis fitur)
+ *  - "api"     → punya API/REST sendiri (key dipakai manual / tool lain)
+ *  - "ui"      → tool situs (bikin & download di situsnya, lalu import hasilnya ke Verve) */
+export type Integrasi = "api-key" | "api" | "ui";
+
 export interface LangkahTutorial {
   /** teks langkah; {LINK} diganti tombol buka situs */
   t: string;
@@ -42,6 +48,10 @@ export interface BuruanItem {
   contohModel?: string;
   /** deskripsi singkat */
   desc: string;
+  /** cara pakai di Verve (api-key / api / ui) */
+  integrasi: Integrasi;
+  /** tautan LANGSUNG ke halaman buat/lihat API key (kalau punya) */
+  keyUrl?: string;
   /** kata kunci tambahan buat pencarian (mis. "gambar bergerak", "animasi", "avatar") */
   tags?: string[];
   /** langkah tutorial (urutan) */

@@ -13,6 +13,32 @@ const JENIS_LABEL: Record<string, string> = {
   permanen: "♾️ Permanen", harian: "🌅 Harian", mingguan: "📅 Mingguan", bulanan: "🗓️ Bulanan", sekali: "🎁 Sekali",
 };
 
+/* 🧩 v19.35.2: cara pakai di Verve per integrasi */
+const INTL: Record<string, { badge: string; label: string }> = {
+  "api-key": { badge: "🔌 API", label: "OpenAI-compatible → nyambung Dompet Bansos" },
+  api: { badge: "🧩 API REST", label: "punya API sendiri (key dipakai manual)" },
+  ui: { badge: "🎨 Tool situs", label: "bikin & download di situs, import ke Verve" },
+};
+const INTL_STEPS: Record<string, string[]> = {
+  "api-key": [
+    "Ketuk tombol \"🔑 Ambil API Key\" di bawah → halaman resminya LANGSUNG kebuka (daftar dulu kalau belum punya akun).",
+    "Buat / salin API key-nya di halaman itu.",
+    "Kembali ke Verve → tempel key di kolom bawah + isi model kalau perlu → 💾 Simpan ke Dompet Bansos.",
+    "Selesai! 🎉 Sutradara di Studio & wizard langsung coba provider ini PALING AWAL (cek di menu Saya → Dompet Bansos AI).",
+  ],
+  api: [
+    "Ketuk \"🔑 Ambil API Key\" → buat key di halaman resminya.",
+    "Key ini bisa dipakai langsung (REST) di tool/script lain — belum dipakai otomatis fitur Verve.",
+    "Kalau endpoint-nya gaya OpenAI-compatible, tetap bisa disimpan ke Dompet Bansos chat.",
+  ],
+  ui: [
+    "Ketuk \"Buka situs ↗\" → daftar & klaim kredit gratisnya di sana.",
+    "Bikin kontennya di situs itu (video/gambar/lagu sesuai tool).",
+    "Download hasilnya ke HP.",
+    "Buka Verve → AutoCut / Lahan / Spectrum → upload file itu → lanjut edit & render. Selesai! 🎉",
+  ],
+};
+
 function bacaStatus(): Record<string, StatusBuruan> {
   try { return JSON.parse(localStorage.getItem(BURUAN_KEY_STATUS) || "{}"); } catch { return {}; }
 }
@@ -131,12 +157,15 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
   if (detail) {
     const i = detail;
     const st = statusMap[i.id];
+    const intl = INTL[i.integrasi] || INTL.ui;
     return (
       <div className="v6e-root" style={{ background: "#07070c" }}>
         <header className="v6e-top">
           <button className="v6e-tbtn" onClick={() => { setDetail(null); setTesInfo(""); }}>‹</button>
           <b style={{ fontSize: 13, flex: 1 }}>🏹 {i.nama}</b>
-          <a className="v6e-export" style={{ textDecoration: "none" }} href={i.url} target="_blank" rel="noreferrer">Buka situs ↗</a>
+          {i.keyUrl
+            ? <a className="v6e-export" style={{ textDecoration: "none", background: "#22c55e", color: "#052e16" }} href={i.keyUrl} target="_blank" rel="noreferrer">🔑 Ambil API Key ↗</a>
+            : <a className="v6e-export" style={{ textDecoration: "none" }} href={i.url} target="_blank" rel="noreferrer">Buka situs ↗</a>}
         </header>
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 90px" }}>
           <div className="v6-cardrow" style={{ cursor: "default", marginTop: 4 }}>
@@ -147,11 +176,22 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
             </div>
             <b style={{ color: "#4ade80", fontSize: 13 }}>{"⭐".repeat(i.mudah)}{"☆".repeat(5 - i.mudah)}</b>
           </div>
-          <div className="v6-note" style={{ marginTop: 8 }}>🎁 {i.gratis}</div>
+          <div className="v6-note" style={{ marginTop: 8, borderColor: "rgba(34,197,94,.4)", color: "#a7f3d0" }}>{intl.badge} · {intl.label}</div>
+          <div className="v6-note" style={{ marginTop: 6 }}>🎁 {i.gratis}</div>
           <p style={{ fontSize: 11.5, color: "#cbd5e1", lineHeight: 1.5 }}>{i.desc}</p>
           {i.baseUrl && (
             <div className="v6-note" style={{ fontFamily: "monospace", fontSize: 10.5 }}>🔗 Base URL: {i.baseUrl}{i.contohModel ? `\n🧩 Model contoh: ${i.contohModel}` : ""}</div>
           )}
+          {/* 🧩 v19.35.2: CARA PAKAI DI VERVE — spesifik per integrasi */}
+          <div className="v6-lbl" style={{ marginTop: 12 }}>🔗 CARA PAKAI DI VERVE</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, border: "1px solid rgba(34,197,94,.3)", borderRadius: 12, padding: 10, background: "rgba(34,197,94,.05)" }}>
+            {(INTL_STEPS[i.integrasi] || INTL_STEPS.ui).map((t, idx) => (
+              <div key={idx} style={{ display: "flex", gap: 8, fontSize: 12, color: "#d1fae5", lineHeight: 1.45 }}>
+                <span style={{ background: "#22c55e", color: "#052e16", borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, marginTop: 1 }}>{idx + 1}</span>
+                <span>{t}</span>
+              </div>
+            ))}
+          </div>
           <div className="v6-lbl" style={{ marginTop: 12 }}>📖 TUTORIAL KLAIM (langkah demi langkah)</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {i.tutorial.map((t, idx) => (
@@ -161,10 +201,10 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
               </div>
             ))}
           </div>
-          {/* Dompet Bansos */}
-          {(i.baseUrl || i.kategori === "chat") && (
+          {/* Dompet Bansos — hanya untuk yang API-key (OpenAI-compatible) */}
+          {i.integrasi === "api-key" && (
             <>
-              <div className="v6-lbl" style={{ marginTop: 14 }}>🔑 SIMPAN KE DOMPET BANSOS {i.baseUrl ? "(chat — langsung dipakai Verve)" : ""}</div>
+              <div className="v6-lbl" style={{ marginTop: 14 }}>🔑 SIMPAN KE DOMPET BANSOS (chat — langsung dipakai Verve)</div>
               <input className="v6-inp" placeholder="Tempel API key di sini (dari situsnya)" value={keyIsi} onChange={(e) => setKeyIsi(e.target.value)} />
               <input className="v6-inp" style={{ marginTop: 6 }} placeholder={i.contohModel ? `Model (contoh: ${i.contohModel})` : "Model (opsional)"} value={modelIsi} onChange={(e) => setModelIsi(e.target.value)} />
               <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
@@ -173,6 +213,11 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
               </div>
               {!!tesInfo && <p style={{ fontSize: 11, color: tesInfo.startsWith("✅") ? "#86efac" : tesInfo.startsWith("❌") ? "#fca5a5" : "#fbbf24", margin: "6px 0 0" }}>{tesInfo}</p>}
             </>
+          )}
+          {i.integrasi !== "api-key" && (
+            <div className="v6-note" style={{ marginTop: 12, borderColor: "rgba(251,191,36,.35)", color: "#fde68a", fontSize: 11 }}>
+              {i.integrasi === "api" ? "ℹ️ Provider ini punya API sendiri — key-nya bisa dipakai langsung (REST). Belum otomatis nyambung fitur Verve, tapi bisa buat tool/script kamu." : "ℹ️ Tool ini nggak punya API key — hasilnya di-download dari situsnya, lalu di-import ke Verve (langkah 2–4 di atas)."}
+            </div>
           )}
           <div className="v6-lbl" style={{ marginTop: 14 }}>📌 STATUS (untuk dirimu sendiri)</div>
           <div className="v6-chips" style={{ padding: 0 }}>
@@ -194,7 +239,10 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
         <button className="v6e-export" disabled={busy} onClick={() => muat(true)}>{busy ? "⏳ …" : "🔍 Cari buruan baru"}</button>
       </header>
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 90px" }}>
-        <div className="v6-note" style={{ fontSize: 11.5 }}>💡 Cari penyedia AI yang kasih <b>kredit / kuota gratis</b> (secara sah) — lengkap dengan tutorial klaim. Ketemu yang OpenAI-compatible? <b>Simpan ke Dompet Bansos</b> → langsung dipakai fitur Verve. {cache ? "Data dari cache." : ""}</div>
+        <div className="v6-note" style={{ fontSize: 11.5 }}>💡 Cari penyedia AI yang kasih <b>kredit / kuota gratis</b> (secara sah) — lengkap dengan tutorial klaim + cara pakai di Verve. {cache ? "Data dari cache." : ""}</div>
+        <div className="v6-note" style={{ fontSize: 10.5, borderColor: "rgba(34,197,94,.3)", color: "#a7f3d0" }}>
+          🔌 <b>API</b> → simpan ke Dompet Bansos, dipakai otomatis Sutradara · 🎨 <b>Tool situs</b> → bikin & download di situsnya, upload hasilnya di AutoCut/Lahan. Langkah lengkap ada di tiap item.
+        </div>
         {/* 🎯 v19.35.1: panduan per kebutuhan — "mau bikin apa" langsung dikasih jawaban */}
         <div className="v6-lbl" style={{ marginTop: 8 }}>🎯 MAU BIKIN APA? (ketuk → langsung muncul daftarnya)</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -230,7 +278,7 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
                 <span style={{ fontSize: 18 }}>{KATEGORI.find((k) => k.id === i.kategori)?.emoji || "🧰"}</span>
                 <div className="tt">
                   <b>{i.nama} {st ? `· ${STATUS_LABEL[st]}` : ""}</b>
-                  <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{JENIS_LABEL[i.jenis]} · {i.syarat} · {i.sumber}</div>
+                  <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{(INTL[i.integrasi] || INTL.ui).badge} · {JENIS_LABEL[i.jenis]} · {i.syarat} · {i.sumber}</div>
                   <div style={{ fontSize: 10.5, color: "#cbd5e1", marginTop: 2 }}>🎁 {i.gratis.slice(0, 90)}{i.gratis.length > 90 ? "…" : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>

@@ -26,6 +26,11 @@ T("semua item kurasi punya tutorial ≥ 2 langkah", kurasi.every((i) => i.tutori
 T("skor mudah semua 1..5", kurasi.every((i) => i.mudah >= 1 && i.mudah <= 5));
 T("item chat OpenAI-compatible punya baseUrl", kurasi.filter((i) => i.kategori === "chat").every((i) => !!i.baseUrl), `${kurasi.filter((i) => i.kategori === "chat").length} item chat`);
 T("item gambar-video punya tags 'gambar bergerak'", kurasi.filter((i) => i.kategori === "gambar-video").every((i) => (i.tags || []).includes("gambar bergerak")));
+/* v19.35.2: integrasi & keyUrl */
+T("semua item kurasi punya integrasi valid", kurasi.every((i) => ["api-key", "api", "ui"].includes(i.integrasi)));
+T("item chat (api-key) punya keyUrl https — tombol langsung ke halaman API key", kurasi.filter((i) => i.integrasi === "api-key").every((i) => /^https:\/\//.test(i.keyUrl || "")), `${kurasi.filter((i) => i.integrasi === "api-key").length} item api-key`);
+T("provider video UI punya integrasi ui", kurasi.filter((i) => i.id === "hailuo" || i.id === "kling" || i.id === "viggle").every((i) => i.integrasi === "ui"));
+T("ElevenLabs & NVIDIA video = api", kurasi.filter((i) => i.id === "elevenlabs" || i.id === "nvidia-video").every((i) => i.integrasi === "api"));
 
 /* 2. pisahLink */
 const pl = pisahLink("- [Groq](https://groq.com) - inferensi ngebut");
@@ -121,6 +126,7 @@ const gabung = gabungItems(kurasi, [...llm, ...ffd], Date.now());
 T("gabung ≥ kurasi (sumber nambah)", gabung.length >= kurasi.length, `${gabung.length} item`);
 T("tidak ada nama duplikat", new Set(gabung.map((x) => x.nama.toLowerCase())).size === gabung.length);
 T("item hasil gabung punya tutorial", gabung.every((x) => x.tutorial.length >= 1));
+T("item hasil gabung punya integrasi", gabung.every((x) => ["api-key", "api", "ui"].includes(x.integrasi)));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI BOT BURUAN GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI BOT BURUAN HIJAU — siap dipakai di dashboard!");
