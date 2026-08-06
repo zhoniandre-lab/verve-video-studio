@@ -419,6 +419,7 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "💬", lb: "Keterangan", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
     { ic: "🫥", lb: "Hapus Latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
     { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
+    { ic: "🎛️", lb: "Audio Room", bb: "NEW", act: () => { location.href = "/audio-room"; } },
     { ic: "🏹", lb: "Bot Buruan", bb: "NEW", act: () => { location.href = "/buruan"; } },
     { ic: "💎", lb: "Jualan", bb: "DEMO", act: () => { location.href = "/jualan"; } },
   ];
