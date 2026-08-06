@@ -111,3 +111,22 @@ export function energiPerDetik(buf: AudioBuffer, bucketSec = 0.5): number[] {
     return [];
   }
 }
+
+/** Puncak amplitudo per ember (0..1, kompresi pangkat 0.7) langsung dari channel —
+ *  TANPA membuat salinan mono (penting untuk audio panjang: hemat ratusan MB). */
+export function hitungPuncak(ch0: Float32Array, ch1: Float32Array | null, sampleRate: number, bucketSec = 0.25): number[] {
+  const per = Math.max(1, Math.floor(bucketSec * sampleRate));
+  const out: number[] = [];
+  let mx = 0;
+  for (let i = 0; i < ch0.length; i += per) {
+    const end = Math.min(ch0.length, i + per);
+    let m = 0;
+    for (let j = i; j < end; j++) {
+      const a = Math.abs(ch0[j]); if (a > m) m = a;
+      if (ch1) { const a2 = Math.abs(ch1[j]); if (a2 > m) m = a2; }
+    }
+    out.push(m); if (m > mx) mx = m;
+  }
+  if (mx <= 0.001) return out.map(() => 0);
+  return out.map((v) => Math.pow(v / mx, 0.7));
+}

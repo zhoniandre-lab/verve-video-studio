@@ -10,7 +10,9 @@ import { paintEffect, paintPreviewCaptions, CC_TEMPLATES, ensureFontsLoaded } fr
 import type { CapWord } from "@/lib/editing";
 import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
 import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
-import { cariKlimaksBuffer, energiPerDetik } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
+import { cariKlimaksBuffer, energiPerDetik, hitungPuncak } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
+import { buildAudioChain } from "@/lib/audio-chain"; // 🎚 v19.33: rantai EQ/kompresor shared (live + offline)
+import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline"; // ⚡ v19.33: mesin render KUAT (WebCodecs, anti-kepotong)
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -195,6 +197,26 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
      Akar masalah "video cuma 54 dtk": layar mati/kunci HP/tab pindah → browser
      menghentikan audio & rAF → MediaRecorder berhenti → hasil terpotong. */
   const [renderNote, setRenderNote] = useState(""); // pesan panduan sebelum/saat render
+  /* 🔬 v19.33: DIAGNOSTIK — data nyata, bukan nebak. Menampilkan durasi yang
+     TERBACA browser vs file, dan laporan render detail kalau ada yang aneh. */
+  const [durWarn, setDurWarn] = useState("");
+  const [diag, setDiag] = useState<{ t: string; s: string }[]>([]);
+  const diagRef = useRef<{ t: string; s: string }[]>([]);
+  const [renderFase, setRenderFase] = useState<"audio" | "video" | "mux" | "">("");
+  const [pakaiMode, setPakaiMode] = useState<"" | "offline" | "realtime">("");
+  function logDiag(s: string) {
+    const row = { t: new Date().toISOString().slice(11, 19), s };
+    diagRef.current = [...diagRef.current.slice(-60), row];
+    setDiag(diagRef.current);
+    try { console.log("[VERVE-DIAG]", row.t, row.s); } catch { /* abaikan */ }
+  }
+  useEffect(() => {
+    const fn = () => {
+      if (rendering) logDiag(document.hidden ? "⚠️ layar/tab tersembunyi (bisa melambat)" : "👁 tab terlihat lagi");
+    };
+    document.addEventListener("visibilitychange", fn);
+    return () => document.removeEventListener("visibilitychange", fn);
+  }, [rendering]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cvRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -327,6 +349,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const k = cariKlimaksBuffer(buf, 30);
       setShortStart(Math.round(k.start * 10) / 10);
       setShortAuto(true);
+      // 🔬 v19.33: DIAGNOSTIK — berapa detik yang BENAR-BENAR terbaca browser?
+      // File besar tapi durasi pendek = header durasi file rusak → render pasti pendek.
+      logDiag(`Audio dimuat: terbaca=${fmtD(buf.duration)} bytes=${raw.byteLength} (${(raw.byteLength / 1048576).toFixed(1)} MB)`);
+      const mb = raw.byteLength / 1048576;
+      if (buf.duration < 150 && mb > 4) {
+        setDurWarn(`⚠️ Browser cuma membaca ${fmtD(buf.duration)} dari file ${mb.toFixed(0)} MB. Kalau lagu aslinya lebih panjang dari itu, header durasi file-nya rusak — hasil render pasti ikut pendek. Solusi: convert ulang file (aplikasi konverter MP3/WAV) lalu upload lagi.`);
+      } else {
+        setDurWarn("");
+      }
     } catch (e: any) { setErr("Audio tidak bisa dibaca: " + (e?.message || "")); }
     setMBusy(false);
   }
@@ -407,38 +438,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setLyrBusy(false);
     }
   }
-  function buildChain(actx: AudioContext, destAnalyserToo = true): { input: AudioNode; analyser: AnalyserNode } {
-    const nodes: AudioNode[] = [];
-    const input = actx.createGain();
-    let head: AudioNode = input;
-    const mk = (n: AudioNode) => { head.connect(n); head = n; nodes.push(n); };
-    if (eq === "bass") {
-      const lo = actx.createBiquadFilter(); lo.type = "lowshelf"; lo.frequency.value = 130; lo.gain.value = 6;
-      const hi = actx.createBiquadFilter(); hi.type = "highshelf"; hi.frequency.value = 8000; hi.gain.value = -2;
-      mk(lo); mk(hi);
-    } else if (eq === "vokal") {
-      const hp = actx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 85;
-      const pk = actx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = 2300; pk.Q.value = 1; pk.gain.value = 3.5;
-      mk(hp); mk(pk);
-    } else if (eq === "hangat") {
-      const lo = actx.createBiquadFilter(); lo.type = "lowshelf"; lo.frequency.value = 160; lo.gain.value = 3;
-      const hi = actx.createBiquadFilter(); hi.type = "highshelf"; hi.frequency.value = 6000; hi.gain.value = -3;
-      mk(lo); mk(hi);
-    } else if (eq === "cerah") {
-      const hi = actx.createBiquadFilter(); hi.type = "highshelf"; hi.frequency.value = 7500; hi.gain.value = 4;
-      mk(hi);
-    }
-    const cp = actx.createDynamicsCompressor();
-    const c = clampN(comp / 100, 0, 1);
-    cp.threshold.value = -18 - c * 22;
-    cp.knee.value = 18;
-    cp.ratio.value = 1.5 + c * 8;
-    cp.attack.value = 0.006; cp.release.value = 0.18;
-    mk(cp);
-    const g = actx.createGain(); g.gain.value = clampN(gain / 100, 0, 1.2); mk(g);
-    const an = actx.createAnalyser(); an.fftSize = 256; an.smoothingTimeConstant = 0.82;
-    head.connect(an);
-    return { input, analyser: an };
+  function buildChain(actx: AudioContext): { input: AudioNode; analyser: AnalyserNode } {
+    return buildAudioChain(actx, eq, comp, gain, true);
   }
 
   function stopPlayback() {
@@ -1065,10 +1066,31 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     return blob;
   }
 
+  /* ⚡ v19.33: render KUAT (offline WebCodecs) — anti-kepotong.
+     Bar sintetis dari puncak audio ASLI (bukan AnalyserNode) — visual tetap
+     ikut energi musik, tapi prosesnya murni komputasi (tahan layar mati). */
+  async function renderOffline(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void; audioCodec?: "aac" | "opus" }): Promise<Blob> {
+    await ensureFontsLoaded().catch(() => {});
+    const buf = bufRef.current!;
+    const peaks = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
+    return renderOfflineVideo({
+      buf, w: opts.w, h: opts.h, offset: opts.offset, dur: opts.dur,
+      eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec,
+      draw: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq),
+      onProg: opts.onProg,
+      onFase: (f) => setRenderFase(f),
+    });
+  }
+
   async function render() {
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     stopPlayback();
     const total = Math.min(bufRef.current.duration, shorts ? 59.5 : bufRef.current.duration);
+    // ⚡ v19.33: pilih mesin render — KUAT (offline) kalau browser mendukung, else realtime
+    const mampu: { ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" } = await cekRenderOfflineMampu().catch(() => ({ ok: false, alasan: "cek gagal" }));
+    const pakai = mampu.ok ? "offline" : "realtime";
+    setPakaiMode(pakai);
+    logDiag(`Mode render: ${pakai} (${mampu.alasan || `WebCodecs H.264 + ${mampu.audioCodec}`}) | buffer=${fmtD(bufRef.current.duration)} target=${fmtD(total)} dual=${dualRender}`);
     // 🛡 v19.32.1: peringatan sebelum render panjang — biar user tahu & jaga layar
     if (total > 600) {
       setRenderNote(`⚠️ Musik ${fmtD(total)} — render butuh waktu ±${Math.round(total / 60)} menit REAL TIME. Layar akan dijaga otomatis menyala (Wake Lock). Jangan kunci HP / pindah tab / tutup aplikasi sampai selesai.`);
@@ -1083,34 +1105,52 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     try {
       // 🎬 v19.32 DUAL RENDER: video 1 = LONG (rasio dipilih), video 2 = SHORT 9:16 native dari bagian paling seru
       setPhase("long");
-      const longBlob = await renderSatu({
-        w: dim.w, h: dim.h, offset: 0, dur: total,
-        onProg: p => setProgress(dualRender ? p * 0.62 : p),
-      });
+      let longBlob: Blob;
+      try {
+        longBlob = pakai === "offline"
+          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => setProgress(dualRender ? p * 0.62 : p) })
+          : await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, onProg: p => setProgress(dualRender ? p * 0.62 : p) });
+      } catch (e: any) {
+        if (pakai === "offline") {
+          logDiag(`Mode offline gagal (${e?.message || e}) → fallback realtime`);
+          longBlob = await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, onProg: p => setProgress(dualRender ? p * 0.62 : p) });
+        } else throw e;
+      }
       setVideoBlob(longBlob);
       setVideoUrl(URL.createObjectURL(longBlob));
       // 🛡 v19.32.1: verifikasi hasil — kalau kepotong (layar mati/suspend), lapor JELAS
       const durLong = await ukurDurasiBlob(longBlob);
+      logDiag(`Long selesai: hasil=${durLong > 0 ? fmtD(durLong) : "gagal diukur"} target=${fmtD(total)} ukuran=${(longBlob.size / 1048576).toFixed(1)} MB`);
       if (durLong > 0 && durLong < total - 3) {
-        setErr(`⚠️ HASIL KEPOTONG: video cuma ${fmtD(durLong)} dari ${fmtD(total)}. Layar/tab sempat berhenti (battery saver/kunci HP?). Coba render ulang & biarkan layar menyala.`);
+        setErr(`⚠️ HASIL KEPOTONG: video cuma ${fmtD(durLong)} dari ${fmtD(total)}. ${pakai === "offline" ? "Padahal pakai mode kuat — cek laporan di bawah & kirim ke developer." : "Layar/tab sempat berhenti (battery saver/kunci HP?). Coba render ulang & biarkan layar menyala."}`);
       }
       if (dualRender) {
         const durAudio = bufRef.current.duration;
         const o = clampN(shortStart, 0, Math.max(0, durAudio - 1));
         const d = Math.min(shortDur, Math.max(1, durAudio - o));
         setPhase("short");
-        const shortBlob = await renderSatu({
-          w: 608, h: 1080, offset: o, dur: d,
-          onProg: p => setProgress(0.62 + p * 0.38),
-        });
+        setRenderFase("");
+        let shortBlob: Blob;
+        try {
+          shortBlob = pakai === "offline"
+            ? await renderOffline({ w: 608, h: 1080, offset: o, dur: d, audioCodec: mampu.audioCodec, onProg: p => setProgress(0.62 + p * 0.38) })
+            : await renderSatu({ w: 608, h: 1080, offset: o, dur: d, onProg: p => setProgress(0.62 + p * 0.38) });
+        } catch (e: any) {
+          if (pakai === "offline") {
+            logDiag(`Mode offline short gagal (${e?.message || e}) → fallback realtime`);
+            shortBlob = await renderSatu({ w: 608, h: 1080, offset: o, dur: d, onProg: p => setProgress(0.62 + p * 0.38) });
+          } else throw e;
+        }
         setShortBlob(shortBlob);
         setShortUrl(URL.createObjectURL(shortBlob));
         const durShort = await ukurDurasiBlob(shortBlob);
+        logDiag(`Short selesai: hasil=${durShort > 0 ? fmtD(durShort) : "gagal diukur"} target=${fmtD(d)} ukuran=${(shortBlob.size / 1048576).toFixed(1)} MB`);
         if (durShort > 0 && durShort < d - 2) {
           setErr(`⚠️ SHORT KEPOTONG: cuma ${fmtD(durShort)} dari ${fmtD(d)} dtk. Coba render ulang.`);
         }
       }
       setPhase("idle");
+      setRenderFase("");
       setProgress(1);
     } catch (e: any) { setErr(e?.message || "Render gagal"); }
     lepasWakeLock(); // 🛡 layar boleh mati lagi setelah selesai
@@ -1253,13 +1293,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <h3 style={{ fontSize: 14, margin: "4px 0 10px" }}>1️⃣ Pilih musik</h3>
             <label className="v6-cardrow">
               <span style={{ fontSize: 20 }}>📥</span>
-              <div className="tt">Upload musik / lagu dari HP<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{mBusy ? "Memproses…" : audioName ? `✅ ${audioName} (${fmtD(duration)})` : "mp3/wav/m4a"}</div></div>
+              <div className="tt">Upload musik / lagu dari HP<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{mBusy ? "Memproses…" : audioName ? `✅ ${audioName} — terbaca ${fmtD(duration)}` : "mp3/wav/m4a"}</div></div>
               <span className="arr">›</span>
               <input type="file" accept="audio/*" hidden onChange={e => {
                 const f = e.target.files?.[0]; if (!f) return;
                 loadAudio(URL.createObjectURL(f), f.name.replace(/\.[^.]+$/, "").slice(0, 40));
               }} />
             </label>
+            {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
+            <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>🔬 Angka "terbaca" = durasi yang benar-benar dibaca browser. Kalau beda jauh dari durasi asli lagu, hasil render pasti ikut pendek — convert ulang file dulu.</p>
             {audioUrl && <button className="v6-bigcta" style={{ background: "#22c55e" }} onClick={() => setStep(1)}>Lanjut: Visual ›</button>}
 
             {/* 🎵 v19.29: GENERATE LAGU — panel sama persis dengan di Lahan */}
@@ -1619,12 +1661,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               </>
             )}
 
+            {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
             {!!renderNote && <div className="v6-note" style={{ borderColor: "rgba(251,191,36,.4)", color: "#fde68a" }}>{renderNote}</div>}
+            <div className="v6-note" style={{ borderColor: "rgba(34,197,94,.35)", color: "#a7f3d0", fontSize: 11 }}>
+              ⚡ Mode render: {pakaiMode === "offline" ? "KUAT (offline WebCodecs) — tahan layar mati, durasi presisi" : pakaiMode === "realtime" ? "real-time (MediaRecorder) — layar wajib menyala" : "otomatis dipilih saat render"}
+            </div>
             <button className="v6-bigcta" onClick={render} disabled={rendering || !audioUrl}>
               {rendering
-                ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${Math.round(progress * 100)}%`
+                ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${renderFase ? `(${renderFase === "audio" ? "audio" : renderFase === "video" ? "gambar" : "gabung"}) ` : ""}${Math.round(progress * 100)}%`
                 : videoUrl ? "🔄 Render ulang" : dualRender ? "🚀 Render 2 video (Long + Short)" : "🚀 Render video spectrum"}</button>
-            {rendering && <div className="v6-note" style={{ textAlign: "center" }}>Biarkan layar menyala — render berjalan realtime (audio ikut diproses). {dualRender && "Setelah Long selesai, otomatis lanjut render Short."}</div>}
+            {rendering && <div className="v6-note" style={{ textAlign: "center" }}>{pakaiMode === "offline" ? "Mode KUAT: proses jalan sendiri tanpa bunyi — layar boleh mati, render tetap lanjut. " : "Biarkan layar menyala — render berjalan realtime (audio ikut diproses). "}{dualRender && "Setelah Long selesai, otomatis lanjut render Short."}</div>}
+            {!!diag.length && !rendering && (
+              <details style={{ marginTop: 8, fontSize: 10.5, opacity: .85 }}>
+                <summary style={{ cursor: "pointer", padding: "6px 8px", background: "rgba(255,255,255,.05)", borderRadius: 8 }}>🔍 Laporan teknis render (untuk cek kalau ada masalah)</summary>
+                <div style={{ padding: "6px 8px", lineHeight: 1.6, color: "#94a3b8", fontFamily: "monospace" }}>
+                  {diag.map((d, i) => <div key={i}><span style={{ color: "#64748b" }}>{d.t}</span> {d.s}</div>)}
+                </div>
+              </details>
+            )}
             {!!videoUrl && (
               <>
                 <div className="v6-lbl">▭ LONG {dim.w}×{dim.h} {dualRender ? "— full video" : ""}</div>

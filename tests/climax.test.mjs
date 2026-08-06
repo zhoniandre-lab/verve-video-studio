@@ -7,7 +7,7 @@ import ts from "typescript";
 const enc = (s) => `data:text/javascript;base64,${Buffer.from(s).toString("base64")}`;
 const srcTs = readFileSync(new URL("../src/lib/climax.ts", import.meta.url), "utf8");
 const js = ts.transpileModule(srcTs, { compilerOptions: { module: ts.ModuleKind.ES2020, target: ts.ScriptTarget.ES2020 } }).outputText;
-const { hitungEnergiMono, cariKlimaksEnergi } = await import(enc(js));
+const { hitungEnergiMono, cariKlimaksEnergi, hitungPuncak } = await import(enc(js));
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -60,6 +60,16 @@ T("RMS sinyal konstan 1 ≈ 1", eKonstan.every((v) => Math.abs(v - 1) < 1e-9), `
 // --- 6. array kosong → aman ---
 const kosong = cariKlimaksEnergi([], 0.25, 30);
 T("energi kosong → start 0 tanpa error", kosong.start === 0 && kosong.energi === 0);
+
+// --- 7. hitungPuncak: langsung dari channel, tanpa salinan mono ---
+const ch0 = new Float32Array(SR * 10); // 10 dtk
+const ch1 = new Float32Array(SR * 10);
+for (let i = 0; i < SR * 10; i++) { const t = i / SR; const a = (t >= 3 && t < 6) ? 0.9 : 0.1; ch0[i] = a * Math.sin(2 * Math.PI * 200 * t); ch1[i] = ch0[i]; }
+const pk = hitungPuncak(ch0, ch1, SR, 0.5);
+T("hitungPuncak: 20 ember untuk 10 dtk (bucket 0.5)", Math.abs(pk.length - 20) <= 1, `${pk.length} ember`);
+const pkLonjakan = pk.slice(6, 12).reduce((a, b) => a + b, 0) / 6; // 3-6 dtk
+const pkPelan = (pk.slice(0, 6).reduce((a, b) => a + b, 0) + pk.slice(12).reduce((a, b) => a + b, 0)) / 14;
+T("hitungPuncak: bagian keras (3-6 dtk) jauh lebih tinggi", pkLonjakan > pkPelan * 2.5, `lonjakan=${pkLonjakan.toFixed(2)} pelan=${pkPelan.toFixed(2)}`);
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI KLIMAKS GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI KLIMAKS HIJAU — deteksi bagian seru siap dipakai Dual Render!");
