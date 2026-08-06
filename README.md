@@ -17,6 +17,22 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### ⚡🌌 v19.25 — SPECTRUM RINGAN + 4 STYLE PREMIUM BARU (riset MDN/W3C)
+* **Ide (feedback user):** spectrum harus RINGAN di HP mana pun (tanpa lag, render tidak rusak) TAPI tetap kualitas luar biasa & pencahayaan wah; perbanyak style "mahal".
+* **Riset referensi akurat (MDN/W3C Optimizing Canvas):** pre-render objek berulang ke offscreen canvas (sprite), HINDARI shadowBlur, cache gradient, canvas kecil di-scale CSS (GPU), alpha:false.
+* **Optimasi (kualitas tetap, jauh lebih ringan):**
+  1. **Gradient cache** (`gradC`) — 1 gradient dibuat sekali per warna/ukuran, dipakai ulang (sebelumnya dibuat tiap frame ~8×/frame).
+  2. **Sprite offscreen** — vinyet & bintang pre-render sekali (1 drawImage, bukan 70 arc/frame).
+  3. **Aurora via translate** — gradient cache + ctx.translate (gradient ikut transform) — 3 blob jadi 1 gradient.
+  4. **Ember** — `fillRect` (bukan arc) + jumlah adaptif; koordinat dibulatkan (MDN: hindari float).
+  5. **Preview canvas internal 0.55×** di-scale CSS (GPU) — ekspor tetap full res.
+  6. **alpha:false** di konteks preview (MDN).
+  7. **FPS adaptif** — kalau HP lemot (>34ms/frame) detail otomatis turun (aurora/ember); lancar → naik lagi.
+* **4 Style premium baru**: 🌌 Aurora (pita cahaya), 🌠 Galaxy (orbit bintang + nebula), 💠 Neon Ring (3 cincin berdenyut), 🪬 Hologram (prisma heksagon berputar) — total 10 style.
+* **Bukti:** `demo_v7_premium_styles.mp4` (logika sama).
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### 🎙️ v19.24 — NARASI TTS DI LANGKAH 8 (niche non-lagu: horor/cerita/tutorial)
 * **Masalah (feedback user):** buat niche horor/cerita, user MAU pakai narasi suara (TTS) bukan lagu — tapi langkah 8 cuma Suno lagu; narasi nggak bisa diisi; ujung-ujungnya balik ke lagu; proses bolak-balik nggak jelas.
 * **Solusi (tuntas):**

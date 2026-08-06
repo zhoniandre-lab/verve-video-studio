@@ -34,7 +34,11 @@ const SPEC_STYLES = [
   { id: "circle", label: "⭕ Lingkaran", desc: "Radial futuristik" },
   { id: "wave", label: "🌊 Gelombang", desc: "Garis ombak lembut" },
   { id: "dots", label: "✨ Partikel", desc: "Bintik mengambang" },
-  { id: "tunnel", label: "🎢 3D Tunnel", desc: "Terowongan perspektif (v19.15)" },
+  { id: "tunnel", label: "🎢 3D Tunnel", desc: "Terowongan perspektif" },
+  { id: "aurora", label: "🌌 Aurora", desc: "Cahaya utara bergelombang" },
+  { id: "galaxy", label: "🌠 Galaxy", desc: "Orbit bintang + nebula" },
+  { id: "neonring", label: "💠 Neon Ring", desc: "Cincin neon berdenyut" },
+  { id: "holo", label: "🪬 Hologram", desc: "Prisma berputar futuristik" },
 ];
 const BG_GRADS = [
   { id: "g0", css: ["#05070f", "#0e7490"], label: "Samudra Malam" },
@@ -48,6 +52,23 @@ const OVERLAYS = [
   { id: "kabut", label: "🌫️ Kabut" }, { id: "bintang", label: "🌟 Bintang" }, { id: "gelembung", label: "🫧 Gelembung" },
   { id: "kilau", label: "✨ Kilau" },
 ];
+// ⚡ v19.25 PERF (MDN/W3C): cache gradient + sprite offscreen — jangan bikin tiap frame.
+const GRAD_CACHE = new Map<string, CanvasGradient>();
+const SPRITE_CACHE = new Map<string, HTMLCanvasElement | null>();
+function gradC(key: string, make: () => CanvasGradient): CanvasGradient {
+  let g = GRAD_CACHE.get(key);
+  if (!g) { g = make(); if (GRAD_CACHE.size > 40) GRAD_CACHE.clear(); GRAD_CACHE.set(key, g); }
+  return g;
+}
+function spriteC(key: string, w: number, h: number, draw: (c: CanvasRenderingContext2D) => void): HTMLCanvasElement | null {
+  const ada = SPRITE_CACHE.get(key);
+  if (ada !== undefined) return ada;
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const c = cv.getContext("2d");
+  if (c) { draw(c); SPRITE_CACHE.set(key, cv); return cv; }
+  SPRITE_CACHE.set(key, null); return null;
+}
+
 const EQ_PRESETS = [
   { id: "flat", label: "🎚 Flat" }, { id: "bass", label: "🔊 Bass Boost" }, { id: "vokal", label: "🎤 Vokal Jernih" },
   { id: "hangat", label: "🔥 Hangat" }, { id: "cerah", label: "✨ Cerah" },
@@ -84,6 +105,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const embersRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; ph: number }[]>([]);
   const shockRef = useRef<{ x: number; y: number; r: number; a: number }[]>([]);
   const lastBassRef = useRef(0);
+  // ⚡ v19.25 ADAPTIF: kalau HP lemot, otomatis turunkan detail (aurora/ember) — naik lagi kalau lancar
+  const frameMsRef = useRef(50);
+  const detailRef = useRef(3);
+  const tickCountRef = useRef(0);
   // 🎛️ v19.14 KUSTOMISASI PRO: layout, posisi logo (drag), bar count, skala, rotasi, glow, ikut beat
   const [layoutId, setLayoutId] = useState("logo-tengah");
   const [logoPos, setLogoPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.42 });
@@ -458,10 +483,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       g.addColorStop(0, gdef.css[0]); g.addColorStop(1, gdef.css[1]);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     }
-    // vinyet lembut
-    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
-    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.28)");
-    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    // ⚡ v19.25: VINYET pre-render (sprite) — nggak bikin gradient tiap frame
+    const vigSpr = spriteC(`vig:${W}x${H}`, W, H, (c) => {
+      const vg2 = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+      vg2.addColorStop(0, "rgba(0,0,0,0)"); vg2.addColorStop(1, "rgba(0,0,0,0.30)");
+      c.fillStyle = vg2; c.fillRect(0, 0, W, H);
+    });
+    if (vigSpr) ctx.drawImage(vigSpr, 0, 0);
 
     // bars dari analyser atau dummy berdenyut
     const N = barCount; // 🎛️ v19.14: jumlah bar bisa diatur
@@ -491,35 +519,44 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const bars = barsRef.current;
     const [r, g2, b] = rgb;
     const acc = `rgb(${r},${g2},${b})`;
-    // 🎬 v19.12: GLOW BERGERAK di background (ala Trap Nation) — bikin nggak polos
-    const gb2 = ctx.createRadialGradient(W / 2 + Math.sin(t * 0.3) * W * 0.15, H * 0.32 + Math.cos(t * 0.4) * H * 0.12, 40, W / 2, H / 2, Math.max(W, H));
-    gb2.addColorStop(0, `rgba(${r},${g2},${b},${((0.10 + bass * 0.16) * glowInt).toFixed(3)})`);
-    gb2.addColorStop(0.5, "rgba(0,0,0,0)"); gb2.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = gb2; ctx.fillRect(0, 0, W, H);
-
-    // 👑 v19.13 AURORA — 3 gumpalan cahaya bergerak pelan + bintang berkelip (murah, tanpa shadowBlur)
-    ctx.save(); ctx.globalCompositeOperation = "lighter";
     const aur = [
       { x: W * 0.2, y: H * 0.25, r: W * 0.5, sp: 0.3, a: (0.10 + bass * 0.05) * glowInt },
       { x: W * 0.8, y: H * 0.7, r: W * 0.55, sp: 0.22, a: (0.08 + bass * 0.04) * glowInt },
       { x: W * 0.5, y: H * 0.5, r: W * 0.6, sp: 0.16, a: 0.07 * glowInt },
     ];
-    for (let i = 0; i < aur.length; i++) {
-      const A = aur[i];
+    // ⚡ v19.25: GLOW + AURORA pakai GRADIENT CACHE + translate (gradient ikut transform)
+    // → 1 gradient dibuat sekali per warna/ukuran, dipakai ulang tiap frame (MDN: cache).
+    const glowSpr = spriteC(`starsglow:${W}x${H}:${r}:${g2}:${b}`, W, H, (c) => {
+      for (let i = 0; i < 70; i++) {
+        c.fillStyle = "rgba(255,255,255,0.55)";
+        c.fillRect(Math.floor(Math.random() * W), Math.floor(Math.random() * H * 0.7), 2, 2);
+      }
+    });
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const aurR = Math.max(W, H);
+    const ag = gradC(`aur:${r}:${g2}:${b}:${W}x${H}`, () => {
+      const g2c = ctx.createRadialGradient(0, 0, 0, 0, 0, aurR);
+      g2c.addColorStop(0, `rgba(${r},${g2},${b},0.20)`);
+      g2c.addColorStop(1, "rgba(0,0,0,0)");
+      return g2c;
+    });
+    const detail = detailRef.current;
+    const aurN = detail >= 3 ? 3 : detail === 2 ? 2 : 1;
+    for (let i = 0; i < aurN; i++) {
+      const A = aur[i % aur.length];
       const ax = A.x + Math.sin(t * A.sp + i * 2.1) * W * 0.08;
       const ay = A.y + Math.cos(t * A.sp * 0.8 + i * 1.7) * H * 0.06;
-      const ag = ctx.createRadialGradient(ax, ay, 0, ax, ay, A.r);
-      ag.addColorStop(0, `rgba(${r},${g2},${b},${A.a.toFixed(3)})`);
-      ag.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
+      ctx.save(); ctx.translate(ax, ay);
+      ctx.globalAlpha = Math.min(1, A.a * (0.8 + bass * 0.5));
+      ctx.fillStyle = ag;
+      ctx.fillRect(-W, -H, W * 2, H * 2);
+      ctx.restore();
     }
-    if (!starsRef.current.length) {
-      for (let i = 0; i < 70; i++) starsRef.current.push({ x: Math.random() * W, y: Math.random() * H * 0.7, r: Math.random() * 1.6 + 0.4, ph: Math.random() * 6.28 });
-    }
-    for (const s of starsRef.current) {
-      const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 1.5 + s.ph));
-      ctx.fillStyle = `rgba(255,255,255,${(tw * 0.6).toFixed(3)})`;
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    // Bintang: SPRITE pre-render (1 drawImage, bukan 70 arc) + kedip seragam
+    if (glowSpr) {
+      ctx.globalAlpha = 0.5 + 0.4 * Math.abs(Math.sin(t * 1.5));
+      ctx.drawImage(glowSpr, 0, 0);
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
 
@@ -562,10 +599,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (specStyle === "bars") {
       const bw = W / N;
       const baseY = H - 8;
-      const grad3 = ctx.createLinearGradient(0, H, 0, 0);
-      grad3.addColorStop(0, acc);
-      grad3.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.55 + 139))},${Math.min(255, Math.round(g2 * 0.45 + 85))},255)`);
-      grad3.addColorStop(1, "#22d3ee");
+      const grad3 = gradC(`bars3:${r}:${g2}:${W}x${H}`, () => {
+        const g = ctx.createLinearGradient(0, H, 0, 0);
+        g.addColorStop(0, acc);
+        g.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.55 + 139))},${Math.min(255, Math.round(g2 * 0.45 + 85))},255)`);
+        g.addColorStop(1, "#22d3ee");
+        return g;
+      });
       // reflection bawah (flip) + glow
       ctx.save(); ctx.globalAlpha = 0.26; ctx.translate(0, baseY + 4); ctx.scale(1, -0.45);
       for (let i = 0; i < N; i++) {
@@ -579,10 +619,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.restore();
       // bars utama + glow MURAH (lighter — tanpa shadowBlur yang bikin HP berat)
       ctx.save(); ctx.globalCompositeOperation = "lighter";
-      const glowBg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.5);
-      glowBg.addColorStop(0, `rgba(${r},${g2},${b},${((0.16 + bass * 0.18) * glowInt).toFixed(3)})`);
-      glowBg.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = glowBg; ctx.fillRect(0, 0, W, H);
+      const glowBg = gradC(`barsglow:${r}:${g2}:${W}x${H}`, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, H * 0.5);
+        g.addColorStop(0, `rgba(${r},${g2},${b},0.34)`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        return g;
+      });
+      ctx.save(); ctx.translate(W / 2, baseY);
+      ctx.globalAlpha = Math.min(1, (0.16 + bass * 0.18) * glowInt);
+      ctx.fillStyle = glowBg; ctx.fillRect(-W, -H, W * 2, H * 2);
+      ctx.restore();
       ctx.restore();
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(3, v * H * 0.62);
@@ -647,6 +693,99 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.strokeStyle = acc; ctx.globalAlpha = alpha; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
       }
       ctx.restore();
+    } else if (specStyle === "aurora") {
+      // 🌌 AURORA — pita cahaya bergelombang (2 band, gradient cache + translate)
+      const bw = W / N, baseY = H - 8;
+      const aurBand = gradC(`aurband:${r}:${g2}:${W}x${H}`, () => {
+        const g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, `rgba(${r},${g2},${b},0)`);
+        g.addColorStop(0.5, `rgba(${r},${g2},${b},0.5)`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        return g;
+      });
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 2; i++) {
+        const yy = H * (0.25 + 0.2 * i) + Math.sin(t * 0.8 + i * 2.4) * H * 0.08;
+        ctx.save(); ctx.translate(0, yy);
+        ctx.globalAlpha = 0.35 + 0.2 * bass;
+        ctx.fillStyle = aurBand; ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+      ctx.restore();
+      for (let i = 0; i < N; i++) { const v = bars[i]; const h = Math.max(3, v * H * 0.5); ctx.fillStyle = acc; ctx.fillRect(Math.round(i * bw + 2), Math.round(baseY - h), Math.max(1, Math.round(bw - 4)), Math.round(h)); }
+    } else if (specStyle === "galaxy") {
+      // 🌠 GALAXY — orbit bintang + nebula pusat + ring
+      const cx = W / 2, cy = H * 0.45, R = Math.min(W, H) * 0.24;
+      const neb = gradC(`neb:${r}:${g2}:${W}x${H}`, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 2.2);
+        g.addColorStop(0, `rgba(${r},${g2},${b},0.5)`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        return g;
+      });
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.translate(cx, cy);
+      ctx.fillStyle = neb; ctx.fillRect(-W, -H, W * 2, H * 2);
+      ctx.rotate(t * 0.4);
+      ctx.strokeStyle = `rgba(${r},${g2},${b},0.5)`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, R + 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([6, 10]);
+      ctx.strokeStyle = `rgba(${r},${g2},${b},0.35)`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, 0, R + 40, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < 5; i++) {
+        const a = t * 0.8 + (i / 5) * Math.PI * 2;
+        const rr = R + 8 + (i % 2) * 32;
+        ctx.fillStyle = `rgba(255,255,255,0.9)`;
+        ctx.fillRect(Math.round(Math.cos(a) * rr) - 2, Math.round(Math.sin(a) * rr) - 2, 4, 4);
+      }
+      ctx.restore();
+      const bw = W / N, baseY = H - 8;
+      for (let i = 0; i < N; i++) { const v = bars[i]; const h = Math.max(3, v * H * 0.45); ctx.fillStyle = `rgba(${r},${g2},${b},0.9)`; ctx.fillRect(Math.round(i * bw + 2), Math.round(baseY - h), Math.max(1, Math.round(bw - 4)), Math.round(h)); }
+    } else if (specStyle === "neonring") {
+      // 💠 NEON RING — 3 cincin berdenyut + glow pusat
+      const cx = W / 2, cy = H * 0.45;
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      const ringCol = `rgba(${r},${g2},${b},`;
+      for (let i = 0; i < 3; i++) {
+        const R = Math.min(W, H) * (0.12 + 0.06 * i) + bass * 18 * (i + 1);
+        const al = 0.25 + 0.2 * bass + 0.1 * Math.sin(t * 2 + i * 1.6);
+        ctx.strokeStyle = ringCol + Math.max(0.05, al).toFixed(3) + ")";
+        ctx.lineWidth = 2 + i;
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+      }
+      const ng = gradC(`neonglow:${r}:${g2}:${W}x${H}`, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.min(W, H) * 0.3);
+        g.addColorStop(0, `rgba(${r},${g2},${b},0.55)`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        return g;
+      });
+      ctx.translate(cx, cy); ctx.fillStyle = ng;
+      ctx.fillRect(-Math.min(W, H), -Math.min(W, H), Math.min(W, H) * 2, Math.min(W, H) * 2);
+      ctx.restore();
+      const bw = W / N, baseY = H - 8;
+      for (let i = 0; i < N; i++) { const v = bars[i]; const h = Math.max(3, v * H * 0.5); ctx.fillStyle = acc; ctx.fillRect(Math.round(i * bw + 2), Math.round(baseY - h), Math.max(1, Math.round(bw - 4)), Math.round(h)); }
+    } else if (specStyle === "holo") {
+      // 🪬 HOLOGRAM — prisma heksagon berputar (8 lapisan tipis)
+      const cx = W / 2, cy = H * 0.45;
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.translate(cx, cy);
+      for (let i = 0; i < 8; i++) {
+        const z = i / 8;
+        const size = Math.min(W, H) * (0.05 + z * 0.3) * (1 + bass * 0.15);
+        const al = 0.05 + 0.12 * (1 - z) + bass * 0.06;
+        ctx.save(); ctx.rotate(t * 0.5 + z * 0.9);
+        ctx.strokeStyle = `rgba(${Math.min(255, r + 40)},${Math.min(255, g2 + 40)},255,${al.toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2 - Math.PI / 2;
+          const px = Math.cos(a) * size, py = Math.sin(a) * size;
+          k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+      const bw = W / N, baseY = H - 8;
+      for (let i = 0; i < N; i++) { const v = bars[i]; const h = Math.max(3, v * H * 0.45); ctx.fillStyle = `rgba(${r},${g2},${b},0.85)`; ctx.fillRect(Math.round(i * bw + 2), Math.round(baseY - h), Math.max(1, Math.round(bw - 4)), Math.round(h)); }
     } else { // dots/partikel
       ctx.save();
       for (let i = 0; i < N; i++) {
@@ -807,12 +946,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       });
     }
     ctx.save(); ctx.globalCompositeOperation = "lighter";
-    for (const e of embersRef.current) {
+    const emberN = detail >= 3 ? 30 : detail === 2 ? 20 : 12;
+    while (embersRef.current.length > emberN) embersRef.current.pop();
+    if (!embersRef.current.length) {
+      for (let i = 0; i < emberN; i++) embersRef.current.push({
+        x: Math.random() * W, y: H + Math.random() * H * 0.4,
+        vx: (Math.random() - 0.5) * 0.4, vy: -(0.25 + Math.random() * 0.5),
+        r: Math.random() * 2 + 1, ph: Math.random() * 6.28,
+      });
+    }
+    const emberCol = `rgba(${r},${g2},${b},`;
+    for (let i = 0; i < embersRef.current.length; i++) {
+      const e = embersRef.current[i];
       e.y += e.vy; e.x += e.vx + Math.sin(t * 1.2 + e.ph) * 0.3;
       if (e.y < -10) { e.y = H + 10; e.x = Math.random() * W; }
       const tw = 0.3 + 0.7 * Math.abs(Math.sin(t * 2 + e.ph));
-      ctx.fillStyle = `rgba(${r},${g2},${b},${(tw * 0.5).toFixed(3)})`;
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.r + bass * 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = emberCol + (tw * 0.5).toFixed(3) + ")";
+      const rr2 = Math.max(1, Math.round(e.r + bass * 1.5));
+      ctx.fillRect(Math.round(e.x), Math.round(e.y), rr2, rr2); // ⚡ fillRect > arc
     }
     ctx.restore();
 
@@ -860,14 +1011,23 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
-    const ctx = cv.getContext("2d") as CanvasRenderingContext2D | null; if (!ctx) return;
+    const ctx = cv.getContext("2d", { alpha: false }) as CanvasRenderingContext2D | null; if (!ctx) return;
     const t = srcRef.current ? actxRef.current!.currentTime - startAtRef.current : performance.now() / 1000;
+    // ⚡ v19.25 ADAPTIF: ukur waktu frame → otomatis turunkan detail kalau HP lemot
+    const t0 = performance.now();
+    tickCountRef.current++;
+    if (tickCountRef.current % 45 === 0) {
+      const avg = frameMsRef.current;
+      if (avg > 34 && detailRef.current > 1) detailRef.current--;
+      else if (avg < 22 && detailRef.current < 3) detailRef.current++;
+    }
     let freq: Uint8Array | null = null;
     if (analyserRef.current && srcRef.current) {
       freq = new Uint8Array(analyserRef.current.frequencyBinCount);
       analyserRef.current.getByteFrequencyData(freq as any);
     }
     drawScene(ctx, cv.width, cv.height, Math.max(0, t), freq);
+    frameMsRef.current = frameMsRef.current * 0.92 + (performance.now() - t0) * 0.08;
     rafRef.current = requestAnimationFrame(tick);
   }, [drawScene]);
 
@@ -1054,7 +1214,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         {/* pratinjau selalu terlihat */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
           <div style={{ position: "relative", width: "100%", maxWidth: ratio === "9:16" ? 250 : 480 }}>
-            <canvas ref={cvRef} width={dim.w} height={dim.h}
+            <canvas ref={cvRef} width={Math.round(dim.w * 0.55)} height={Math.round(dim.h * 0.55)}
               style={{ width: "100%", borderRadius: 14, border: dragMode ? "2px solid rgba(139,92,246,.7)" : "1px solid rgba(255,255,255,.14)", background: "#000", aspectRatio: `${dim.w}/${dim.h}`, touchAction: "none", cursor: dragMode ? "crosshair" : "default" }}
               onPointerDown={(e) => {
                 // 🐛 FIX v19.15.1: drag LANGSUNG tanpa toggle — hit-test posisi logo & judul
