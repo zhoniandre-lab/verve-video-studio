@@ -15,6 +15,12 @@ const SUNO_PROVIDERS = [
   { id: "sunor", label: "Sunor.cc" },
   { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
 ];
+const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
+  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key)" },
+  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
+  sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
+  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
+};
 const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
 const SUNO_MODELS = [
@@ -254,7 +260,14 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       </button>
       {keyPanel && (
         <div className="lh-keypanel">
-          <p className="lh-note">1. Tap link provider → login → ambil key. 2. Tempel <b>satu kunci per baris</b> → + Tambah. Bisa BANYAK kunci: kalau satu habis, mesin otomatis pindah berikutnya.</p>
+          {PROVIDER_KEY_LINK[sunoProv]?.url ? (
+            <a className="lh-keylink" href={PROVIDER_KEY_LINK[sunoProv].url} target="_blank" rel="noreferrer">
+              🔑 Ambil API key di {SUNO_PROVIDERS.find((p) => p.id === sunoProv)?.label.replace(/^🥇 /, "")} ↗
+            </a>
+          ) : (
+            <p className="lh-note">aimusic.so = mode gratis tanpa key (sering penuh). Mau lancar: pakai Kie.ai.</p>
+          )}
+          <p className="lh-note">{PROVIDER_KEY_LINK[sunoProv]?.hint || ""}<br />2. Tempel <b>satu kunci per baris</b> → + Tambah. Bisa BANYAK kunci: kalau satu habis, mesin otomatis pindah berikutnya.</p>
           <textarea className="lh-ta" rows={3} placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "kunci_baris_1\nkunci_baris_2"} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button className="lh-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!keyDraft.trim()} onClick={addKeysFromDraft}>＋ Tambah</button>

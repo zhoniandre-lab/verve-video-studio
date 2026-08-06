@@ -17,6 +17,12 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔑 v19.31 — LINK AMBIL API KEY DI SUNO PANEL (sama seperti Lahan)
+* **Masalah (screenshot user):** di panel Suno Spectrum, belum ada LINK yang bisa diklik untuk ambil API key di provider (padahal di Lahan ada) — kalau kredit habis, user mau tinggal tap link → buat key baru (ganti email).
+* **Perbaikan:** salin `PROVIDER_KEY_LINK` dari Lahan ke `SunoPanel.tsx` — di panel 🔑 Setelan API Key sekarang muncul link klik **"🔑 Ambil API key di Kie.ai/apiframe/Sunor.cc ↗"** (buka di tab baru) + hint cara dapat key + pesan "mode gratis" untuk aimusic. Persis perilaku Lahan.
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### 🎨 v19.30 — BUANG TOMBOL LAMA + STYLE LAGU BEBAS DI SUNO PANEL
 * **Masalah (screenshot user):** ada DUA tombol buat lagu di Spectrum — yang atas ("✨ Buat Lagu AI") mubazir & error; di panel Suno belum ada input style bebas.
 * **Perbaikan:**
