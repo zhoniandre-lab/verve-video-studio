@@ -12,11 +12,9 @@ const SUNO_KEYS_KEY = "verve_suno_keys_v1";
 const SUNO_PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
   { id: "sunor", label: "Sunor.cc" },
-  { id: "apiframe", label: "apiframe.ai" },
 ];
 const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
   kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key). Daftar baru dapat 5.000 kredit." },
-  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
   sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
 };
 /** 🛡 v19.35.4: dashboard tempat cek hasil manual kalau polling lama */

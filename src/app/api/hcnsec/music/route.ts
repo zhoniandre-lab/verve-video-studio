@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
 import { gerbangFitur } from "../../../../lib/setelan";
+import { normalizeLagu as normalize, mapModelKie, mapModelGeneric } from "../../../../lib/suno-normalize";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -57,27 +58,6 @@ function getCreds(req: Request) {
 }
 
 async function sleep(ms:number){return new Promise(r=>setTimeout(r,ms));}
-
-function mapModelKie(modelId: string): string {
-  const m = String(modelId || "v5.5").toLowerCase();
-  if (m.includes("v5.5") || m.includes("v5_5")) return "V5_5";
-  if (m.includes("v5")) return "V5";
-  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "V4_5PLUS";
-  if (m.includes("v4.5all") || (m.includes("v4.5") && m.includes("all"))) return "V4_5ALL";
-  if (m.includes("v4.5")) return "V4_5";
-  if (m.includes("v4")) return "V4";
-  if (m.includes("v3.5") || m.includes("v3_5")) return "V3_5";
-  return "V5_5";
-}
-function mapModelGeneric(modelId: string): string {
-  const m = String(modelId || "v5.5").toLowerCase();
-  if (m.includes("v5.5")) return "suno-v5.5";
-  if (m.includes("v5")) return "suno-v5";
-  if (m.includes("v4.5")) return "suno-v4.5";
-  if (m.includes("v4")) return "suno-v4";
-  if (m.includes("v3.5")) return "chirp-v3.5";
-  return m;
-}
 
 function buildBody(payload: any, provider: Provider): any {
   // Dukung payload "Kampung-style" yang pisah title, lyrics, deskripsi utama
@@ -222,86 +202,14 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
   ];
 }
 
-function normalize(d: any, provider: Provider): any {
-  // Kie.ai format: { code:200, data:{ taskId } } saat generate,
-  // dan { code:200, data:{ status:"SUCCESS", response:{ sunoData:[{audioUrl,...}]} } } saat poll
-  if (provider === "kie") {
-    if (d?.code !== 200 && d?.code !== 0) {
-      return { status: "error", error: d?.msg || "Kie error" };
-    }
-    const data = d.data || {};
-    if (data.taskId && !data.response) {
-      return { id: data.taskId, status: "pending" };
-    }
-    const st = String(data.status || "pending").toUpperCase();
-    if (st === "SUCCESS" || st === "FIRST_SUCCESS") {
-      const items = data.response?.sunoData || data.response?.data || data.sunoData || [];
-      const first = items[0] || {};
-      return {
-        id: data.taskId || first.id || "",
-        status: "completed",
-        audio_url: first.audioUrl || first.streamAudioUrl || first.url || "",
-        title: first.title || "",
-        image_url: first.imageUrl || "",
-        duration: first.duration,
-      };
-    }
-    if (st.includes("FAIL") || st.includes("ERROR")) {
-      return { status: "error", error: data.errorMessage || st };
-    }
-    return { id: data.taskId, status: "pending" };
-  }
-
-  // ☀️ v10.5 Sunor: buat → {data:{task_id}} · poll → {data:{status:"success"|"failure"|"running", output:{…}}}
-  // 🐛 FIX v19.35.5: wrapper Sunor standar menaruh hasil di `output.sunoData` (bukan songs/clips)!
-  // Dulu normalize cuma cek songs/clips → polling 40x "pending" padahal lagu sudah jadi.
-  if (provider === "sunor") {
-    const d0 = d.data || d || {};
-    if (d0.task_id && !d0.status && !d0.state) return { id: d0.task_id, status: "pending" };
-    if (d0.id && !d0.status && !d0.state) return { id: d0.id, status: "pending" };
-    const st = String(d0.status || d0.state || "pending").toLowerCase();
-    if (st === "success" || st === "completed" || st === "succeeded" || st === "complete") {
-      const out = d0.output ?? d0.result ?? {};
-      const first: any = Array.isArray(out) ? (out[0] || {})
-        : (out.sunoData?.[0] || out.songs?.[0] || out.clips?.[0] || out || {});
-      return {
-        id: d0.task_id || d0.id || first.id || "",
-        status: "completed",
-        audio_url: first.audio_url || first.audioUrl || first.url || first.stream_url || "",
-        title: first.title || d0.title || "",
-        image_url: first.image_url || first.imageUrl || first.cover_url || "",
-        duration: first.duration,
-      };
-    }
-    if (st === "failure" || st === "error" || st === "failed" || st === "timeout") {
-      return { status: "error", error: d0.error || d0.message || d0.fail_reason || `Sunor: ${st}` };
-    }
-    return { id: d0.task_id || d0.id || "", status: "pending" };
-  }
-
-  // Generic suno-compatible
-  const items = d.data || (Array.isArray(d) ? d : [d]);
-  const first = items[0] || d || {};
-  const audioUrl = first.audio_url || first.url || first.stream_url || first.audioUrl || d.audio_url || d.url || "";
-  let status = (first.status || d.status || "pending").toString().toLowerCase();
-  if (audioUrl && (status === "pending" || status === "processing" || status === "submitted" || status === "queued")) {
-    status = "completed";
-  }
-  if (/complete|success|done/i.test(status)) status = "completed";
-  if (/error|fail/i.test(status)) status = "error";
-  return {
-    id: first.id || d.id || d.task_id || "",
-    status,
-    audio_url: audioUrl,
-    title: first.title || d.title || "",
-    image_url: first.image_url || first.cover || first.image || d.image_url || "",
-  };
-}
-
 export async function POST(req: Request) {
   try {
     const payload = await req.json();
     const { key, base, provider } = getCreds(req);
+    // 🐛 FIX v19.35.6: apiframe MATI (404) — tolak lebih dulu, jangan buang waktu
+    if (provider === "apiframe") {
+      return NextResponse.json({ error: "apiframe.ai sudah MATI (endpoint 404). Pilih 🥇 Kie.ai atau Sunor.cc di panel Provider — dan tambah key-nya di 🔑 Setelan API Key.", status: "provider_mati", provider }, { status: 502 });
+    }
     const body = buildBody(payload, provider);
     const headers = buildHeaders(key);
     const endpoints = getEndpoints(provider, base);
@@ -345,9 +253,7 @@ export async function POST(req: Request) {
           if (r.status === 401 || r.status === 403) {
             const msg = provider === "kie"
               ? `API Key Kie.ai invalid/expired. Cek key di dashboard kie.ai ya bro.`
-              : provider === "apiframe"
-                ? `API Key apiframe.ai invalid atau IP diblok Cloudflare. Coba pindah ke Kie.ai (lebih lancar).`
-                : `API Key invalid. Cek di dashboard ${PROVIDERS[provider].label}.`;
+              : `API Key invalid. Cek di dashboard ${PROVIDERS[provider].label}.`;
             return NextResponse.json({ error: msg, status: "auth_error", provider }, { status: 401 });
           }
           if (r.status === 402) {
@@ -400,6 +306,10 @@ export async function GET(req: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id diperlukan" }, { status: 400 });
     const { key, base, provider } = getCreds(req);
+    // 🐛 FIX v19.35.6: apiframe MATI — tolak lebih dulu
+    if (provider === "apiframe") {
+      return NextResponse.json({ status: "error", error: "apiframe.ai sudah MATI — pilih Kie.ai atau Sunor.cc." });
+    }
     const headers = buildHeaders(key);
     const endpoints = getEndpoints(provider, base, id);
 

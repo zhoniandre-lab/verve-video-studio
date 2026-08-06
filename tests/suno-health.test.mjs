@@ -31,9 +31,13 @@ T("panel: 'Failed to fetch' diterjemahkan", /failed to fetch/i.test(panel) && /t
 T("panel: ada tombol 'Cek ulang' & link dashboard", /Cek ulang/.test(panel) && /PROVIDER_DASH/.test(panel));
 T("panel: ada tombol 🩺 Cek status provider", /🩺 Cek status/.test(panel));
 
-/* 🐛 v19.35.5: normalize Sunor harus baca output.sunoData (bug polling 40x) */
-T("route: normalize Sunor baca output.sunoData", /out\.sunoData\?\.\[0\]/.test(route) || /out\.sunoData\?\.\[0\]/.test(route));
-T("route: sunor dukungan d0.id (task id alternatif)", /\(d0\.id && !d0\.status && !d0\.state\)/.test(route));
+/* 🐛 v19.35.5/6: normalize dipindah ke lib murni suno-normalize.ts (diuji terpisah) */
+import { readFileSync as rfs2 } from "fs";
+const normLib = rfs2(new URL("../src/lib/suno-normalize.ts", import.meta.url), "utf8");
+T("lib normalize ada & baca output.sunoData", /normalizeSunor/.test(normLib) && /sunoData/.test(normLib));
+T("lib normalize: cari audio rekursif (streamUrl dst)", /cariAudioRekursif/.test(normLib) && /streamUrl/.test(normLib));
+T("lib normalize: mapModelKie & Generic dipakai route", /mapModelKie/.test(route) && /mapModelGeneric/.test(route));
+T("route: apiframe MATI ditolak di POST & GET", (route.match(/provider === "apiframe"/g) || []).length >= 2);
 /* 🕐 polling tampilkan durasi & interval lebih cepat */
 T("panel: pesan polling tampilkan durasi (m s)", /sudah \$\{Math\.floor\(detik \/ 60\)\}m/.test(panel));
 T("panel: interval polling 5s awal → 12s maks (lebih cepat)", /5000 \+ idx \* 700/.test(panel));
