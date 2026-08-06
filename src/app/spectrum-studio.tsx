@@ -125,12 +125,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [multiBeat, setMultiBeat] = useState(4); // 🐛 v19.16.1: ganti tiap 4 ketukan (~2.5 dtk) — nggak pusing
   const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
   const [danceZoom, setDanceZoom] = useState(0.03); // 🐛 v19.16.1: amplitudo zoom lebih lembut (0 = mati)
-  // 🎚️ v19.26 POSISI SPEKTRUM + MODE BERSIH + CINEMATIC
+  // 🎚️ v19.27 POSISI SPEKTRUM (SEMUA style via transform global) + PINCH + BERSIH
   const [specPos, setSpecPos] = useState<"bawah" | "tengah" | "atas" | "bebas">("bawah");
-  const [specPosY, setSpecPosY] = useState(0.9); // fraksi tinggi (dipakai mode bebas)
-  const [specBersih, setSpecBersih] = useState(false); // 🧹 mode bersih: efek dikurangi, spektrum jelas
-  const [letterbox, setLetterbox] = useState(false); // 🎬 cinematic bar atas-bawah
-  const [grain, setGrain] = useState(false); // 🎞️ film grain halus
+  const [specPosY, setSpecPosY] = useState(0.9);
+  const [specBersih, setSpecBersih] = useState(false);
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchRef = useRef<{ d: number; scale: number } | null>(null);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
@@ -475,10 +473,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
   }
 
-  // 🎚️ v19.26: posisi vertikal spektrum (0..1) — Bawah/Tengah/Atas/Bebas
+  // 🎚️ v19.27: posisi vertikal spektrum (0..1)
   const specY = specPos === "bawah" ? 0.9 : specPos === "tengah" ? 0.5 : specPos === "atas" ? 0.15 : specPosY;
 
   const drawScene = useCallback((ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq?: Uint8Array | null) => {
+    // 🎚️ v19.27: geser SEMUA style ke posisi (translate global) — bukan baseY per style
+    ctx.save();
+    ctx.translate(0, (H * specY) - H * 0.55); // dorong tengah spektrum ke specY
     // background
     if (bgType === "img" && bgImgRef.current) {
       const im = bgImgRef.current, ir = im.naturalWidth / im.naturalHeight, cr = W / H;
@@ -537,8 +538,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     ];
     // ⚡ v19.25: GLOW + AURORA pakai GRADIENT CACHE + translate (gradient ikut transform)
     // → 1 gradient dibuat sekali per warna/ukuran, dipakai ulang tiap frame (MDN: cache).
-    // 🧹 v19.26: mode BERSIH → efek latar dikurangi drastis, spektrum jelas
-    const glowSpr = specBersih ? null : spriteC(`starsglow:${W}x${H}:${r}:${g2}:${b}`, W, H, (c) => {
+    const glowSpr = spriteC(`starsglow:${W}x${H}:${r}:${g2}:${b}`, W, H, (c) => {
       for (let i = 0; i < 70; i++) {
         c.fillStyle = "rgba(255,255,255,0.55)";
         c.fillRect(Math.floor(Math.random() * W), Math.floor(Math.random() * H * 0.7), 2, 2);
@@ -610,7 +610,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // ---- spectrum styles (🎬 v19.12: upgrade WAH — glow, reflection, gradien 3 warna, center glow) ----
     if (specStyle === "bars") {
       const bw = W / N;
-      const baseY = H * specY;
+      const baseY = H - 8;
       const grad3 = gradC(`bars3:${r}:${g2}:${W}x${H}`, () => {
         const g = ctx.createLinearGradient(0, H, 0, 0);
         g.addColorStop(0, acc);
@@ -654,7 +654,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.beginPath(); ctx.arc(W / 2, H - 46, 10 + bass * 26, 0, Math.PI * 2);
       ctx.fillStyle = acc; ctx.globalAlpha = 0.45 + bass * 0.5; ctx.fill(); ctx.globalAlpha = 1;
     } else if (specStyle === "mirror") {
-      const bw = W / N; const cy = H * specY;
+      const bw = W / N; const cy = H * 0.56;
       ctx.save();
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(2, v * H * 0.28);
@@ -693,7 +693,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.fillStyle = rgc; ctx.beginPath(); ctx.arc(0, 0, gr, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     } else if (specStyle === "wave") {
-      const cy = H * specY;
+      const cy = H * 0.55;
       ctx.save();
       for (const [alpha, amp] of [[0.95, 1], [0.4, 1.6], [0.2, 2.3]] as any[]) {
         ctx.beginPath();
@@ -950,15 +950,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
 
     // 👑 v19.13 PRO PACK: EMBER NAIK — partikel ringan (murah, tanpa shadowBlur)
-    // 🧹 v19.26: mode BERSIH → ember di-skip
-    if (!specBersih && !embersRef.current.length) {
+    // 🧹 v19.27: mode BERSIH → ember di-skip
+    if (!specBersih) {
+    if (!embersRef.current.length) {
       for (let i = 0; i < 30; i++) embersRef.current.push({
         x: Math.random() * W, y: H + Math.random() * H * 0.4,
         vx: (Math.random() - 0.5) * 0.4, vy: -(0.25 + Math.random() * 0.5),
         r: Math.random() * 2 + 1, ph: Math.random() * 6.28,
       });
     }
-    if (!specBersih) {
     ctx.save(); ctx.globalCompositeOperation = "lighter";
     const emberN = detail >= 3 ? 30 : detail === 2 ? 20 : 12;
     while (embersRef.current.length > emberN) embersRef.current.pop();
@@ -982,23 +982,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     ctx.restore();
     }
 
-    // 🎬 v19.26 CINEMATIC: letterbox (bar hitam atas-bawah) + film grain halus (sprite)
-    if (letterbox) {
-      const hb = Math.max(14, Math.round(H * 0.035));
-      ctx.fillStyle = "rgba(0,0,0,0.92)";
-      ctx.fillRect(0, 0, W, hb);
-      ctx.fillRect(0, H - hb, W, hb);
-    }
-    if (grain) {
-      const gr = spriteC(`grain:${W}x${H}`, W, H, (c) => {
-        for (let i = 0; i < 900; i++) {
-          const n = Math.random();
-          c.fillStyle = n > 0.5 ? `rgba(255,255,255,${(0.03 + Math.random() * 0.05).toFixed(3)})` : `rgba(0,0,0,${(0.04 + Math.random() * 0.06).toFixed(3)})`;
-          c.fillRect(Math.floor(Math.random() * W), Math.floor(Math.random() * H), 1, 1);
-        }
-      });
-      if (gr) { ctx.save(); ctx.globalAlpha = 0.5; ctx.drawImage(gr, 0, 0); ctx.restore(); }
-    }
+    ctx.restore(); // 🎚️ tutup translate posisi spektrum
 
     // overlay suasana
     if (overlay !== "none") paintEffect(ctx, W, H, overlay, t, true);
@@ -1040,7 +1024,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.fillText("∞ loop mulus", W - H * 0.1 - 8, 8 + H * 0.023);
     }
   }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless,
-    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom, specY, specBersih, letterbox, grain]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
+    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom, specY, specBersih]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
@@ -1180,12 +1164,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         mr.onstop = () => res(new Blob(chunks, { type: (chunks[0]?.type || mime || "video/webm").split(";")[0] }));
       });
 
-      // ⚡ v19.26 FIX STUTTER: frame sinkron audio clock, tapi:
-      //  - setProgress DI-THROTTLE (jangan tiap frame → React re-render tiap frame = jank)
-      //  - akhir render bersih: hentikan loop saat audio habis, stop recorder LANGSUNG
+      // frame sinkron dgn audio clock
       startAtRef.current = actx.currentTime;
-      let audioEnded = false;
-      src.onended = () => { audioEnded = true; };
+      src.onended = () => setTimeout(() => { try { mr.stop(); } catch {} }, 180);
       mr.start(350);
       src.start();
       await actx.resume().catch(() => {});
@@ -1199,13 +1180,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
           analyser.getByteFrequencyData(barsLocal as any);
           drawScene(ctx, W, H, Math.max(0, t), barsLocal);
           progTick++;
-          if (progTick % 8 === 0) setProgress(clampN(t / total, 0, 1)); // ⚡ throttle: ±4×/detik
-          if (t >= total + 0.05 || audioEnded) { res2(); return; } // ⚡ berhenti pas, tanpa gap 180ms
+          if (progTick % 8 === 0) setProgress(clampN(t / total, 0, 1)); // ⚡ throttle (jangan tiap frame)
+          if (t >= total + 0.05) { res2(); return; } // ⚡ berhenti pas, tanpa gap
           requestAnimationFrame(loop);
         };
         loop();
       });
-      try { mr.stop(); } catch {} // ⚡ stop LANGSUNG (tanpa setTimeout)
       try { src.stop(); } catch {}
       const blob = await done;
       actx.close().catch(() => {});
@@ -1256,8 +1236,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <canvas ref={cvRef} width={Math.round(dim.w * 0.55)} height={Math.round(dim.h * 0.55)}
               style={{ width: "100%", borderRadius: 14, border: dragMode ? "2px solid rgba(139,92,246,.7)" : "1px solid rgba(255,255,255,.14)", background: "#000", aspectRatio: `${dim.w}/${dim.h}`, touchAction: "none", cursor: dragMode ? "crosshair" : "default" }}
               onPointerDown={(e) => {
-                // 🐛 FIX v19.15.1: drag LANGSUNG tanpa toggle — hit-test posisi logo & judul
-                // 🔍 v19.26: PINCH ZOOM (2 jari) — jari 2 = zoom logo
+                // 🔍 v19.27: PINCH ZOOM (2 jari) + drag 1 jari
                 pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
                 if (pointersRef.current.size === 2) {
                   const [p1, p2] = [...pointersRef.current.values()];
@@ -1268,7 +1247,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
                 const x = (e.clientX - r.left) / r.width;
                 const y = (e.clientY - r.top) / r.height;
-                const tol = 0.12; // jarak sentuh yang dianggap "kena"
+                const tol = 0.12;
                 const dLogo = Math.hypot(x - logoPos.x, y - logoPos.y);
                 const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
                 if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
@@ -1283,7 +1262,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               onPointerMove={(e) => {
                 const prev = pointersRef.current.get(e.pointerId);
                 pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-                // 🔍 PINCH ZOOM: 2 jari → skala logo
                 if (pointersRef.current.size === 2 && pinchRef.current) {
                   const [p1, p2] = [...pointersRef.current.values()];
                   const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
@@ -1299,7 +1277,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
                 if (dragRef.current.target === "logo") setLogoPos({ x, y });
                 else setTitlePos({ x, y });
-                try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ } // 🐛 FIX: tanda user pernah geser manual
+                try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ }
               }}
               onPointerUp={(e) => { pointersRef.current.delete(e.pointerId); pinchRef.current = null; dragRef.current = null; }}
             />
@@ -1446,8 +1424,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             )}
             {!!presetMsg && <p style={{ fontSize: 11, color: presetMsg.startsWith("✅") ? "#6ee7b7" : "#fbbf24", margin: "6px 0 0" }}>{presetMsg}</p>}
 
-            {/* 🎚️ v19.26 POSISI SPEKTRUM + MODE BERSIH + CINEMATIC */}
-            <div className="v6-lbl">🎚️ POSISI SPEKTRUM</div>
+            <div className="v6-lbl">🎚️ POSISI SPEKTRUM (semua style)</div>
             <div className="v6-chips" style={{ padding: 0 }}>
               {[["bawah", "⬇ Bawah"], ["tengah", "🎯 Tengah"], ["atas", "⬆ Atas"], ["bebas", "✋ Bebas"]].map(([id, lb]) => (
                 <button key={id} className={`v6-chip ${specPos === id ? "on" : ""}`} onClick={() => setSpecPos(id as any)}>{lb}</button>
@@ -1455,18 +1432,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             {specPos === "bebas" && (
               <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                <span style={{ minWidth: 96 }}>Tinggi spektrum</span>
+                <span style={{ minWidth: 96 }}>Tinggi</span>
                 <input type="range" min={0.12} max={0.95} step={0.01} value={specPosY} onChange={(e) => setSpecPosY(Number(e.target.value))} style={{ flex: 1 }} />
                 <b style={{ minWidth: 28 }}>{Math.round(specPosY * 100)}%</b>
               </label>
             )}
             <div className="v6-lbl">🧹 TAMPILAN</div>
-            <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+            <div className="v6-chips" style={{ padding: 0 }}>
               <button className={`v6-chip ${specBersih ? "on" : ""}`} onClick={() => setSpecBersih(!specBersih)}>🧹 Mode Bersih</button>
-              <button className={`v6-chip ${letterbox ? "on" : ""}`} onClick={() => setLetterbox(!letterbox)}>🎬 Cinematic Bar</button>
-              <button className={`v6-chip ${grain ? "on" : ""}`} onClick={() => setGrain(!grain)}>🎞️ Film Grain</button>
             </div>
-            <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>Mode Bersih = efek latar dikurangi, spektrum paling jelas. Cinematic Bar = garis hitam ala film. Pinch 2 jari di logo = zoom in/out.</p>
+            <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>Geser 1 jari = pindah posisi · Cubit 2 jari di logo = zoom. Mode Bersih = latar minim, spektrum jelas.</p>
 
             <div className="v6-lbl">⚙️ PENGATURAN</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>

@@ -17,6 +17,17 @@ Branch Utama: `main` (Push ke `main` otomatis men-deploy pembaruan ke Vercel)
 
 ## 🚦 JURNAL PEMBARUAN & OPTIMASI TERBARU (v16.8-lock)
 
+### 🔄 v19.27 — ROLLBACK VISUAL (kembalikan kualitas) + POSISI SPEKTRUM SEMUA STYLE + PINCH
+* **Masalah (feedback user):** update v19.26 bikin kualitas "lebih burik/jelek" (translate per-style bikin sebagian style aneh); mau kembalikan tampilan sebelumnya; spektrum harus bisa digeser/cubit ke mana aja (SEMUA style); logo pinch zoom sudah bagus — pertahankan.
+* **Solusi:**
+  1. **Rollback visual ke v19.25** (kualitas seperti semula — yang user bilang lebih bagus) — hapus letterbox/film-grain/translate-per-style yang bikin kusam/aneh.
+  2. **POSISI SPEKTRUM SEMUA STYLE via transform GLOBAL** — `ctx.translate(0, H*specY - H*0.55)` membungkus semua style (bars/mirror/circle/wave/tunnel/dll) → geser posisi konsisten ke mana aja (Bawah/Tengah/Atas/Bebas + slider).
+  3. **Pinch zoom logo (2 jari)** dipertahankan & ditambah **drag 1 jari** pindah posisi.
+  4. **Mode Bersih** sederhana (latar minim, spektrum jelas) — tanpa efek yang bikin kusam.
+  5. **Fix stutter** tetap: throttle setProgress + akhir render bersih.
+* 33 suite hijau; tsc 0; build 0.
+
+
 ### 🎚️🎬 v19.26 — FIX STUTTER RENDER + POSISI SPEKTRUM + MODE BERSIH + PINCH ZOOM LOGO
 * **Masalah (feedback user):** (1) hasil render di ujung menit terakhir ada stag/lag berhenti lalu lanjut; (2) posisi spektrum kurang lengkap; (3) mau background bersih tapi spektrum jelas; (4) logo mau bisa pinch zoom.
 * **Perbaikan:**
