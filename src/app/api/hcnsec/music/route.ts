@@ -5,36 +5,41 @@ import { gerbangFitur } from "../../../../lib/setelan";
 
 /**
  * Generate AI music via Suno-compatible API.
- * Multi-provider: kie.ai, apiframe.ai, sunor.cc, aimusic.so (free).
+ * Multi-provider: kie.ai, apiframe.ai, sunor.cc.
+ * (aimusic.so DIHAPUS v19.35.4 — endpoint API-nya mati total, 404 semua.)
  *
  * Credentials priority:
  *   1. Header X-Suno-Key
  *   2. Header X-Suno-Provider ("kie" | "apiframe" | "sunor") — opsional, kalau dikirim
  *      client akan dipakai; kalau tidak, dideteksi dari prefix key.
  *   3. Env: SUNO_API_KEY / MUSIC_API_KEY
- *   4. Default free aimusic.so (kadang penuh)
+ *   Tanpa key sama sekali → error need_key + panduan dapat key gratis.
  */
 export const dynamic = "force-dynamic";
 
-type Provider = "kie" | "apiframe" | "sunor" | "aimusic";
+type Provider = "kie" | "apiframe" | "sunor";
 
 const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   kie:      { base: "https://api.kie.ai/api/v1", label: "Kie.ai" },
   apiframe: { base: "https://apiframe.ai/api",   label: "apiframe.ai" },
   sunor:    { base: "https://sunor.cc",            label: "Sunor.cc" }, // v10.5: subdomain api.* MATI di DNS — endpoint resmi ada di domain utama
-  aimusic:  { base: "https://api.aimusic.so",    label: "aimusic.so (free)" },
+};
+
+/** 🛡 v19.35.4: provider yang TERVERIFIKASI mati (semua endpoint 404) — jangan pernah dipakai.
+ *  Cek via /api/hcnsec/music/health (health-check otomatis dari server). */
+export const PROVIDER_MATI: Record<string, string> = {
+  aimusic: "aimusic.so — endpoint API sudah MATI (404 semua). Hapus dari daftar & pakai Kie/Sunor.",
 };
 
 function detectProvider(rawKey: string, hdrProvider?: string): Provider {
   if (hdrProvider && PROVIDERS[hdrProvider as Provider]) return hdrProvider as Provider;
   const k = rawKey.toLowerCase().trim();
-  if (!k) return "aimusic";
   if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
   if (k.startsWith("snr_") || k.startsWith("sunor_") || k.startsWith("sk_live")) return "sunor"; // v10.5: kunci asli Sunor = sk_live_…
   if (k.startsWith("afk_") || k.startsWith("af_")) return "apiframe";
   // Hex 32+ tanpa prefix — asumsikan Kie.ai (Kie ngasih key hex murni).
   if (/^[a-f0-9]{24,}$/i.test(k)) return "kie";
-  return "apiframe";
+  return "kie";
 }
 
 function getCreds(req: Request) {
@@ -151,7 +156,7 @@ function buildBody(payload: any, provider: Provider): any {
     return { model: "suno", task_type: "music", input };
   }
 
-  // apiframe / aimusic — suno-compatible
+  // apiframe — suno-compatible
   const body: any = {
     prompt: isCustom ? finalLyrics : finalPrompt,
     title: finalTitle,
@@ -303,6 +308,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: _g.alasan, status: "fitur_dimatikan", provider }, { status: 503 });
     }
 
+    // 🛡 v19.35.4: tanpa key SAMA SEKALI → jangan coba-coba ke provider (buang waktu),
+    // langsung kasih tahu cara dapat key gratis. (Dulu diam-diam nyoba provider mati.)
+    if (!key) {
+      return NextResponse.json({
+        error: "Generate lagu butuh API key provider. Cara dapat GRATIS: daftar Kie.ai (dapat 5.000 kredit) → buka https://kie.ai/api-key → salin key → di sini tap 🔑 Setelan API Key → tempel key → Tambah. (Provider 'gratis tanpa key' sudah tidak tersedia.)",
+        status: "need_key", provider,
+      }, { status: 401 });
+    }
+
     let lastErr: any = null;
     for (const url of endpoints) {
       try {
@@ -370,12 +384,6 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!key) {
-      return NextResponse.json({
-        error: "AI music free trial lagi tidak tersedia. Tap 🔑 Set API Key lalu pilih 🥇 Kie.ai (5.000 kredit GRATIS, bisa akses dari Indo) atau apiframe.ai ya bro!",
-        status: "need_key",
-      }, { status: 401 });
-    }
     return NextResponse.json({ error: `AI music error (${PROVIDERS[provider].label}): ${lastErr}`, provider }, { status: 502 });
   } catch (e: any) {
     return NextResponse.json({ error: `AI music gagal: ${e.message}` }, { status: 500 });
@@ -394,7 +402,10 @@ export async function GET(req: Request) {
     for (const url of endpoints) {
       try {
         const controller = new AbortController();
-        const t = setTimeout(()=>controller.abort(), 15000);
+        // 🛡 v19.35.4: timeout polling DIPERCEPAT ke 8s — respons server harus cepat,
+        // biar muat di Vercel & client nggak nunggu lama (dulu 15s × beberapa endpoint
+        // = bisa bikin client "Failed to fetch").
+        const t = setTimeout(()=>controller.abort(), 8000);
         const r = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
         clearTimeout(t);
         if (!r.ok) continue;

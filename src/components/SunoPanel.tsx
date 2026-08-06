@@ -11,15 +11,19 @@ import { useEffect, useRef, useState } from "react";
 const SUNO_KEYS_KEY = "verve_suno_keys_v1";
 const SUNO_PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
-  { id: "apiframe", label: "apiframe.ai" },
   { id: "sunor", label: "Sunor.cc" },
-  { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
+  { id: "apiframe", label: "apiframe.ai" },
 ];
 const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
-  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key)" },
+  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key). Daftar baru dapat 5.000 kredit." },
   apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
   sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
-  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
+};
+/** 🛡 v19.35.4: dashboard tempat cek hasil manual kalau polling lama */
+const PROVIDER_DASH: Record<string, string> = {
+  kie: "https://kie.ai/playground",
+  sunor: "https://sunor.cc",
+  apiframe: "https://apiframe.ai",
 };
 const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
@@ -80,8 +84,32 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   const [done, setDone] = useState<{ url: string; title: string; duration?: number } | null>(null);
   const pollTimer = useRef<any>(null);
   const launchKeyRef = useRef("");
+  /* 🛡 v19.35.4: health check provider (hidup/mati) + polling jujur */
+  const [health, setHealth] = useState<Record<string, boolean>>({});
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const lastTaskRef = useRef("");
+  const MAX_POLL = 40;
 
   useEffect(() => () => { if (pollTimer.current) clearTimeout(pollTimer.current); }, []);
+
+  /* 🛡 v19.35.4: cek status hidup/mati provider dari server */
+  useEffect(() => { cekHealth(); }, []);
+  async function cekHealth() {
+    setCheckingHealth(true);
+    try {
+      const r = await fetch("/api/hcnsec/music/health", { cache: "no-store" });
+      const j = await r.json();
+      const m: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(j.providers || {})) m[k] = !!(v as any).hidup;
+      setHealth(m);
+    } catch { /* biarkan netral */ }
+    setCheckingHealth(false);
+  }
+  function terjemahErr(msg: string): string {
+    if (/failed to fetch/i.test(msg)) return "Koneksi ke server terputus — cek internet kamu, lalu tap 'Cek ulang' di bawah.";
+    if (/abort|timed out|timeout/i.test(msg)) return "Server terlalu lama merespons — tap 'Cek ulang' di bawah.";
+    return msg;
+  }
 
   function savePool(next: SunoKey[]) {
     setKeyPool(next);
@@ -172,6 +200,8 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
 
   function startPolling(id: string) {
     setPolling(true);
+    setErr("");
+    lastTaskRef.current = id;
     setPollMsg("⏳ Lagu sedang diolah… (bisa 1-6 menit, tergantung provider)");
     let idx = 0;
     const tick = async () => {
@@ -179,13 +209,24 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       setPollMsg(`⏳ Mengecek hasil… (#${idx})`);
       try {
         const r = await checkOnce(id);
-        if (r === "pending") { pollTimer.current = setTimeout(tick, Math.min(6000 + idx * 800, 15000)); }
+        if (r === "pending") {
+          // 🛡 v19.35.4: batas polling wajar — jangan nunggu selamanya
+          if (idx >= MAX_POLL) {
+            setPolling(false);
+            setErr(`⏱ Provider belum selesai setelah ${Math.round((idx * 9) / 60)} menit. Lagu MUNGKIN sudah jadi di dashboard provider — cek manual via tautan di bawah, atau tap "Cek ulang".`);
+            return;
+          }
+          pollTimer.current = setTimeout(tick, Math.min(6000 + idx * 800, 15000));
+        }
       } catch (e) {
         setPolling(false);
-        setErr(e instanceof Error ? e.message : "Gagal cek hasil");
+        setErr("⚠️ " + terjemahErr(e instanceof Error ? e.message : "Gagal cek hasil"));
       }
     };
     pollTimer.current = setTimeout(tick, 4000);
+  }
+  function pollUlang() {
+    if (lastTaskRef.current) startPolling(lastTaskRef.current);
   }
 
   async function generate() {
@@ -195,7 +236,12 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     const lyr = lyrics.trim();
     if (!instrumental && lyr.length < 30) { setErr("Lirik terlalu pendek (min 30 karakter) — generate lirik AI dulu atau pilih 🎼 Instrumental."); return; }
     const keys = keysForProvider();
-    if (sunoProv !== "aimusic" && !keys.length) { setKeyPanel(true); setErr("Belum ada API key — buka 🔑 Setelan API Key di bawah, tempel key → Tambah."); return; }
+    // 🛡 v19.35.4: provider yang terdeteksi mati → tolak lebih dulu (jangan buang waktu)
+    if (health[sunoProv] === false) {
+      setErr("⚠️ Provider ini lagi MATI (cek status 🩺 di atas). Pilih Kie.ai atau Sunor.cc — jangan buang waktumu.");
+      return;
+    }
+    if (!keys.length) { setKeyPanel(true); setErr("Belum ada API key — buka 🔑 Setelan API Key di bawah, tempel key → Tambah. (Cara dapat gratis: daftar Kie.ai → 5.000 kredit → salin key di kie.ai/api-key)"); return; }
     setErr(""); setBusy("song"); setDone(null);
     const styleStr = (mStyle.trim() || [genre, mood, "indonesian, emotional, high quality"].join(", ")).slice(0, 480);
     const payload = {
@@ -251,21 +297,26 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
 
       <div className="lh-kv"><span>Provider</span><b>
         <select className="lh-sel" value={sunoProv} onChange={(e) => { setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch { /* abaikan */ } setCreditInfo({}); }}>
-          {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}{health[p.id] === false ? " — 💀 MATI" : health[p.id] === true ? " — ✅ hidup" : ""}</option>)}
         </select>
-      </b></div>
+      </b>
+        <button className="lh-mini" onClick={cekHealth} disabled={checkingHealth} title="Cek status provider dari server">{checkingHealth ? "⏳…" : "🩺 Cek status"}</button>
+      </div>
+      {health[sunoProv] === false && (
+        <p className="lh-note" style={{ color: "#fca5a5", border: "1px solid rgba(239,68,68,.4)", padding: "6px 8px", borderRadius: 8, marginTop: 4 }}>
+          💀 Provider ini terdeteksi MATI dari server — ganti ke <b>Kie.ai</b> (🥇 utama) atau <b>Sunor.cc</b>. Klik 🩺 Cek status untuk memastikan.
+        </p>
+      )}
 
       <button className="lh-btn sec" onClick={() => setKeyPanel(!keyPanel)}>
         🔑 Setelan API Key — {keysForProvider().length} kunci tersimpan {keyPanel ? "▴" : "▾"}
       </button>
       {keyPanel && (
         <div className="lh-keypanel">
-          {PROVIDER_KEY_LINK[sunoProv]?.url ? (
+          {PROVIDER_KEY_LINK[sunoProv]?.url && (
             <a className="lh-keylink" href={PROVIDER_KEY_LINK[sunoProv].url} target="_blank" rel="noreferrer">
               🔑 Ambil API key di {SUNO_PROVIDERS.find((p) => p.id === sunoProv)?.label.replace(/^🥇 /, "")} ↗
             </a>
-          ) : (
-            <p className="lh-note">aimusic.so = mode gratis tanpa key (sering penuh). Mau lancar: pakai Kie.ai.</p>
           )}
           <p className="lh-note">{PROVIDER_KEY_LINK[sunoProv]?.hint || ""}<br />2. Tempel <b>satu kunci per baris</b> → + Tambah. Bisa BANYAK kunci: kalau satu habis, mesin otomatis pindah berikutnya.</p>
           <textarea className="lh-ta" rows={3} placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "kunci_baris_1\nkunci_baris_2"} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} />
@@ -324,6 +375,17 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       {!!err && <p className="lh-note" style={{ color: "#e85c5c", marginTop: 8 }}>⚠️ {err}</p>}
       {!!pollMsg && <p className="lh-note" style={{ color: "#6ee7b7", marginTop: 6 }}>{pollMsg}</p>}
       {done && <p className="lh-note" style={{ color: "#6ee7b7" }}>✅ {done.title} siap — dipakai sebagai audio video.</p>}
+      {/* 🛡 v19.35.4: polling berhenti (error/batas) → kasih aksi: cek ulang + cek manual */}
+      {!!err && !!lastTaskRef.current && !polling && (
+        <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+          <button className="lh-btn sec" style={{ marginTop: 0, flex: 1 }} onClick={pollUlang}>🔁 Cek ulang</button>
+          {!!PROVIDER_DASH[sunoProv] && (
+            <a className="lh-btn sec" style={{ marginTop: 0, textDecoration: "none", textAlign: "center", flex: 1 }} href={PROVIDER_DASH[sunoProv]} target="_blank" rel="noreferrer">
+              👀 Cek manual di {SUNO_PROVIDERS.find((p) => p.id === sunoProv)?.label.replace(/^🥇 /, "")}
+            </a>
+          )}
+        </div>
+      )}
 
       <button className="lh-btn" style={{ marginTop: 10 }} disabled={busy === "song" || polling} onClick={generate}>
         {busy === "song" ? "⏳ Mengirim ke dapur lagu…" : polling ? "⏳ Lagu sedang diolah…" : "🎵 Generate Lagu"}
