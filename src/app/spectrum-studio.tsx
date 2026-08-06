@@ -10,6 +10,7 @@ import { paintEffect, paintPreviewCaptions, CC_TEMPLATES, ensureFontsLoaded } fr
 import type { CapWord } from "@/lib/editing";
 import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
 import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
+import { cariKlimaksBuffer, energiPerDetik } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -178,6 +179,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [videoUrl, setVideoUrl] = useState("");
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [err, setErr] = useState("");
+  /* 🎬 v19.32 DUAL RENDER — sekali render → 2 video:
+     1) Long (rasio dipilih) 2) Short 9:16 NATIVE 30 dtk dari bagian paling seru.
+     Short di-render ulang layout 9:16 asli (608×1080) → TIDAK ADA yang kepotong. */
+  const [dualRender, setDualRender] = useState(false);
+  const [shortDur, setShortDur] = useState(30); // ⏱ default 30 detik (permintaan user)
+  const [shortStart, setShortStart] = useState(0); // detik awal short (deteksi otomatis / geser manual)
+  const [shortAuto, setShortAuto] = useState(true); // 🎯 otomatis vs ✋ manual
+  const [energiArr, setEnergiArr] = useState<number[]>([]); // energi per 0.5 dtk → gambar timeline
+  const [shortUrl, setShortUrl] = useState("");
+  const [shortBlob, setShortBlob] = useState<Blob | null>(null);
+  const [phase, setPhase] = useState<"idle" | "long" | "short">("idle"); // fase render (biar tombol jujur)
+  const miniRef = useRef<HTMLCanvasElement | null>(null);
 
   const cvRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -305,6 +318,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setAudioUrl(url); setAudioName(name);
       setDuration(buf.duration);
       if (!title) setTitle(name);
+      // 🎬 v19.32 DUAL RENDER: hitung energi & deteksi klimaks OTOMATIS
+      setEnergiArr(energiPerDetik(buf, 0.5));
+      const k = cariKlimaksBuffer(buf, 30);
+      setShortStart(Math.round(k.start * 10) / 10);
+      setShortAuto(true);
     } catch (e: any) { setErr("Audio tidak bisa dibaca: " + (e?.message || "")); }
     setMBusy(false);
   }
@@ -912,68 +930,116 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setTimeout(() => { if (shorts) { stopPlayback(); } }, Math.min(bufRef.current.duration, shorts ? 60 : bufRef.current.duration) * 1000 + 200);
   }
 
+  /* 🎬 v19.32: pratinjau bagian tertentu (dipakai tombol "Pratinjau bagian ini" di Dual Render) */
+  function auditionAt(offset: number, dur: number) {
+    if (!bufRef.current || rendering) return;
+    stopPlayback();
+    const actx = actxRef.current!;
+    actx.resume().catch(() => {});
+    const o = Math.max(0, Math.min(offset, bufRef.current.duration - 0.1));
+    const d = Math.max(0.5, Math.min(dur, bufRef.current.duration - o));
+    const src = actx.createBufferSource();
+    src.buffer = bufRef.current;
+    const { input, analyser } = buildChain(actx);
+    input.connect(actx.destination);
+    src.connect(input);
+    src.onended = () => { setPlaying(false); srcRef.current = null; };
+    src.start(0, o, d);
+    srcRef.current = src; analyserRef.current = analyser;
+    startAtRef.current = actx.currentTime;
+    setPlaying(true);
+    setTimeout(() => { stopPlayback(); }, d * 1000 + 250);
+  }
+
+  /* 🎬 v19.32: satu sesi render (dipakai untuk Long ATAU Short).
+     offset = detik mulai audio; dur = durasi video.
+     Untuk SHORT: layout canvas 9:16 native (608×1080) → tampilan UTUH, nggak ada kepotong,
+     dan waktu visual = offset + waktu lokal → lirik & denyut sinkron dengan audio. */
+  async function renderSatu(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void }): Promise<Blob> {
+    await ensureFontsLoaded().catch(() => {});
+    const W = opts.w, H = opts.h;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d", { alpha: false })!;
+
+    const actx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const src = actx.createBufferSource();
+    src.buffer = bufRef.current;
+    const { input, analyser } = buildChain(actx);
+    const dest = actx.createMediaStreamDestination();
+    input.connect(dest);
+
+    const o = Math.max(0, opts.offset);
+    const d = Math.max(0.5, Math.min(opts.dur, bufRef.current!.duration - o));
+    src.connect(fades ? fadeGain(actx, input, d) : input);
+
+    const vstream = (cv as any).captureStream(30);
+    const stream = new MediaStream([...vstream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm"].find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } }) || "";
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : undefined);
+    const chunks: Blob[] = [];
+    mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const done = new Promise<Blob>(res => {
+      mr.onstop = () => res(new Blob(chunks, { type: (chunks[0]?.type || mime || "video/webm").split(";")[0] }));
+    });
+
+    // frame sinkron dgn audio clock
+    const startAt = actx.currentTime;
+    src.onended = () => setTimeout(() => { try { mr.stop(); } catch {} }, 180);
+    mr.start(350);
+    src.start(0, o, d);
+    await actx.resume().catch(() => {});
+
+    // gambar frame via rAF selama audio jalan
+    const barsLocal = new Uint8Array(analyser.frequencyBinCount);
+    await new Promise<void>(res2 => {
+      let frame = 0;
+      const loop = () => {
+        const lt = actx.currentTime - startAt;
+        analyser.getByteFrequencyData(barsLocal as any);
+        drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal);
+        // 🐛 FIX v19.26: throttle progress tiap 8 frame — setState tiap frame bikin HP berat/stutter
+        if ((frame++ & 7) === 0) opts.onProg(clampN(lt / d, 0, 1));
+        if (lt >= d + 0.15) { opts.onProg(1); res2(); return; }
+        requestAnimationFrame(loop);
+      };
+      loop();
+    });
+    try { src.stop(); } catch {}
+    const blob = await done;
+    actx.close().catch(() => {});
+    return blob;
+  }
+
   async function render() {
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     stopPlayback();
     setRendering(true); setProgress(0); setErr("");
     setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setVideoBlob(null);
+    setShortUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setShortBlob(null);
     try {
-      await ensureFontsLoaded().catch(() => {});
-      const W = dim.w, H = dim.h;
-      const cv = document.createElement("canvas");
-      cv.width = W; cv.height = H;
-      const ctx = cv.getContext("2d", { alpha: false })!;
-
-      const actx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const src = actx.createBufferSource();
-      src.buffer = bufRef.current;
-      const { input, analyser } = buildChain(actx);
-      const dest = actx.createMediaStreamDestination();
-      input.connect(dest);
-
-      // fades
       const total = Math.min(bufRef.current.duration, shorts ? 59.5 : bufRef.current.duration);
-      if (fades) {
-        const gnode = actx.createGain();
-        // sisipkan gain fade antara src dan input
+      // 🎬 v19.32 DUAL RENDER: video 1 = LONG (rasio dipilih), video 2 = SHORT 9:16 native dari bagian paling seru
+      setPhase("long");
+      const longBlob = await renderSatu({
+        w: dim.w, h: dim.h, offset: 0, dur: total,
+        onProg: p => setProgress(dualRender ? p * 0.62 : p),
+      });
+      setVideoBlob(longBlob);
+      setVideoUrl(URL.createObjectURL(longBlob));
+      if (dualRender) {
+        const durAudio = bufRef.current.duration;
+        const o = clampN(shortStart, 0, Math.max(0, durAudio - 1));
+        const d = Math.min(shortDur, Math.max(1, durAudio - o));
+        setPhase("short");
+        const shortBlob = await renderSatu({
+          w: 608, h: 1080, offset: o, dur: d,
+          onProg: p => setProgress(0.62 + p * 0.38),
+        });
+        setShortBlob(shortBlob);
+        setShortUrl(URL.createObjectURL(shortBlob));
       }
-      src.connect(fades ? fadeGain(actx, input, total) : input);
-
-      const vstream = (cv as any).captureStream(30);
-      const stream = new MediaStream([...vstream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
-      const mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm"].find(m => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } }) || "";
-      const mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6_000_000 } : undefined);
-      const chunks: Blob[] = [];
-      mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-      const done = new Promise<Blob>(res => {
-        mr.onstop = () => res(new Blob(chunks, { type: (chunks[0]?.type || mime || "video/webm").split(";")[0] }));
-      });
-
-      // frame sinkron dgn audio clock
-      startAtRef.current = actx.currentTime;
-      src.onended = () => setTimeout(() => { try { mr.stop(); } catch {} }, 180);
-      mr.start(350);
-      src.start();
-      await actx.resume().catch(() => {});
-
-      // gambar frame via rAF selama audio jalan
-      const barsLocal = new Uint8Array(analyser.frequencyBinCount);
-      await new Promise<void>(res2 => {
-        const loop = () => {
-          const t = actx.currentTime - startAtRef.current;
-          analyser.getByteFrequencyData(barsLocal as any);
-          drawScene(ctx, W, H, Math.max(0, t), barsLocal);
-          setProgress(clampN(t / total, 0, 1));
-          if (t >= total + 0.15) { res2(); return; }
-          requestAnimationFrame(loop);
-        };
-        loop();
-      });
-      try { src.stop(); } catch {}
-      const blob = await done;
-      actx.close().catch(() => {});
-      setVideoBlob(blob);
-      setVideoUrl(URL.createObjectURL(blob));
+      setPhase("idle");
       setProgress(1);
     } catch (e: any) { setErr(e?.message || "Render gagal"); }
     setRendering(false);
@@ -994,6 +1060,58 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
     downloadBlobX(videoBlob, `spectrum_${(title || audioName || "verve").replace(/[^\w\- ]+/g, "").slice(0, 30)}_${Date.now()}.${ext}`);
   }
+
+  /* 🎬 v19.32: download video SHORT hasil Dual Render */
+  function downloadShort() {
+    if (!shortBlob) return;
+    const ext = shortBlob.type.includes("mp4") ? "mp4" : "webm";
+    downloadBlobX(shortBlob, `spectrum_short_${(title || audioName || "verve").replace(/[^\w\- ]+/g, "").slice(0, 30)}_${Date.now()}.${ext}`);
+  }
+
+  /* 🎬 v19.32: gambar TIMELINE ENERGI mini — bar energi audio + highlight window short (hijau) */
+  useEffect(() => {
+    const cv = miniRef.current; if (!cv) return;
+    const ctx = cv.getContext("2d"); if (!ctx) return;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    const arr = energiArr;
+    if (!arr.length) {
+      ctx.fillStyle = "rgba(148,163,184,.45)";
+      ctx.font = "600 11px 'Poppins',sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("Timeline energi muncul setelah musik dimuat 🎵", W / 2, H / 2);
+      return;
+    }
+    const mx = Math.max(...arr, 1e-9);
+    const n = arr.length;
+    const bw = W / n;
+    const dur = bufRef.current?.duration || duration;
+    // bar energi (timeline)
+    for (let i = 0; i < n; i++) {
+      const h = Math.max(1.5, (arr[i] / mx) * (H - 16));
+      ctx.fillStyle = i % 8 < 4 ? "rgba(148,163,184,.6)" : "rgba(148,163,184,.38)";
+      ctx.fillRect(i * bw, H - 4 - h, Math.max(1, bw - 0.5), h);
+    }
+    if (dur > 0) {
+      const x0 = clampN(shortStart / dur, 0, 1) * W;
+      const x1 = clampN(Math.min(shortStart + shortDur, dur) / dur, 0, 1) * W;
+      ctx.fillStyle = "rgba(34,197,94,.25)";
+      ctx.fillRect(x0, 3, Math.max(2, x1 - x0), H - 10);
+      ctx.strokeStyle = "#4ade80"; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x0 + 0.75, 3, Math.max(2, x1 - x0), H - 10);
+      // garis mulai
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(x0 - 0.75, 0, 1.5, H);
+      // label status
+      ctx.font = "800 9px 'Poppins',sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.fillStyle = shortAuto ? "#4ade80" : "#fbbf24";
+      ctx.fillText(shortAuto ? "🎯 KLIMAKS OTOMATIS" : "✋ GESER MANUAL", 6, 6);
+      ctx.fillStyle = "rgba(255,255,255,.85)";
+      ctx.textAlign = "right";
+      ctx.fillText(`SHORT ${shortDur} dtk`, W - 6, 6);
+    }
+  }, [energiArr, shortStart, shortDur, shortAuto, duration]);
 
   /* ================= UI ================= */
   return (
@@ -1377,15 +1495,82 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 {dim.w}×{dim.h}px · 30fps · {fmtD(Math.min(duration, shorts ? 59.5 : duration))} · EQ {eq} · kompresi {comp}% {fades ? "· fade" : ""}
               </div>
             </div>
+
+            {/* 🎬 v19.32 DUAL RENDER — sekali render, dapat 2 video */}
+            <div className="v6-cardrow" onClick={() => setDualRender(!dualRender)} style={{ borderColor: dualRender ? "rgba(34,197,94,.55)" : undefined }}>
+              <span style={{ fontSize: 18 }}>🎬</span>
+              <div className="tt">
+                <b>Dual Render: Long + Short otomatis</b>
+                <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>1× render → 2 video: video utama + Short 9:16 ({shortDur} dtk) dari bagian PALING SERU — tanpa kepotong (layout 9:16 asli)</div>
+              </div>
+              <button className={`v6-toggle ${dualRender ? "on" : ""}`} />
+            </div>
+            {dualRender && (
+              <>
+                <div className="v6-lbl">⏱ DURASI SHORT</div>
+                <div className="v6-chips" style={{ padding: 0 }}>
+                  {[15, 30, 60].map(d => (
+                    <button key={d} className={`v6-chip ${shortDur === d ? "on" : ""}`} onClick={() => setShortDur(d)}>{d} detik</button>
+                  ))}
+                </div>
+                <div className="v6-lbl">🧠 TIMELINE ENERGI — hijau = bagian short yang diambil</div>
+                <canvas ref={miniRef} width={360} height={60}
+                  style={{ width: "100%", height: 60, borderRadius: 10, background: "#0b0b14", border: "1px solid rgba(255,255,255,.12)" }} />
+                {duration > shortDur ? (
+                  <>
+                    <div className="v6-slider-row">
+                      <div className="lr"><span>✋ Mulai short di:</span><b>{fmtD(shortStart)} {shortAuto ? "· 🎯 otomatis" : "· ✋ manual"}</b></div>
+                      <input type="range" min={0} max={Math.max(1, Math.floor(duration - shortDur))} step={0.5}
+                        value={clampN(shortStart, 0, Math.max(0, duration - shortDur))}
+                        onChange={e => { setShortStart(Number(e.target.value)); setShortAuto(false); }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                      <button className="v6-chip" style={{ borderColor: "rgba(34,197,94,.5)", color: "#86efac", background: "rgba(34,197,94,.08)" }}
+                        onClick={() => {
+                          if (!bufRef.current) return;
+                          const k = cariKlimaksBuffer(bufRef.current, shortDur);
+                          setShortStart(Math.round(k.start * 10) / 10);
+                          setShortAuto(true);
+                        }}>
+                        🎯 Deteksi otomatis lagi
+                      </button>
+                      <button className="v6-chip" disabled={rendering || playing}
+                        onClick={() => auditionAt(shortStart, Math.min(shortDur, duration - shortStart))}>
+                        ▶ Pratinjau bagian ini
+                      </button>
+                    </div>
+                    <p className="v6-note">💡 Short di-render ulang dengan layout 9:16 asli (608×1080) — bukan hasil potong dari 16:9, jadi tampilan selalu utuh. Lirik & denyut ikut pas di bagian yang dipilih.</p>
+                  </>
+                ) : (
+                  <div className="v6-note">ℹ️ Musik cuma {fmtD(duration)} — short akan memakai seluruh musik dari awal.</div>
+                )}
+              </>
+            )}
+
             <button className="v6-bigcta" onClick={render} disabled={rendering || !audioUrl}>
-              {rendering ? `⏳ Merender… ${Math.round(progress * 100)}%` : videoUrl ? "🔄 Render ulang" : "🚀 Render video spectrum"}</button>
-            {rendering && <div className="v6-note" style={{ textAlign: "center" }}>Biarkan layar menyala — render berjalan realtime (audio ikut diproses).</div>}
+              {rendering
+                ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${Math.round(progress * 100)}%`
+                : videoUrl ? "🔄 Render ulang" : dualRender ? "🚀 Render 2 video (Long + Short)" : "🚀 Render video spectrum"}</button>
+            {rendering && <div className="v6-note" style={{ textAlign: "center" }}>Biarkan layar menyala — render berjalan realtime (audio ikut diproses). {dualRender && "Setelah Long selesai, otomatis lanjut render Short."}</div>}
             {!!videoUrl && (
               <>
+                <div className="v6-lbl">▭ LONG {dim.w}×{dim.h} {dualRender ? "— full video" : ""}</div>
                 <video src={videoUrl} controls style={{ width: "100%", borderRadius: 12, marginTop: 10, border: "1px solid rgba(255,255,255,.14)" }} />
-                <button className="v6-bigcta" style={{ background: "#22c55e", color: "#052e16" }} onClick={download}>⬇️ Download {videoBlob ? `(${(videoBlob.size / 1048576).toFixed(1)} MB)` : ""}</button>
-                <div className="v6-okbox">✅ Siap diunggah ke YouTube/TikTok. Musik dari AI = orisinal, aman hak cipta 🛡️</div>
+                <button className="v6-bigcta" style={{ background: "#22c55e", color: "#052e16" }} onClick={download}>⬇️ Download Long {videoBlob ? `(${(videoBlob.size / 1048576).toFixed(1)} MB)` : ""}</button>
               </>
+            )}
+            {!!shortUrl && (
+              <>
+                <div className="v6-lbl">▯ SHORT 9:16 — mulai {fmtD(shortStart)}, {fmtD(Math.min(shortDur, duration - shortStart))} dtk</div>
+                <video src={shortUrl} controls style={{ width: "45%", borderRadius: 12, marginTop: 10, border: "1px solid rgba(255,255,255,.14)", aspectRatio: "9/16", background: "#000" }} />
+                <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#ec4899,#f97316)", color: "#fff" }} onClick={downloadShort}>⬇️ Download Short {shortBlob ? `(${(shortBlob.size / 1048576).toFixed(1)} MB)` : ""}</button>
+              </>
+            )}
+            {!!videoUrl && !shortUrl && (
+              <div className="v6-okbox">✅ Siap diunggah ke YouTube/TikTok. Musik dari AI = orisinal, aman hak cipta 🛡️</div>
+            )}
+            {!!shortUrl && (
+              <div className="v6-okbox">✅ Dua-duanya jadi! Long buat YouTube, Short buat Reels/TikTok/Shorts — bagian serunya otomatis terpilih 🎯</div>
             )}
             <div className="v6-note">🔄 <b>Loop mulus</b>: di YouTube aktifkan "Ulangi" — visual spectrum nyambung tanpa jedanya (bg statis + spectrum kontinyu).</div>
           </>
