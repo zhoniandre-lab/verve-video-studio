@@ -58,6 +58,8 @@ export const SUMBER_EKSTERNAL = [
   { id: "awesome-free-llm-apis", label: "awesome-free-llm-apis (mnfst)", url: `${GITHUB_RAW}/mnfst/awesome-free-llm-apis/main/README.md` },
   { id: "free-for-dev", label: "free-for-dev (ripienaar)", url: `${GITHUB_RAW}/ripienaar/free-for-dev/master/README.md` },
   { id: "free-ai-tools", label: "free-ai-tools (ShaikhWarsi)", url: `${GITHUB_RAW}/ShaikhWarsi/free-ai-tools/main/README.md` },
+  { id: "awesome-image-to-video", label: "awesome-image-to-video (wqooops)", url: `${GITHUB_RAW}/wqooops/awesome-image-to-video/main/README.md` },
+  { id: "awesome-ai-tools-video", label: "awesome-ai-tools/Video.md (tankvn)", url: `${GITHUB_RAW}/tankvn/awesome-ai-tools/main/Video.md` },
 ];
 
 /** Batas ukuran teks yang diambil (README raksasa) */
@@ -174,6 +176,61 @@ export function parseFreeAiTools(teks: string): Mentah[] {
       kategori: tebakKategori(gabung), jenis: tebakJenis(gabung),
       syarat: /no credit card/i.test(gabung) ? "Tanpa kartu" : "Cek di situs",
       mudah: skorMudah(gabung), sumber: "free-ai-tools",
+    });
+  }
+  return out;
+}
+
+/** 4) awesome-image-to-video: tabel markdown
+ *  | # | Name | URL | Description | Free tier summary | */
+export function parseI2vTable(teks: string): Mentah[] {
+  const out: Mentah[] = [];
+  const lines = teks.split(/\r?\n/);
+  let diTabel = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith("| #") || line.startsWith("|#")) { diTabel = true; continue; }
+    if (diTabel && line.startsWith("|") && !line.includes("---")) {
+      const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
+      if (cells.length >= 5) {
+        const [, nama, url, desc, gratis] = cells;
+        if (/^https?:/.test(url)) {
+          const gabung = `${nama} ${desc} ${gratis}`;
+          out.push({
+            nama: nama.slice(0, 60), url, desc: desc.slice(0, 200),
+            gratis: gratis.slice(0, 160), kategori: "gambar-video",
+            jenis: tebakJenis(gabung + " " + gratis),
+            syarat: /no credit card/i.test(gabung) ? "Tanpa kartu" : "Cek di situs",
+            mudah: skorMudah(gabung), sumber: "awesome-image-to-video",
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** 5) awesome-ai-tools (tankvn): bullet "- [Nama](url) - desc.. [Tag]"
+ *  Tag: Free / Freemium / Free Trial / Paid → hanya yang gratis masuk. */
+export function parseAwesomeAiTools(teks: string): Mentah[] {
+  const out: Mentah[] = [];
+  const lines = teks.split(/\r?\n/);
+  let judul = "";
+  for (const raw of lines) {
+    const line = raw.trim();
+    const h = line.match(/^#{2,3}\s+(.+)$/);
+    if (h) { judul = h[1].trim(); continue; }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (!bullet) continue;
+    const tag = (line.match(/\[(Free|Freemium|Free Trial)\]/i) || [])[1];
+    if (!tag) continue;
+    const { nama, url, desc } = pisahLink(bullet[1]);
+    if (!url || !/^https?:/.test(url)) continue;
+    const gabung = `${nama} ${desc} ${judul} ${tag}`;
+    out.push({
+      nama: nama.slice(0, 60), url, desc: desc.slice(0, 200), gratis: `${tag} — ${(desc || nama).slice(0, 130)}`,
+      kategori: tebakKategori(gabung), jenis: tebakJenis(gabung),
+      syarat: "Cek di situs", mudah: skorMudah(gabung), sumber: "awesome-ai-tools",
     });
   }
   return out;

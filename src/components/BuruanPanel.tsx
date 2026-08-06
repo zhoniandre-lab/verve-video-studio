@@ -71,9 +71,20 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
     return items.filter((i) => {
       if (kat && i.kategori !== kat) return false;
       if (!qq) return true;
-      return (i.nama + " " + i.desc + " " + i.gratis).toLowerCase().includes(qq);
+      const tags = (i.tags || []).join(" ");
+      return (i.nama + " " + i.desc + " " + i.gratis + " " + tags).toLowerCase().includes(qq);
     });
   }, [items, q, kat]);
+
+  /* 🎯 Panduan cepat per kebutuhan — pilih "mau bikin apa" → langsung set pencarian */
+  const PANDUAN = [
+    { emoji: "🖼️➡️🎬", judul: "Bikin gambar jadi BERGERAK", q: "gambar bergerak", desc: "Kling · Hailuo · Vidu · PixVerse · Viggle — upload foto, jadi video" },
+    { emoji: "🎬✨", judul: "Bikin video AI dari teks", q: "text-to-video", desc: "Hailuo · Pika · Wan · Haiper · InVideo" },
+    { emoji: "🧑‍💬", judul: "Bikin orang bicara (avatar)", q: "avatar", desc: "HeyGen · D-ID — foto jadi presenter ngomong" },
+    { emoji: "🎵", judul: "Bikin lagu / musik", q: "musik", desc: "Suno · Udio — lagu orisinal dari prompt" },
+    { emoji: "🗣️", judul: "Bikin narasi suara", q: "suara", desc: "ElevenLabs · Edge TTS — suara natural" },
+    { emoji: "💬🧠", judul: "Otak/chat gratis buat Verve", q: "llm", desc: "Groq · Cerebras · Gemini · Mistral — simpan ke Dompet Bansos" },
+  ];
 
   function setStatus(id: string, s: StatusBuruan) {
     const next = { ...statusMap, [id]: s };
@@ -184,7 +195,22 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
       </header>
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 90px" }}>
         <div className="v6-note" style={{ fontSize: 11.5 }}>💡 Cari penyedia AI yang kasih <b>kredit / kuota gratis</b> (secara sah) — lengkap dengan tutorial klaim. Ketemu yang OpenAI-compatible? <b>Simpan ke Dompet Bansos</b> → langsung dipakai fitur Verve. {cache ? "Data dari cache." : ""}</div>
-        <input className="v6-inp" placeholder="🔎 Cari: groq, video, musik, elevenlabs…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {/* 🎯 v19.35.1: panduan per kebutuhan — "mau bikin apa" langsung dikasih jawaban */}
+        <div className="v6-lbl" style={{ marginTop: 8 }}>🎯 MAU BIKIN APA? (ketuk → langsung muncul daftarnya)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {PANDUAN.map((p) => (
+            <button key={p.q} onClick={() => { setQ(p.q); setKat(""); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.35)", borderRadius: 12, padding: "9px 12px", cursor: "pointer" }}>
+              <span style={{ fontSize: 20 }}>{p.emoji}</span>
+              <span style={{ flex: 1 }}>
+                <b style={{ fontSize: 12.5, color: "#e9d5ff", display: "block" }}>{p.judul}</b>
+                <span style={{ fontSize: 10.5, color: "#a78bfa" }}>{p.desc}</span>
+              </span>
+              <span style={{ color: "#a78bfa", fontSize: 16 }}>›</span>
+            </button>
+          ))}
+        </div>
+        <input className="v6-inp" style={{ marginTop: 10 }} placeholder="🔎 Cari bebas: groq, gambar bergerak, avatar, musik…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap", marginTop: 6 }}>
           <button className={`v6-chip ${kat === "" ? "on" : ""}`} onClick={() => setKat("")}>Semua ({items.length})</button>
           {KATEGORI.map((k) => (

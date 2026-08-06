@@ -3,13 +3,14 @@
    Daftar penyedia AI yang kasih kredit GRATIS secara sah + tutorial
    langkah-demi-langkah cara klaim. Disusun manual biar presisi.
    ===================================================================== */
-import type { BuruanItem, KategoriId, JenisGratis } from "./types";
+import type { BuruanItem, KategoriId, JenisGratis, LangkahTutorial } from "./types";
 
 interface Kasar {
   id: string; nama: string; url: string; kategori: KategoriId; gratis: string;
   jenis: JenisGratis; syarat: string; berlaku?: string; mudah: number;
   baseUrl?: string; contohModel?: string; desc: string;
-  tutorial: { t: string }[]; sumber: string;
+  tutorial: LangkahTutorial[]; sumber: string;
+  tags?: string[];
 }
 
 const K = (x: Omit<Kasar, "sumber" | "dicek">): Kasar => ({ ...x, sumber: "kurasi" });
@@ -185,11 +186,156 @@ const KATALOG_ASLI: Kasar[] = [
   K({
     id: "krea", nama: "Krea AI", url: "https://krea.ai", kategori: "gambar-video",
     gratis: "Kredit harian (real-time & generator)", jenis: "harian",
-    syarat: "Email doang", mudah: 4,
+    syarat: "Email doang", mudah: 4, tags: ["gambar bergerak", "upscale", "real-time"],
     desc: "Generator gambar + video + upscale. Ada kredit harian gratis untuk pemakaian ringan.",
     tutorial: [
       { t: "Buka https://krea.ai — daftar." },
       { t: "Pakai kredit harian buat generate — perhatikan sisa di dashboard." },
+    ],
+  }),
+
+  /* ================= PERDALAM v19.35.1: PROVIDER VIDEO AI (gambar→video, text→video) ================= */
+  K({
+    id: "vidu", nama: "Vidu AI", url: "https://www.vidu.com", kategori: "gambar-video",
+    gratis: "Kredit harian gratis (klaim tiap login)", jenis: "harian",
+    syarat: "Email doang", mudah: 5, tags: ["gambar bergerak", "text-to-video", "karakter"],
+    desc: "Video AI dari gambar & teks — punya fitur karakter konsisten (Character to Video). Kredit gratis di-refresh tiap hari.",
+    tutorial: [
+      { t: "Buka https://www.vidu.com — daftar dengan email." },
+      { t: "Login tiap hari → klaim kredit harian (biasanya otomatis di dashboard)." },
+      { t: "Pilih 'Image to Video' → upload gambar → atur durasi & gerakan → Generate." },
+      { t: "Download videonya → pakai di Verve (AutoCut/editor)." },
+    ],
+  }),
+  K({
+    id: "pixverse", nama: "PixVerse", url: "https://pixverse.ai", kategori: "gambar-video",
+    gratis: "Kredit harian (beberapa job video)", jenis: "harian",
+    syarat: "Email/Google doang", mudah: 5, tags: ["gambar bergerak", "text-to-video", "efek"],
+    desc: "Image & text to video dengan kontrol gerakan kamera + gaya. Free tier dapat job harian.",
+    tutorial: [
+      { t: "Buka https://pixverse.ai — daftar (Google bisa)." },
+      { t: "Pilih 'Image to Video' / 'Text to Video' → prompt + upload → Generate." },
+      { t: "Kredit harian muncul di dashboard — kalau habis, tunggu reset besok." },
+    ],
+  }),
+  K({
+    id: "viggle", nama: "Viggle AI", url: "https://viggle.ai", kategori: "gambar-video",
+    gratis: "Kredit harian (animasi karakter dari gambar)", jenis: "harian",
+    syarat: "Email doang", mudah: 5, tags: ["gambar bergerak", "karakter", "animasi", "mix"],
+    desc: "Spesialis ANIMASI KARAKTER: tempel karakter ke video gerakan (mix) atau gerakin gambar statis. Gratis harian.",
+    tutorial: [
+      { t: "Buka https://viggle.ai — daftar." },
+      { t: "Pilih 'Mix' (karakter masuk video gerakan) atau 'Animate' (gerakin gambar sendiri)." },
+      { t: "Upload gambar → pilih gerakan → Generate → download." },
+      { t: "Sempurnakan hasilnya di Verve (AutoCut, zoom, keterangan)." },
+    ],
+  }),
+  K({
+    id: "wan-ai", nama: "Wan AI (Alibaba)", url: "https://wan.ai", kategori: "gambar-video",
+    gratis: "Job gratis tanpa watermark untuk user baru", jenis: "sekali",
+    syarat: "Email doang", berlaku: "Sekali klaim", mudah: 4, tags: ["gambar bergerak", "hd", "text-to-video"],
+    desc: "Interface resmi model video Wan (Alibaba) — kualitas HD, image & text to video. Ada jatah gratis user baru.",
+    tutorial: [
+      { t: "Buka https://wan.ai — daftar." },
+      { t: "Pilih Image to Video / Text to Video → Generate." },
+      { t: "Download hasilnya — tanpa watermark selama jatah gratis." },
+    ],
+  }),
+  K({
+    id: "haiper", nama: "Haiper AI", url: "https://haiper.ai", kategori: "gambar-video",
+    gratis: "Free tier (kredit terbatas)", jenis: "permanen",
+    syarat: "Email doang", mudah: 4, tags: ["gambar bergerak", "stylized"],
+    desc: "Generator gambar & teks ke video dengan gaya gerakan mulus.",
+    tutorial: [
+      { t: "Buka https://haiper.ai — daftar." },
+      { t: "Generate → pilih gaya → download." },
+    ],
+  }),
+  K({
+    id: "ltx", nama: "LTX Studio (Lightricks)", url: "https://ltx.studio", kategori: "gambar-video",
+    gratis: "Kredit gratis bulanan (storyboard-to-video)", jenis: "bulanan",
+    syarat: "Email doang", berlaku: "Per bulan", mudah: 3, tags: ["film pendek", "naskah", "storyboard", "adegan"],
+    desc: "Bikin FILM PENDEK dari naskah: bikin storyboard otomatis, lalu tiap adegan jadi video. Ada kredit gratis.",
+    tutorial: [
+      { t: "Buka https://ltx.studio — daftar." },
+      { t: "Ketik naskah cerita → LTX bikin storyboard per adegan." },
+      { t: "Generate tiap adegan jadi video → download per adegan → rakit di Verve." },
+    ],
+  }),
+  K({
+    id: "adobe-firefly-video", nama: "Adobe Firefly Video", url: "https://firefly.adobe.com", kategori: "gambar-video",
+    gratis: "Kredit Firefly gratis bulanan (akun Adobe gratis)", jenis: "bulanan",
+    syarat: "Akun Adobe gratis", berlaku: "Per bulan", mudah: 4, tags: ["gambar bergerak", "1080p", "premium"],
+    desc: "Image to video & text to video sampai 1080p. Akun Adobe gratis dapat kredit Firefly tiap bulan.",
+    tutorial: [
+      { t: "Buka https://firefly.adobe.com — daftar akun Adobe (gratis)." },
+      { t: "Pilih 'Text to Video' / 'Image to Video' → Generate." },
+      { t: "Kredit Firefly bulanan otomatis — cek sisa di dashboard." },
+    ],
+  }),
+  K({
+    id: "genmo", nama: "Genmo", url: "https://www.genmo.ai", kategori: "gambar-video",
+    gratis: "Kredit harian (Replay video generator)", jenis: "harian",
+    syarat: "Email doang", mudah: 4, tags: ["gambar bergerak", "replay"],
+    desc: "Replay — bikin video pendek dari gambar & teks. Ada kredit gratis harian.",
+    tutorial: [
+      { t: "Buka https://www.genmo.ai — daftar." },
+      { t: "Replay → upload gambar/prompt → Generate → download." },
+    ],
+  }),
+  K({
+    id: "heygen", nama: "HeyGen", url: "https://www.heygen.com", kategori: "gambar-video",
+    gratis: "Kredit avatar video gratis (plan free)", jenis: "bulanan",
+    syarat: "Email doang", berlaku: "Per bulan", mudah: 4, tags: ["avatar", "presenter", "video orang bicara"],
+    desc: "Bikin VIDEO ORANG BICARA (avatar presenter) dari teks — buat konten edukasi/iklan. Ada jatah gratis.",
+    tutorial: [
+      { t: "Buka https://www.heygen.com — daftar." },
+      { t: "Pilih avatar → ketik skrip → Generate → download MP4." },
+      { t: "Gabungkan dengan footage lain di Verve." },
+    ],
+  }),
+  K({
+    id: "d-id", nama: "D-ID", url: "https://www.d-id.com", kategori: "gambar-video",
+    gratis: "Kredit percobaan saat daftar (buat foto bicara)", jenis: "sekali",
+    syarat: "Email doang", berlaku: "Sekali klaim", mudah: 4, tags: ["foto bicara", "avatar", "talking photo"],
+    desc: "Spesialis 'FOTO BICARA': foto orang jadi video ngomong. Ada kredit sambutan.",
+    tutorial: [
+      { t: "Buka https://www.d-id.com — daftar." },
+      { t: "Upload foto → ketik teks → pilih suara → Generate." },
+      { t: "Download → pakai di Verve buat konten wajah bicara." },
+    ],
+  }),
+  K({
+    id: "invideo", nama: "InVideo AI", url: "https://invideo.io", kategori: "gambar-video",
+    gratis: "Plan gratis (10 menit/minggu, ada watermark)", jenis: "mingguan",
+    syarat: "Email doang", berlaku: "10 menit/minggu", mudah: 5, tags: ["video otomatis", "naskah", "voiceover"],
+    desc: "Ketik ide → jadi video JADI (footage + voiceover + teks) otomatis. Plan gratis 10 menit/minggu.",
+    tutorial: [
+      { t: "Buka https://invideo.io — daftar." },
+      { t: "Ketik ide/naskah → InVideo rakit video otomatis." },
+      { t: "Export (ada watermark di free) → potong/olah lagi di Verve." },
+    ],
+  }),
+  K({
+    id: "google-veo", nama: "Google Veo (AI Studio)", url: "https://aistudio.google.com", kategori: "gambar-video",
+    gratis: "Kuota video gratis terbatas di AI Studio", jenis: "bulanan",
+    syarat: "Akun Google", berlaku: "Kuota di-refresh", mudah: 4, tags: ["gambar bergerak", "premium", "google"],
+    desc: "Model video Google Veo bisa dicoba gratis (kuota terbatas) di AI Studio — kualitas sinematik.",
+    tutorial: [
+      { t: "Buka https://aistudio.google.com — login Google." },
+      { t: "Pilih tab video → ketik prompt / upload gambar → Generate." },
+      { t: "Download → pakai di Verve." },
+    ],
+  }),
+  K({
+    id: "nvidia-video", nama: "NVIDIA NIM (Wan/Hunyuan)", url: "https://build.nvidia.com", kategori: "gambar-video",
+    gratis: "Kredit API gratis di build.nvidia.com (model video open-source)", jenis: "permanen",
+    syarat: "Email doang", mudah: 4, tags: ["gambar bergerak", "api", "open source"],
+    desc: "Model video open-source (Wan 2.x, Hunyuan Video) bisa dipanggil gratis lewat API NVIDIA NIM.",
+    tutorial: [
+      { t: "Buka https://build.nvidia.com — daftar." },
+      { t: "Cari model video (Wan/Hunyuan) → Get API Key → salin." },
+      { t: "Simpan ke Dompet Bansos Verve / pakai langsung via endpoint NVIDIA." },
     ],
   }),
 
@@ -272,10 +418,16 @@ const KATALOG_ASLI: Kasar[] = [
   }),
 ];
 
-/** Item kurasi siap pakai (dengan timestamp dicek). */
+/** Item kurasi siap pakai (dengan timestamp dicek).
+ *  Otomatis: SEMUA item gambar-video dijamin punya tag "gambar bergerak"
+ *  (digabung kalau sudah ada tags custom) biar pencarian "bikin gambar
+ *  bergerak" selalu nemu. */
 export function katalogKurasi(now = Date.now()): BuruanItem[] {
   return KATALOG_ASLI.map((k) => ({
     ...k,
+    tags: k.kategori === "gambar-video"
+      ? Array.from(new Set([...(k.tags || []), "gambar bergerak", "video ai"]))
+      : k.tags,
     dicek: now,
   }));
 }

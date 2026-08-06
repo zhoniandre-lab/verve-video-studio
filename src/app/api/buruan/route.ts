@@ -7,7 +7,7 @@
    ===================================================================== */
 import { NextRequest, NextResponse } from "next/server";
 import { katalogKurasi } from "@/lib/buruan/katalog";
-import { SUMBER_EKSTERNAL, parseAwesomeFreeLlmApis, parseFreeForDev, parseFreeAiTools, gabungItems, MAKS_BYTE } from "@/lib/buruan/parse";
+import { SUMBER_EKSTERNAL, parseAwesomeFreeLlmApis, parseFreeForDev, parseFreeAiTools, parseI2vTable, parseAwesomeAiTools, gabungItems, MAKS_BYTE } from "@/lib/buruan/parse";
 import type { Mentah } from "@/lib/buruan/parse";
 
 export const runtime = "nodejs";
@@ -43,7 +43,9 @@ async function sinkron(): Promise<{ item: ReturnType<typeof katalogKurasi>; sumb
       if (!teks) { error.push(s.label); continue; }
       if (s.id === "awesome-free-llm-apis") semuaMentah.push(...parseAwesomeFreeLlmApis(teks));
       else if (s.id === "free-for-dev") semuaMentah.push(...parseFreeForDev(teks));
-      else semuaMentah.push(...parseFreeAiTools(teks));
+      else if (s.id === "free-ai-tools") semuaMentah.push(...parseFreeAiTools(teks));
+      else if (s.id === "awesome-image-to-video") semuaMentah.push(...parseI2vTable(teks));
+      else semuaMentah.push(...parseAwesomeAiTools(teks));
       sumberOk.push(s.label);
     } catch { error.push(s.label); }
   }

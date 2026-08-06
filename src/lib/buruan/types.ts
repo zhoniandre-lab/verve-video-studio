@@ -42,6 +42,8 @@ export interface BuruanItem {
   contohModel?: string;
   /** deskripsi singkat */
   desc: string;
+  /** kata kunci tambahan buat pencarian (mis. "gambar bergerak", "animasi", "avatar") */
+  tags?: string[];
   /** langkah tutorial (urutan) */
   tutorial: LangkahTutorial[];
   /** sumber data: "kurasi" | nama repo */
