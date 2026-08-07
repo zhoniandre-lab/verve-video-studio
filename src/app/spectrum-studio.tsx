@@ -1062,14 +1062,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const tg = ctx.createLinearGradient(0, ty, 0, ty + tfs);
       tg.addColorStop(0, "#ffffff"); tg.addColorStop(1, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
       ctx.fillStyle = tg; ctx.fillText(title, tx, ty);
-      // info bar kecil (ala video pro: TRACK • EFFECT)
-      ctx.font = `700 ${Math.round(H * 0.02)}px 'Poppins',sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-      const info = `TRACK: ${(mTitle || audioName || "VERVE SPECTRUM").toUpperCase()}  ·  EFFECT: ${specStyle.toUpperCase()}`;
-      ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.lineWidth = 4; ctx.lineJoin = "round";
-      ctx.strokeText(info, W / 2, H - H * 0.03);
-      ctx.fillStyle = `rgba(${r},${g2},${b},1)`;
-      ctx.fillText(info, W / 2, H - H * 0.03);
     }
 
     // lirik karaoke
@@ -1116,9 +1108,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
     }
 
-    // badge loop mulus
+    // badge loop mulus — 🐛 v19.42: DIHAPUS (user minta buang — ganggu tampilan)
     if (!dinOnly) {
-    if (seamless) {
+    if (false) {
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.fillRect(W - H * 0.2 - 8, 8, H * 0.2, H * 0.045);
       ctx.fillStyle = "#9ff5ef"; ctx.font = `700 ${Math.round(H * 0.022)}px 'Poppins',sans-serif`;
@@ -1537,9 +1529,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const tol = 0.12; // jarak sentuh yang dianggap "kena"
                 const dLogo = Math.hypot(x - logoPos.x, y - logoPos.y);
                 const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
-                // 🔔 subscribe dicek duluan kalau aktif (dekat posisinya)
+                // 🔔 subscribe dicek duluan kalau aktif (dekat posisinya — area besar biar gampang kena)
                 const dSub = subOn ? Math.hypot(x - subPos.x, y - subPos.y) : 9;
-                if (subOn && dSub <= 0.16) {
+                if (subOn && dSub <= 0.24) {
                   dragRef.current = { x, y, target: "subscribe" as const };
                 } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
                   dragRef.current = { x, y, target: "logo" as const };
@@ -1667,9 +1659,23 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                     </button>
                   ))}
                 </div>
-                <div className="v6-slider-row">
+                {/* 🐛 v19.42: kontrol POSISI & UKURAN dari panel (bukan cuma drag) */}
+                <div className="v6-lbl" style={{ marginTop: 6 }}>📍 POSISI (atau seret tombol di preview)</div>
+                <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, x: Math.max(0.05, p.x - 0.03) }))}>⬅</button>
+                  <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, x: Math.min(0.95, p.x + 0.03) }))}>➡</button>
+                  <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, y: Math.max(0.05, p.y - 0.03) }))}>⬆</button>
+                  <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, y: Math.min(0.95, p.y + 0.03) }))}>⬇</button>
+                  <span style={{ fontSize: 10, color: "#8b8b98", marginLeft: 4 }}>geser halus</span>
+                </div>
+                <div className="v6-slider-row" style={{ marginTop: 6 }}>
                   <div className="lr"><span>Ukuran</span><b>{Math.round(subSize * 100)}%</b></div>
                   <input type="range" min={0.08} max={0.55} step={0.01} value={subSize} onChange={e => setSubSize(Number(e.target.value))} />
+                </div>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <button className="v6-chip" onClick={() => setSubSize(s => Math.max(0.08, s - 0.03))}>🔽 Kecil</button>
+                  <button className="v6-chip" onClick={() => setSubSize(s => Math.min(0.55, s + 0.03))}>🔼 Besar</button>
+                  <span style={{ fontSize: 10, color: "#8b8b98", marginLeft: 4 }}>atau cubit 2 jari di preview</span>
                 </div>
                 {/* ⏱ v19.41: DURASI tombol subscribe */}
                 <div className="v6-lbl" style={{ marginTop: 6 }}>⏱ DURASI MUNCUL</div>
@@ -1970,6 +1976,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         {step === 4 && (
           <>
             <h3 style={{ fontSize: 14, margin: "4px 0 10px" }}>5️⃣ Ekspor video spectrum</h3>
+            {/* 🐛 v19.42: pintas ke pengaturan elemen (subscribe, dll) biar gampang ketemu */}
+            <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap", marginBottom: 6 }}>
+              <button className="v6-chip" onClick={() => setStep(1)}>🔔 Atur Subscribe ›</button>
+              <button className="v6-chip" onClick={() => setStep(2)}>💬 Atur Lirik ›</button>
+              <button className="v6-chip" onClick={() => setStep(1)}>🎨 Atur Visual ›</button>
+            </div>
             <div className="v6-cardrow" style={{ cursor: "default" }}>
               <span style={{ fontSize: 18 }}>ℹ️</span>
               <div className="tt" style={{ fontSize: 11.5 }}>
