@@ -289,12 +289,15 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
     }
     if (ptrs.current.size === 1 && prev) {
       const p = toCanvas(e);
-      if (dragZoneRef.current) {
-        // 🐛 FIX v19.37.2: zona bisa sudah dihapus → find null → crash. Guard!
-        const z = zones.find((zz) => zz.id === dragZoneRef.current!.id);
+      // 🐛 FIX v19.37.3 (AKAR MASALAH): jangan baca dragZoneRef.current di dalam
+      // callback setZones (ASYNC) — bisa null → crash "Cannot read properties of null (reading 'dx')".
+      const dz = dragZoneRef.current;
+      if (dz) {
+        const z = zones.find((zz) => zz.id === dz.id);
         if (!z) { dragZoneRef.current = null; return; }
-        if (dragZoneRef.current.mode === "move") {
-          setZones((zs) => zs.map((zz) => zz.id === z.id ? { ...zz, x: clampN(p.x + dragZoneRef.current!.dx, 0.01, 0.99), y: clampN(p.y + dragZoneRef.current!.dy, 0.01, 0.99) } : zz));
+        if (dz.mode === "move") {
+          const dx = dz.dx, dy = dz.dy;
+          setZones((zs) => zs.map((zz) => zz.id === z.id ? { ...zz, x: clampN(p.x + dx, 0.01, 0.99), y: clampN(p.y + dy, 0.01, 0.99) } : zz));
         } else {
           const sc = Math.max(0.02, Math.hypot(p.x - z.x, (p.y - z.y) * (proj.w / proj.h)));
           setZones((zs) => zs.map((zz) => zz.id === z.id ? { ...zz, rx: clampN(sc, 0.015, 0.5), ry: clampN(sc * (proj.w / proj.h), 0.015, 0.5) } : zz));
