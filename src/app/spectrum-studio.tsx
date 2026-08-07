@@ -14,6 +14,8 @@ import { cariKlimaksBuffer, energiPerDetik, hitungPuncak } from "@/lib/climax"; 
 import { buildAudioChain } from "@/lib/audio-chain"; // 🎚 v19.33: rantai EQ/kompresor shared (live + offline)
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline"; // ⚡ v19.33: mesin render KUAT (WebCodecs, anti-kepotong)
 import { deteksiBeats, bpmDariBeats } from "@/lib/beats"; // 🥁 v19.36: deteksi beat & BPM (timeline beat)
+import { hitungFreqFramesChunked } from "@/lib/fft"; // 🎛 v19.39: FFT frekuensi ASLI → spektrum render akurat
+import type { FreqFrames } from "@/lib/fft";
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -124,6 +126,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [beatsArr, setBeatsArr] = useState<number[]>([]);
   const [bpmN, setBpmN] = useState(0);
   const beatsRef = useRef<number[]>([]);
+  // 🎛 v19.39: FFT frekuensi asli — dipakai render (bukan synthBars) biar spektrum akurat
+  const freqFramesRef = useRef<FreqFrames | null>(null);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
   const tempoRef = useRef(0.5); // 🩰 estimasi energi musik 0..1 (untuk gambar "menari")
   // 🎢 v19.15 EFEK 3D TUNNEL
@@ -380,6 +384,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       beatsRef.current = bt;
       setBeatsArr(bt);
       setBpmN(bpmDariBeats(bt));
+      // 🎛 v19.39: hitung FFT frekuensi asli (chunked biar HP nggak nge-freeze)
+      logDiag("Analisis frekuensi (FFT) untuk spektrum akurat…");
+      try {
+        const fr = await hitungFreqFramesChunked(buf, 10, 128);
+        freqFramesRef.current = fr;
+        logDiag(`FFT siap: ${fr.frames.length} frame × ${fr.bins} bin @${fr.fps}fps`);
+      } catch { freqFramesRef.current = null; }
       // 🔬 v19.33: DIAGNOSTIK — berapa detik yang BENAR-BENAR terbaca browser?
       // File besar tapi durasi pendek = header durasi file rusak → render pasti pendek.
       logDiag(`Audio dimuat: terbaca=${fmtD(buf.duration)} bytes=${raw.byteLength} (${(raw.byteLength / 1048576).toFixed(1)} MB)`);
@@ -1241,6 +1252,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     return renderOfflineVideo({
       buf, w: opts.w, h: opts.h, offset: opts.offset, dur: opts.dur,
       eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec, fps: fpsOpt, videoBitrate: vbr,
+      // 🎛 v19.39: pakai FFT asli → spektrum render AKURAT ikut musik (bukan sintetis)
+      freqFrames: freqFramesRef.current || undefined,
       drawBg: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "bg"),
       drawDin: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "dinamis"),
       draw: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq),

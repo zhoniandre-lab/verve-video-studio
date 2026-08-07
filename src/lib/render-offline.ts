@@ -19,6 +19,8 @@
    ===================================================================== */
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { buildAudioChain } from "./audio-chain";
+import { freqAt } from "./fft";
+import type { FreqFrames } from "./fft";
 
 export interface OptsRenderOffline {
   buf: AudioBuffer;
@@ -32,6 +34,9 @@ export interface OptsRenderOffline {
   fades: boolean;
   /** puncak energi 0..1 per 0.25 dtk — untuk bar sintetis (dari audio asli) */
   peaks?: number[];
+  /** 🎛 v19.39: frame FREKUENSI ASLI (FFT) — kalau ada, dipakai buat bars
+   *  (bukan synthBars sintetis) → spektrum AKURAT mengikuti musik. */
+  freqFrames?: FreqFrames;
   /** AAC (default) atau Opus — dipilih otomatis dari cekRenderOfflineMampu */
   audioCodec?: "aac" | "opus";
   /** bitrate video (default 6 Mbps) */
@@ -247,7 +252,8 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   const visibel = () => (typeof document !== "undefined" ? document.visibilityState !== "hidden" : true);
   for (let f = 0; f < totalFrames; f++) {
     const t = off0 + f / fps;
-    const freq = peaks.length ? synthBars(t, peaks) : null;
+    // 🎛 v19.39: pakai FFT ASLI kalau ada — kalau tidak, fallback synthBars
+    const freq = o.freqFrames ? freqAt(o.freqFrames, t) : (peaks.length ? synthBars(t, peaks) : null);
     if (pakaiLapis) {
       // 🚀 v19.34: latar digambar ulang tiap BG_EVERY frame → 3-4× lebih cepat
       if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, W, H, t, freq);
