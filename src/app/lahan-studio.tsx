@@ -1257,9 +1257,19 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     setErr(null);
     setBusy("lyrics");
     try {
+      // 🧠 v19.38: bawa key Dompet Bansos (OpenAI-compatible) → lirik jalan tanpa key server
+      const hdrBansos: Record<string, string> = {};
+      try {
+        const bc = JSON.parse(localStorage.getItem("verve_bansos_chat_v1") || "null");
+        if (bc && bc.base && bc.key) {
+          hdrBansos["x-bansos-chat-base"] = String(bc.base);
+          hdrBansos["x-bansos-chat-key"] = String(bc.key);
+          if (bc.model) hdrBansos["x-bansos-chat-model"] = String(bc.model);
+        }
+      } catch { /* abaikan */ }
       const r = await fetch("/api/hcnsec/lyrics", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...hdrBansos },
         body: JSON.stringify({ title: selTitle, keyword: selKeyword, niche: nicheDef.label + (nicheId === "story_song" ? " / lagu emosional" : ""), genre, mood }),
       });
       const j = await r.json();

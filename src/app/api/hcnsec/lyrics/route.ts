@@ -1,65 +1,35 @@
 import { NextResponse } from "next/server";
 import { chat } from "@/lib/hcnsec";
+import { buildSystemPrompt, parseLyrics } from "@/lib/lyrics-prompt";
+import { chatOpenAiCompatible } from "@/lib/openai-compat";
 
 export const dynamic = "force-dynamic";
 
-async function tryGenerate(title: string, keyword: string, niche: string, genre: string, mood: string): Promise<any> {
-  const sys =
-`Kamu penulis lirik Indonesia yang viral. Buat lirik untuk lagu:
-Judul: "${title}"
-Keyword: ${keyword||"-"}
-Niche: ${niche||"-"}
-Genre: ${genre||"pop ballad"}
-Mood: ${mood||"menyentuh"}
-
-Struktur WAJIB: [Intro] 2 baris / [Verse 1] 4 / [Pre-Chorus] 2 / [Chorus] 4 / [Verse 2] 4 / [Chorus] 4 / [Bridge] 3 / [Chorus] 4 / [Outro] 2. Total 25-30 baris.
-
-ATURAN:
-- Teks dalam bahasa sehari-hari, menyentuh, relatable
-- JANGAN gunakan tanda kutip ganda (") di lirik; pakai kutip satu jika perlu
-- Pemisah tiap baris: \n
-- JANGAN tambahkan penjelasan lain
-
-Output HARUS dalam FORMAT INI (teks polos, tanpa code block, tanpa JSON):
-===TITLE===
-(judul singkat)
-===GENRE===
-${genre||"pop ballad"}
-===MOOD===
-${mood||"menyentuh"}
-===TAGS===
-tag1, tag2, tag3, tag4, tag5
-===STYLE_PROMPT_SUNO===
-(1 kalimat BAHASA INGGRIS untuk AI music: genre, instruments, vocal, mood)
-===LYRICS===
-[Intro]
-baris 1
-baris 2
-[Verse 1]
-baris 1
-...dst`;
-
-  const raw = await chat([{ role: "user", content: sys }]);
-  return parseLyrics(raw);
+/** 🧠 v19.38: generate lirik dengan sumber AI berurutan:
+ *  1) BANSOS (header x-bansos-chat-*) — key OpenAI-compatible gratis dari
+ *     Dompet Bansos (Groq/Gemini/dll) → lirik JALAN walau HCNSEC_API_KEY
+ *     belum di-set di Vercel.
+ *  2) HCNSEC (mesin bawaan) — kalau key server tersedia.
+ */
+async function cobaBansos(req: Request, title: string, keyword: string, niche: string, genre: string, mood: string) {
+  const base = (req.headers.get("x-bansos-chat-base") || "").trim().replace(/\/+$/, "");
+  const key = (req.headers.get("x-bansos-chat-key") || "").trim();
+  const model = (req.headers.get("x-bansos-chat-model") || "").trim();
+  if (!/^https?:\/\//.test(base) || !key) return null;
+  try {
+    const sys = buildSystemPrompt(title, keyword, niche, genre, mood);
+    const raw = await chatOpenAiCompatible(base, key, model, [{ role: "user", content: sys }]);
+    return parseLyrics(raw);
+  } catch (e) {
+    console.warn("[lyrics] bansos gagal:", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
-function parseLyrics(raw: string): any {
-  const s = raw.replace(/```[a-z]*/gi, "").replace(/```/g, "").trim();
-  const get = (key: string) => {
-    const re = new RegExp(`===${key}===\\s*\\n([\\s\\S]*?)(?=\\n===|$)`);
-    const m = s.match(re);
-    return m ? m[1].trim() : "";
-  };
-  const title = get("TITLE").split("\n")[0].trim().slice(0,100);
-  const genre = get("GENRE").split("\n")[0].trim().slice(0,50);
-  const mood = get("MOOD").split("\n")[0].trim().slice(0,50);
-  const tagsRaw = get("TAGS").split("\n")[0];
-  const tags = tagsRaw.split(",").map((t:string)=>t.replace(/^#/,"").trim()).filter(Boolean).slice(0,8);
-  const style_suno = get("STYLE_PROMPT_SUNO").split("\n")[0].trim().slice(0,200);
-  const lyrics = get("LYRICS").trim();
-
-  if (!lyrics || lyrics.length < 50) throw new Error("Lirik terlalu pendek / gagal diparse");
-  return { title, genre, mood, tags, style_prompt_suno: style_suno, lyrics };
+async function cobaHcnsec(title: string, keyword: string, niche: string, genre: string, mood: string) {
+  const sys = buildSystemPrompt(title, keyword, niche, genre, mood);
+  const raw = await chat([{ role: "user", content: sys }]);
+  return parseLyrics(raw);
 }
 
 export async function POST(req: Request) {
@@ -68,15 +38,22 @@ export async function POST(req: Request) {
     if (!title) return NextResponse.json({ error: "Judul kosong" }, { status: 400 });
 
     let lastErr: any = null;
-    for (let i=1;i<=3;i++){
+
+    // 1) Bansos dulu (cepat & tanpa key server)
+    const viaBansos = await cobaBansos(req, title, keyword || "", niche || "", genre || "", mood || "");
+    if (viaBansos) return NextResponse.json({ ...viaBansos, sumber: "bansos" });
+
+    // 2) Hcnsec (3 percobaan)
+    for (let i = 1; i <= 3; i++) {
       try {
-        const parsed = await tryGenerate(title, keyword||"", niche||"", genre||"", mood||"");
-        return NextResponse.json(parsed);
-      } catch(e){ lastErr = e; }
+        const parsed = await cobaHcnsec(title, keyword || "", niche || "", genre || "", mood || "");
+        return NextResponse.json({ ...parsed, sumber: "hcnsec" });
+      } catch (e) { lastErr = e; }
     }
+
     return NextResponse.json(
-      { error: `Lirik gagal: ${lastErr?.message||"coba lagi"}` },
-      { status: 500 }
+      { error: `Lirik gagal: ${lastErr?.message || "coba lagi"}. Pastikan ada API key di Dompet Bansos (menu Saya → Bansos chat) — key gratis bisa dari Bot Buruan (Groq/Gemini).` },
+      { status: 500 },
     );
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Gagal buat lirik" }, { status: 500 });

@@ -124,6 +124,19 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     if (k) { h["X-Suno-Key"] = k; h["X-Suno-Provider"] = sunoProv; }
     return h;
   }
+  /* 🧠 v19.38: bawa key Dompet Bansos (OpenAI-compatible) — dipakai route lyrics
+     sebagai sumber AI utama biar generate lirik JALAN tanpa key server. */
+  function bansosHeaders(): Record<string, string> {
+    try {
+      const bc = JSON.parse(localStorage.getItem("verve_bansos_chat_v1") || "null");
+      if (bc && bc.base && bc.key) {
+        const h: Record<string, string> = { "x-bansos-chat-base": String(bc.base), "x-bansos-chat-key": String(bc.key) };
+        if (bc.model) h["x-bansos-chat-model"] = String(bc.model);
+        return h;
+      }
+    } catch { /* abaikan */ }
+    return {};
+  }
   function addKeysFromDraft() {
     const lines = keyDraft.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     if (!lines.length) return;
@@ -163,7 +176,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     if (!defaultTitle.trim()) { setErr("Judul belum ada — isi judul dulu."); return; }
     setBusy("lyrics"); setErr("");
     try {
-      const r = await fetch("/api/hcnsec/lyrics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: defaultTitle, keyword: defaultTitle, niche: "cerita jadi lagu / lagu emosional", genre, mood }) });
+      const r = await fetch("/api/hcnsec/lyrics", { method: "POST", headers: { "Content-Type": "application/json", ...bansosHeaders() }, body: JSON.stringify({ title: defaultTitle, keyword: defaultTitle, niche: "cerita jadi lagu / lagu emosional", genre, mood }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       setLyrics(j.lyrics || "");
