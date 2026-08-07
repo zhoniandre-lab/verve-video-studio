@@ -85,36 +85,39 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
   const drawScene = useCallback((ctx: CanvasRenderingContext2D, t: number) => {
     const W = proj.w, H = proj.h;
     ctx.fillStyle = "#0b0b12"; ctx.fillRect(0, 0, W, H);
-    if (!imgRef.current) return;
+    if (!imgRef.current) return; // 🐛 FIX: jangan render kalau gambar belum dimuat
     // gambar cover (aspect sama → full)
     ctx.drawImage(imgRef.current, 0, 0, W, H);
-    // zona reaktif
-    if (peaksRef.current.length) {
+    // zona reaktif — guard array kosong
+    const pk = peaksRef.current;
+    if (pk.length && zones.length) {
       const list = zones.map((z) => {
-        const f = {
-          bass: peaksRef.current[Math.min(peaksRef.current.length - 1, Math.max(0, Math.floor(t / 0.25)))] ?? 0,
-          beat: 0, treble: 0.4, rms: 0.5, flux: 0,
-        };
+        const i = Math.min(pk.length - 1, Math.max(0, Math.floor(t / 0.25)));
         let beat = 0;
         for (const b of beatsRef.current) { const d = Math.abs(b - t); if (d < 0.06) { beat = 1; break; } if (d < 0.13) { beat = 0.5; break; } if (b > t + 0.13) break; }
-        f.beat = beat;
-        f.flux = Math.min(1, Math.abs((peaksRef.current[Math.min(peaksRef.current.length - 1, Math.max(0, Math.floor(t / 0.25)))] ?? 0) - (peaksRef.current[Math.max(0, Math.floor(t / 0.25) - 1)] ?? 0)) * 2);
+        const f = {
+          bass: pk[i] ?? 0, beat, treble: 0.4, rms: 0.5,
+          flux: Math.min(1, Math.abs((pk[i] ?? 0) - (pk[Math.max(0, i - 1)] ?? 0)) * 2),
+        };
         const d = hitungDriver(z, f, t, stRef.current[z.id] || (stRef.current[z.id] = { prev: {} }), 1 / 60);
         return { z, d };
       });
       gambarZonaReaktif(ctx, imgRef.current, imgNat.w, imgNat.h, W, H, list, { glowWarna: "#22d3ee" });
     }
-    // outline zona (mode edit)
+    // outline zona (mode edit — sembunyikan saat preview biar bersih)
+    const showOutline = !playing;
     for (const z of zones) {
       const aktif = z.id === selId;
-      ctx.save();
-      buatPath(ctx, z, W, H);
-      ctx.strokeStyle = aktif ? "rgba(34,211,238,0.95)" : "rgba(255,255,255,0.45)";
-      ctx.lineWidth = aktif ? 3 : 1.5;
-      ctx.setLineDash(aktif ? [] : [6, 5]);
-      ctx.stroke();
-      ctx.restore();
-      if (aktif) {
+      if (showOutline) {
+        ctx.save();
+        buatPath(ctx, z, W, H);
+        ctx.strokeStyle = aktif ? "rgba(34,211,238,0.95)" : "rgba(255,255,255,0.45)";
+        ctx.lineWidth = aktif ? 3 : 1.5;
+        ctx.setLineDash(aktif ? [] : [6, 5]);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (aktif && showOutline) {
         // handle resize
         for (const [hx, hy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
           ctx.fillStyle = "#22d3ee";
@@ -346,13 +349,14 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
       const o = clampN(shortStart, 0, Math.max(0, dur - 1));
       const buf = bufRef.current;
       const pk = peaksRef.current, bt = beatsRef.current;
-      const img = imgRef.current, nat = imgNat, W = proj.w, H = proj.h;
+      const W = proj.w, H = proj.h;
       const blob = await renderOfflineVideo({
         buf, w: W, h: H, offset: o, dur: total, eq: "flat", comp: 50, gain: 100, fades: true,
-        peaks: [], audioCodec: undefined, fps: 30, videoBitrate: 6_000_000,
-        draw: (ctx, w2, h2, t) => {
+        peaks: pk, audioCodec: undefined, fps: 30, videoBitrate: 6_000_000,
+        draw: (ctx, w2, h2, t, freq) => {
           ctx.fillStyle = "#0b0b12"; ctx.fillRect(0, 0, w2, h2);
-          ctx.drawImage(img, 0, 0, w2, h2);
+          if (!imgRef.current) return; // 🐛 FIX: aman kalau gambar hilang
+          ctx.drawImage(imgRef.current, 0, 0, w2, h2);
           if (pk.length) {
             const sts: Record<string, { prev: Record<string, number> }> = {};
             const list = zones.map((z) => {
@@ -363,7 +367,7 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
               const d = hitungDriver(z, f, t, sts[z.id] || (sts[z.id] = { prev: {} }), 1 / 30);
               return { z, d };
             });
-            gambarZonaReaktif(ctx, img, nat.w, nat.h, w2, h2, list, { glowWarna: "#22d3ee" });
+            gambarZonaReaktif(ctx, imgRef.current, imgNat.w, imgNat.h, w2, h2, list, { glowWarna: "#22d3ee" });
           }
         },
         onProg: (p) => setProgress(p),
@@ -374,6 +378,23 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
   }
 
   const sel = zones.find((z) => z.id === selId) || null;
+
+  /* 🔍 v19.37.1: kontrol navigasi — zoom cepat & geser zona halus (buat HP enak) */
+  function zoomBy(f: number) {
+    const r = cvRef.current?.getBoundingClientRect();
+    const cx = r ? r.width / 2 : 0, cy = r ? r.height / 2 : 0;
+    setView((v) => {
+      const s = clampN(v.scale * f, 0.6, 8);
+      const ns = s / v.scale;
+      return { scale: s, tx: cx - (cx - v.tx) * ns, ty: cy - (cy - v.ty) * ns };
+    });
+  }
+  function fitView() { setView({ scale: 1, tx: 0, ty: 0 }); }
+  function geserZonaHalus(dx: number, dy: number) {
+    if (!sel) return;
+    const step = 0.01;
+    updateZona(sel.id, { x: clampN(sel.x + dx * step, 0.01, 0.99), y: clampN(sel.y + dy * step, 0.01, 0.99) });
+  }
 
   /* ---------- UI ---------- */
   return (
@@ -409,9 +430,12 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
                 style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", background: "#0b0b12", touchAction: "none", borderRadius: 10, border: "1px solid rgba(255,255,255,.12)" }}
                 onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
               />
-              {/* tombol cepat */}
-              <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
-                <button className="v6-chip" style={{ background: "rgba(0,0,0,.6)" }} onClick={autoDetect}>🔍 Deteksi speaker</button>
+              {/* 🧭 v19.37.1: kontrol navigasi — zoom & fit (enak dipakai di HP) */}
+              <div style={{ position: "absolute", top: 8, right: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                <button className="v6-chip" style={{ background: "rgba(0,0,0,.7)", fontSize: 15, width: 36, height: 36, padding: 0, borderRadius: 10 }} onClick={() => zoomBy(1.4)}>＋</button>
+                <button className="v6-chip" style={{ background: "rgba(0,0,0,.7)", fontSize: 15, width: 36, height: 36, padding: 0, borderRadius: 10 }} onClick={() => zoomBy(1 / 1.4)}>－</button>
+                <button className="v6-chip" style={{ background: "rgba(0,0,0,.7)", fontSize: 12, width: 36, height: 36, padding: 0, borderRadius: 10 }} onClick={fitView}>⛶</button>
+                <button className="v6-chip" style={{ background: "rgba(0,0,0,.7)", fontSize: 12, width: 36, padding: "8px 0", borderRadius: 10 }} onClick={autoDetect}>🔍</button>
               </div>
             </>
           )}
@@ -458,8 +482,15 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
           <div style={{ borderTop: "1px solid rgba(255,255,255,.12)", background: "#0d0d16", padding: "8px 12px", maxHeight: "38vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <b style={{ fontSize: 12.5, flex: 1 }}>🎯 {sel.name}</b>
-              <button className="v6-chip" style={{ fontSize: 10 }} onClick={() => duplikatZona(sel.id)}>⧉ Duplikat</button>
-              <button className="v6-chip" style={{ fontSize: 10, color: "#fca5a5" }} onClick={() => hapusZona(sel.id)}>🗑 Hapus</button>
+              {/* 🧭 v19.37.1: geser halus pakai tombol arah — presisi di HP */}
+              <div style={{ display: "flex", gap: 2 }}>
+                <button className="v6-chip" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => geserZonaHalus(-1, 0)}>◀</button>
+                <button className="v6-chip" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => geserZonaHalus(0, -1)}>▲</button>
+                <button className="v6-chip" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => geserZonaHalus(0, 1)}>▼</button>
+                <button className="v6-chip" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => geserZonaHalus(1, 0)}>▶</button>
+              </div>
+              <button className="v6-chip" style={{ fontSize: 10 }} onClick={() => duplikatZona(sel.id)}>⧉</button>
+              <button className="v6-chip" style={{ fontSize: 10, color: "#fca5a5" }} onClick={() => hapusZona(sel.id)}>🗑</button>
               <button className="v6-chip" style={{ fontSize: 10 }} onClick={() => setSelId(null)}>✓</button>
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 6, alignItems: "center" }}>
