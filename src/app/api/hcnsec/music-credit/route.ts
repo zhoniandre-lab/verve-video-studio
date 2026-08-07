@@ -12,12 +12,11 @@ export const maxDuration = 30;
 
 const BASE: Record<string, string> = {
   kie: "https://api.kie.ai/api/v1",
-  apiframe: "https://apiframe.ai/api",
-  sunor: "https://api.sunor.cc/v1",
+  // 🐛 FIX v19.35.6: Sunor API ada di sunor.cc (subdomain api.sunor.cc MATI di DNS)
+  sunor: "https://sunor.cc/api/v1",
 };
 const PROBE: Record<string, string[]> = {
   kie: ["/chat/credit", "/credit", "/user/credit"],
-  apiframe: ["/credits", "/user/credits", "/credit"],
   sunor: ["/user/credits", "/credits", "/credit"],
 };
 
