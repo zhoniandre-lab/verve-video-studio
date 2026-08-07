@@ -155,16 +155,28 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // ⏱ v19.41: DURASI tombol subscribe — muncul mulai detik & hilang detik (0 = sampai akhir)
   const [subStart, setSubStart] = useState(0);
   const [subEnd, setSubEnd] = useState(0);
-  // 🐛 v19.42.1: preview mini di panel — gambar ulang saat pilihan berubah
+  // 🐛 v19.42.2: preview mini DI PANEL — selalu hidup (interval rAF ringan) biar
+  // tombol kelihatan & animasinya jalan (dulu useEffect sekali → bisa kosong)
   useEffect(() => {
-    const cv = subPrevRef.current; if (!cv) return;
-    const ctx = cv.getContext("2d"); if (!ctx) return;
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.fillStyle = "#0b0b14"; ctx.fillRect(0, 0, cv.width, cv.height);
-    const stl = SUB_STYLES.find((x) => x.id === subStyle) || SUB_STYLES[0];
-    const st = hitungSubState(0.7, 1, 0.6, subAnim, performance.now() / 1000);
-    gambarSubscribe(ctx, cv.width / 2, cv.height / 2, cv.height * 0.55, stl, st, performance.now() / 1000);
-  }, [subStyle, subAnim, subSize]);
+    let raf = 0;
+    const gambar = () => {
+      const cv = subPrevRef.current;
+      if (cv) {
+        const ctx = cv.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, cv.width, cv.height);
+          ctx.fillStyle = "#0b0b14"; ctx.fillRect(0, 0, cv.width, cv.height);
+          const stl = SUB_STYLES.find((x) => x.id === subStyle) || SUB_STYLES[0];
+          const t = performance.now() / 1000;
+          const st = hitungSubState(0.7, 1, 0.6, subAnim, t);
+          gambarSubscribe(ctx, cv.width / 2, cv.height / 2, cv.height * 0.55, stl, st, t);
+        }
+      }
+      raf = requestAnimationFrame(gambar);
+    };
+    raf = requestAnimationFrame(gambar);
+    return () => cancelAnimationFrame(raf);
+  }, [subStyle, subAnim]);
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   const subPrevRef = useRef<HTMLCanvasElement | null>(null);
   // Layout preset — posisi logo & judul (fraksi)
@@ -1662,10 +1674,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className="v6-chip" onClick={() => { setSpecStyle("tunnel"); }}>🎢 Tunnel</button>
             </div>
             {/* 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI */}
-            <div className="v6-cardrow" style={{ marginTop: 8 }} onClick={() => setSubOn(!subOn)}>
+            <div className="v6-cardrow" style={{ marginTop: 8, borderColor: subOn ? "rgba(34,197,94,.6)" : undefined, background: subOn ? "rgba(34,197,94,.07)" : undefined }} onClick={() => setSubOn(!subOn)}>
               <span style={{ fontSize: 18 }}>🔔</span>
               <div className="tt">
-                <b>Tombol Subscribe animasi</b>
+                <b>Tombol Subscribe animasi {subOn ? "✅ AKTIF" : "(mati — ketuk untuk aktifkan)"}</b>
                 <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Banyak gaya · denyut ikut bass · lonceng goyang saat beat — geser jari buat pindah, cubit 2 jari buat ukuran</div>
               </div>
               <button className={`v6-toggle ${subOn ? "on" : ""}`} />
