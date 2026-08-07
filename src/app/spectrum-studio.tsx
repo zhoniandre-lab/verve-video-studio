@@ -177,6 +177,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     raf = requestAnimationFrame(gambar);
     return () => cancelAnimationFrame(raf);
   }, [subStyle, subAnim]);
+
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   const subPrevRef = useRef<HTMLCanvasElement | null>(null);
   // Layout preset — posisi logo & judul (fraksi)
@@ -1160,7 +1161,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     }
   }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless,
-    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
+    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom,
+    // 🐛 FIX v19.42.2: SEMUA state yang dipakai drawScene WAJIB di dep — kalau tidak,
+    // preview pakai closure LAMA → tombol subscribe/lapisan/posisi tidak pernah muncul.
+    layerVis, layerOp, step, playing,
+    subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
