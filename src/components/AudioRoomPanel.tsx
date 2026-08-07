@@ -75,10 +75,18 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
     return { w, h };
   }, [imgNat]);
 
-  /* ---------- muat proyek tersimpan ---------- */
+  /* ---------- muat proyek tersimpan (DIPERKUAT: validasi data) ---------- */
   useEffect(() => {
-    const p = muatProyek();
-    if (p?.bgImage) { setBgImg(p.bgImage); setZones(p.zones || []); }
+    try {
+      const p = muatProyek();
+      if (p?.bgImage && typeof p.bgImage === "string" && p.bgImage.startsWith("data:image")) {
+        const im = new Image();
+        im.onload = () => { imgRef.current = im; setImgNat({ w: im.naturalWidth || 1080, h: im.naturalHeight || 608 }); };
+        im.src = p.bgImage;
+        setBgImg(p.bgImage);
+        if (Array.isArray(p.zones)) setZones(p.zones.filter((z: any) => z && typeof z.x === "number" && typeof z.y === "number"));
+      }
+    } catch { /* abaikan — mulai kosong */ }
   }, []);
 
   /* ---------- gambar ke canvas (preview) ---------- */
@@ -142,25 +150,27 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
 
   const stRef = useRef<Record<string, { prev: Record<string, number> }>>({});
 
-  /* ---------- loop preview ---------- */
+  /* ---------- loop preview (DIBUNGKUS try/catch — anti crash halaman) ---------- */
   useEffect(() => {
     let stop = false;
     const loop = () => {
       if (stop) return;
-      const cv = cvRef.current; if (cv) {
-        const ctx = cv.getContext("2d");
-        if (ctx) {
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.clearRect(0, 0, cv.width, cv.height);
-          const v = viewRef.current;
-          ctx.save();
-          ctx.translate(v.tx, v.ty);
-          ctx.scale(v.scale, v.scale);
-          ctx.beginPath(); ctx.rect(0, 0, proj.w, proj.h); ctx.clip();
-          drawScene(ctx, playing ? playheadRef.current : playheadRef.current);
-          ctx.restore();
+      try {
+        const cv = cvRef.current; if (cv) {
+          const ctx = cv.getContext("2d");
+          if (ctx) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, cv.width, cv.height);
+            const v = viewRef.current;
+            ctx.save();
+            ctx.translate(v.tx, v.ty);
+            ctx.scale(v.scale, v.scale);
+            ctx.beginPath(); ctx.rect(0, 0, proj.w, proj.h); ctx.clip();
+            drawScene(ctx, playing ? playheadRef.current : playheadRef.current);
+            ctx.restore();
+          }
         }
-      }
+      } catch (e) { /* jangan matikan halaman karena 1 frame error */ }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
@@ -273,7 +283,6 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
       const r = (e.target as HTMLElement).getBoundingClientRect();
       const s = clampN(pinchRef.current.s0 * (d / pinchRef.current.d0), 0.6, 6);
       const cx = (a.x + b.x) / 2 - r.left, cy = (a.y + b.y) / 2 - r.top;
-      // zoom ke titik tengah jari
       const ns = s / viewRef.current.scale;
       setView((v) => ({ scale: s, tx: cx - (cx - v.tx) * ns, ty: cy - (cy - v.ty) * ns }));
       return;
@@ -281,8 +290,9 @@ export default function AudioRoomPanel({ onExit }: { onExit: () => void }) {
     if (ptrs.current.size === 1 && prev) {
       const p = toCanvas(e);
       if (dragZoneRef.current) {
+        // 🐛 FIX v19.37.2: zona bisa sudah dihapus → find null → crash. Guard!
         const z = zones.find((zz) => zz.id === dragZoneRef.current!.id);
-        if (!z) return;
+        if (!z) { dragZoneRef.current = null; return; }
         if (dragZoneRef.current.mode === "move") {
           setZones((zs) => zs.map((zz) => zz.id === z.id ? { ...zz, x: clampN(p.x + dragZoneRef.current!.dx, 0.01, 0.99), y: clampN(p.y + dragZoneRef.current!.dy, 0.01, 0.99) } : zz));
         } else {
