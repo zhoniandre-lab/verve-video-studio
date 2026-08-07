@@ -75,7 +75,9 @@ try { await chatOpenAiCompatible("notaurl", "k", "m", []); T("base aneh ditolak"
 /* 6. route lyrics: harus baca header bansos dulu (cek kode) */
 const route = readFileSync(new URL("../src/app/api/hcnsec/lyrics/route.ts", import.meta.url), "utf8");
 T("route: baca header x-bansos-chat-base", /x-bansos-chat-base/.test(route));
-T("route: bansos dicoba DULU sebelum hcnsec", route.indexOf("cobaBansos") < route.indexOf("cobaHcnsec") && /viaBansos/.test(route));
+const posCallHcn = route.indexOf("// 1) AI UTAMA: hcnsec");
+const posCallBan = route.indexOf("// 2) CADANGAN: bansos");
+T("route: hcnsec (AI utama) dipanggil DULU sebelum bansos (cadangan)", posCallHcn >= 0 && posCallBan >= 0 && posCallHcn < posCallBan && /AI UTAMA/.test(route));
 T("route: pesan error kasih solusi Dompet Bansos", /Dompet Bansos/.test(route));
 /* SunoPanel & Lahan kirim header bansos */
 const panel = readFileSync(new URL("../src/components/SunoPanel.tsx", import.meta.url), "utf8");

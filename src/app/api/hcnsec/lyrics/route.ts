@@ -5,11 +5,10 @@ import { chatOpenAiCompatible } from "@/lib/openai-compat";
 
 export const dynamic = "force-dynamic";
 
-/** 🧠 v19.38: generate lirik dengan sumber AI berurutan:
- *  1) BANSOS (header x-bansos-chat-*) — key OpenAI-compatible gratis dari
- *     Dompet Bansos (Groq/Gemini/dll) → lirik JALAN walau HCNSEC_API_KEY
- *     belum di-set di Vercel.
- *  2) HCNSEC (mesin bawaan) — kalau key server tersedia.
+/** 🧠 v19.38.1: urutan sumber AI yang BENAR:
+ *  1) HCNSEC (mesin bawaan — key server Vercel) → INI AI UTAMA user.
+ *  2) BANSOS (OpenAI-compatible dari Dompet Bansos) → HANYA cadangan kalau
+ *     hcnsec gagal (mis. key server kosong). BUKAN pengganti utama.
  */
 async function cobaBansos(req: Request, title: string, keyword: string, niche: string, genre: string, mood: string) {
   const base = (req.headers.get("x-bansos-chat-base") || "").trim().replace(/\/+$/, "");
@@ -39,11 +38,7 @@ export async function POST(req: Request) {
 
     let lastErr: any = null;
 
-    // 1) Bansos dulu (cepat & tanpa key server)
-    const viaBansos = await cobaBansos(req, title, keyword || "", niche || "", genre || "", mood || "");
-    if (viaBansos) return NextResponse.json({ ...viaBansos, sumber: "bansos" });
-
-    // 2) Hcnsec (3 percobaan)
+    // 1) AI UTAMA: hcnsec (key server) — yang selama ini jalan di Lahan
     for (let i = 1; i <= 3; i++) {
       try {
         const parsed = await cobaHcnsec(title, keyword || "", niche || "", genre || "", mood || "");
@@ -51,8 +46,12 @@ export async function POST(req: Request) {
       } catch (e) { lastErr = e; }
     }
 
+    // 2) CADANGAN: bansos (kalau hcnsec benar-benar gagal)
+    const viaBansos = await cobaBansos(req, title, keyword || "", niche || "", genre || "", mood || "");
+    if (viaBansos) return NextResponse.json({ ...viaBansos, sumber: "bansos" });
+
     return NextResponse.json(
-      { error: `Lirik gagal: ${lastErr?.message || "coba lagi"}. Pastikan ada API key di Dompet Bansos (menu Saya → Bansos chat) — key gratis bisa dari Bot Buruan (Groq/Gemini).` },
+      { error: `Lirik gagal: ${lastErr?.message || "coba lagi"}.` },
       { status: 500 },
     );
   } catch (e: any) {
