@@ -16,6 +16,8 @@ import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline"
 import { deteksiBeats, bpmDariBeats } from "@/lib/beats"; // 🥁 v19.36: deteksi beat & BPM (timeline beat)
 import { hitungFreqFramesChunked } from "@/lib/fft"; // 🎛 v19.39: FFT frekuensi ASLI → spektrum render akurat
 import type { FreqFrames } from "@/lib/fft";
+import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe } from "@/lib/subscribe"; // 🔔 v19.40: tombol subscribe animasi
+import type { SubStyle, SubAnim } from "@/lib/subscribe";
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -53,6 +55,7 @@ const LAYER_DEFS = [
   { id: "logo", label: "📛 Logo & Judul" },
   { id: "overlay", label: "🌧️ Overlay suasana" },
   { id: "partikel", label: "✨ Partikel (ember)" },
+  { id: "subscribe", label: "🔔 Tombol Subscribe" },
 ];
 const BG_GRADS = [
   { id: "g0", css: ["#05070f", "#0e7490"], label: "Samudra Malam" },
@@ -120,7 +123,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
   const [danceZoom, setDanceZoom] = useState(0.03); // 🐛 v19.16.1: amplitudo zoom lebih lembut (0 = mati)
   // 🧩 v19.36 LAPISAN — visibilitas & transparansi tiap elemen
-  const [layerVis, setLayerVis] = useState<Record<string, boolean>>({ spektrum: true, gambar: true, logo: true, overlay: true, partikel: true });
+  const [layerVis, setLayerVis] = useState<Record<string, boolean>>({ spektrum: true, gambar: true, logo: true, overlay: true, partikel: true, subscribe: true });
   const [layerOp, setLayerOp] = useState<Record<string, number>>({});
   // 🥁 v19.36 BEAT & BPM — dari analisis audio (timeline beat)
   const [beatsArr, setBeatsArr] = useState<number[]>([]);
@@ -128,6 +131,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const beatsRef = useRef<number[]>([]);
   // 🎛 v19.39: FFT frekuensi asli — dipakai render (bukan synthBars) biar spektrum akurat
   const freqFramesRef = useRef<FreqFrames | null>(null);
+  // 🎛 peaks asli (per 0.25 dtk) — dipakai animasi subscribe saat render offline
+  const peaksRef = useRef<number[]>([]);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
   const tempoRef = useRef(0.5); // 🩰 estimasi energi musik 0..1 (untuk gambar "menari")
   // 🎢 v19.15 EFEK 3D TUNNEL
@@ -137,7 +142,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [presetName, setPresetName] = useState("");
   const [presetMsg, setPresetMsg] = useState("");
   const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
-  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" | "subscribe" } | null>(null);
+  // 🤏 v19.40: pinch 2 jari buat ukuran tombol subscribe
+  const ptrsCanvas = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchSub = useRef<{ d0: number; s0: number } | null>(null);
+  // 🔔 v19.40 TOMBOL SUBSCRIBE ANIMASI — banyak gaya, geser jari, cubit buat ukuran
+  const [subOn, setSubOn] = useState(false);
+  const [subStyle, setSubStyle] = useState("yt");
+  const [subSize, setSubSize] = useState(0.24);
+  const [subPos, setSubPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.9 });
+  const [subAnim, setSubAnim] = useState<SubAnim>("denyut");
+  const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   // Layout preset — posisi logo & judul (fraksi)
   const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
     "logo-tengah": { logo: { x: 0.5, y: 0.42 }, titleY: 0.035, titleScale: 1 },
@@ -281,6 +296,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         overlay, layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
         layerVis, layerOp,
+        // 🔔 v19.40: tombol subscribe ikut tersimpan
+        subOn, subStyle, subSize, subPos, subAnim,
       };
       const idx = list.findIndex((p: any) => p.nama === nama);
       if (idx >= 0) list[idx] = preset; else list.unshift(preset);
@@ -303,6 +320,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setTunnelSpeed(p.tunnelSpeed ?? 1); setTunnelDepth(p.tunnelDepth ?? 40);
       if (p.layerVis) setLayerVis(p.layerVis);
       if (p.layerOp) setLayerOp(p.layerOp);
+      // 🔔 v19.40: muat subscribe dari preset
+      if (p.subOn !== undefined) setSubOn(!!p.subOn);
+      if (p.subStyle) setSubStyle(p.subStyle);
+      if (p.subSize) setSubSize(p.subSize);
+      if (p.subPos) setSubPos(p.subPos);
+      if (p.subAnim) setSubAnim(p.subAnim);
       setPresetMsg(`✅ Preset "${nama}" dimuat`);
     } catch { setPresetMsg("⚠️ Gagal muat preset"); }
   }
@@ -380,6 +403,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setShortAuto(true);
       // 🥁 v19.36: analisis BEAT & BPM (timeline beat)
       const pk = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
+      peaksRef.current = pk;
       const bt = deteksiBeats(pk, 0.25);
       beatsRef.current = bt;
       setBeatsArr(bt);
@@ -1048,6 +1072,31 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     }
 
+    // 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI — paling atas (di atas semua elemen)
+    if (subOn && layerVis.subscribe !== false) {
+      const stl = SUB_STYLES.find((s) => s.id === subStyle) || SUB_STYLES[0];
+      subStyleRef.current = stl;
+      // fitur audio utk animasi: bass + beat + flux (dari bars saat ini)
+      let subBass = bass, subBeat = 0, subFlux = 0;
+      if (freq) {
+        subBass = bass;
+        subBeat = bass > 0.52 && bass > lastBassRef.current * 1.18 ? 1 : 0;
+        subFlux = Math.min(1, Math.abs(bass - lastBassRef.current) * 2);
+      } else if (peaksRef.current.length) {
+        const pkS = peaksRef.current;
+        const iSub = Math.min(pkS.length - 1, Math.max(0, Math.floor(t / 0.25)));
+        subBass = pkS[iSub] ?? 0;
+        subBeat = 0; for (const b of beatsRef.current) { const dd = Math.abs(b - t); if (dd < 0.06) { subBeat = 1; break; } if (dd < 0.13) { subBeat = 0.5; break; } if (b > t + 0.13) break; }
+        subFlux = Math.min(1, Math.abs((pkS[iSub] ?? 0) - (pkS[Math.max(0, iSub - 1)] ?? 0)) * 2);
+      }
+      const subSt = hitungSubState(subBass, subBeat, subFlux, subAnim, t);
+      ctx.save();
+      ctx.globalAlpha = layerOp.subscribe ?? 1;
+      const wSub = Math.min(W, H) * subSize;
+      gambarSubscribe(ctx, subPos.x * W, subPos.y * H, wSub, stl, subSt, t);
+      ctx.restore();
+    }
+
     // badge loop mulus
     if (!dinOnly) {
     if (seamless) {
@@ -1455,6 +1504,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <canvas ref={cvRef} width={dim.w} height={dim.h}
               style={{ width: "100%", borderRadius: 14, border: dragMode ? "2px solid rgba(139,92,246,.7)" : "1px solid rgba(255,255,255,.14)", background: "#000", aspectRatio: `${dim.w}/${dim.h}`, touchAction: "none", cursor: dragMode ? "crosshair" : "default" }}
               onPointerDown={(e) => {
+                // 🤏 v19.40: lacak semua jari (buat pinch 2 jari)
+                ptrsCanvas.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (ptrsCanvas.current.size === 2) {
+                  const [a, b] = [...ptrsCanvas.current.values()];
+                  pinchSub.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: subSize };
+                  return;
+                }
                 // 🐛 FIX v19.15.1: drag LANGSUNG tanpa toggle — hit-test posisi logo & judul
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
                 const x = (e.clientX - r.left) / r.width;
@@ -1462,7 +1518,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const tol = 0.12; // jarak sentuh yang dianggap "kena"
                 const dLogo = Math.hypot(x - logoPos.x, y - logoPos.y);
                 const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
-                if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
+                // 🔔 subscribe dicek duluan kalau aktif (dekat posisinya)
+                const dSub = subOn ? Math.hypot(x - subPos.x, y - subPos.y) : 9;
+                if (subOn && dSub <= 0.16) {
+                  dragRef.current = { x, y, target: "subscribe" as const };
+                } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
                   dragRef.current = { x, y, target: "logo" as const };
                 } else if (dTitle <= tol && title.trim()) {
                   dragRef.current = { x, y, target: "judul" as const };
@@ -1472,15 +1532,28 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 try { (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); } catch { /* aman */ }
               }}
               onPointerMove={(e) => {
+                // 🤏 v19.40: PINCH 2 JARI → ubah ukuran tombol subscribe
+                if (ptrsCanvas.current.size === 2 && pinchSub.current && subOn) {
+                  const [a, b] = [...ptrsCanvas.current.values()];
+                  const d = Math.hypot(a.x - b.x, a.y - b.y);
+                  const s = clampN(pinchSub.current.s0 * (d / Math.max(1, pinchSub.current.d0)), 0.08, 0.55);
+                  setSubSize(s);
+                  return;
+                }
                 if (!dragRef.current) return;
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
                 const x = Math.min(0.95, Math.max(0.05, (e.clientX - r.left) / r.width));
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
                 if (dragRef.current.target === "logo") setLogoPos({ x, y });
+                else if (dragRef.current.target === "subscribe") setSubPos({ x, y });
                 else setTitlePos({ x, y });
                 try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ } // 🐛 FIX: tanda user pernah geser manual
               }}
-              onPointerUp={() => { dragRef.current = null; }}
+              onPointerUp={(e) => {
+                ptrsCanvas.current.delete(e.pointerId);
+                if (ptrsCanvas.current.size < 2) pinchSub.current = null;
+                dragRef.current = null;
+              }}
             />
             {!!audioUrl && (
               <button onClick={audition} disabled={rendering}
@@ -1548,6 +1621,40 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className="v6-chip" onClick={() => { setSpecStyle("bars-h"); }}>↔ Horizontal</button>
               <button className="v6-chip" onClick={() => { setSpecStyle("tunnel"); }}>🎢 Tunnel</button>
             </div>
+            {/* 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI */}
+            <div className="v6-cardrow" style={{ marginTop: 8 }} onClick={() => setSubOn(!subOn)}>
+              <span style={{ fontSize: 18 }}>🔔</span>
+              <div className="tt">
+                <b>Tombol Subscribe animasi</b>
+                <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Banyak gaya · denyut ikut bass · lonceng goyang saat beat — geser jari buat pindah, cubit 2 jari buat ukuran</div>
+              </div>
+              <button className={`v6-toggle ${subOn ? "on" : ""}`} />
+            </div>
+            {subOn && (
+              <>
+                <div className="v6-lbl">🎨 PILIH GAYA ({SUB_STYLES.length})</div>
+                <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+                  {SUB_STYLES.map(s => (
+                    <button key={s.id} className={`v6-chip ${subStyle === s.id ? "on" : ""}`} onClick={() => setSubStyle(s.id)}>
+                      {s.emoji} {s.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="v6-lbl">✨ ANIMASI</div>
+                <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+                  {SUB_ANIMS.map(a => (
+                    <button key={a.id} className={`v6-chip ${subAnim === a.id ? "on" : ""}`} onClick={() => setSubAnim(a.id)}>
+                      {a.label} <small style={{ opacity: .6 }}>{a.desc}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Ukuran</span><b>{Math.round(subSize * 100)}%</b></div>
+                  <input type="range" min={0.08} max={0.55} step={0.01} value={subSize} onChange={e => setSubSize(Number(e.target.value))} />
+                </div>
+                <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>👆 <b>Seret tombol</b> di preview buat pindah posisi · 🤏 <b>Cubit 2 jari</b> di area preview buat perbesar/kecilkan.</p>
+              </>
+            )}
             {/* 🧩 v19.36: LAPISAN */}
             <div className="v6-lbl">🧩 LAPISAN (mata = tampil/sembunyi · slider = transparansi)</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
