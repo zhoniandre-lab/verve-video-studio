@@ -42,6 +42,11 @@ T("spectrum: ada pinch (2 jari) untuk ukuran", /pinchSub/.test(src));
 T("spectrum: layerVis ada subscribe", /subscribe: true/.test(src));
 T("spectrum: preset simpan subOn..subAnim", /subOn, subStyle, subSize, subPos, subAnim/.test(src));
 T("spectrum: UI section TOMBOL SUBSCRIBE", /TOMBOL SUBSCRIBE/.test(src));
+/* ⏱ v19.41: durasi tombol subscribe */
+T("spectrum: ada state subStart & subEnd", /subStart/.test(src) && /subEnd/.test(src));
+T("spectrum: render pakai jendela durasi (mulai/hilang + fade)", /mulai \+ 0\.4/.test(src) && /hilang - 0\.4/.test(src) && /dalamJendela/.test(src));
+T("spectrum: UI slider 'Muncul di' & 'Hilang di'", /Muncul di/.test(src) && /Hilang di/.test(src));
+T("spectrum: preset simpan subStart & subEnd", /subStart, subEnd/.test(src));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI SUBSCRIBE GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI SUBSCRIBE HIJAU — tombol subscribe animasi siap!");

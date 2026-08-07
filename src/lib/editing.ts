@@ -4,6 +4,7 @@
    - Timeline math per-klip (durasi beda-beda + transisi per-sambungan)
    - Painter bersama untuk PREVIEW (page.tsx) & EXPORT (recorder.ts)
    ===================================================================== */
+import { wrapIndices, skalaAgarMuat, lebarGroup } from "./captionwrap"; // 🧾 v19.41: lirik panjang → 2 baris
 
 export interface ClipText {
   txt: string;
@@ -1644,7 +1645,7 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
   // 🎭 v17.6 INDIE FILM STYLE: Turunkan lirik sedikit lebih dekat ke letterbox jika menggunakan gaya Indie
   const isIndie = capStyle === "indie";
   const y = isIndie ? ((opts?.yRatio ?? 0.78) * H + H * 0.04) : (opts?.yRatio ?? 0.78) * H;
-  const fs = isIndie ? Math.max(10, (opts?.sizeRatio ?? 0.055) * H * 0.75) : Math.max(12, (opts?.sizeRatio ?? 0.055) * H);
+  let fs = isIndie ? Math.max(10, (opts?.sizeRatio ?? 0.055) * H * 0.75) : Math.max(12, (opts?.sizeRatio ?? 0.055) * H);
   const gap = fs * 0.25;
 
   ctx.save();
@@ -1654,29 +1655,52 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
     : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
 
   ctx.textBaseline = "middle"; ctx.lineJoin = "round";
-  const widths = lineWords.map(w => ctx.measureText(w.text).width);
-  const totalW = widths.reduce((a, b) => a + b, 0) + gap * (lineWords.length - 1);
-  let x = (W - totalW) / 2; ctx.textAlign = "left";
-  lineWords.forEach((w, i) => {
-    const isActive = exact === w || (!exact && w === active[active.length - 1]);
-    let fill = "#ffffff", strokeC = "rgba(0,0,0,0.85)", glow = "";
-    if (capStyle === "karaoke" || capStyle === "capcut") fill = isActive ? "#ffd93d" : "#ffffff";
-    else if (capStyle === "neon") { fill = isActive ? "#ffffff" : "#f9a8d4"; glow = "#ec4899"; }
-    else if (capStyle === "pop") { fill = isActive ? "#000000" : "#ffffff"; }
-    else if (capStyle === "gradient") fill = isActive ? "#22d3ee" : "#e2e8f0";
-    else if (capStyle === "boldwhite" || capStyle === "indie") fill = "#ffffff";
-    if (capStyle === "pop" && isActive) {
-      ctx.fillStyle = "#fde047";
-      roundRectPath(ctx, x - fs * 0.12, y - fs * 0.75, widths[i] + fs * 0.24, fs * 1.3, fs * 0.18); ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = fs * 0.06;
-      ctx.strokeText(w.text, x, y);
-    } else {
-      ctx.strokeStyle = strokeC; ctx.lineWidth = isIndie ? fs * 0.08 : fs * 0.14; ctx.strokeText(w.text, x, y);
-    }
-    if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.6 : 0.3); }
-    ctx.fillStyle = fill; ctx.fillText(w.text, x, y);
-    ctx.shadowBlur = 0;
-    x += widths[i] + gap;
+  // 🧾 v19.41: ukur kata & BAGI jadi maks 2 baris kalau kepanjangan (tidak keluar video)
+  const maxW = W * 0.92;
+  let widths = lineWords.map(w => ctx.measureText(w.text).width);
+  let groups = wrapIndices(widths, gap, maxW, 2);
+  // kalau 2 baris pun masih ada yang lewat → perkecil font sampai muat
+  // (clamp 0.45 = jangan terlalu kecil; kasus ini hampir mustahil untuk lirik biasa)
+  const sk = skalaAgarMuat(widths, groups, gap, maxW);
+  if (sk < 1) {
+    fs *= Math.max(0.45, sk);
+    ctx.font = isIndie 
+      ? `600 ${fs}px 'Playfair Display','Lora',Georgia,serif`
+      : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
+    widths = lineWords.map(w => ctx.measureText(w.text).width);
+    groups = wrapIndices(widths, gap, maxW, 2);
+  }
+  const G = groups.length;
+  const lineH = fs * 0.62;
+  // kalau 2 baris, naikkan sedikit biar tetap di area bawah (tidak mentok)
+  const y0 = G > 1 ? y - lineH * 0.5 : y;
+
+  groups.forEach((gi, gIdx) => {
+    const gy = y0 + gIdx * lineH;
+    const groupW = lebarGroup(widths, gi, gap);
+    let x = (W - groupW) / 2; ctx.textAlign = "left";
+    gi.forEach((wi) => {
+      const w = lineWords[wi];
+      const isActive = exact === w || (!exact && w === active[active.length - 1]);
+      let fill = "#ffffff", strokeC = "rgba(0,0,0,0.85)", glow = "";
+      if (capStyle === "karaoke" || capStyle === "capcut") fill = isActive ? "#ffd93d" : "#ffffff";
+      else if (capStyle === "neon") { fill = isActive ? "#ffffff" : "#f9a8d4"; glow = "#ec4899"; }
+      else if (capStyle === "pop") { fill = isActive ? "#000000" : "#ffffff"; }
+      else if (capStyle === "gradient") fill = isActive ? "#22d3ee" : "#e2e8f0";
+      else if (capStyle === "boldwhite" || capStyle === "indie") fill = "#ffffff";
+      if (capStyle === "pop" && isActive) {
+        ctx.fillStyle = "#fde047";
+        roundRectPath(ctx, x - fs * 0.12, gy - fs * 0.75, widths[wi] + fs * 0.24, fs * 1.3, fs * 0.18); ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = fs * 0.06;
+        ctx.strokeText(w.text, x, gy);
+      } else {
+        ctx.strokeStyle = strokeC; ctx.lineWidth = isIndie ? fs * 0.08 : fs * 0.14; ctx.strokeText(w.text, x, gy);
+      }
+      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.6 : 0.3); }
+      ctx.fillStyle = fill; ctx.fillText(w.text, x, gy);
+      ctx.shadowBlur = 0;
+      x += widths[wi] + gap;
+    });
   });
   ctx.restore();
 }

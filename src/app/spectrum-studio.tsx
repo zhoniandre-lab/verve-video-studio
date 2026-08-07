@@ -152,6 +152,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [subSize, setSubSize] = useState(0.24);
   const [subPos, setSubPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.9 });
   const [subAnim, setSubAnim] = useState<SubAnim>("denyut");
+  // ⏱ v19.41: DURASI tombol subscribe — muncul mulai detik & hilang detik (0 = sampai akhir)
+  const [subStart, setSubStart] = useState(0);
+  const [subEnd, setSubEnd] = useState(0);
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   // Layout preset — posisi logo & judul (fraksi)
   const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
@@ -297,7 +300,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
         layerVis, layerOp,
         // 🔔 v19.40: tombol subscribe ikut tersimpan
-        subOn, subStyle, subSize, subPos, subAnim,
+        subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd,
       };
       const idx = list.findIndex((p: any) => p.nama === nama);
       if (idx >= 0) list[idx] = preset; else list.unshift(preset);
@@ -326,6 +329,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       if (p.subSize) setSubSize(p.subSize);
       if (p.subPos) setSubPos(p.subPos);
       if (p.subAnim) setSubAnim(p.subAnim);
+      // ⏱ v19.41: durasi subscribe
+      if (p.subStart !== undefined) setSubStart(p.subStart);
+      if (p.subEnd !== undefined) setSubEnd(p.subEnd);
       setPresetMsg(`✅ Preset "${nama}" dimuat`);
     } catch { setPresetMsg("⚠️ Gagal muat preset"); }
   }
@@ -1073,7 +1079,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
 
     // 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI — paling atas (di atas semua elemen)
+    // ⏱ v19.41: diatur DURASINYA — muncul mulai subStart, hilang setelah subEnd (fade 0.4 dtk)
+    // 🐛 FIX: pakai kondisi (BUKAN return) — biar elemen setelahnya tetap digambar
     if (subOn && layerVis.subscribe !== false) {
+      const durS = duration || 0;
+      const mulai = subStart || 0;
+      const hilang = subEnd > 0 ? subEnd : Infinity;
+      const dalamJendela = t >= mulai && t <= hilang;
+      let subAlpha = dalamJendela ? 1 : 0;
+      if (dalamJendela) {
+        if (t < mulai + 0.4) subAlpha = Math.max(0, (t - mulai) / 0.4);
+        if (hilang < Infinity && t > hilang - 0.4) subAlpha = Math.min(subAlpha, Math.max(0, (hilang - t) / 0.4));
+      }
       const stl = SUB_STYLES.find((s) => s.id === subStyle) || SUB_STYLES[0];
       subStyleRef.current = stl;
       // fitur audio utk animasi: bass + beat + flux (dari bars saat ini)
@@ -1089,12 +1106,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         subBeat = 0; for (const b of beatsRef.current) { const dd = Math.abs(b - t); if (dd < 0.06) { subBeat = 1; break; } if (dd < 0.13) { subBeat = 0.5; break; } if (b > t + 0.13) break; }
         subFlux = Math.min(1, Math.abs((pkS[iSub] ?? 0) - (pkS[Math.max(0, iSub - 1)] ?? 0)) * 2);
       }
-      const subSt = hitungSubState(subBass, subBeat, subFlux, subAnim, t);
-      ctx.save();
-      ctx.globalAlpha = layerOp.subscribe ?? 1;
-      const wSub = Math.min(W, H) * subSize;
-      gambarSubscribe(ctx, subPos.x * W, subPos.y * H, wSub, stl, subSt, t);
-      ctx.restore();
+      if (subAlpha > 0.01) {
+        const subSt = hitungSubState(subBass, subBeat, subFlux, subAnim, t);
+        ctx.save();
+        ctx.globalAlpha = (layerOp.subscribe ?? 1) * subAlpha; // ⏱ fade durasi
+        const wSub = Math.min(W, H) * subSize;
+        gambarSubscribe(ctx, subPos.x * W, subPos.y * H, wSub, stl, subSt, t);
+        ctx.restore();
+      }
     }
 
     // badge loop mulus
@@ -1652,7 +1671,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   <div className="lr"><span>Ukuran</span><b>{Math.round(subSize * 100)}%</b></div>
                   <input type="range" min={0.08} max={0.55} step={0.01} value={subSize} onChange={e => setSubSize(Number(e.target.value))} />
                 </div>
-                <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>👆 <b>Seret tombol</b> di preview buat pindah posisi · 🤏 <b>Cubit 2 jari</b> di area preview buat perbesar/kecilkan.</p>
+                {/* ⏱ v19.41: DURASI tombol subscribe */}
+                <div className="v6-lbl" style={{ marginTop: 6 }}>⏱ DURASI MUNCUL</div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Muncul di</span><b>{fmtD(subStart)}</b></div>
+                  <input type="range" min={0} max={Math.max(1, Math.floor(duration || 60))} step={0.5} value={subStart} onChange={e => setSubStart(Math.min(Number(e.target.value), subEnd > 0 ? subEnd : Number(e.target.value)))} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>Hilang di</span><b>{subEnd > 0 ? fmtD(subEnd) : "Sampai akhir"}</b></div>
+                  <input type="range" min={0} max={Math.max(1, Math.floor(duration || 60))} step={0.5} value={subEnd} onChange={e => setSubEnd(Number(e.target.value))} />
+                </div>
+                {subEnd > 0 && subEnd < (duration || 0) && <button className="v6-chip" onClick={() => setSubEnd(0)}>↺ Sampai akhir</button>}
+                <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>👆 <b>Seret tombol</b> di preview buat pindah posisi · 🤏 <b>Cubit 2 jari</b> buat ukuran · ⏱ <b>Muncul/Hilang</b> buat atur kapan tombol tampil di video (fade halus 0.4 dtk).</p>
               </>
             )}
             {/* 🧩 v19.36: LAPISAN */}
