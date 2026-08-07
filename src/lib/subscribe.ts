@@ -93,23 +93,34 @@ export function gambarBell(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.restore();
 }
 
-/** Gambar tombol subscribe (pill) — deterministik. `w` = lebar tombol. */
+/** Gambar tombol subscribe (pill) — deterministik.
+ *  🐛 FIX v19.42.1: parameter = TINGGI tombol (bukan lebar). Lebar pill dihitung
+ *  OTOMATIS dari lebar teks + lonceng + padding → teks SELALU muat di dalam pill
+ *  (sebelumnya lebar kaku → teks 'SUBSCRIBE' keluar dari pill). */
 export function gambarSubscribe(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
-  w: number,
+  h: number,
   st: SubStyle,
   state: SubState,
   t: number,
   teks = "SUBSCRIBE",
 ): void {
-  if (w <= 4) return;
-  const h = w * 0.30;
+  if (h <= 4) return;
   const scale = state.scale || 1;
-  const dw = w * scale, dh = h * scale;
-  const x = cx - dw / 2, y = cy - dh / 2;
+  const dh = h * scale;
   const r = dh / 2;
+
+  // ukur teks dulu → lebar pill = lonceng + gap + teks + padding
+  ctx.save();
+  ctx.font = `900 ${Math.round(dh * 0.52)}px 'Poppins',system-ui,sans-serif`;
+  const textW = ctx.measureText(teks).width;
+  ctx.restore();
+  const bellW = dh * 0.85;
+  const padX = dh * 0.42;
+  const dw = (bellW + padX * 0.4 + textW + padX) * scale;
+  const x = cx - dw / 2, y = cy - dh / 2;
 
   // glow belakang (lighter — murah, tanpa shadowBlur)
   if ((state.glow || 0) > 0.02) {

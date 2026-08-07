@@ -149,13 +149,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 🔔 v19.40 TOMBOL SUBSCRIBE ANIMASI — banyak gaya, geser jari, cubit buat ukuran
   const [subOn, setSubOn] = useState(false);
   const [subStyle, setSubStyle] = useState("yt");
-  const [subSize, setSubSize] = useState(0.24);
+  const [subSize, setSubSize] = useState(0.10); // tinggi tombol (fraksi min(W,H))
   const [subPos, setSubPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.9 });
   const [subAnim, setSubAnim] = useState<SubAnim>("denyut");
   // ⏱ v19.41: DURASI tombol subscribe — muncul mulai detik & hilang detik (0 = sampai akhir)
   const [subStart, setSubStart] = useState(0);
   const [subEnd, setSubEnd] = useState(0);
+  // 🐛 v19.42.1: preview mini di panel — gambar ulang saat pilihan berubah
+  useEffect(() => {
+    const cv = subPrevRef.current; if (!cv) return;
+    const ctx = cv.getContext("2d"); if (!ctx) return;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = "#0b0b14"; ctx.fillRect(0, 0, cv.width, cv.height);
+    const stl = SUB_STYLES.find((x) => x.id === subStyle) || SUB_STYLES[0];
+    const st = hitungSubState(0.7, 1, 0.6, subAnim, performance.now() / 1000);
+    gambarSubscribe(ctx, cv.width / 2, cv.height / 2, cv.height * 0.55, stl, st, performance.now() / 1000);
+  }, [subStyle, subAnim, subSize]);
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
+  const subPrevRef = useRef<HTMLCanvasElement | null>(null);
   // Layout preset — posisi logo & judul (fraksi)
   const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
     "logo-tengah": { logo: { x: 0.5, y: 0.42 }, titleY: 0.035, titleScale: 1 },
@@ -1102,8 +1113,26 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         const subSt = hitungSubState(subBass, subBeat, subFlux, subAnim, t);
         ctx.save();
         ctx.globalAlpha = (layerOp.subscribe ?? 1) * subAlpha; // ⏱ fade durasi
-        const wSub = Math.min(W, H) * subSize;
-        gambarSubscribe(ctx, subPos.x * W, subPos.y * H, wSub, stl, subSt, t);
+        const hSub = Math.min(W, H) * subSize; // tinggi tombol — lebar otomatis dari teks
+        gambarSubscribe(ctx, subPos.x * W, subPos.y * H, hSub, stl, subSt, t);
+        // 🐛 v19.42.1: HANDLE EDIT — border putus-putus + 4 titik → jelas bisa digeser
+        if (step === 1 && !playing) {
+          const hh = hSub * subSt.scale;
+          const ww = hh * 3.4;
+          ctx.save();
+          ctx.strokeStyle = "rgba(255,255,255,0.6)";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([6, 4]);
+          ctx.strokeRect(subPos.x * W - ww / 2, subPos.y * H - hh / 2, ww, hh);
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#22d3ee";
+          for (const [hx, hy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+            ctx.beginPath();
+            ctx.arc(subPos.x * W + hx * ww / 2, subPos.y * H + hy * hh / 2, 6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
         ctx.restore();
       }
     }
@@ -1531,7 +1560,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
                 // 🔔 subscribe dicek duluan kalau aktif (dekat posisinya — area besar biar gampang kena)
                 const dSub = subOn ? Math.hypot(x - subPos.x, y - subPos.y) : 9;
-                if (subOn && dSub <= 0.24) {
+                if (subOn && dSub <= 0.32) {
                   dragRef.current = { x, y, target: "subscribe" as const };
                 } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
                   dragRef.current = { x, y, target: "logo" as const };
@@ -1643,6 +1672,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             {subOn && (
               <>
+                {/* 🐛 v19.42.1: PREVIEW MINI di panel — pilihan langsung kelihatan */}
+                <div className="v6-lbl">👁 PREVIEW TOMBOL (sesuai pilihanmu)</div>
+                <canvas ref={subPrevRef} width={260} height={70}
+                  style={{ width: "100%", maxWidth: 260, height: 70, borderRadius: 10, background: "#0b0b14", border: "1px solid rgba(255,255,255,.12)" }} />
                 <div className="v6-lbl">🎨 PILIH GAYA ({SUB_STYLES.length})</div>
                 <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
                   {SUB_STYLES.map(s => (
@@ -1670,11 +1703,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 </div>
                 <div className="v6-slider-row" style={{ marginTop: 6 }}>
                   <div className="lr"><span>Ukuran</span><b>{Math.round(subSize * 100)}%</b></div>
-                  <input type="range" min={0.08} max={0.55} step={0.01} value={subSize} onChange={e => setSubSize(Number(e.target.value))} />
+                  <input type="range" min={0.04} max={0.20} step={0.005} value={subSize} onChange={e => setSubSize(Number(e.target.value))} />
                 </div>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  <button className="v6-chip" onClick={() => setSubSize(s => Math.max(0.08, s - 0.03))}>🔽 Kecil</button>
-                  <button className="v6-chip" onClick={() => setSubSize(s => Math.min(0.55, s + 0.03))}>🔼 Besar</button>
+                  <button className="v6-chip" onClick={() => setSubSize(s => Math.max(0.04, s - 0.01))}>🔽 Kecil</button>
+                  <button className="v6-chip" onClick={() => setSubSize(s => Math.min(0.20, s + 0.01))}>🔼 Besar</button>
                   <span style={{ fontSize: 10, color: "#8b8b98", marginLeft: 4 }}>atau cubit 2 jari di preview</span>
                 </div>
                 {/* ⏱ v19.41: DURASI tombol subscribe */}
