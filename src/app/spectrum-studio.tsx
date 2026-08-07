@@ -1266,7 +1266,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   async function render() {
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     stopPlayback();
-    const total = Math.min(bufRef.current.duration, shorts ? 59.5 : bufRef.current.duration);
+    // 🐛 FIX v19.39.1: toggle "Potong maks 59 dtk" TIDAK boleh motong LONG saat
+    // Dual Render aktif (short 9:16 sudah punya durasi sendiri 30 dtk) —
+    // dulu long ikut kepotong 59.5 dtk walau lagunya 6 menit.
+    const total = Math.min(bufRef.current.duration, (shorts && !dualRender) ? 59.5 : bufRef.current.duration);
     // ⚡ v19.33: pilih mesin render — KUAT (offline) kalau browser mendukung, else realtime
     const mampu: { ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" } = await cekRenderOfflineMampu().catch(() => ({ ok: false, alasan: "cek gagal" }));
     const pakai = mampu.ok ? "offline" : "realtime";
@@ -1811,9 +1814,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <div className="tt">Fade in & fade out halus</div>
               <button className={`v6-toggle ${fades ? "on" : ""}`} />
             </div>
-            <div className="v6-cardrow" onClick={() => setShorts(!shorts)}>
+            <div className="v6-cardrow" onClick={() => setShorts(!shorts)} style={{ opacity: dualRender ? 0.5 : 1 }}>
               <span style={{ fontSize: 18 }}>▯</span>
-              <div className="tt">Potong maks 59 dtk (Shorts/Reels)</div>
+              <div className="tt">Potong maks 59 dtk (Shorts/Reels){dualRender ? <div style={{ fontSize: 10, color: "#fbbf24", fontWeight: 500 }}>Nonaktif otomatis saat Dual Render — Long tetap FULL, Short pakai durasinya sendiri</div> : ""}</div>
               <button className={`v6-toggle ${shorts ? "on" : ""}`} />
             </div>
             <div className="v6-cardrow" onClick={() => setSeamless(!seamless)}>
@@ -1833,7 +1836,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <div className="v6-cardrow" style={{ cursor: "default" }}>
               <span style={{ fontSize: 18 }}>ℹ️</span>
               <div className="tt" style={{ fontSize: 11.5 }}>
-                {dim.w}×{dim.h}px · 30fps · {fmtD(Math.min(duration, shorts ? 59.5 : duration))} · EQ {eq} · kompresi {comp}% {fades ? "· fade" : ""}
+                {dim.w}×{dim.h}px · 30fps · {fmtD(Math.min(duration, (shorts && !dualRender) ? 59.5 : duration))} · EQ {eq} · kompresi {comp}% {fades ? "· fade" : ""}
               </div>
             </div>
 
