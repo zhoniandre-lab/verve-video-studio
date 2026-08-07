@@ -715,10 +715,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (specStyle === "bars") {
       const bw = W / N;
       const baseY = H - 8;
+      // 🎨 v19.36.2: gradient VIVID (tetap berwarna di puncak — bukan putih pucat)
       const grad3 = ctx.createLinearGradient(0, H, 0, 0);
       grad3.addColorStop(0, acc);
-      grad3.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.55 + 139))},${Math.min(255, Math.round(g2 * 0.45 + 85))},255)`);
-      grad3.addColorStop(1, "#22d3ee");
+      grad3.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.65 + 130))},${Math.min(255, Math.round(g2 * 0.55 + 110))},255)`);
+      grad3.addColorStop(0.82, `rgb(${Math.min(255, Math.round(r * 0.4 + 205))},${Math.min(255, Math.round(g2 * 0.35 + 190))},255)`);
+      grad3.addColorStop(1, `rgb(${Math.min(255, Math.round(r * 0.3 + 225))},${Math.min(255, Math.round(g2 * 0.25 + 220))},255)`);
       // reflection bawah (flip) + glow
       ctx.save(); ctx.globalAlpha = 0.26; ctx.translate(0, baseY + 4); ctx.scale(1, -0.45);
       for (let i = 0; i < N; i++) {
@@ -733,17 +735,36 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       // bars utama + glow MURAH (lighter — tanpa shadowBlur yang bikin HP berat)
       ctx.save(); ctx.globalCompositeOperation = "lighter";
       const glowBg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.5);
-      glowBg.addColorStop(0, `rgba(${r},${g2},${b},${((0.16 + bass * 0.18) * glowInt).toFixed(3)})`);
+      glowBg.addColorStop(0, `rgba(${r},${g2},${b},${((0.18 + bass * 0.22) * glowInt).toFixed(3)})`);
       glowBg.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = glowBg; ctx.fillRect(0, 0, W, H);
       ctx.restore();
+      // ✨ v19.36.2: PEAK CAP — titik terang di ujung tiap bar (tanda visualizer pro)
+      const peakH = new Array<number>(N).fill(0);
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(3, v * H * 0.62);
+        const x = i * bw + bw * 0.16, w = bw * 0.68, r2 = bw * 0.3;
+        // shadow lembut (premium)
+        ctx.fillStyle = `rgba(0,0,0,0.25)`;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + 1.5, baseY - h + 1.5, w, h, r2);
+        else ctx.rect(x + 1.5, baseY - h + 1.5, w, h);
+        ctx.fill();
+        // bar utama
         ctx.fillStyle = grad3;
         ctx.beginPath();
-        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h, bw * 0.3);
-        else ctx.rect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h);
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, baseY - h, w, h, r2);
+        else ctx.rect(x, baseY - h, w, h);
         ctx.fill();
+        // highlight kiri atas (glossy)
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        ctx.fillRect(x + w * 0.12, baseY - h, w * 0.16, h);
+        // peak cap
+        const targetCap = h;
+        peakH[i] = Math.max(peakH[i] * 0.82, targetCap);
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5, 2.5);
+        else ctx.fillRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5);
       }
       // lingkar bass di bawah tengah
       ctx.beginPath(); ctx.arc(W / 2, H - 46, 10 + bass * 26, 0, Math.PI * 2);
@@ -1516,6 +1537,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
                 const x = Math.min(0.95, Math.max(0.05, (e.clientX - r.left) / r.width));
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
+                // 🐛 FIX v19.36.2: dulu target "speaker" TIDAK ditangani di sini
+                // → speaker tidak bisa digeser. Sekarang ditangani.
                 if (dragRef.current.target === "logo") setLogoPos({ x, y });
                 else if (dragRef.current.target === "speaker") setSpeakerPos({ x, y });
                 else setTitlePos({ x, y });
