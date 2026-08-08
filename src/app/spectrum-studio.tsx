@@ -18,6 +18,9 @@ import { hitungFreqFramesChunked } from "@/lib/fft"; // 🎛 v19.39: FFT frekuen
 import type { FreqFrames } from "@/lib/fft";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe } from "@/lib/subscribe"; // 🔔 v19.40: tombol subscribe animasi
 import type { SubStyle, SubAnim } from "@/lib/subscribe";
+import { FRAME_STYLES, gambarFrame } from "@/lib/frames"; // 🖼️ v19.44: frame layout mewah
+import { FONT_OPTS, TEXT_DEFAULT, TEKS_WARNA, gambarTeksCustom } from "@/lib/textstyles"; // ✏️ v19.44: teks custom
+import type { TextStyle } from "@/lib/textstyles";
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -55,7 +58,9 @@ const SPEC_STYLES = [
 /** 🧩 v19.36: definisi lapisan (order gambar: bawah → atas) */
 const LAYER_DEFS = [
   { id: "spektrum", label: "📊 Spectrum" },
+  { id: "spektrumMini", label: "🎯 Spektrum Mini" },
   { id: "gambar", label: "🖼️ Multi-gambar" },
+  { id: "teks", label: "✏️ Teks" },
   { id: "logo", label: "📛 Logo & Judul" },
   { id: "overlay", label: "🌧️ Overlay suasana" },
   { id: "partikel", label: "✨ Partikel (ember)" },
@@ -127,7 +132,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
   const [danceZoom, setDanceZoom] = useState(0.03); // 🐛 v19.16.1: amplitudo zoom lebih lembut (0 = mati)
   // 🧩 v19.36 LAPISAN — visibilitas & transparansi tiap elemen
-  const [layerVis, setLayerVis] = useState<Record<string, boolean>>({ spektrum: true, gambar: true, logo: true, overlay: true, partikel: true, subscribe: true });
+  const [layerVis, setLayerVis] = useState<Record<string, boolean>>({ spektrum: true, spektrumMini: true, gambar: true, teks: true, logo: true, overlay: true, partikel: true, subscribe: true });
   const [layerOp, setLayerOp] = useState<Record<string, number>>({});
   // 🥁 v19.36 BEAT & BPM — dari analisis audio (timeline beat)
   const [beatsArr, setBeatsArr] = useState<number[]>([]);
@@ -146,7 +151,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [presetName, setPresetName] = useState("");
   const [presetMsg, setPresetMsg] = useState("");
   const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
-  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" | "subscribe" } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" | "subscribe" | "float" | "teks" } | null>(null);
   // 🤏 v19.40: pinch 2 jari buat ukuran tombol subscribe
   const ptrsCanvas = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchSub = useRef<{ d0: number; s0: number } | null>(null);
@@ -186,6 +191,22 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   const subPrevRef = useRef<HTMLCanvasElement | null>(null);
+  // 🎯 v19.44 SPEKTRUM MINI — gaya pendek, bisa di-drag & di-cubit ke mana aja
+  const [floatSpec, setFloatSpec] = useState(false);
+  const [floatStyle, setFloatStyle] = useState("bars");
+  const [floatSize, setFloatSize] = useState(0.26);
+  const [floatPos, setFloatPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.22 });
+  const pinchFloat = useRef<{ d0: number; s0: number } | null>(null);
+  // 🖼️ v19.44 FRAME LAYOUT — bingkai mewah di atas video
+  const [frameOn, setFrameOn] = useState(false);
+  const [frameStyle, setFrameStyle] = useState("gold");
+  // ✏️ v19.44 TEKS CUSTOM — isi teks + font + warna + 3D + stroke
+  const [textOn, setTextOn] = useState(false);
+  const [textCustom, setTextCustom] = useState("");
+  const [textStyle, setTextStyle] = useState<TextStyle>({ ...TEXT_DEFAULT });
+  const [textSize, setTextSize] = useState(0.09);
+  const [textPos, setTextPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.15 });
+  const dragRefText = useRef<{ dx: number; dy: number } | null>(null);
   // 🗂 v19.43: UI RAPI — section collapsible di langkah Visual (tiap fitur punya tombol sendiri)
   const [secOpen, setSecOpen] = useState<Record<string, boolean>>({
     gaya: true, spektrum: false, latar: false, gambar: false, subscribe: false, lapisan: false, preset: false,
@@ -336,6 +357,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         layerVis, layerOp,
         // 🔔 v19.40: tombol subscribe ikut tersimpan
         subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks,
+        floatSpec, floatStyle, floatSize, floatPos, frameOn, frameStyle,
+        textOn, textCustom, textStyle, textSize, textPos,
       };
       const idx = list.findIndex((p: any) => p.nama === nama);
       if (idx >= 0) list[idx] = preset; else list.unshift(preset);
@@ -368,6 +391,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       if (p.subStart !== undefined) setSubStart(p.subStart);
       if (p.subEnd !== undefined) setSubEnd(p.subEnd);
       if (p.subTeks) setSubTeks(p.subTeks);
+      if (p.floatSpec !== undefined) setFloatSpec(!!p.floatSpec);
+      if (p.floatStyle) setFloatStyle(p.floatStyle);
+      if (p.floatSize) setFloatSize(p.floatSize);
+      if (p.floatPos) setFloatPos(p.floatPos);
+      if (p.frameOn !== undefined) setFrameOn(!!p.frameOn);
+      if (p.frameStyle) setFrameStyle(p.frameStyle);
+      if (p.textOn !== undefined) setTextOn(!!p.textOn);
+      if (p.textCustom !== undefined) setTextCustom(p.textCustom);
+      if (p.textStyle) setTextStyle({ ...TEXT_DEFAULT, ...p.textStyle });
+      if (p.textSize) setTextSize(p.textSize);
+      if (p.textPos) setTextPos(p.textPos);
       setPresetMsg(`✅ Preset "${nama}" dimuat`);
     } catch { setPresetMsg("⚠️ Gagal muat preset"); }
   }
@@ -1073,6 +1107,47 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     ctx.restore();
     } // tutup lapisan spectrum
+    // 🎯 v19.44: SPEKTRUM MINI — gaya pendek, bisa di-drag & di-cubit (pakai bars asli)
+    if (floatSpec && layerVis.spektrumMini !== false) {
+      const fw = Math.min(W, H) * floatSize;
+      const fh = fw * 0.5;
+      const fx0 = floatPos.x * W - fw / 2, fy0 = floatPos.y * H - fh / 2;
+      ctx.save();
+      ctx.globalAlpha = layerOp.spektrumMini ?? 1;
+      ctx.fillStyle = "rgba(5,7,15,0.55)";
+      ctx.beginPath();
+      if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(fx0, fy0, fw, fh, 10);
+      else ctx.rect(fx0, fy0, fw, fh);
+      ctx.fill();
+      // bars mini
+      const NB = 24, bw2 = fw / NB;
+      const gradM = ctx.createLinearGradient(0, fy0 + fh, 0, fy0);
+      gradM.addColorStop(0, acc); gradM.addColorStop(1, "#ffffff");
+      for (let i = 0; i < NB; i++) {
+        const v = bars[Math.floor((i / NB) * N)];
+        const h2 = Math.max(2, v * fh * 0.85);
+        ctx.fillStyle = gradM;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(fx0 + i * bw2 + bw2 * 0.14, fy0 + fh - h2, bw2 * 0.72, h2, 3);
+        else ctx.rect(fx0 + i * bw2 + bw2 * 0.14, fy0 + fh - h2, bw2 * 0.72, h2);
+        ctx.fill();
+      }
+      // handle edit (garis putus)
+      if (step === 1 && !playing) {
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeRect(fx0, fy0, fw, fh);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#22d3ee";
+        for (const [hx, hy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+          ctx.beginPath();
+          ctx.arc(floatPos.x * W + hx * fw / 2, floatPos.y * H + hy * fh / 2, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
     // 👑 v19.13 PRO PACK: SHOCKWAVE — cincin membesar saat bass naik
     // 🐛 FIX v19.16.1: shockwave/logo/ember DIPINDAHKAN keluar if/else —
     // dulu terjebak di else → saat tunnel dipilih logo tidak muncul.
@@ -1212,6 +1287,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
     }
 
+    // ✏️ v19.44: TEKS CUSTOM (di atas semua, sebelum frame)
+    if (textOn && textCustom.trim() && layerVis.teks !== false) {
+      ctx.save();
+      ctx.globalAlpha = layerOp.teks ?? 1;
+      gambarTeksCustom(ctx, textCustom, textPos.x * W, textPos.y * H, Math.min(W, H) * textSize, textStyle);
+      ctx.restore();
+    }
+    // 🖼️ v19.44: FRAME LAYOUT (paling atas)
+    if (frameOn) {
+      const fs2 = FRAME_STYLES.find((x) => x.id === frameStyle) || FRAME_STYLES[0];
+      gambarFrame(ctx, W, H, fs2, t, bass);
+    }
     // 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI — paling atas (di atas semua elemen)
     // ⏱ v19.41: diatur DURASINYA — muncul mulai subStart, hilang setelah subEnd (fade 0.4 dtk)
     // 🐛 FIX: pakai kondisi (BUKAN return) — biar elemen setelahnya tetap digambar
@@ -1283,7 +1370,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 🐛 FIX v19.42.2: SEMUA state yang dipakai drawScene WAJIB di dep — kalau tidak,
     // preview pakai closure LAMA → tombol subscribe/lapisan/posisi tidak pernah muncul.
     layerVis, layerOp, step, playing,
-    subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
+    subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd,
+    // 🐛 FIX v19.44: state baru (spektrum mini, frame, teks) WAJIB di dep — tanpa ini
+    // drawScene pakai closure LAMA → frame/teks/mini tidak pernah muncul.
+    floatSpec, floatStyle, floatSize, floatPos,
+    frameOn, frameStyle,
+    textOn, textCustom, textStyle, textSize, textPos]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
@@ -1683,7 +1775,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 ptrsCanvas.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
                 if (ptrsCanvas.current.size === 2) {
                   const [a, b] = [...ptrsCanvas.current.values()];
-                  pinchSub.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: subSize };
+                  // 🎯 v19.44: pinch → ukur mana yang dekat: subscribe / spektrum mini
+                  const dSub = Math.hypot((a.x + b.x) / 2 - subPos.x * 0 + 0, 0); // dummy
+                  const dFloat = Math.hypot(((a.x + b.x) / 2 - (e.target as HTMLElement).getBoundingClientRect().left) / (e.target as HTMLElement).getBoundingClientRect().width - floatPos.x,
+                    ((a.y + b.y) / 2 - (e.target as HTMLElement).getBoundingClientRect().top) / (e.target as HTMLElement).getBoundingClientRect().height - floatPos.y);
+                  if (floatSpec && dFloat <= 0.3) {
+                    pinchFloat.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: floatSize };
+                    pinchSub.current = null;
+                  } else {
+                    pinchSub.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: subSize };
+                    pinchFloat.current = null;
+                  }
                   return;
                 }
                 // 🐛 FIX v19.15.1: drag LANGSUNG tanpa toggle — hit-test posisi logo & judul
@@ -1695,7 +1797,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 const dTitle = Math.hypot(x - titlePos.x, y - titlePos.y);
                 // 🔔 subscribe dicek duluan kalau aktif (dekat posisinya — area besar biar gampang kena)
                 const dSub = subOn ? Math.hypot(x - subPos.x, y - subPos.y) : 9;
-                if (subOn && dSub <= 0.32) {
+                // 🎯 v19.44: hit-test spektrum mini & teks custom dulu (lebih prioritas)
+                const dFloat = floatSpec ? Math.hypot(x - floatPos.x, y - floatPos.y) : 9;
+                const dTeks = textOn && textCustom.trim() ? Math.hypot(x - textPos.x, y - textPos.y) : 9;
+                if (floatSpec && dFloat <= 0.22) {
+                  dragRef.current = { x, y, target: "float" as const };
+                } else if (textOn && dTeks <= 0.16) {
+                  dragRefText.current = { dx: textPos.x - x, dy: textPos.y - y };
+                  dragRef.current = { x, y, target: "teks" as const };
+                } else if (subOn && dSub <= 0.32) {
                   dragRef.current = { x, y, target: "subscribe" as const };
                 } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
                   dragRef.current = { x, y, target: "logo" as const };
@@ -1708,26 +1818,36 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               }}
               onPointerMove={(e) => {
                 // 🤏 v19.40: PINCH 2 JARI → ubah ukuran tombol subscribe
-                if (ptrsCanvas.current.size === 2 && pinchSub.current && subOn) {
+                if (ptrsCanvas.current.size === 2 && (pinchSub.current || pinchFloat.current)) {
                   const [a, b] = [...ptrsCanvas.current.values()];
                   const d = Math.hypot(a.x - b.x, a.y - b.y);
-                  const s = clampN(pinchSub.current.s0 * (d / Math.max(1, pinchSub.current.d0)), 0.08, 0.55);
-                  setSubSize(s);
-                  return;
+                  if (pinchFloat.current && floatSpec) {
+                    const s = clampN(pinchFloat.current.s0 * (d / Math.max(1, pinchFloat.current.d0)), 0.08, 0.6);
+                    setFloatSize(s);
+                    return;
+                  }
+                  if (pinchSub.current && subOn) {
+                    const s = clampN(pinchSub.current.s0 * (d / Math.max(1, pinchSub.current.d0)), 0.08, 0.55);
+                    setSubSize(s);
+                    return;
+                  }
                 }
                 if (!dragRef.current) return;
                 const r = (e.target as HTMLCanvasElement).getBoundingClientRect();
                 const x = Math.min(0.95, Math.max(0.05, (e.clientX - r.left) / r.width));
                 const y = Math.min(0.9, Math.max(0.04, (e.clientY - r.top) / r.height));
-                if (dragRef.current.target === "logo") setLogoPos({ x, y });
+                if (dragRef.current.target === "float") setFloatPos({ x, y });
+                else if (dragRef.current.target === "teks") setTextPos({ x: clampN(x + (dragRefText.current?.dx ?? 0), 0.05, 0.95), y: clampN(y + (dragRefText.current?.dy ?? 0), 0.05, 0.9) });
+                else if (dragRef.current.target === "logo") setLogoPos({ x, y });
                 else if (dragRef.current.target === "subscribe") setSubPos({ x, y });
                 else setTitlePos({ x, y });
                 try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ } // 🐛 FIX: tanda user pernah geser manual
               }}
               onPointerUp={(e) => {
                 ptrsCanvas.current.delete(e.pointerId);
-                if (ptrsCanvas.current.size < 2) pinchSub.current = null;
+                if (ptrsCanvas.current.size < 2) { pinchSub.current = null; pinchFloat.current = null; }
                 dragRef.current = null;
+                dragRefText.current = null;
               }}
             />
             {!!audioUrl && (
@@ -1803,6 +1923,113 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className="v6-chip" onClick={() => { setSpecStyle("bars-h"); }}>↔ Horizontal</button>
               <button className="v6-chip" onClick={() => { setSpecStyle("tunnel"); }}>🎢 Tunnel</button>
             </div>
+              </>
+            )}
+            {/* 🎯 v19.44: SPEKTRUM MINI — drag & cubit */}
+            <button onClick={() => toggleSec("spektrumMini")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🎯</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Spektrum Mini (bisa di-drag & di-cubit)</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.spektrumMini ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.spektrumMini && (
+              <>
+                <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setFloatSpec(!floatSpec)}>
+                  <span style={{ fontSize: 16 }}>🎯</span>
+                  <div className="tt"><b>Spektrum mini (pendek) di atas video</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Geser jari pindah posisi · cubit 2 jari besar/kecil</div></div>
+                  <button className={`v6-toggle ${floatSpec ? "on" : ""}`} />
+                </div>
+                {floatSpec && (
+                  <>
+                    <div className="v6-slider-row" style={{ marginTop: 6 }}>
+                      <div className="lr"><span>Ukuran</span><b>{Math.round(floatSize * 100)}%</b></div>
+                      <input type="range" min={0.08} max={0.6} step={0.01} value={floatSize} onChange={e => setFloatSize(Number(e.target.value))} />
+                    </div>
+                    <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>👆 <b>Seret</b> di preview · 🤏 <b>Cubit</b> buat ukuran · posisi default atas-tengah.</p>
+                  </>
+                )}
+              </>
+            )}
+            {/* 🖼️ v19.44: FRAME LAYOUT */}
+            <button onClick={() => toggleSec("frame")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🖼️</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Frame Layout (bingkai mewah)</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.frame ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.frame && (
+              <>
+                <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setFrameOn(!frameOn)}>
+                  <span style={{ fontSize: 16 }}>🖼️</span>
+                  <div className="tt"><b>Tampilkan bingkai</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Emas · Neon · Ungu · Merah · Ganda · Sudut · Sinema</div></div>
+                  <button className={`v6-toggle ${frameOn ? "on" : ""}`} />
+                </div>
+                {frameOn && (
+                  <>
+                    <div className="v6-lbl">PILIH FRAME ({FRAME_STYLES.length})</div>
+                    <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+                      {FRAME_STYLES.map(f => (
+                        <button key={f.id} className={`v6-chip ${frameStyle === f.id ? "on" : ""}`} onClick={() => setFrameStyle(f.id)}>{f.emoji} {f.label}</button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+            {/* ✏️ v19.44: TEKS */}
+            <button onClick={() => toggleSec("teks")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>✏️</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Teks (tulis, font, warna, 3D)</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.teks ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.teks && (
+              <>
+                <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setTextOn(!textOn)}>
+                  <span style={{ fontSize: 16 }}>✏️</span>
+                  <div className="tt"><b>Tampilkan teks</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Geser jari pindah posisi</div></div>
+                  <button className={`v6-toggle ${textOn ? "on" : ""}`} />
+                </div>
+                {textOn && (
+                  <>
+                    <div className="v6-lbl">KOLOM TEKS</div>
+                    <input className="v6-inp" placeholder="Tulis teks di sini… (mis. judul lagu / nama channel)" value={textCustom} onChange={e => setTextCustom(e.target.value)} />
+                    <div className="v6-lbl">FONT ({FONT_OPTS.length})</div>
+                    <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+                      {FONT_OPTS.map(f => (
+                        <button key={f.id} className={`v6-chip ${textStyle.fontId === f.id ? "on" : ""}`} style={{ fontFamily: f.css }} onClick={() => setTextStyle(s => ({ ...s, fontId: f.id }))}>{f.label}</button>
+                      ))}
+                    </div>
+                    <div className="v6-lbl">WARNA FONT</div>
+                    <div className="v6-rows">
+                      {TEKS_WARNA.map(c => (
+                        <button key={c} className={`v6-swatch ${textStyle.color === c ? "on" : ""}`} style={{ background: c }} onClick={() => setTextStyle(s => ({ ...s, color: c }))} />
+                      ))}
+                      <span className="v6-swatch" style={{ background: "conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)" }}>
+                        <input type="color" value={textStyle.color} onChange={e => setTextStyle(s => ({ ...s, color: e.target.value }))} />
+                      </span>
+                    </div>
+                    <div className="v6-lbl">EFEK</div>
+                    <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
+                      <button className={`v6-chip ${textStyle.tigaD ? "on" : ""}`} onClick={() => setTextStyle(s => ({ ...s, tigaD: !s.tigaD }))}>🧊 3D</button>
+                      <button className={`v6-chip ${textStyle.grad ? "on" : ""}`} onClick={() => setTextStyle(s => ({ ...s, grad: !s.grad }))}>🌈 Gradasi</button>
+                      <button className={`v6-chip ${textStyle.stroke ? "on" : ""}`} onClick={() => setTextStyle(s => ({ ...s, stroke: s.stroke ? "" : "#000000" }))}>✒️ Outline</button>
+                      <button className={`v6-chip ${textStyle.shadow ? "on" : ""}`} onClick={() => setTextStyle(s => ({ ...s, shadow: !s.shadow }))}>🌫 Bayangan</button>
+                    </div>
+                    {textStyle.grad && (
+                      <>
+                        <div className="v6-lbl">WARNA GRADASI KE</div>
+                        <div className="v6-rows">
+                          {["#22d3ee", "#ec4899", "#fde047", "#a855f7", "#f97316", "#22c55e"].map(c => (
+                            <button key={c} className={`v6-swatch ${textStyle.gradTo === c ? "on" : ""}`} style={{ background: c }} onClick={() => setTextStyle(s => ({ ...s, gradTo: c }))} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    <div className="v6-slider-row" style={{ marginTop: 6 }}>
+                      <div className="lr"><span>Ukuran teks</span><b>{Math.round(textSize * 100)}%</b></div>
+                      <input type="range" min={0.03} max={0.2} step={0.005} value={textSize} onChange={e => setTextSize(Number(e.target.value))} />
+                    </div>
+                    <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>👆 <b>Seret teks</b> di preview buat pindah posisi.</p>
+                  </>
+                )}
               </>
             )}
             <button onClick={() => toggleSec("subscribe")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
