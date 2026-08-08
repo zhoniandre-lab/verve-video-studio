@@ -50,3 +50,10 @@ T("spectrum: preset simpan subStart & subEnd", /subStart, subEnd/.test(src));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI SUBSCRIBE GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI SUBSCRIBE HIJAU — tombol subscribe animasi siap!");
+
+/* 💎 v19.43: spektrum mewah baru + UI section rapi + teks custom */
+T("SPEC_STYLES punya ring/dual/flame (12 tipe)", /\{ id: "ring"/.test(src) && /\{ id: "dual"/.test(src) && /\{ id: "flame"/.test(src));
+T("drawScene punya blok ring/dual/flame", /specStyle === "ring"/.test(src) && /specStyle === "dual"/.test(src) && /specStyle === "flame"/.test(src));
+T("UI section collapsible (secOpen + toggleSec)", /secOpen/.test(src) && /toggleSec/.test(src));
+T("ada header section 'Gaya & Template' & 'Tombol Subscribe (klik'", /Gaya & Template/.test(src) && /Tombol Subscribe \(klik untuk semua setting\)/.test(src));
+T("input teks custom subscribe (subTeks)", /subTeks/.test(src) && /TULISAN TOMBOL/.test(src));

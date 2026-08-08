@@ -47,6 +47,10 @@ const SPEC_STYLES = [
   { id: "bars-h", label: "↔ Horizontal", desc: "Bar dari kiri (v19.36)" },
   { id: "line", label: "➖ Line", desc: "Garis mulus + glow (v19.36)" },
   { id: "waveform", label: "〰️ Waveform", desc: "Simetris tengah (v19.36)" },
+  // 💎 v19.43: SPEKTRUM MEWAH baru
+  { id: "ring", label: "💍 Ring", desc: "Cincin ganda berdenyut (v19.43)" },
+  { id: "dual", label: "🪞 Dual", desc: "Kiri-kanan simetris dari tengah (v19.43)" },
+  { id: "flame", label: "🔥 Bara", desc: "Gradien api + glow (v19.43)" },
 ];
 /** 🧩 v19.36: definisi lapisan (order gambar: bawah → atas) */
 const LAYER_DEFS = [
@@ -155,6 +159,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // ⏱ v19.41: DURASI tombol subscribe — muncul mulai detik & hilang detik (0 = sampai akhir)
   const [subStart, setSubStart] = useState(0);
   const [subEnd, setSubEnd] = useState(0);
+  // 💎 v19.43: TEKS custom tombol subscribe (bisa ganti "SUBSCRIBE")
+  const [subTeks, setSubTeks] = useState("SUBSCRIBE");
   // 🐛 v19.42.2: preview mini DI PANEL — selalu hidup (interval rAF ringan) biar
   // tombol kelihatan & animasinya jalan (dulu useEffect sekali → bisa kosong)
   useEffect(() => {
@@ -169,17 +175,22 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
           const stl = SUB_STYLES.find((x) => x.id === subStyle) || SUB_STYLES[0];
           const t = performance.now() / 1000;
           const st = hitungSubState(0.7, 1, 0.6, subAnim, t);
-          gambarSubscribe(ctx, cv.width / 2, cv.height / 2, cv.height * 0.55, stl, st, t);
+          gambarSubscribe(ctx, cv.width / 2, cv.height / 2, cv.height * 0.55, stl, st, t, subTeks);
         }
       }
       raf = requestAnimationFrame(gambar);
     };
     raf = requestAnimationFrame(gambar);
     return () => cancelAnimationFrame(raf);
-  }, [subStyle, subAnim]);
+  }, [subStyle, subAnim, subTeks]);
 
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   const subPrevRef = useRef<HTMLCanvasElement | null>(null);
+  // 🗂 v19.43: UI RAPI — section collapsible di langkah Visual (tiap fitur punya tombol sendiri)
+  const [secOpen, setSecOpen] = useState<Record<string, boolean>>({
+    gaya: true, spektrum: false, latar: false, gambar: false, subscribe: false, lapisan: false, preset: false,
+  });
+  const toggleSec = (k: string) => setSecOpen((s) => ({ ...s, [k]: !s[k] }));
   // Layout preset — posisi logo & judul (fraksi)
   const LAYOUTS: Record<string, { logo: { x: number; y: number }; titleY: number; titleScale: number }> = {
     "logo-tengah": { logo: { x: 0.5, y: 0.42 }, titleY: 0.035, titleScale: 1 },
@@ -324,7 +335,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
         layerVis, layerOp,
         // 🔔 v19.40: tombol subscribe ikut tersimpan
-        subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd,
+        subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks,
       };
       const idx = list.findIndex((p: any) => p.nama === nama);
       if (idx >= 0) list[idx] = preset; else list.unshift(preset);
@@ -356,6 +367,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       // ⏱ v19.41: durasi subscribe
       if (p.subStart !== undefined) setSubStart(p.subStart);
       if (p.subEnd !== undefined) setSubEnd(p.subEnd);
+      if (p.subTeks) setSubTeks(p.subTeks);
       setPresetMsg(`✅ Preset "${nama}" dimuat`);
     } catch { setPresetMsg("⚠️ Gagal muat preset"); }
   }
@@ -886,6 +898,112 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.strokeStyle = `rgba(${r},${g2},${b},0.5)`; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
       ctx.restore();
+    } else if (specStyle === "ring") { // 💍 v19.43: RING GANDA — cincin konsentris berdenyut (mewah)
+      const cx = W / 2, cy = H * 0.48;
+      const R0 = Math.min(W, H) * 0.24;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const [lapis, Rk, al] of [[0, 1.0, 0.85], [1, 1.22, 0.5], [2, 1.45, 0.28]] as any[]) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, R0 * Rk, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${r},${g2},${b},${al * (0.5 + bass * 0.5)})`;
+        ctx.lineWidth = 2 + bass * 6 - lapis * 1.5;
+        ctx.stroke();
+        // bar keluar dari ring
+        for (let i = 0; i < N; i++) {
+          const v = bars[i];
+          const ang = (i / N) * Math.PI * 2 - Math.PI / 2 + t * 0.12;
+          const len = Math.max(2, v * R0 * (0.5 + lapis * 0.18));
+          const x0 = cx + Math.cos(ang) * R0 * Rk;
+          const y0 = cy + Math.sin(ang) * R0 * Rk;
+          ctx.strokeStyle = `rgba(${Math.min(255, r + 40)},${Math.min(255, g2 + 30)},255,${al * (0.4 + v * 0.6)})`;
+          ctx.lineWidth = Math.max(1.5, (Math.min(W, H) * 0.006) * (1 - lapis * 0.25));
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len);
+          ctx.stroke();
+        }
+      }
+      // pusat glow ikut bass
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, R0 * (0.7 + bass * 0.3));
+      cg.addColorStop(0, `rgba(${r},${g2},${b},${(0.25 + bass * 0.45).toFixed(3)})`);
+      cg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = cg;
+      ctx.beginPath(); ctx.arc(cx, cy, R0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else if (specStyle === "dual") { // 🪞 v19.43: DUAL — spektrum kiri & kanan dari tengah (simetris, mewah)
+      const cx = W * 0.5, baseY = H - 8;
+      const bw = W / 2 / N;
+      const gradD = ctx.createLinearGradient(0, H, 0, 0);
+      gradD.addColorStop(0, acc);
+      gradD.addColorStop(0.6, `rgb(${Math.min(255, Math.round(r * 0.6 + 140))},${Math.min(255, Math.round(g2 * 0.5 + 120))},255)`);
+      gradD.addColorStop(1, "#ffffff");
+      ctx.save();
+      for (let side = 0; side < 2; side++) {
+        const dir = side === 0 ? -1 : 1;
+        for (let i = 0; i < N; i++) {
+          const v = bars[side === 0 ? N - 1 - i : i];
+          const h = Math.max(3, v * H * 0.66);
+          const x = cx + dir * (i * bw + bw * 0.1);
+          ctx.fillStyle = gradD;
+          ctx.beginPath();
+          if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(side === 0 ? x - bw * 0.8 : x, baseY - h, bw * 0.8, h, bw * 0.35);
+          else ctx.rect(side === 0 ? x - bw * 0.8 : x, baseY - h, bw * 0.8, h);
+          ctx.fill();
+        }
+      }
+      // garis tengah menyala saat bass
+      ctx.fillStyle = `rgba(255,255,255,${(0.35 + bass * 0.6).toFixed(3)})`;
+      ctx.fillRect(cx - 1.5, baseY - H * 0.5, 3, H * 0.5);
+      // glow tengah bawah
+      const gd = ctx.createRadialGradient(cx, baseY, 0, cx, baseY, W * 0.3);
+      gd.addColorStop(0, `rgba(${r},${g2},${b},${(0.15 + bass * 0.2).toFixed(3)})`);
+      gd.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gd; ctx.fillRect(cx - W * 0.3, baseY - W * 0.3, W * 0.6, W * 0.3);
+      ctx.restore();
+    } else if (specStyle === "flame") { // 🔥 v19.43: BARA — bars gradien api (merah→kuning) + glow
+      const bw = W / N;
+      const baseY = H - 8;
+      const gradF = ctx.createLinearGradient(0, H, 0, 0);
+      gradF.addColorStop(0, "#7f1d1d");
+      gradF.addColorStop(0.4, "#ef4444");
+      gradF.addColorStop(0.75, "#f97316");
+      gradF.addColorStop(1, "#fde047");
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const fg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.55);
+      fg.addColorStop(0, `rgba(239,68,68,${(0.14 + bass * 0.2).toFixed(3)})`);
+      fg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = fg; ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+      const peakF = new Array<number>(N).fill(0);
+      for (let i = 0; i < N; i++) {
+        const v = bars[i];
+        const h = Math.max(3, v * H * 0.68);
+        ctx.fillStyle = gradF;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h, bw * 0.3);
+        else ctx.rect(i * bw + bw * 0.16, baseY - h, bw * 0.68, h);
+        ctx.fill();
+        // highlight atas (lidah api)
+        ctx.fillStyle = "rgba(253,224,71,0.85)";
+        ctx.fillRect(i * bw + bw * 0.28, baseY - h, bw * 0.44, Math.max(2, h * 0.12));
+        peakF[i] = Math.max(peakF[i] * 0.8, h);
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.22, baseY - peakF[i] - 4, bw * 0.56, 4, 2);
+        else ctx.fillRect(i * bw + bw * 0.22, baseY - peakF[i] - 4, bw * 0.56, 4);
+      }
+      // ember api di dasar
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 24; i++) {
+        const ex = ((i * 83 + Math.floor(t * 26) * 17) % W);
+        const ey = baseY - ((t * (14 + (i % 4) * 5) + i * 61) % (H * 0.3)) - 4;
+        const tw = 0.3 + 0.7 * Math.abs(Math.sin(t * 2 + i * 2.1));
+        ctx.fillStyle = `rgba(251,146,60,${(tw * 0.5).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(ex, ey, 1 + (i % 3) + bass, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
     } else { // dots/partikel
       ctx.save();
       for (let i = 0; i < N; i++) {
@@ -1127,7 +1245,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.save();
         ctx.globalAlpha = (layerOp.subscribe ?? 1) * subAlpha; // ⏱ fade durasi
         const hSub = Math.min(W, H) * subSize; // tinggi tombol — lebar otomatis dari teks
-        gambarSubscribe(ctx, subPos.x * W, subPos.y * H, hSub, stl, subSt, t);
+        gambarSubscribe(ctx, subPos.x * W, subPos.y * H, hSub, stl, subSt, t, subTeks);
         // 🐛 v19.42.1: HANDLE EDIT — border putus-putus + 4 titik → jelas bisa digeser
         if (step === 1 && !playing) {
           const hh = hSub * subSt.scale;
@@ -1666,6 +1784,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className={`v6-chip ${ratio === "16:9" ? "on" : ""}`} onClick={() => setRatio("16:9")}>▭ 16:9 YouTube</button>
               <button className={`v6-chip ${ratio === "9:16" ? "on" : ""}`} onClick={() => setRatio("9:16")}>▯ 9:16 Shorts</button>
             </div>
+            <button onClick={() => toggleSec("gaya")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🎨</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Gaya & Template</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.gaya ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.gaya && (
+              <>
             <div className="v6-lbl">GAYA SPECTRUM</div>
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
               {SPEC_STYLES.map(s => <button key={s.id} className={`v6-chip ${specStyle === s.id ? "on" : ""}`} onClick={() => setSpecStyle(s.id)}>{s.label}</button>)}
@@ -1678,6 +1803,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className="v6-chip" onClick={() => { setSpecStyle("bars-h"); }}>↔ Horizontal</button>
               <button className="v6-chip" onClick={() => { setSpecStyle("tunnel"); }}>🎢 Tunnel</button>
             </div>
+              </>
+            )}
+            <button onClick={() => toggleSec("subscribe")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>📣</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Tombol Subscribe (klik untuk semua setting)</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.subscribe ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.subscribe && (
+              <>
             {/* 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI */}
             <div className="v6-cardrow" style={{ marginTop: 8, borderColor: subOn ? "rgba(34,197,94,.6)" : undefined, background: subOn ? "rgba(34,197,94,.07)" : undefined }} onClick={() => setSubOn(!subOn)}>
               <span style={{ fontSize: 18 }}>🔔</span>
@@ -1689,6 +1823,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             {subOn && (
               <>
+                {/* 💎 v19.43: TEKS custom tombol subscribe */}
+                <div className="v6-lbl">✏️ TULISAN TOMBOL</div>
+                <input className="v6-inp" value={subTeks} maxLength={18} onChange={(e) => setSubTeks(e.target.value.toUpperCase() || "SUBSCRIBE")} />
+                <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 6px" }}>Ganti tulisan bebas (maks 18 huruf) — mis. "SUBSCRIBE YA" atau nama channel kamu.</p>
                 {/* 🐛 v19.42.1: PREVIEW MINI di panel — pilihan langsung kelihatan */}
                 <div className="v6-lbl">👁 PREVIEW TOMBOL (sesuai pilihanmu)</div>
                 <canvas ref={subPrevRef} width={260} height={70}
@@ -1741,6 +1879,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>👆 <b>Seret tombol</b> di preview buat pindah posisi · 🤏 <b>Cubit 2 jari</b> buat ukuran · ⏱ <b>Muncul/Hilang</b> buat atur kapan tombol tampil di video (fade halus 0.4 dtk).</p>
               </>
             )}
+              </>
+            )}
+            <button onClick={() => toggleSec("lapisan")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🧩</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Lapisan (tampil/sembunyi & transparansi)</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.lapisan ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.lapisan && (
+              <>
             {/* 🧩 v19.36: LAPISAN */}
             <div className="v6-lbl">🧩 LAPISAN (mata = tampil/sembunyi · slider = transparansi)</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -1757,6 +1904,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 </div>
               ))}
             </div>
+              </>
+            )}
+            <button onClick={() => toggleSec("spektrum")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🎛️</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Setting Spektrum (layout, warna, bar)</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.spektrum ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.spektrum && (
+              <>
             {/* 🎛️ v19.14 KUSTOMISASI PRO — layout, geser, slider, ikut-beat */}
             <div className="v6-lbl">🎛️ ATURAN / LAYOUT</div>
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
@@ -1783,69 +1939,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 </button>
               ))}
             </div>
-
-            {/* 🖼️ v19.15 MODE MULTI-GAMBAR — perjelas apa maksudnya */}
-            <div className="v6-lbl">🖼️ MULTI-GAMBAR (background bergantian — 2+ gambar)</div>
-            <label className="v6-cardrow">
-              <span style={{ fontSize: 20 }}>🖼️</span><div className="tt">{multiImgs.length ? `✅ ${multiImgs.length} gambar — ganti bergantian (ikut lagu)` : "Pilih 2-6 gambar → ganti-ganti otomatis tiap beberapa ketukan"}</div><span className="arr">›</span>
-              <input type="file" accept="image/*" multiple hidden onChange={e => {
-                const fs2 = Array.from(e.target.files || []).slice(0, 6);
-                const readers = fs2.map(f => new Promise<string>((res) => { const rd = new FileReader(); rd.onload = () => res(rd.result as string); rd.readAsDataURL(f); }));
-                Promise.all(readers).then(imgs => setMultiImgs(imgs));
-              }} />
-            </label>
-            <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Gunanya: video nggak gitu-gitu aja — latar berganti-ganti + sedikit zoom mengikuti lagu. Spectrum tetap tampil di atasnya. Kalau nggak butuh, biarkan kosong.</p>
-            {multiImgs.length > 1 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, opacity: .6, flex: 1 }}>Ganti tiap:</span>
-                  <select value={multiBeat} onChange={(e) => setMultiBeat(Number(e.target.value))} style={{ background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "4px 8px", fontSize: 11 }}>
-                    {[1, 2, 4, 8].map((n) => <option key={n} value={n}>⏱ {n} ketukan (≈{((60 / 96) * n).toFixed(1)} dtk)</option>)}
-                  </select>
-                  <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
-                </div>
-                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ minWidth: 96 }}>Zoom halus</span>
-                  <input type="range" min={0} max={0.1} step={0.005} value={danceZoom} onChange={(e) => setDanceZoom(Number(e.target.value))} style={{ flex: 1 }} />
-                  <b style={{ minWidth: 28 }}>{(danceZoom * 100).toFixed(0)}%</b>
-                </label>
-                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: goyang-goyang dihapus — sekarang pergantian gambar kalem (fade + zoom napas halus), kayak slideshow sinematik. Spectrum tetap tampil.</p>
-              </div>
-            )}
-
-            {/* 🎢 v19.15 Slider khusus TUNNEL */}
-            {specStyle === "tunnel" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>
-                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ minWidth: 96 }}>Kecepatan tunnel</span>
-                  <input type="range" min={0.2} max={2.5} step={0.1} value={tunnelSpeed} onChange={(e) => setTunnelSpeed(Number(e.target.value))} style={{ flex: 1 }} />
-                  <b style={{ minWidth: 28 }}>{tunnelSpeed.toFixed(1)}</b>
-                </label>
-                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ minWidth: 96 }}>Kedalaman</span>
-                  <input type="range" min={12} max={80} step={4} value={tunnelDepth} onChange={(e) => setTunnelDepth(Number(e.target.value))} style={{ flex: 1 }} />
-                  <b style={{ minWidth: 28 }}>{tunnelDepth}</b>
-                </label>
-              </div>
-            )}
-
-            {/* 💾 v19.15 SIMPAN PRESET KUSTOM */}
-            <div className="v6-lbl">💾 SIMPAN / MUAT PRESET KUSTOM</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input className="v6-inp" style={{ flex: 1 }} placeholder="Nama preset (mis. 'Trap Gold + Tunnel')" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
-              <button className="v6-chip" onClick={simpanPreset}>💾 Simpan</button>
-            </div>
-            {!!daftarPreset().length && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
-                {daftarPreset().map((n) => (
-                  <div key={n} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <button className="v6-chip" style={{ flex: 1 }} onClick={() => muatPreset(n)}>▶ Muat "{n}"</button>
-                    <button className="v6-chip" style={{ color: "#f87171" }} onClick={() => hapusPreset(n)}>🗑</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!!presetMsg && <p style={{ fontSize: 11, color: presetMsg.startsWith("✅") ? "#6ee7b7" : "#fbbf24", margin: "6px 0 0" }}>{presetMsg}</p>}
 
             <div className="v6-lbl">⚙️ PENGATURAN</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>
@@ -1879,6 +1972,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 <input type="color" value={specColor} onChange={e => setSpecColor(e.target.value)} />
               </span>
             </div>
+              </>
+            )}
+            <button onClick={() => toggleSec("latar")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🌌</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Latar & Suasana</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.latar ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.latar && (
+              <>
             <div className="v6-lbl">LATAR</div>
             <div className="v6-chips" style={{ padding: 0 }}>
               <button className={`v6-chip ${bgType === "grad" ? "on" : ""}`} onClick={() => setBgType("grad")}>🌈 Gradasi</button>
@@ -1928,6 +2030,61 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>
               {OVERLAYS.map(o => <button key={o.id} className={`v6-chip ${overlay === o.id ? "on" : ""}`} onClick={() => setOverlay(o.id)}>{o.label}</button>)}
             </div>
+              </>
+            )}
+            <button onClick={() => toggleSec("gambar")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>🖼️</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Gambar, Logo & Judul</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.gambar ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.gambar && (
+              <>
+            {/* 🖼️ v19.15 MODE MULTI-GAMBAR — perjelas apa maksudnya */}
+            <div className="v6-lbl">🖼️ MULTI-GAMBAR (background bergantian — 2+ gambar)</div>
+            <label className="v6-cardrow">
+              <span style={{ fontSize: 20 }}>🖼️</span><div className="tt">{multiImgs.length ? `✅ ${multiImgs.length} gambar — ganti bergantian (ikut lagu)` : "Pilih 2-6 gambar → ganti-ganti otomatis tiap beberapa ketukan"}</div><span className="arr">›</span>
+              <input type="file" accept="image/*" multiple hidden onChange={e => {
+                const fs2 = Array.from(e.target.files || []).slice(0, 6);
+                const readers = fs2.map(f => new Promise<string>((res) => { const rd = new FileReader(); rd.onload = () => res(rd.result as string); rd.readAsDataURL(f); }));
+                Promise.all(readers).then(imgs => setMultiImgs(imgs));
+              }} />
+            </label>
+            <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Gunanya: video nggak gitu-gitu aja — latar berganti-ganti + sedikit zoom mengikuti lagu. Spectrum tetap tampil di atasnya. Kalau nggak butuh, biarkan kosong.</p>
+            {multiImgs.length > 1 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontSize: 10, opacity: .6, flex: 1 }}>Ganti tiap:</span>
+                  <select value={multiBeat} onChange={(e) => setMultiBeat(Number(e.target.value))} style={{ background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "4px 8px", fontSize: 11 }}>
+                    {[1, 2, 4, 8].map((n) => <option key={n} value={n}>⏱ {n} ketukan (≈{((60 / 96) * n).toFixed(1)} dtk)</option>)}
+                  </select>
+                  <button className="v6-chip" onClick={() => setMultiImgs([])}>🗑 Bersihkan</button>
+                </div>
+                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 96 }}>Zoom halus</span>
+                  <input type="range" min={0} max={0.1} step={0.005} value={danceZoom} onChange={(e) => setDanceZoom(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 28 }}>{(danceZoom * 100).toFixed(0)}%</b>
+                </label>
+                <p style={{ fontSize: 10, opacity: .6, margin: 0 }}>🐛 FIX: goyang-goyang dihapus — sekarang pergantian gambar kalem (fade + zoom napas halus), kayak slideshow sinematik. Spectrum tetap tampil.</p>
+              </div>
+            )}
+
+            {/* 🎢 v19.15 Slider khusus TUNNEL */}
+            {specStyle === "tunnel" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "2px 0" }}>
+                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 96 }}>Kecepatan tunnel</span>
+                  <input type="range" min={0.2} max={2.5} step={0.1} value={tunnelSpeed} onChange={(e) => setTunnelSpeed(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 28 }}>{tunnelSpeed.toFixed(1)}</b>
+                </label>
+                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 96 }}>Kedalaman</span>
+                  <input type="range" min={12} max={80} step={4} value={tunnelDepth} onChange={(e) => setTunnelDepth(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 28 }}>{tunnelDepth}</b>
+                </label>
+              </div>
+            )}
+
+
             <div className="v6-lbl">👑 LOGO CHANNEL DI TENGAH (opsional — ala Trap Nation)</div>
             <label className="v6-cardrow">
               <span style={{ fontSize: 20 }}>📛</span><div className="tt">{logoImg ? "✅ Logo dipilih — ganti?" : "Upload logo (bulat) — denyut ikut bass"}</div><span className="arr">›</span>
@@ -1939,6 +2096,36 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             {!logoImg && <p style={{ fontSize: 10, opacity: .55, margin: "2px 0 0" }}>Tanpa logo → judul/teks jadi pusat berdenyut. Plus otomatis: sinar cahaya berputar, shockwave saat bass, bintang & ember.</p>}
             <div className="v6-lbl">JUDUL DI VIDEO (opsional)</div>
             <input className="v6-inp" placeholder="cth: Hujan di Jendela — 1 Hour Loop" value={title} onChange={e => setTitle(e.target.value)} />
+              </>
+            )}
+            <button onClick={() => toggleSec("preset")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 14 }}>💾</span>
+              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Simpan / Muat Preset</b>
+              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.preset ? "▴" : "▾"}</span>
+            </button>
+            {secOpen.preset && (
+              <>
+            {/* 💾 v19.15 SIMPAN PRESET KUSTOM */}
+            <div className="v6-lbl">💾 SIMPAN / MUAT PRESET KUSTOM</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input className="v6-inp" style={{ flex: 1 }} placeholder="Nama preset (mis. 'Trap Gold + Tunnel')" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
+              <button className="v6-chip" onClick={simpanPreset}>💾 Simpan</button>
+            </div>
+            {!!daftarPreset().length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 6 }}>
+                {daftarPreset().map((n) => (
+                  <div key={n} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button className="v6-chip" style={{ flex: 1 }} onClick={() => muatPreset(n)}>▶ Muat "{n}"</button>
+                    <button className="v6-chip" style={{ color: "#f87171" }} onClick={() => hapusPreset(n)}>🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!!presetMsg && <p style={{ fontSize: 11, color: presetMsg.startsWith("✅") ? "#6ee7b7" : "#fbbf24", margin: "6px 0 0" }}>{presetMsg}</p>}
+
+
+              </>
+            )}
             <button className="v6-bigcta" onClick={() => setStep(2)}>Lanjut: Lirik ›</button>
           </>
         )}
