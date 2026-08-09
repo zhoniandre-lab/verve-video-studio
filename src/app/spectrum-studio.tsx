@@ -108,8 +108,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [duration, setDuration] = useState(0);
   const [mTitle, setMTitle] = useState("");
   const [mLyrics, setMLyrics] = useState("");
-  const [mGenre, setMGenre] = useState("pop ballad");
-  const [mMood, setMMood] = useState("emotional, dreamy");
   const [mBusy, setMBusy] = useState(false);
   /* visual */
   const [ratio, setRatio] = useState<"16:9" | "9:16">("16:9");
@@ -142,7 +140,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 🖼️ v19.15 MODE MULTI-GAMBAR — array gambar bergantian per bar/beat
   const [multiImgs, setMultiImgs] = useState<string[]>([]);
   const [multiBeat, setMultiBeat] = useState(4); // 🐛 v19.16.1: ganti tiap 4 ketukan (~2.5 dtk) — nggak pusing
-  const [danceMode, setDanceMode] = useState("irama"); // 🩰 v19.16: "irama" (ikut musik) | "statis"
   const [danceZoom, setDanceZoom] = useState(0.03); // 🐛 v19.16.1: amplitudo zoom lebih lembut (0 = mati)
   // 🧩 v19.36 LAPISAN — visibilitas & transparansi tiap elemen
   const [layerVis, setLayerVis] = useState<Record<string, boolean>>({ spektrum: true, spektrumMini: true, gambar: true, teks: true, logo: true, overlay: true, partikel: true, subscribe: true });
@@ -438,7 +435,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } catch { /* abaikan */ }
   }
   const barsRef = useRef<Float32Array>(new Float32Array(128)); // 🐛 FIX v19.17.1: harus ≥ barCount maks (128) — dulu 64 → naikkan bar >64 bikin NaN
-  const renderRecRef = useRef<MediaRecorder | null>(null);
 
   const dim = useMemo(() => ratio === "9:16" ? { w: 608, h: 1080 } : { w: 1080, h: 608 }, [ratio]);
   const tpl = useMemo(() => CC_TEMPLATES.find(t => t.id === ccTpl) || CC_TEMPLATES[1], [ccTpl]);
@@ -529,7 +525,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   /* 🎤 v19.17 AUTO-PAS LIRIK — transkripsi Whisper → lirik + timing PERSIS audio (bukan dibagi rata) */
   const [lyrBusy, setLyrBusy] = useState(false);
   const [lyrMsg, setLyrMsg] = useState("");
-  const [autoLines, setAutoLines] = useState<string[]>([]);
 
   async function autoPasLirik() {
     if (!audioUrl && !bufRef.current) { setLyrMsg("⚠️ Isi musik dulu di langkah 1."); return; }
@@ -591,7 +586,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
       if (cur.trim()) { lines.push(cur.trim()); grouped.push({ w: cur.trim(), start: curStart, end: curEnd, line: li }); }
       // 5) Simpan → lyricsText (baris) & autoWords (timing presisi)
-      setAutoLines(lines);
       autoWordsRef.current = grouped;
       setLyrAuto(true);
       setLyricsText(lines.join("\n"));
@@ -1388,22 +1382,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
     }
 
-    // badge loop mulus — 🐛 v19.42: DIHAPUS (user minta buang — ganggu tampilan)
-    if (!dinOnly) {
-    if (false) {
-      ctx.fillStyle = "rgba(0,0,0,0.4)";
-      ctx.fillRect(W - H * 0.2 - 8, 8, H * 0.2, H * 0.045);
-      ctx.fillStyle = "#9ff5ef"; ctx.font = `700 ${Math.round(H * 0.022)}px 'Poppins',sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("∞ loop mulus", W - H * 0.1 - 8, 8 + H * 0.023);
-    }
-    }
+    // (badge loop mulus dihapus v19.42 — user minta buang)
   }, [bgType, bgColor, bgGrad, specStyle, overlay, title, mTitle, audioName, lirikOn, capWords, tpl, rgb, seamless,
-    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceMode, danceZoom,
+    barCount, logoPos, titlePos, logoScale, rotSpeed, glowInt, beatMode, layoutId, tunnelSpeed, tunnelDepth, multiImgs, multiBeat, danceZoom,
     // 🐛 FIX v19.42.2: SEMUA state yang dipakai drawScene WAJIB di dep — kalau tidak,
     // preview pakai closure LAMA → tombol subscribe/lapisan/posisi tidak pernah muncul.
     layerVis, layerOp, step, playing,
-    subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd,
+    subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks, duration, // 🐛 FIX v19.47: subTeks & duration WAJIB di deps (dipakai drawScene)
     // 🐛 FIX v19.44: state baru (spektrum mini, frame, teks) WAJIB di dep — tanpa ini
     // drawScene pakai closure LAMA → frame/teks/mini tidak pernah muncul.
     floatSpec, floatStyle, floatSize, floatPos,

@@ -17,7 +17,6 @@ import {
   applyAutoTerminate,
   saveProject,
   loadProject,
-  newProject,
   extractMediaDuration,
   detectMediaKind,
   renderTimeline,

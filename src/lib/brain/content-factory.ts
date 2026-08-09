@@ -10,7 +10,7 @@
 import { jadwalUpload } from "./deep-dive";
 import { analyzeBrainPatterns } from "./pattern-insight";
 import { suggestTitlesFromBrain } from "./title-guru";
-import { bandingkanGelombang, cocokNiche, type TrendGelombang, type TrendItem } from "./trend-radar";
+import { cocokNiche, type TrendGelombang, type TrendItem } from "./trend-radar";
 import type { BrainMemory } from "./yie-score";
 
 export type SlotKonten = {

@@ -4,7 +4,7 @@
    encode pakai gifenc (pure JS). Singkat: maks ~8 detik • 384-480px.
    ===================================================================== */
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
-import { buildTimeline, locate, canonicalTrans, effDur, paintClips, buildClipFilter, setDrawBg, paintFloatingTexts, paintFloatingStickers } from "./editing";
+import { buildTimeline, locate, canonicalTrans, effDur, paintClips, setDrawBg, paintFloatingTexts, paintFloatingStickers } from "./editing";
 import type { SlideOpt } from "./editing";
 import { preloadStickerImages } from "./editing";
 

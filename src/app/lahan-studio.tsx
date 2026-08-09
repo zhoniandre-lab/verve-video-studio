@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { avWarm } from "@/lib/avault";
-import { cariStokVideoSmart, kueriDariScene, pilihKlipTerbaik, pilihKlipBervariasi, temaDariKarakter, GAYA_EN, type VidPick } from "@/lib/stockvid";
+import { cariStokVideoSmart, kueriDariScene, pilihKlipBervariasi, temaDariKarakter, GAYA_EN, type VidPick } from "@/lib/stockvid";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
   type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
@@ -22,7 +22,7 @@ import {
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
-import { NICHES, isSongNiche, nicheAiLabel, nicheById, nicheLabel, wizardSteps } from "@/lib/brain/niche";
+import { NICHES, isSongNiche, nicheAiLabel, nicheById, wizardSteps } from "@/lib/brain/niche";
 import { resetJikaPerangkatBeda, tandaiPerangkat, deviceSama } from "@/lib/device-scope";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
 import { ambilSnapshotTrend, bandingkanGelombang, cocokNiche, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
@@ -32,8 +32,8 @@ import { analisaHook, upgradeAdegan1 } from "@/lib/brain/hook-engine";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
 import { cekNotifikasiHarian, notifEnabled, notifSupported, requestNotifPermission, setNotifEnabled } from "@/lib/brain/daily-notify";
-import { analisisPolaKompetitor, angkaPopulerDariJudul, bandingkanJudul, butuhResolve, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, serangBalikJudul, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type HasilSerang, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
-import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, mergeSyncResults, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
+import { analisisPolaKompetitor, angkaPopulerDariJudul, bandingkanJudul, deteksiUploadBaru, extractChannelId, KOMP_SEEN_KEY, KOMP_TITLES_KEY, kumpulkanJudul, ringkasanScan, serangBalikJudul, simJudul, tandaiTerlihat, waktuLalu, type HasilBanding, type HasilSerang, type KompChannel, type KompFeed, type KompTitleRow, type PolaKompetitor } from "@/lib/brain/competitor-rss";
+import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
