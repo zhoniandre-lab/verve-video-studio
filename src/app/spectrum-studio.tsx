@@ -208,6 +208,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [textPos, setTextPos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.15 });
   const dragRefText = useRef<{ dx: number; dy: number } | null>(null);
   // 🗂 v19.43: UI RAPI — section collapsible di langkah Visual (tiap fitur punya tombol sendiri)
+  // 🧹 v19.45.1: EFEK DEKORATIF OTOMATIS — default MATI (hasil bersih).
+  // User komplain: aurora/shockwave/lingkar bass muncul tanpa diminta & nutup visual.
+  const [fx, setFx] = useState<Record<string, boolean>>({ aurora: false, shock: false, ring: false, stars: false });
+  const setFxK = (k: string, v: boolean) => setFx((f) => ({ ...f, [k]: v }));
+  const modeBersih = !fx.aurora && !fx.shock && !fx.ring && !fx.stars;
   const [secOpen, setSecOpen] = useState<Record<string, boolean>>({
     gaya: true, spektrum: false, latar: false, gambar: false, subscribe: false, lapisan: false, preset: false,
   });
@@ -359,6 +364,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks,
         floatSpec, floatStyle, floatSize, floatPos, frameOn, frameStyle,
         textOn, textCustom, textStyle, textSize, textPos,
+        fx,
       };
       const idx = list.findIndex((p: any) => p.nama === nama);
       if (idx >= 0) list[idx] = preset; else list.unshift(preset);
@@ -402,6 +408,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       if (p.textStyle) setTextStyle({ ...TEXT_DEFAULT, ...p.textStyle });
       if (p.textSize) setTextSize(p.textSize);
       if (p.textPos) setTextPos(p.textPos);
+      if (p.fx) setFx(p.fx);
       setPresetMsg(`✅ Preset "${nama}" dimuat`);
     } catch { setPresetMsg("⚠️ Gagal muat preset"); }
   }
@@ -678,31 +685,38 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     gb2.addColorStop(0.5, "rgba(0,0,0,0)"); gb2.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = gb2; ctx.fillRect(0, 0, W, H);
 
-    // 👑 v19.13 AURORA — 3 gumpalan cahaya bergerak pelan + bintang berkelip (murah, tanpa shadowBlur)
+    // 👑 v19.13 AURORA — 3 gumpalan cahaya bergerak pelan + bintang berkelip
+    // 🧹 v19.45.1: hanya kalau fx.aurora & fx.stars ON (default MATI = hasil bersih)
+    if (fx.aurora || fx.stars) {
     ctx.save(); ctx.globalCompositeOperation = "lighter";
-    const aur = [
-      { x: W * 0.2, y: H * 0.25, r: W * 0.5, sp: 0.3, a: (0.10 + bass * 0.05) * glowInt },
-      { x: W * 0.8, y: H * 0.7, r: W * 0.55, sp: 0.22, a: (0.08 + bass * 0.04) * glowInt },
-      { x: W * 0.5, y: H * 0.5, r: W * 0.6, sp: 0.16, a: 0.07 * glowInt },
-    ];
-    for (let i = 0; i < aur.length; i++) {
-      const A = aur[i];
-      const ax = A.x + Math.sin(t * A.sp + i * 2.1) * W * 0.08;
-      const ay = A.y + Math.cos(t * A.sp * 0.8 + i * 1.7) * H * 0.06;
-      const ag = ctx.createRadialGradient(ax, ay, 0, ax, ay, A.r);
-      ag.addColorStop(0, `rgba(${r},${g2},${b},${A.a.toFixed(3)})`);
-      ag.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
+    if (fx.aurora) {
+      const aur = [
+        { x: W * 0.2, y: H * 0.25, r: W * 0.5, sp: 0.3, a: (0.10 + bass * 0.05) * glowInt },
+        { x: W * 0.8, y: H * 0.7, r: W * 0.55, sp: 0.22, a: (0.08 + bass * 0.04) * glowInt },
+        { x: W * 0.5, y: H * 0.5, r: W * 0.6, sp: 0.16, a: 0.07 * glowInt },
+      ];
+      for (let i = 0; i < aur.length; i++) {
+        const A = aur[i];
+        const ax = A.x + Math.sin(t * A.sp + i * 2.1) * W * 0.08;
+        const ay = A.y + Math.cos(t * A.sp * 0.8 + i * 1.7) * H * 0.06;
+        const ag = ctx.createRadialGradient(ax, ay, 0, ax, ay, A.r);
+        ag.addColorStop(0, `rgba(${r},${g2},${b},${A.a.toFixed(3)})`);
+        ag.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
+      }
     }
-    if (!starsRef.current.length) {
-      for (let i = 0; i < 70; i++) starsRef.current.push({ x: Math.random() * W, y: Math.random() * H * 0.7, r: Math.random() * 1.6 + 0.4, ph: Math.random() * 6.28 });
-    }
-    for (const s of starsRef.current) {
-      const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 1.5 + s.ph));
-      ctx.fillStyle = `rgba(255,255,255,${(tw * 0.6).toFixed(3)})`;
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    if (fx.stars) {
+      if (!starsRef.current.length) {
+        for (let i = 0; i < 70; i++) starsRef.current.push({ x: Math.random() * W, y: Math.random() * H * 0.7, r: Math.random() * 1.6 + 0.4, ph: Math.random() * 6.28 });
+      }
+      for (const s of starsRef.current) {
+        const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * 1.5 + s.ph));
+        ctx.fillStyle = `rgba(255,255,255,${(tw * 0.6).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+      }
     }
     ctx.restore();
+    }
     }
 
     if (!bgOnly) {
@@ -805,9 +819,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5, 2.5);
         else ctx.fillRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5);
       }
-      // lingkar bass di bawah tengah
-      ctx.beginPath(); ctx.arc(W / 2, H - 46, 10 + bass * 26, 0, Math.PI * 2);
-      ctx.fillStyle = acc; ctx.globalAlpha = 0.45 + bass * 0.5; ctx.fill(); ctx.globalAlpha = 1;
+      // lingkar bass di bawah tengah — 🧹 v19.45.1: hanya kalau fx.ring ON
+      if (fx.ring) {
+        ctx.beginPath(); ctx.arc(W / 2, H - 46, 10 + bass * 26, 0, Math.PI * 2);
+        ctx.fillStyle = acc; ctx.globalAlpha = 0.45 + bass * 0.5; ctx.fill(); ctx.globalAlpha = 1;
+      }
     } else if (specStyle === "mirror") {
       const bw = W / N; const cy = H * 0.56;
       ctx.save();
@@ -1151,11 +1167,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 👑 v19.13 PRO PACK: SHOCKWAVE — cincin membesar saat bass naik
     // 🐛 FIX v19.16.1: shockwave/logo/ember DIPINDAHKAN keluar if/else —
     // dulu terjebak di else → saat tunnel dipilih logo tidak muncul.
+    lastBassRef.current = bass;
+    if (fx.shock) {
     if (bass > 0.52 && bass > lastBassRef.current * 1.18) {
       shockRef.current.push({ x: W / 2, y: H * 0.55, r: 50, a: 0.85 });
       if (shockRef.current.length > 6) shockRef.current.shift();
     }
-    lastBassRef.current = bass;
     ctx.save(); ctx.globalCompositeOperation = "lighter";
     for (let i = shockRef.current.length - 1; i >= 0; i--) {
       const s = shockRef.current[i];
@@ -1166,6 +1183,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.restore();
+    }
 
     // 👑 v19.13/v19.14 PRO PACK: LOGO PUSAT — denyut ikut bass + sinar berputar + ring
     // 🎛️ v19.14: posisi bebas (drag), skala, kecepatan rotasi, mode ikut-beat
@@ -1375,7 +1393,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // drawScene pakai closure LAMA → frame/teks/mini tidak pernah muncul.
     floatSpec, floatStyle, floatSize, floatPos,
     frameOn, frameStyle,
-    textOn, textCustom, textStyle, textSize, textPos]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
+    textOn, textCustom, textStyle, textSize, textPos,
+    fx]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
     const cv = cvRef.current; if (!cv) return;
@@ -2208,6 +2227,30 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </button>
             {secOpen.latar && (
               <>
+            <div className="v6-lbl">🧹 EFEK DEKORATIF OTOMATIS (default BERSIH — nyalakan kalau mau)</div>
+            <div className="v6-cardrow" style={{ marginTop: 0 }} onClick={() => setFxK("aurora", !fx.aurora)}>
+              <span style={{ fontSize: 15 }}>🌌</span>
+              <div className="tt"><b>Aurora (lingkaran cahaya bergerak)</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>gumpalan glow besar — bisa nutup visual</div></div>
+              <button className={`v6-toggle ${fx.aurora ? "on" : ""}`} />
+            </div>
+            <div className="v6-cardrow" style={{ marginTop: 0 }} onClick={() => setFxK("shock", !fx.shock)}>
+              <span style={{ fontSize: 15 }}>💥</span>
+              <div className="tt"><b>Shockwave (cincin saat bass)</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>cincin membesar tiap bass naik</div></div>
+              <button className={`v6-toggle ${fx.shock ? "on" : ""}`} />
+            </div>
+            <div className="v6-cardrow" style={{ marginTop: 0 }} onClick={() => setFxK("ring", !fx.ring)}>
+              <span style={{ fontSize: 15 }}>⭕</span>
+              <div className="tt"><b>Lingkar bass bawah</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>lingkaran di bawah tengah ikut musik</div></div>
+              <button className={`v6-toggle ${fx.ring ? "on" : ""}`} />
+            </div>
+            <div className="v6-cardrow" style={{ marginTop: 0 }} onClick={() => setFxK("stars", !fx.stars)}>
+              <span style={{ fontSize: 15 }}>🌟</span>
+              <div className="tt"><b>Bintang berkelip</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>70 bintang kecil di latar</div></div>
+              <button className={`v6-toggle ${fx.stars ? "on" : ""}`} />
+            </div>
+            {modeBersih
+              ? <button className="v6-chip" style={{ marginTop: 4 }} onClick={() => setFx({ aurora: true, shock: true, ring: true, stars: true })}>✨ Nyalakan semua efek</button>
+              : <button className="v6-chip" style={{ marginTop: 4, color: "#fca5a5" }} onClick={() => setFx({ aurora: false, shock: false, ring: false, stars: false })}>🧹 Mode Bersih (matikan semua)</button>}
             <div className="v6-lbl">LATAR</div>
             <div className="v6-chips" style={{ padding: 0 }}>
               <button className={`v6-chip ${bgType === "grad" ? "on" : ""}`} onClick={() => setBgType("grad")}>🌈 Gradasi</button>
