@@ -21,6 +21,7 @@ import {
   solutionFor, monetizationHint, deviceAdvice, DATA_GAPS,
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
+import { gabungChunksDataUrl } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS cadangan → 1 audio
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
 import { NICHES, isSongNiche, nicheAiLabel, nicheById, wizardSteps } from "@/lib/brain/niche";
 import { resetJikaPerangkatBeda, tandaiPerangkat, deviceSama } from "@/lib/device-scope";
@@ -297,7 +298,8 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [song, setSong] = useState<SongResult | null>(null);
   // 🎙️ v19.24 NARASI TTS (niche non-lagu: horor/cerita/tutorial pakai suara narasi, bukan lagu)
   const [ttsNarasi, setTtsNarasi] = useState("");
-  const [ttsVoice, setTtsVoice] = useState("nova");
+  const [ttsVoice, setTtsVoice] = useState("gadis");
+  const [ttsStyle, setTtsStyle] = useState("normal");
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsMsg, setTtsMsg] = useState("");
   const [narasiUrl, setNarasiUrl] = useState("");
@@ -1515,12 +1517,14 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (!teks) { setTtsMsg("⚠️ Tulis/isi naskah dulu (atau generate naskah di langkah 6)."); return; }
     setTtsBusy(true); setTtsMsg("🎙️ Mengubah naskah jadi suara narasi…");
     try {
-      const r = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: teks.slice(0, 3500), voice: ttsVoice }) });
+      const r = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: teks.slice(0, 3500), voice: ttsVoice, style: ttsStyle }) });
       const j = await r.json();
-      if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
-      setNarasiUrl(j.url); setNarasiName(`Narasi: ${(selTitle || "cerita").slice(0, 40)}`);
+      if (!r.ok || (!j?.url && !j?.chunks?.length)) throw new Error(j?.error || `HTTP ${r.status}`);
+      let url = j.url;
+      if (!url && j.chunks?.length) url = await gabungChunksDataUrl(j.chunks); // 🧩 v19.49 gabung potongan
+      setNarasiUrl(url); setNarasiName(`Narasi: ${(selTitle || "cerita").slice(0, 40)}`);
       setNarasiDur(j.duration || Math.ceil(teks.length / 12));
-      setTtsMsg(`✅ Narasi jadi (±${Math.ceil(teks.length / 12)} dtk) — lanjut Gabung Video.`);
+      setTtsMsg(j.notice ? `${j.notice}` : `✅ Narasi jadi (±${Math.ceil(teks.length / 12)} dtk) — lanjut Gabung Video.`);
     } catch (e) {
       setTtsMsg(`⚠️ Gagal TTS: ${e instanceof Error ? e.message : "coba lagi"}`);
     } finally { setTtsBusy(false); }
@@ -2790,7 +2794,24 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                 <textarea className="lh-ta" rows={4} style={{ marginTop: 6 }} placeholder="Teks narasi — kosongkan = pakai naskah dari langkah 6" value={ttsNarasi} onChange={(e) => setTtsNarasi(e.target.value)} />
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
                   <select className="lh-sel" style={{ flex: 1, minWidth: 120 }} value={ttsVoice} onChange={(e) => setTtsVoice(e.target.value)}>
-                    {["nova", "alloy", "echo", "fable", "onyx", "shimmer"].map((v) => <option key={v} value={v}>{v}</option>)}
+                    {[
+                      { id: "gadis", n: "Gadis — Perempuan (🇮🇩)" },
+                      { id: "ardi", n: "Ardi — Laki-laki (🇮🇩)" },
+                      { id: "aria", n: "Aria — Perempuan (🇬🇧)" },
+                      { id: "guy", n: "Guy — Laki-laki (🇬🇧)" },
+                      { id: "jenny", n: "Jenny — Perempuan (🇬🇧)" },
+                      { id: "christopher", n: "Christopher — Kisah (🇬🇧)" },
+                      { id: "michelle", n: "Michelle — Perempuan (🇬🇧)" },
+                    ].map((v) => <option key={v.id} value={v.id}>{v.n}</option>)}
+                  </select>
+                  <select className="lh-sel" style={{ minWidth: 130 }} value={ttsStyle} onChange={(e) => setTtsStyle(e.target.value)}>
+                    {[
+                      { id: "normal", n: "Gaya: Normal" },
+                      { id: "berita", n: "Gaya: 📰 Berita" },
+                      { id: "kisah", n: "Gaya: 📖 Kisah" },
+                      { id: "cepat", n: "Gaya: ⚡ Cepat" },
+                      { id: "tenang", n: "Gaya: 🌙 Tenang" },
+                    ].map((s) => <option key={s.id} value={s.id}>{s.n}</option>)}
                   </select>
                   <button className="lh-mini ok" disabled={ttsBusy} onClick={buatNarasiTTS} style={{ padding: "8px 14px" }}>
                     {ttsBusy ? "⏳ Membuat suara…" : "🎙️ Generate Narasi Suara"}

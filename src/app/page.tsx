@@ -19,6 +19,7 @@ import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarize
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
 import { clearDraftMirror, deleteDraftMirror, listDraftMirrorMetas, mergeDraftMetas, mirrorDraft, mirrorDrafts, readDraftMirror } from "@/lib/guard/draft-idb"; // 🗄️ mirror draft IndexedDB
+import { gabungChunksDataUrl } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS cadangan → 1 audio
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -1156,13 +1157,22 @@ const IMG_STYLE_PRESETS = [
   { id: "cyberpunk", label: "🌃 Cyber" },    { id: "oil",   label: "🎨 Oil" },
   { id: "minimalist",label: "◻️ Minimal" },  { id: "3d",    label: "🧊 3D" },
 ];
-const VOICES: { id: string; name: string; av: string; bg: string }[] = [
-  { id: "alloy", name: "Nadia", av: "👩", bg: "#0e7490" },
-  { id: "nova", name: "Laras", av: "👩‍🦰", bg: "#7c3aed" },
-  { id: "shimmer", name: "Sinta", av: "👱‍♀️", bg: "#be185d" },
-  { id: "echo", name: "Dimas", av: "🧑", bg: "#1d4ed8" },
-  { id: "onyx", name: "Bara", av: "👨", bg: "#111827" },
-  { id: "fable", name: "Pandu", av: "🧔", bg: "#065f46" },
+const VOICES: { id: string; name: string; av: string; bg: string; lang: string; desc: string }[] = [
+  { id: "gadis", name: "Gadis", av: "👩", bg: "#0e7490", lang: "🇮🇩", desc: "Natural & hangat" },
+  { id: "ardi", name: "Ardi", av: "👨", bg: "#1d4ed8", lang: "🇮🇩", desc: "Natural & tenang" },
+  { id: "aria", name: "Aria", av: "👩‍🦰", bg: "#7c3aed", lang: "🇬🇧", desc: "Cerah & jernih" },
+  { id: "guy", name: "Guy", av: "🧑", bg: "#111827", lang: "🇬🇧", desc: "Tegas & mantap" },
+  { id: "jenny", name: "Jenny", av: "👱‍♀️", bg: "#be185d", lang: "🇬🇧", desc: "Ramah & halus" },
+  { id: "christopher", name: "Christopher", av: "🧔", bg: "#065f46", lang: "🇬🇧", desc: "Pembaca kisah" },
+  { id: "michelle", name: "Michelle", av: "👩🏻", bg: "#b45309", lang: "🇬🇧", desc: "Hangat & dewasa" },
+];
+// 🎚 Gaya baca suara (nuansa pembaca berita / kisah / dll)
+const TTS_STYLES: { id: string; name: string; desc: string }[] = [
+  { id: "normal", name: "Normal", desc: "Biasa" },
+  { id: "berita", name: "📰 Berita", desc: "Tegas & jelas" },
+  { id: "kisah", name: "📖 Kisah", desc: "Pelan, menghayati" },
+  { id: "cepat", name: "⚡ Cepat", desc: "Energik" },
+  { id: "tenang", name: "🌙 Tenang", desc: "Santai & dalam" },
 ];
 const MUSIC_GENRES = ["pop ballad", "slow rock", "dangdut koplo", "akustik", "religi", "trap edm", "lofi", "cinematic epic"];
 
@@ -1363,7 +1373,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [mTask, setMTask] = useState("");
   const [mStatus, setMStatus] = useState("");
   /* ---------- tts modal ---------- */
-  const [ttsVoice, setTtsVoice] = useState("alloy");
+  const [ttsVoice, setTtsVoice] = useState("gadis");
+  const [ttsStyle, setTtsStyle] = useState("normal");
   /* ---------- draft ---------- */
   const [draftId, setDraftId] = useState("");
   const [gambaraiReplaceId, setGambaraiReplaceId] = useState<string | undefined>(undefined);
@@ -2930,12 +2941,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   async function doTTS(text: string, voice: string) {
     setLoading("tts"); setError("");
     try {
-      const r = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 3500), voice }) });
+      const r = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 3500), voice, style: ttsStyle }) });
       const data = await r.json().catch(() => ({}));
       if (!r.ok || data.error) throw new Error(data.error || `Error ${r.status}`);
-      setTtsUrl(data.url); setTtsText(text.slice(0, 3500));
-      getAudioDuration(data.url).then(setTtsDur);
-      flash("🗣️ Narasi AI siap — masuk track audio");
+      let url = data.url;
+      if (!url && data.chunks?.length) url = await gabungChunksDataUrl(data.chunks); // 🧩 v19.49 gabung potongan
+      if (!url) throw new Error("Tidak ada audio yang dihasilkan.");
+      setTtsUrl(url); setTtsText(text.slice(0, 3500));
+      if (data.notice) { setError(data.notice); } else { flash("🗣️ Narasi AI siap — masuk track audio"); }
+      getAudioDuration(url).then(setTtsDur);
       setModal(null);
     } catch (e: any) { setErr(e); }
     setLoading(null);
@@ -4088,9 +4102,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           if (text) {
             setTtsText(text);
             setStageText("🗣️ Membuat suara narasi...");
-            const tr = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 3500), voice: "nova" }) });
+            const tr = await fetch("/api/hcnsec/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 3500), voice: ttsVoice, style: ttsStyle }) });
             const td = await tr.json().catch(() => ({}));
             if (td.url) { setTtsUrl(td.url); getAudioDuration(td.url).then(setTtsDur); }
+            else if (td.chunks?.length) { try { const u = await gabungChunksDataUrl(td.chunks); if (u) { setTtsUrl(u); getAudioDuration(u).then(setTtsDur); } } catch {} }
           }
         } catch {}
       } else if (wzAudio === "suno") {
@@ -4690,7 +4705,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
 
       {/* modal-modul */}
       {modal === "rekam" && <RekamModal onClose={() => setModal(null)} onUse={(u: string) => { setVoiceUrl(u); setVoiceOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setModal(null); flash(`🎙️ Rekaman masuk jalur audio mulai ${formatDur(curTRef.current)}`); getAudioDuration(u).then(setVoiceDur); }} />}
-      {modal === "tts" && <TtsModal initial={ttsText} onClose={() => setModal(null)} onGen={doTTS} loading={loading} voice={ttsVoice} setVoice={setTtsVoice} />}
+      {modal === "tts" && <TtsModal initial={ttsText} onClose={() => setModal(null)} onGen={doTTS} loading={loading} voice={ttsVoice} setVoice={setTtsVoice} style={ttsStyle} setStyle={setTtsStyle} />}
       {modal === "musik" && <MusikModal
         onClose={() => setModal(null)} sunoKey={sunoKey} setSunoKey={setSunoKey} sunoProv={sunoProv} setSunoProv={setSunoProv}
         mTitle={mTitle} setMTitle={setMTitle} mLyrics={mLyrics} setMLyrics={setMLyrics} mStyle={mStyle} setMStyle={setMStyle}
@@ -6970,7 +6985,7 @@ function RekamModal({ onClose, onUse }: any) {
 }
 
 /* ---------- TEKS KE AUDIO (TTS) ---------- */
-function TtsModal({ initial, onClose, onGen, loading, voice, setVoice }: any) {
+function TtsModal({ initial, onClose, onGen, loading, voice, setVoice, style, setStyle }: any) {
   const [txt, setTxt] = useState(initial || "");
   const [narr, setNarr] = useState(true);
   return (
@@ -6995,12 +7010,21 @@ function TtsModal({ initial, onClose, onGen, loading, voice, setVoice }: any) {
           <div className="tt">Pengisi suara</div>
           <button className={`v6-toggle ${narr ? "on" : ""}`} onClick={() => setNarr(!narr)} />
         </div>
-        <div className="v6-lbl">DIBUAT OLEH: TEKS KE UCAPAN ▾ &nbsp;&nbsp;<span style={{ color: "#6b7280" }}>Lainnya ›</span></div>
+        <div className="v6-lbl">SUARA NATURAL (NEURAL) &nbsp;&nbsp;<span style={{ color: "#6b7280" }}>🇮🇩 Indonesia · 🇬🇧 Inggris</span></div>
         <div className="v6-rows">
           {VOICES.map(v => (
             <button key={v.id} className={`v6-voice-chip ${voice === v.id ? "on" : ""}`} onClick={() => setVoice(v.id)}>
               <span className="av" style={{ background: v.bg }}>{v.av}</span>
-              <span className="nm">{v.name}</span>
+              <span className="nm">{v.name} <span style={{ fontSize: 10, opacity: .75 }}>{v.lang}</span></span>
+              <span className="tg" style={{ fontSize: 9.5, opacity: .6 }}>{v.desc}</span>
+            </button>
+          ))}
+        </div>
+        <div className="v6-lbl" style={{ marginTop: 10 }}>GAYA BACA</div>
+        <div className="v6-rows" style={{ gap: 6 }}>
+          {TTS_STYLES.map(s => (
+            <button key={s.id} className={`v6-chip ${style === s.id ? "on" : ""}`} style={{ borderColor: style === s.id ? "#a78bfa" : undefined, color: style === s.id ? "#c4b5fd" : undefined }} onClick={() => setStyle(s.id)}>
+              {s.name}
             </button>
           ))}
         </div>
