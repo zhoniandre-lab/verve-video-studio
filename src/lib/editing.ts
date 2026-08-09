@@ -1634,11 +1634,35 @@ export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: num
 
 /* ---------- CAPTION PAINTER (preview & Spectrum Studio) ---------- */
 export interface CapWord { text: string; start: number; end: number; line: number; }
+// 🚀 v19.45: cache lebar teks (ukur sekali, dipakai ribuan frame) — render jauh lebih cepat
+const _wCache = new Map<string, number>();
+function _cw(ctx: CanvasRenderingContext2D, fontKey: string, teks: string): number {
+  const k = fontKey + "|" + teks;
+  let w = _wCache.get(k);
+  if (w === undefined) {
+    w = ctx.measureText(teks).width;
+    if (_wCache.size > 800) _wCache.clear();
+    _wCache.set(k, w);
+  }
+  return w;
+}
+
 export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H: number, words: CapWord[], t: number, capStyle: string, opts?: { yRatio?: number; sizeRatio?: number }) {
   if (!words || !words.length) return;
-  const active = words.filter(w => t >= w.start - 0.05 && t <= w.end + 0.25);
-  if (!active.length) return;
-  const lineNo = active[0].line;
+  // 🐛 FIX v19.45: pilih baris yang PALING RELEVAN (bukan baris pertama yang aktif).
+  // Dulu: baris lama yang masih dalam window (+0.25s) terus "menang" → baris baru
+  // tidak muncul & bisa NUMPUK saat timing lirik overlap (auto-pas Whisper) → terlihat
+  // berantakan/rusak di render. Sekarang: baris dari kata yang SEDANG dinyanyikan.
+  const sedang = words.filter(w => t >= w.start && t < w.end);
+  let lineNo: number;
+  if (sedang.length) {
+    const wBaru = sedang.reduce((a, b) => (b.start > a.start ? b : a));
+    lineNo = wBaru.line;
+  } else {
+    const aktif = words.filter(w => t >= w.start - 0.05 && t <= w.end + 0.25);
+    if (!aktif.length) return;
+    lineNo = aktif[aktif.length - 1].line; // baris yang paling baru (bukan paling lama)
+  }
   const lineWords = words.filter(w => w.line === lineNo);
   const exact = words.find(w => t >= w.start && t < w.end && w.line === lineNo);
 
@@ -1650,38 +1674,44 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
 
   ctx.save();
   // Gunakan font Serif elegan untuk gaya Film Indie dokumenter
+  const fontKey = isIndie ? "indie" : "pop";
   ctx.font = isIndie 
     ? `600 ${fs}px 'Playfair Display','Lora',Georgia,serif`
     : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
 
   ctx.textBaseline = "middle"; ctx.lineJoin = "round";
-  // 🧾 v19.41: ukur kata & BAGI jadi maks 2 baris kalau kepanjangan (tidak keluar video)
+  // 🧾 v19.41 + 🐛 FIX v19.45: ukur kata (cache) & BAGI jadi maks 3 baris kalau kepanjangan
+  // (dulu maks 2 + clamp font 0.45 → lirik super panjang masih bisa terpotong di tepi)
   const maxW = W * 0.92;
-  let widths = lineWords.map(w => ctx.measureText(w.text).width);
+  let widths = lineWords.map(w => _cw(ctx, fontKey, w.text));
   let groups = wrapIndices(widths, gap, maxW, 2);
-  // kalau 2 baris pun masih ada yang lewat → perkecil font sampai muat
-  // (clamp 0.45 = jangan terlalu kecil; kasus ini hampir mustahil untuk lirik biasa)
   const sk = skalaAgarMuat(widths, groups, gap, maxW);
-  if (sk < 1) {
-    fs *= Math.max(0.45, sk);
+  if (sk < 0.62 && lineWords.length > 5) {
+    // masih kepanjangan → coba 3 baris
+    groups = wrapIndices(widths, gap, maxW, 3);
+  }
+  const sk2 = skalaAgarMuat(widths, groups, gap, maxW);
+  if (sk2 < 1) {
+    fs *= Math.max(0.3, sk2);
     ctx.font = isIndie 
       ? `600 ${fs}px 'Playfair Display','Lora',Georgia,serif`
       : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
-    widths = lineWords.map(w => ctx.measureText(w.text).width);
-    groups = wrapIndices(widths, gap, maxW, 2);
+    widths = lineWords.map(w => _cw(ctx, fontKey, w.text));
+    groups = wrapIndices(widths, gap, maxW, 3);
   }
   const G = groups.length;
   const lineH = fs * 0.62;
-  // kalau 2 baris, naikkan sedikit biar tetap di area bawah (tidak mentok)
-  const y0 = G > 1 ? y - lineH * 0.5 : y;
+  // kalau 2-3 baris, naikkan sedikit biar tetap di area bawah (tidak mentok)
+  const y0 = G > 1 ? y - lineH * (G - 1) * 0.5 : y;
 
   groups.forEach((gi, gIdx) => {
     const gy = y0 + gIdx * lineH;
     const groupW = lebarGroup(widths, gi, gap);
     let x = (W - groupW) / 2; ctx.textAlign = "left";
+    const kataAkhir = lineWords[lineWords.length - 1]; // 🐛 FIX v19.45: ganti referensi active[]
     gi.forEach((wi) => {
       const w = lineWords[wi];
-      const isActive = exact === w || (!exact && w === active[active.length - 1]);
+      const isActive = exact === w || (!exact && w === kataAkhir);
       let fill = "#ffffff", strokeC = "rgba(0,0,0,0.85)", glow = "";
       if (capStyle === "karaoke" || capStyle === "capcut") fill = isActive ? "#ffd93d" : "#ffffff";
       else if (capStyle === "neon") { fill = isActive ? "#ffffff" : "#f9a8d4"; glow = "#ec4899"; }
