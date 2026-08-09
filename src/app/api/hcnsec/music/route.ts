@@ -57,8 +57,6 @@ function getCreds(req: Request) {
   return { key, base, provider };
 }
 
-async function sleep(ms:number){return new Promise(r=>setTimeout(r,ms));}
-
 function buildBody(payload: any, provider: Provider): any {
   // Dukung payload "Kampung-style" yang pisah title, lyrics, deskripsi utama
   const rawTitle = (payload._raw_title || payload.title || "").toString().trim();

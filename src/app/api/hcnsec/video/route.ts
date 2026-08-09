@@ -166,7 +166,7 @@ async function pollCustomProvider(p: CP, taskId: string, epHint: string): Promis
 
 export async function POST(req: Request) {
   try {
-    const { prompt, imageUrl, duration, model, aspectRatio, poll, negativePrompt, enhance,
+    const { prompt, imageUrl, duration, model, aspectRatio, poll, negativePrompt,
       taskId, endpoint, pollOnly, provider, customProviders, cp, probeModels } = await req.json();
 
     // 🏹 v12.2: CEK KATALOG GRATIS — nanya daftar model milik penyedia bawaan pembuat (dialek openai),

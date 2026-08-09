@@ -14,7 +14,7 @@ import { avWarm } from "@/lib/avault";
 import { cariStokVideoSmart, kueriDariScene, pilihKlipBervariasi, temaDariKarakter, GAYA_EN, type VidPick } from "@/lib/stockvid";
 import {
   analyzeAngle, buildCandidates, scoreTitleV2, uniq,
-  type Angle, type ScoredTitle, type BrainMemory, type BrainResult, type AnalyzedVideo,
+  type Angle, type ScoredTitle, type BrainMemory, type BrainResult,
 } from "@/lib/brain/yie-score";
 import {
   detectAudienceIntent, audienceCard, dominantEmotion, watchActivity,
@@ -27,8 +27,8 @@ import { NICHES, isSongNiche, nicheAiLabel, nicheById, wizardSteps } from "@/lib
 import { resetJikaPerangkatBeda, tandaiPerangkat, deviceSama } from "@/lib/device-scope";
 import { bestUploadDay, bestUploadWindows, brainLevel, buildBrainReport, idealDuration, jadwalUpload, predictCtrBayes, velocityLabel, videoVelocity } from "@/lib/brain/deep-dive";
 import { ambilSnapshotTrend, bandingkanGelombang, cocokNiche, skorTrend, simpanSnapshotTrend, type TrendGelombang, type TrendItem } from "@/lib/brain/trend-radar";
-import { kompetitorVelocity, type KompItem } from "@/lib/brain/competitor-rss";
-import { rencanaKonten, type SlotKonten } from "@/lib/brain/content-factory";
+import { kompetitorVelocity } from "@/lib/brain/competitor-rss";
+import { rencanaKonten } from "@/lib/brain/content-factory";
 import { analisaHook, upgradeAdegan1 } from "@/lib/brain/hook-engine";
 import { radarKompetitor } from "@/lib/brain/kompetitor-radar";
 import { saranThumbnail, type SaranThumbnail } from "@/lib/brain/thumb-trend";
@@ -202,8 +202,6 @@ const GAYA_VISUAL = [
 ];
 /** kode style untuk mesin gambar hcnsec (IMAGE_STYLES ids) */
 const GAYA_TO_STYLE = ["cinematic", "oil", "anime", "3d"];
-
-const STEP_LABEL = ["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"];
 
 /** Perintah konsistensi yang disuntik ke prompt (untuk preview/salin di langkah Visual). */
 function composeVisualPrompt(scene: string, chars: CharCard[], gaya: string): string {
@@ -1150,7 +1148,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
         return cariStokVideoSmart(kueriDariScene(sc.visual_prompt, sc.scene_desc, tema, sc.mood, gaya), rasaIndo);
       })
     );
-    targetIdxs.forEach(({ sc, i }, idx) => {
+    targetIdxs.forEach(({ sc }, idx) => {
       const r = searchResults[idx];
       if (r.ok && r.hasil.length) {
         if (r.lebar) lebar++;
@@ -3055,7 +3053,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
               <span className="lh-note" style={{ margin: 0 }}>{fmtClock(Math.floor(pvT))} / {fmtClock(totalDur)}</span>
             </div>
             <div className="lh-dotnav">
-              {doneScenes.map((s, i) => (
+              {doneScenes.map((_, i) => (
                 <button key={i} className={i === pvIdx ? "on" : ""} onClick={() => seekPreview(i)}>{i + 1}</button>
               ))}
             </div>

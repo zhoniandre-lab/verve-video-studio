@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { renderSlideshow, downloadBlob, vidPlan, vidLoopPrev } from "@/lib/recorder";
 import { transcribeBlobBesar, ccDiagMulai, ccDiag, ccDiagBaca } from "@/lib/audiocc";
 import { renderGif } from "@/lib/gif";
@@ -24,7 +24,7 @@ import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
   ADJUST_DEFS, DEFAULT_ADJUST, DEFAULT_TEXT, buildClipFilter, canonicalTrans, effDur,
-  buildTimeline, locate, paintClips, paintClipText, CC_TEMPLATES, paintPreviewCaptions,
+  buildTimeline, locate, paintClips, CC_TEMPLATES, paintPreviewCaptions,
   ensureFontsLoaded, setDrawBg, paintFloatingTexts, paintTextSelectBox, paintFloatingStickers, paintStickerSelectBox, allClipTexts,
 } from "@/lib/editing";
 import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } from "@/lib/editing";
@@ -44,33 +44,6 @@ const DRAFTS_KEY = "verve_drafts_v1";
 const SESSION_KEY = "verve_session_v6";
 const SUNO_TASK_KEY = "verve_suno_task_v1";
 const MAX_DRAFTS = 12;
-
-const SUNO_KEYS_KEY = "verve_suno_keys_v1";
-type SunoKey = { key: string; provider: string };
-const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
-  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate" },
-  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
-  sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
-  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
-};
-function detectProvClient(k: string, fallback: string): string {
-  const s = k.toLowerCase().trim();
-  if (s.startsWith("kie") || s.startsWith("sk-kie")) return "kie";
-  if (s.startsWith("afk_") || s.startsWith("af_")) return "apiframe";
-  if (s.startsWith("snr_") || s.startsWith("sunor_")) return "sunor";
-  if (/^[a-f0-9]{24,}$/i.test(k.trim())) return "kie";
-  return fallback;
-}
-function maskKey(k: string): string {
-  try { return k && k.length > 10 ? `${k.slice(0, 7)}…${k.slice(-3)}` : "••••"; } catch { return "••••"; }
-}
-const SUNO_PROVIDERS_FULL = [
-  { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
-  { id: "apiframe", label: "apiframe.ai" },
-  { id: "sunor", label: "Sunor.cc" },
-  { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
-];
-
 
 /* ---------------- helpers ---------------- */
 function uid(p = "s"): string { return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
@@ -1272,7 +1245,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     flash("🎵 Audio pindah ke jalur " + (rr + 1));
   }, []);
   const [sheetTab, setSheetTab] = useState("");
-  const [modal, setModal] = useState<string | null>(null); // rekam|tts|musik|kamera|wizard|sampul|videoai|ganti|gambarai
+  const [modal, setModal] = useState<string | null>(null); // rekam|tts|musik|kamera|wizard|videoai|ganti|gambarai
   const [loading, setLoading] = useState<string | null>(null);
   const [stageText, setStageText] = useState("");
   const [error, setError] = useState("");
@@ -1434,7 +1407,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const specU8Ref = useRef<Uint8Array<ArrayBuffer> | null>(null); // 🌈 v13.4: buffer frekuensi utk stiker @bars
   const [cineBars, setCineBars] = useState(false); // 🎬 v13.5 LETTERBOX BIOSKOP 2.39:1 — garis hitam atas-bawah, ikut preview & render
   const cineBarsRef = useRef(false);
-  const barsRef = useRef<Float32Array>(new Float32Array(48));
   const clockRef = useRef<{ audio: HTMLAudioElement | null; t0: number; base: number; running: boolean }>({ audio: null, t0: 0, base: 0, running: false });
   const slidesRef = useRef(slides); useEffect(() => { slidesRef.current = slides; }, [slides]);
   const curTRef = useRef(0); useEffect(() => { curTRef.current = curT; }, [curT]);
@@ -1700,21 +1672,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     d = { url, a: mk(), b: mk() };
     decksRef.current.set(id, d);
     return d;
-  }
-  function getVideo(url: string): HTMLVideoElement | null {
-    let v = vidsRef.current.get(url);
-    if (v) { if (!(v as any).__dead) queueVidBlob(v, url); return (v as any).__dead ? null : v; }
-    v = document.createElement("video");
-    v.muted = true; v.playsInline = true; v.preload = "auto"; v.crossOrigin = "anonymous";
-    v.addEventListener("error", () => {
-      const el = v as any;
-      if (!el.__retried) { el.__retried = 1; v!.src = `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`; }
-      else el.__dead = true;
-    });
-    v.src = url;
-    vidsRef.current.set(url, v);
-    queueVidBlob(v, url);
-    return v;
   }
   function blitPrevVid(v: HTMLVideoElement, W: number, H: number, slot: number): HTMLCanvasElement | null {
     if (!v.videoWidth) return null;
@@ -3547,9 +3504,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     setTool("teksedit"); setClipBar(false);
   }
-  function setTextObj(id: string, patch: Partial<ClipText>) {
-    setTextObj2(id, "", patch);
-  }
   // ketuk chip teks di track → PILIH teksnya di layar (bingkai muncul, jarum pindah ke teksnya);
   // ketuk chip yang sama lagi → buka editor teks. tid = id lapisan ("" = utama)
   function onTextChipTap(sid: string, tid: string = "") {
@@ -4694,7 +4648,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       )}
       {tool === "teksedit" && textEditingId && (
         <TextEditSheet
-          slideId={textEditingId}
           layerLbl={textEditingTid ? `⧉ Lapisan ${(slideOptsById[textEditingId]?.texts || []).findIndex(x => x.id === textEditingTid) + 2}` : "Lapisan utama"}
           text={getTextOf(textEditingId, textEditingTid) || { ...DEFAULT_TEXT }}
           onChange={(patch: Partial<ClipText>) => setTextObj2(textEditingId, textEditingTid, patch)}
@@ -5359,7 +5312,6 @@ function TimelineV6(p: any) {
               <div className="v6e-lanehead" aria-hidden="true"><span><b className="dot" />Visual · {slides.length}</span></div>
               {slides.map((s: Slide, i: number) => {
                 const sel = s.id === selId;
-                const isOutro = s.id.startsWith("outro");
                 const d = dragRef.current as any;
                 const ghost = d?.kind === "reorder" && d.moved && d.to === i && d.i !== i;
                 const lifting = d?.kind === "reorder" && d.armed && d.i === i;
@@ -6769,7 +6721,7 @@ function EksporSheet({ api: A, onClose }: any) {
 /* ==================================================================
    TEXT EDIT SHEET — Template · Font · Gaya · Animasi · Gelembung · Preset
    ================================================================== */
-function TextEditSheet({ slideId, text, onChange, onDone, onDelete, layerLbl }: any) {
+function TextEditSheet({ text, onChange, onDone, onDelete, layerLbl }: any) {
   const [tab, setTab] = useState("template");
   const [presets, setPresets] = useState<any[]>([]);
   useEffect(() => { try { setPresets(JSON.parse(localStorage.getItem("verve_text_presets") || "[]")); } catch {} }, []);
@@ -7037,41 +6989,10 @@ function TtsModal({ initial, onClose, onGen, loading, voice, setVoice, style, se
 /* ---------- MUSIK AI (SUNO) ---------- */
 function MusikModal(p: any) {
   const [showKey, setShowKey] = useState(false);
-  const [keyPool, setKeyPool] = useState<SunoKey[]>(() => {
-    try { const raw = localStorage.getItem(SUNO_KEYS_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; }
-  });
-  const [keyDraft, setKeyDraft] = useState("");
-  const [creditInfo, setCreditInfo] = useState<Record<string, string>>({});
-  const [checkingCredit, setCheckingCredit] = useState(false);
   const [lyricTab, setLyricTab] = useState<"manual" | "auto">("manual");
   const [nicheExtra, setNicheExtra] = useState("");
   const [lyricLoading, setLyricLoading] = useState(false);
 
-  const providerLink = ((typeof PROVIDER_KEY_LINK !== "undefined" ? PROVIDER_KEY_LINK : { kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai" } }) as any)[p.sunoProv] || { url: "https://kie.ai/api-key", hint: "Login kie.ai" };
-  const providerLabelFull = (typeof SUNO_PROVIDERS_FULL !== "undefined" ? SUNO_PROVIDERS_FULL.find((x:any)=>x.id===p.sunoProv)?.label : p.sunoProv) || p.sunoProv;
-  const poolFiltered = keyPool.filter((k:any)=>k.provider===p.sunoProv);
-  const totalCredit = (() => { let tot=0,has=false; try{ Object.values(creditInfo).forEach((v:any)=>{ const m=String(v).match(/([0-9]+)/); if(m){ const n=parseInt(m[1]); if(!isNaN(n)){ tot+=n; has=true; } } }); }catch{} return has?tot:null; })();
-
-  function savePool(next: SunoKey[]) { setKeyPool(next); try { localStorage.setItem(SUNO_KEYS_KEY, JSON.stringify(next)); } catch {} }
-  function addKeysFromDraft() {
-    const lines = keyDraft.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-    if (!lines.length) return;
-    const next = [...keyPool]; let added=0;
-    lines.forEach(k=>{ if (next.some(x=>x.key===k)) return; next.push({ key: k, provider: detectProvClient(k, p.sunoProv) }); added++; });
-    savePool(next); setKeyDraft(""); const first = next.filter(x=>x.provider===p.sunoProv)[0]; if (first) { try { p.setSunoKey(first.key); localStorage.setItem("verve_suno_key", first.key); } catch {} }
-  }
-  function removeKey(key: string) { savePool(keyPool.filter(k=>k.key!==key)); }
-  function clearKeysCurrentProv() { savePool(keyPool.filter(k=>k.provider!==p.sunoProv)); setCreditInfo({}); }
-  async function cekKredit() {
-    const keys = (poolFiltered.length ? poolFiltered : (p.sunoKey ? [{key:p.sunoKey,provider:p.sunoProv}] : [])).map((k:any)=>k.key||k);
-    if (!keys.length) { alert("Belum ada kunci"); return; }
-    setCheckingCredit(true);
-    try {
-      const r = await fetch("/api/hcnsec/music-credit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: p.sunoProv, keys }) });
-      const j = await r.json(); if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      const map: Record<string,string> = {}; (j.results||[]).forEach((res:any)=>{ map[res.key] = res.status==="ok" ? `💳 ${res.credit}` : (res.msg||"tidak terekspos"); }); setCreditInfo(map);
-    } catch (e:any) { alert("Cek kredit gagal: "+(e?.message||e)); } finally { setCheckingCredit(false); }
-  }
   async function genLyricsFromNiche() {
     const title = (p.mTitle || p.projTitle || "").trim() || "Lagu tentang rindu";
     const nicheBase = (p.niche || "").trim() || "Cerita jadi lagu";
@@ -7284,63 +7205,6 @@ function WizardModal(p: any) {
       </div>
     </div>
   );
-}
-
-/* ---------- SAMPUL ---------- */
-function SampulModal({ slides, slideOptsById, timeline, ratio, getImage, onClose, onSave }: any) {
-  const cvRef = useRef<HTMLCanvasElement | null>(null);
-  const [t, setT] = useState(0);
-  const [txt, setTxt] = useState("");
-  const total = timeline?.total || 0;
-  const cw = ratio === "9:16" ? 270 : ratio === "1:1" ? 320 : 426;
-  const ch = ratio === "9:16" ? 480 : ratio === "1:1" ? 320 : 240;
-  useEffect(() => {
-    const paint = () => {
-      const cv = cvRef.current; if (!cv) return;
-      const ctx = cv.getContext("2d") as CanvasRenderingContext2D | null; if (!ctx) return;
-      const W = cv.width, H = cv.height;
-      ctx.fillStyle = "#0a0a0e"; ctx.fillRect(0, 0, W, H);
-      const tl = timeline; if (!tl || !slides.length) return;
-      const L = locate(tl, Math.min(t, Math.max(0, tl.total - 0.001)));
-      const opt = slideOptsById[slides[L.idx].id] || null;
-      const cur = getImage(slides[L.idx].imageUrl);
-      paintClips(ctx, W, H, cur, null, {
-        clipT: L.clipT, clipDur: L.clipDur, inTrans: false, transT: 0, transId: "none",
-        optCur: opt, optNxt: null, globalFilter: "none", absT: t, isMobile: true, beat: false, grain: 0, kbZoom: 1,
-      } as any);
-      paintFloatingStickers(ctx, W, H, slides.map((x: Slide) => slideOptsById[x.id]), t);
-      paintFloatingTexts(ctx, W, H, slides.map((x: Slide) => slideOptsById[x.id]), t);
-      if (txt.trim()) {
-        const ct: ClipText = { ...DEFAULT_TEXT, txt, size: 0.085, y: 0.85, karaokeWords: undefined };
-        paintClipTextSafe(ctx, W, H, ct);
-      }
-    };
-    paint();
-    const itv = setInterval(paint, 400); // gambar async loading
-    return () => clearInterval(itv);
-  }, [t, txt, slides, slideOptsById, timeline]); // eslint-disable-line
-  return (
-    <div className="v6-modal-back">
-      <div className="v6-modal" onClick={e => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <button className="v6e-tbtn" style={{ color: "#fff" }} onClick={onClose}>✕</button>
-          <h3 style={{ flex: 1, textAlign: "center" }}>✏️ Sampul proyek</h3>
-          <div style={{ width: 38 }} />
-        </div>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <canvas ref={cvRef} width={cw} height={ch} style={{ borderRadius: 12, border: "1px solid var(--v6-line)", maxWidth: "78vw" }} />
-        </div>
-        <div className="v6-slider-row"><div className="lr"><span>Pilih frame</span><b>{formatDur(t)}</b></div>
-          <input type="range" min={0} max={Math.max(0.1, total - 0.01)} step={0.05} value={t} onChange={e => setT(Number(e.target.value))} /></div>
-        <input className="v6-inp" placeholder="Teks judul di sampul (opsional)" value={txt} onChange={e => setTxt(e.target.value)} />
-        <button className="v6-bigcta" onClick={() => onSave(cvRef.current!.toDataURL("image/jpeg", 0.82))}>✓ Simpan sampul</button>
-        <div className="v6-note">Sampul tampil di <b>strip proyek terakhir</b> & halaman Proyek — jadi gampang dikenali.</div>
-      </div>
-    </div>
-  );
-}
-function paintClipTextSafe(ctx: CanvasRenderingContext2D, W: number, H: number, ct: ClipText) {
-  try { paintClipText(ctx, W, H, ct, 1, 10, 1, 1); } catch {}
 }
 
 /* ---------- GAMBAR AI (satu) ---------- */

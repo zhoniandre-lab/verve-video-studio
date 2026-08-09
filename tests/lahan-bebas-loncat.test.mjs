@@ -72,7 +72,7 @@ T("CSS gembok lama tak dipakai lagi (lh-dot:disabled boleh ada tapi tak direfere
 /* ---------- 5. Persist posisi langkah ---------- */
 T("langkah tersimpan di payload (pindah HP/refresh tak hilang)", /step, topic/.test(lahan) || /\{ step, topic/.test(lahan));
 T("langkah dipulihkan dari simpanan", /setStep\(j\.step \|\| 1\)/.test(lahan));
-T("9 langkah tetap utuh (wizardSteps, Lagu/Audio adaptif)", /wizardSteps\(nicheId\)/.test(lahan) && /const STEP_LABEL = \["Niat", "Sudut", "Riset", "Judul", "Visual", "Cerita", "Adegan", "Lagu", "Video"\];/.test(lahan));
+T("9 langkah tetap utuh (wizardSteps, Lagu/Audio adaptif)", /wizardSteps\(nicheId\)/.test(lahan) && /wizardSteps/.test(readFileSync(new URL("../src/lib/brain/niche.ts", import.meta.url), "utf8")) && !/const STEP_LABEL/.test(lahan));
 
 /* ---------- 6. FASE-LAHAN L2 PROFESIONAL: kepala seragam 9 langkah ---------- */
 const jmlKepala = (lahan.match(/kepalaLangkah\(\d+,/g) || []).length;
