@@ -1701,74 +1701,74 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (!board || !song) return;
     if ((masukStudio as any)._busy) return; (masukStudio as any)._busy = true;
     try {
-    if (!doneScenes.length) {
-      setErr({ code: "merge", msg: "Belum ada adegan bergambar — kembali ke langkah Adegan dulu bro." });
-      return;
-    }
-    // 🩹 v13.7 SELARAS LAGU: durasi lagu HARUS terukur sebelum bagi rata — dulu lagu tanpa durasi →
-    // 7 adegan × 6d = 42 detik doang dari lagu 4+ menit (laporan bro: "tidak mengikuti audio panjangnya").
-    let durEff = song.duration && song.duration > 1 ? song.duration : 0;
-    if (!durEff) {
-      flash("📻 Mengukur durasi lagu dulu ya bro…");
-      durEff = await probeSongDur(song.url);
-      if (durEff > 1) { setSong((s) => (s ? { ...s, duration: durEff } : s)); flash(`🎵 Lagu terukur ${Math.round(durEff)} detik — adegan aku selaraskan`); }
-    }
-    const totalEff = durEff > 1 ? Math.round(durEff) : totalDur;
-    const per = Math.round((totalEff / doneScenes.length) * 100) / 100;
-    const builtSlides = doneScenes.map((sc) => ({
-      id: uidL("c"),
-      imageUrl: sc.vidOn && sc.vid ? sc.vid.thumb : (sc.url as string), // 🎞️ poster = pengganti gambar (fallback aman)
-      ...(sc.vidOn && sc.vid ? { videoUrl: sc.vid.src } : {}), // 🎬 v13.11.2 FASE 2: pipa resmi v11.8 — Studio & render melukis VIDEO BERGERAK
-    }));
-    const slideOptsById: Record<string, unknown> = {};
-    builtSlides.forEach((sl, i) => {
-      const sc = doneScenes[i];
-      const cap = (sc.lyric_line || sc.scene_desc || "").trim().slice(0, 80);
-      slideOptsById[sl.id] = {
-        dur: per,
-        trans: "dissolve",
-        ...(sc.vidOn && sc.vid && sc.vidSpd && sc.vidSpd !== 1 ? { spd: sc.vidSpd } : {}), // ⏱ v13.13: kecepatan manual ikut ke render
-        ...(sc.vidOn && sc.vid ? { stock: { provider: sc.vid.provider || (sc.vid.by || "").split("·").pop()?.trim().toLowerCase() || "stock", by: sc.vid.by, link: sc.vid.link, id: sc.vid.id, dur: sc.vid.dur } } : {}), // 🧾 v18.5: jejak sumber stock ikut ke Studio/Upload Kit
-          texts: cap
-          ? [{
-              id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
-              bold: true, italic: false, shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5,
-              bg: true, bgColor: "rgba(0,0,0,0.45)", y: 0.84, align: "center", anim: "none",
-              lahanPill: true, // v8.2.1: penanda caption bawaan adegan (untuk tombol 🧹 di Keterangan otomatis)
-            } as any]
-          : [],
+      if (!doneScenes.length) {
+        setErr({ code: "merge", msg: "Belum ada adegan bergambar — kembali ke langkah Adegan dulu bro." });
+        return;
+      }
+      // 🩹 v13.7 SELARAS LAGU: durasi lagu HARUS terukur sebelum bagi rata — dulu lagu tanpa durasi →
+      // 7 adegan × 6d = 42 detik doang dari lagu 4+ menit (laporan bro: "tidak mengikuti audio panjangnya").
+      let durEff = song.duration && song.duration > 1 ? song.duration : 0;
+      if (!durEff) {
+        flash("📻 Mengukur durasi lagu dulu ya bro…");
+        durEff = await probeSongDur(song.url);
+        if (durEff > 1) { setSong((s) => (s ? { ...s, duration: durEff } : s)); flash(`🎵 Lagu terukur ${Math.round(durEff)} detik — adegan aku selaraskan`); }
+      }
+      const totalEff = durEff > 1 ? Math.round(durEff) : totalDur;
+      const per = Math.round((totalEff / doneScenes.length) * 100) / 100;
+      const builtSlides = doneScenes.map((sc) => ({
+        id: uidL("c"),
+        imageUrl: sc.vidOn && sc.vid ? sc.vid.thumb : (sc.url as string), // 🎞️ poster = pengganti gambar (fallback aman)
+        ...(sc.vidOn && sc.vid ? { videoUrl: sc.vid.src } : {}), // 🎬 v13.11.2 FASE 2: pipa resmi v11.8 — Studio & render melukis VIDEO BERGERAK
+      }));
+      const slideOptsById: Record<string, unknown> = {};
+      builtSlides.forEach((sl, i) => {
+        const sc = doneScenes[i];
+        const cap = (sc.lyric_line || sc.scene_desc || "").trim().slice(0, 80);
+        slideOptsById[sl.id] = {
+          dur: per,
+          trans: "dissolve",
+          ...(sc.vidOn && sc.vid && sc.vidSpd && sc.vidSpd !== 1 ? { spd: sc.vidSpd } : {}), // ⏱ v13.13: kecepatan manual ikut ke render
+          ...(sc.vidOn && sc.vid ? { stock: { provider: sc.vid.provider || (sc.vid.by || "").split("·").pop()?.trim().toLowerCase() || "stock", by: sc.vid.by, link: sc.vid.link, id: sc.vid.id, dur: sc.vid.dur } } : {}), // 🧾 v18.5: jejak sumber stock ikut ke Studio/Upload Kit
+            texts: cap
+            ? [{
+                id: uidL("t"), txt: cap, font: "sistem", size: 0.062, color: "#ffffff",
+                bold: true, italic: false, shadow: true, stroke: true, strokeColor: "#000000", strokeW: 5,
+                bg: true, bgColor: "rgba(0,0,0,0.45)", y: 0.84, align: "center", anim: "none",
+                lahanPill: true, // v8.2.1: penanda caption bawaan adegan (untuk tombol 🧹 di Keterangan otomatis)
+              } as any]
+            : [],
+        };
+      });
+      const draft = {
+        v: 6, id: uidL("d"), title: selTitle.slice(0, 80), updatedAt: Date.now(),
+        slides: builtSlides, slideOptsById,
+        ratio: "16:9", slideDuration: per, transition: "dissolve", transitionDur: 0.6,
+        bgMode: "cover", bgColor: "#000000",
+        musicUrl: song.url, musicName: (song.title || selTitle).slice(0, 60),
+        musicDur: Math.round((durEff || song.duration || 0) * 100) / 100 || 0,
+        musicOff: 0, musicVol: 1, musicFadeIn: 0, musicFadeOut: 0,
+        ttsUrl: "", ttsText: "", voiceUrl: "", ttsDur: 0, voiceDur: 0, ttsOff: 0, voiceOff: 0, voiceVol: 1,
+        filterPreset: "none", qualitySharp: false, audMuted: false,
+        capWords: [], capStyle: "capcut", ccTpl: "standar", ccSize: 0.055, ccY: 0.78,
+        niche: nicheAI || nicheDef.label,
+        coverThumb: (builtSlides[0]?.imageUrl || "").slice(0, 40000),
+        adj: { b: 0, c: 6, s: 4, e: 0, tem: 4, hue: 0, fade: 0, vig: 12, grain: 0 },
+        mTitle: selTitle, mLyrics: lyrics, mStyle, mGenre: genre, mMood: mood,
+        mModel: "suno-" + sunoModel.toLowerCase().replace(/_/g, "."), mVocal: vocal === "instrumental" ? "instrumental" : "vocal", // 🎚 v10.3: meta ikut versi asli
       };
-    });
-    const draft = {
-      v: 6, id: uidL("d"), title: selTitle.slice(0, 80), updatedAt: Date.now(),
-      slides: builtSlides, slideOptsById,
-      ratio: "16:9", slideDuration: per, transition: "dissolve", transitionDur: 0.6,
-      bgMode: "cover", bgColor: "#000000",
-      musicUrl: song.url, musicName: (song.title || selTitle).slice(0, 60),
-      musicDur: Math.round((durEff || song.duration || 0) * 100) / 100 || 0,
-      musicOff: 0, musicVol: 1, musicFadeIn: 0, musicFadeOut: 0,
-      ttsUrl: "", ttsText: "", voiceUrl: "", ttsDur: 0, voiceDur: 0, ttsOff: 0, voiceOff: 0, voiceVol: 1,
-      filterPreset: "none", qualitySharp: false, audMuted: false,
-      capWords: [], capStyle: "capcut", ccTpl: "standar", ccSize: 0.055, ccY: 0.78,
-      niche: nicheAI || nicheDef.label,
-      coverThumb: (builtSlides[0]?.imageUrl || "").slice(0, 40000),
-      adj: { b: 0, c: 6, s: 4, e: 0, tem: 4, hue: 0, fade: 0, vig: 12, grain: 0 },
-      mTitle: selTitle, mLyrics: lyrics, mStyle, mGenre: genre, mMood: mood,
-      mModel: "suno-" + sunoModel.toLowerCase().replace(/_/g, "."), mVocal: vocal === "instrumental" ? "instrumental" : "vocal", // 🎚 v10.3: meta ikut versi asli
-    };
-    try {
-      const arr = JSON.parse(localStorage.getItem("verve_drafts_v1") || "[]");
-      arr.unshift(draft);
-      while (arr.length > 12) arr.pop();
-      localStorage.setItem("verve_drafts_v1", JSON.stringify(arr));
-      void mirrorDraft(draft).catch(() => {});
-      if (pvAudioRef.current) { pvAudioRef.current.pause(); setPvPlaying(false); }
-      flash("🎬 Proyek gabungan terkirim ke Studio!");
-      if (gotoEditor) gotoEditor(draft.id);
-      else flash("📁 Draf tersimpan — buka dari tab Proyek");
-    } catch (e) {
-      setErr({ code: "merge", msg: "Gagal simpan draf gabungan (storage penuh? hapus draf lama): " + (e instanceof Error ? e.message : String(e)) });
-    }
+      try {
+        const arr = JSON.parse(localStorage.getItem("verve_drafts_v1") || "[]");
+        arr.unshift(draft);
+        while (arr.length > 12) arr.pop();
+        localStorage.setItem("verve_drafts_v1", JSON.stringify(arr));
+        void mirrorDraft(draft).catch(() => {});
+        if (pvAudioRef.current) { pvAudioRef.current.pause(); setPvPlaying(false); }
+        flash("🎬 Proyek gabungan terkirim ke Studio!");
+        if (gotoEditor) gotoEditor(draft.id);
+        else flash("📁 Draf tersimpan — buka dari tab Proyek");
+      } catch (e) {
+        setErr({ code: "merge", msg: "Gagal simpan draf gabungan (storage penuh? hapus draf lama): " + (e instanceof Error ? e.message : String(e)) });
+      }
     } finally { (masukStudio as any)._busy = false; } // v13.7: tutup gerbang anti dobel-klik
   }
 
