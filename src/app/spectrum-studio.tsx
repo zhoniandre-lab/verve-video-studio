@@ -150,6 +150,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const beatsRef = useRef<number[]>([]);
   // 🎛 v19.39: FFT frekuensi asli — dipakai render (bukan synthBars) biar spektrum akurat
   const freqFramesRef = useRef<FreqFrames | null>(null);
+  // 🐛 FIX v19.47.1: lacak blob URL audio (upload dari HP) — di-revoke saat ganti lagu (anti leak)
+  const audioBlobUrlRef = useRef<string | null>(null);
   // 🎛 peaks asli (per 0.25 dtk) — dipakai animasi subscribe saat render offline
   const peaksRef = useRef<number[]>([]);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
@@ -487,6 +489,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       if (!actxRef.current) actxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       const buf = await actxRef.current.decodeAudioData(raw.slice(0));
       bufRef.current = buf;
+      // 🐛 FIX v19.47.1: revoke blob URL audio LAMA (hanya yang dari upload HP) — anti leak memori
+      if (audioBlobUrlRef.current && audioBlobUrlRef.current !== url) {
+        try { URL.revokeObjectURL(audioBlobUrlRef.current); } catch { /* aman */ }
+      }
+      audioBlobUrlRef.current = url.startsWith("blob:") ? url : null;
       setAudioUrl(url); setAudioName(name);
       setDuration(buf.duration);
       if (!title) setTitle(name);
@@ -1523,53 +1530,57 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       mr.onstop = () => res(new Blob(chunks, { type: (chunks[0]?.type || mime || "video/webm").split(";")[0] }));
     });
 
-    // frame sinkron dgn audio clock
-    const startAt = actx.currentTime;
-    src.onended = () => setTimeout(() => { try { mr.stop(); } catch {} }, 180);
-    mr.start(350);
-    src.start(0, o, d);
-    await actx.resume().catch(() => {});
-    // 🛡 v19.32.1: untuk SHORT (render ke-2 tanpa sentuhan user) browser strict bisa menolak
-    // audio (autoplay policy) → deteksi & kasih error jelas, bukan hang/terpotong.
-    await new Promise(r => setTimeout(r, 700));
-    if (actx.state !== "running") {
-      await actx.resume().catch(() => {});
-      await new Promise(r => setTimeout(r, 500));
-    }
-    if (actx.state !== "running") {
-      try { mr.stop(); } catch {}
-      lepasWakeLock();
-      throw new Error("Browser menolak audio otomatis. Sentuh layar dulu, lalu render lagi.");
-    }
-
-    // gambar frame: rAF normal + interval CADANGAN (🛡 rAF bisa berhenti saat layar mati/tab pindah —
-    // interval tetap jalan → canvas terus update → hasil nggak kepotong)
-    const barsLocal = new Uint8Array(analyser.frequencyBinCount);
     let iv: any = null;
-    let selesai = false;
-    let lastProg = -1;
-    const gambar = (): boolean => {
-      const lt = actx.currentTime - startAt;
-      analyser.getByteFrequencyData(barsLocal as any);
-      drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal);
-      // 🐛 FIX v19.26: throttle progress — setState tiap frame bikin HP berat/stutter
-      // 🛡 v19.32.1: progress naik walau rAF mati (interval yang gambar), update hemat (≥0.4%)
-      const p = clampN(lt / d, 0, 1);
-      if (p >= 1 || Math.abs(p - lastProg) > 0.004) { lastProg = p; opts.onProg(p); }
-      if (lt >= d + 0.15 && !selesai) { selesai = true; opts.onProg(1); return true; }
-      return false;
-    };
-    await new Promise<void>(res2 => {
-      const loop = () => { if (!gambar()) requestAnimationFrame(loop); };
-      loop();
-      iv = setInterval(() => { gambar(); }, 150); // cadangan ~7×/dtk
-      const cek = setInterval(() => { if (selesai) { clearInterval(cek); res2(); } }, 200);
-    });
-    clearInterval(iv);
-    try { src.stop(); } catch {}
-    const blob = await done;
-    actx.close().catch(() => {});
-    return blob;
+    try {
+      // frame sinkron dgn audio clock
+      const startAt = actx.currentTime;
+      src.onended = () => setTimeout(() => { try { mr.stop(); } catch {} }, 180);
+      mr.start(350);
+      src.start(0, o, d);
+      await actx.resume().catch(() => {});
+      // 🛡 v19.32.1: untuk SHORT (render ke-2 tanpa sentuhan user) browser strict bisa menolak
+      // audio (autoplay policy) → deteksi & kasih error jelas, bukan hang/terpotong.
+      await new Promise(r => setTimeout(r, 700));
+      if (actx.state !== "running") {
+        await actx.resume().catch(() => {});
+        await new Promise(r => setTimeout(r, 500));
+      }
+      if (actx.state !== "running") {
+        throw new Error("Browser menolak audio otomatis. Sentuh layar dulu, lalu render lagi.");
+      }
+
+      // gambar frame: rAF normal + interval CADANGAN (🛡 rAF bisa berhenti saat layar mati/tab pindah —
+      // interval tetap jalan → canvas terus update → hasil nggak kepotong)
+      const barsLocal = new Uint8Array(analyser.frequencyBinCount);
+      let selesai = false;
+      let lastProg = -1;
+      const gambar = (): boolean => {
+        const lt = actx.currentTime - startAt;
+        analyser.getByteFrequencyData(barsLocal as any);
+        drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal);
+        // 🐛 FIX v19.26: throttle progress — setState tiap frame bikin HP berat/stutter
+        // 🛡 v19.32.1: progress naik walau rAF mati (interval yang gambar), update hemat (≥0.4%)
+        const p = clampN(lt / d, 0, 1);
+        if (p >= 1 || Math.abs(p - lastProg) > 0.004) { lastProg = p; opts.onProg(p); }
+        if (lt >= d + 0.15 && !selesai) { selesai = true; opts.onProg(1); return true; }
+        return false;
+      };
+      await new Promise<void>(res2 => {
+        const loop = () => { if (!gambar()) requestAnimationFrame(loop); };
+        loop();
+        iv = setInterval(() => { gambar(); }, 150); // cadangan ~7×/dtk
+        const cek = setInterval(() => { if (selesai) { clearInterval(cek); res2(); } }, 200);
+      });
+      try { src.stop(); } catch {}
+      const blob = await done;
+      return blob;
+    } finally {
+      // 🐛 FIX v19.47.1: cleanup SELALU jalan (juga saat error) — anti bocor AudioContext
+      clearInterval(iv);
+      try { src.stop(); } catch {}
+      actx.close().catch(() => {});
+      lepasWakeLock();
+    }
   }
 
   /* ⚡ v19.33: render KUAT (offline WebCodecs) — anti-kepotong.
