@@ -16,7 +16,7 @@ import type { VizStyle } from "./types";
 import { avGet, avPut, avDel } from "./avault";
 import {
   buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
-  setDrawBg, getDrawBg, preloadStickerImages, paintFloatingTexts, paintFloatingStickers,
+  setDrawBg, getDrawBg, preloadStickerImages, preloadStickerVideos, paintFloatingTexts, paintFloatingStickers,
 } from "./editing";
 import type { SlideOpt, Timeline } from "./editing";
 
@@ -1973,14 +1973,16 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
   onStage?.("⚡ Swarm Paralel: menyiapkan gambar, audio, & aset...");
   let __m = __tp();
   const stickerUrls: string[] = [];
+  const stickerVidUrls: string[] = [];
   try {
-    (opts.slideOpts || []).forEach(o => (o?.stickers || []).forEach(st => { if ((st as any).img) stickerUrls.push((st as any).img); }));
+    (opts.slideOpts || []).forEach(o => (o?.stickers || []).forEach(st => { if ((st as any).img) stickerUrls.push((st as any).img); if ((st as any).videoUrl) stickerVidUrls.push((st as any).videoUrl); }));
   } catch {}
 
   const [imgs, audio, _, logoImg] = await Promise.all([
     prepareImages(images, rW, rH, onStage, !!opts.sharpen),
     audioUrl ? decodeAudio(audioUrl, onStage).catch(() => null) : Promise.resolve(null),
     stickerUrls.length ? preloadStickerImages([...new Set(stickerUrls)]).catch(() => null) : Promise.resolve(null),
+    stickerVidUrls.length ? preloadStickerVideos([...new Set(stickerVidUrls)]).catch(() => null) : Promise.resolve(null),
     (opts.logoUrl && opts.logoPosition !== "none") ? loadImage(opts.logoUrl).catch(() => null) : Promise.resolve(null),
   ]);
   prepT.gambar = __tp() - __m;

@@ -26,6 +26,7 @@ import {
   ADJUST_DEFS, DEFAULT_ADJUST, DEFAULT_TEXT, buildClipFilter, canonicalTrans, effDur,
   buildTimeline, locate, paintClips, CC_TEMPLATES, paintPreviewCaptions,
   ensureFontsLoaded, setDrawBg, paintFloatingTexts, paintTextSelectBox, paintFloatingStickers, paintStickerSelectBox, allClipTexts,
+  preloadStickerVideos,
 } from "@/lib/editing";
 import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } from "@/lib/editing";
 
@@ -1227,6 +1228,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ---------- preview ---------- */
   const [playing, setPlaying] = useState(false);
   const [comparing, setComparing] = useState(false); // 👁️ v17.5 BEFORE/AFTER COMPARING STATE
+  const compareWasOnRef = useRef(false); // v19.53: ingat kondisi sebelum ditekan (buat toggle tap pendek)
+  const compareDownAtRef = useRef(0);
   const [curT, setCurT] = useState(0);
   const [durT, setDurT] = useState(0);
   const [pipOn, setPipOn] = useState(true);
@@ -2100,6 +2103,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!d) return;
     stopPreview();
     setSlides(d.slides || []); setSlideOptsById(d.slideOptsById || {});
+    // 🎬 v19.53: panaskan cache video overlay yang ikut tersimpan di draf
+    try {
+      const vids = Object.values(d.slideOptsById || {}).flatMap((o: any) => (o?.stickers || []).filter((s: any) => s?.videoUrl).map((s: any) => s.videoUrl));
+      if (vids.length) void preloadStickerVideos([...new Set(vids)] as string[]).catch(() => null);
+    } catch {}
     setRatio(d.ratio || "9:16"); setSlideDuration(d.slideDuration || 3);
     setTransition(d.transition || "dissolve"); setTransitionDur(d.transitionDur ?? 0.6);
     setBgMode(d.bgMode || "color"); setBgColor(d.bgColor || "#000000");
@@ -3521,7 +3529,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
 
   /* ---------- STIKER ---------- */
-  function addSticker(emoji: string, img?: string) {
+  function addSticker(emoji: string, img?: string, videoUrl?: string) {
     let sid = selId;
     if (!sid) {
       const tl = timelineRef.current;
@@ -3534,13 +3542,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const isMusicSticker = emoji === "@bars" || emoji === "@wavepro" || emoji === "@ring";
     const startAt = isMusicSticker ? 0 : Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100; // lahir di posisi penanda (atau 0 untuk musik)
     const stDur = isMusicSticker ? Math.max(300, musicDur || 300) : (emoji === "@cta" ? 6 : 3);
+    // 🎬 v19.53: overlay VIDEO (PiP) lahir di tengah & lebih besar biar langsung kelihatan
     const st: StickerItem = { id: uid("st"), emoji, x: 0.5,
-      y: emoji === "@bars" ? 0.86 : emoji === "@cta" ? 0.14 : emoji === "@wavepro" ? 0.8 : emoji === "@ring" ? 0.46 : emoji.startsWith("@") ? 0.72 : 0.4, // 🎬 v13.4/v13.8: posisi lahir tiap stiker musik-CTA
-      size: emoji === "@bars" ? 0.17 : emoji === "@cta" ? 0.13 : emoji === "@wavepro" || emoji === "@ring" ? 0.2 : emoji.startsWith("@") ? 0.07 : 0.12,
-      rot: 0, img, start: startAt, dur: stDur };
+      y: videoUrl ? 0.5 : emoji === "@bars" ? 0.86 : emoji === "@cta" ? 0.14 : emoji === "@wavepro" ? 0.8 : emoji === "@ring" ? 0.46 : emoji.startsWith("@") ? 0.72 : 0.4, // 🎬 v13.4/v13.8: posisi lahir tiap stiker musik-CTA
+      size: videoUrl ? 0.3 : emoji === "@bars" ? 0.17 : emoji === "@cta" ? 0.13 : emoji === "@wavepro" || emoji === "@ring" ? 0.2 : emoji.startsWith("@") ? 0.07 : 0.12,
+      rot: 0, img, videoUrl, start: startAt, dur: stDur };
     setOpt(sid, { stickers: [...cur, st] } as Partial<SlideOpt>);
     setSelStik({ sid, stid: st.id }); // langsung terpilih → bisa digeser/di-cubit saat itu juga
-    flash(img ? `🖼️ Overlay foto ditambahkan mulai ${formatDur(startAt)}` : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan mulai ${formatDur(startAt)} — jalur baru dibuat!`);
+    if (videoUrl) void preloadStickerVideos([videoUrl]).catch(() => null); // 🎬 v19.53: panaskan cache biar langsung muncul
+    flash(videoUrl ? `🎬 Overlay video ditambahkan mulai ${formatDur(startAt)} — geser/cubit di layar` : img ? `🖼️ Overlay foto ditambahkan mulai ${formatDur(startAt)}` : `${emoji.startsWith("@") ? "✨ Stiker animasi" : emoji} ditambahkan mulai ${formatDur(startAt)} — jalur baru dibuat!`);
   }
   function moveSticker(sid: string, stid: string, x: number, y: number) {
     const stks = (slideOptsById[sid]?.stickers || []).map(s => s.id === stid ? { ...s, x: clampN(x, 0.05, 0.95), y: clampN(y, 0.05, 0.95) } : s);
@@ -3605,6 +3615,25 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
   function uploadOverlayImg(f: FileList | null) {
     if (!f || !f.length) return;
+    const file = f[0];
+    if (file.type.startsWith("video/")) {
+      // 🎬 v19.53 OVERLAY VIDEO (PiP)
+      if (file.size > 8 * 1024 * 1024) { flash("⚠️ Video overlay maks 8MB"); return; }
+      const r = new FileReader();
+      r.onload = () => {
+        const url = r.result as string;
+        if (url.length > 2_400_000) {
+          // Terlalu besar untuk draf tersimpan (localStorage) → blob sesi + peringatan JUJUR
+          const bl = URL.createObjectURL(file);
+          addSticker("@vid", undefined, bl);
+          flash("🎬 Overlay video ditambahkan (ukuran besar → hanya bertahan sesi ini, refresh akan hilang)");
+        } else {
+          addSticker("@vid", undefined, url);
+        }
+      };
+      r.readAsDataURL(file);
+      return;
+    }
     const r = new FileReader();
     r.onload = () => addSticker("@img", r.result as string ? (r.result as string) : undefined);
     r.readAsDataURL(f[0]);
@@ -4404,14 +4433,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           <button className="cbtn" onClick={undo} disabled={!canUndo} title="Urungkan">↶</button>
           <button className="cbtn" onClick={redo} disabled={!canRedo} title="Ulangi">↷</button>
           <button
-            onPointerDown={() => setComparing(true)}
-            onPointerUp={() => setComparing(false)}
+            onPointerDown={() => { compareWasOnRef.current = comparing; compareDownAtRef.current = performance.now(); setComparing(true); }}
+            onPointerUp={() => { const dt = performance.now() - compareDownAtRef.current; setComparing(dt < 300 ? !compareWasOnRef.current : false); }}
             onPointerLeave={() => setComparing(false)}
-            onTouchStart={(e) => { e.preventDefault(); setComparing(true); }}
-            onTouchEnd={() => setComparing(false)}
+            onTouchStart={(e) => { e.preventDefault(); compareWasOnRef.current = comparing; compareDownAtRef.current = performance.now(); setComparing(true); }}
+            onTouchEnd={() => { const dt = performance.now() - compareDownAtRef.current; setComparing(dt < 300 ? !compareWasOnRef.current : false); }}
             className={`cbtn ${comparing ? "on" : ""}`}
             style={{ color: comparing ? "var(--v6-teal)" : "#fff", position: "relative" }}
-            title="Tekan dan Tahan untuk membandingkan Sebelum & Sesudah diberi Sihir Film"
+            title="Ketuk = bandingkan asli/editan (nyala/mati) · Tekan & TAHAN = lihat versi asli selagi ditekan"
           >
             👁️<span className="mini" style={{ bottom: -2, fontSize: "7px" }}>{comparing ? "Asli" : "Compare"}</span>
           </button>
@@ -5558,7 +5587,7 @@ function TimelineV6(p: any) {
                                     onPointerDown={(e) => onStkDown(e, s.id, st.id, "move", st)}
                                     onClick={() => { if (gstRef.current) return; if (suppressClickRef.current) { suppressClickRef.current = false; return; } p.onStickerChipTap?.(s.id, st.id); }}
                                     style={{ position: "absolute", left: t0 * PXS0, top: 4, width: Math.max(52, dd * PXS0), height: 46, overflow: "hidden", justifyContent: "flex-start", whiteSpace: "nowrap", fontSize: 20, margin: 0, transform: lifting ? `translateY(${sDragY}px) scale(1.05)` : undefined, zIndex: lifting ? 9 : undefined }}>
-                                    {st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
+                                    {st.videoUrl ? "🎬" : st.img ? "🖼️" : (typeof st.emoji === "string" && st.emoji.startsWith("@") ? "✨" : st.emoji)}
                                     <b className="v6e-chipvs" style={{ marginRight: 12 }}>⇅</b>
                                     <span className="txtdur" title="Tarik untuk ubah durasi stiker"
                                       onPointerDown={(e) => onStkDown(e, s.id, st.id, "dur", st)}>⋮</span>
@@ -6593,15 +6622,16 @@ function StikerSheet({ api: A, tab0, onClose }: any) {
         {tab === "overlay" && (
           <>
             <label className="v6-bigcta" style={{ display: "block", textAlign: "center" }}>
-              🖼️ Tambahkan foto sebagai overlay (PiP)
-              <input type="file" accept="image/*" hidden onChange={e => A.uploadOverlayImg(e.target.files)} />
+              🖼️🎬 Tambahkan foto / video sebagai overlay (PiP)
+              <input type="file" accept="image/*,video/*" hidden onChange={e => A.uploadOverlayImg(e.target.files)} />
             </label>
+            <div className="v6-note">Video overlay bisa digeser & di-cubit besar/kecil seperti stiker. Muncul mulai posisi penanda.</div>
             <div className="v6-lbl">OVERLAY & STIKER DI KLIP TERPILIH ({curSticks.length})</div>
             {!A.selId && <div className="v6-note">Pilih klip dulu untuk mengelola overlay-nya.</div>}
             <div className="v6-grid4">
               {curSticks.map((s: any) => (
                 <button key={s.id} className="v6-gcell" onClick={() => A.delSticker(A.selId, s.id)} title="Tap buat hapus">
-                  {s.img ? <span style={{ fontSize: 20 }}>🖼️</span> : <span className="e">{ANIM_STICKER_PREVIEW[s.emoji] || s.emoji}</span>}
+                  {s.videoUrl ? <span style={{ fontSize: 20 }}>🎬</span> : s.img ? <span style={{ fontSize: 20 }}>🖼️</span> : <span className="e">{ANIM_STICKER_PREVIEW[s.emoji] || s.emoji}</span>}
                   <span className="l">🗑 Hapus</span>
                 </button>
               ))}

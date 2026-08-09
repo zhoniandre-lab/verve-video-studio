@@ -25,7 +25,7 @@ export interface ClipText {
   dur?: number;        // detik tampil saat mode lepas (default: durasi klip)
   row?: number;        // v8.5: baris jalur pilihan pengguna di track (undefined = padat otomatis)
 }
-export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; opacity?: number;
+export interface StickerItem { id: string; emoji: string; x: number; y: number; size: number; rot: number; img?: string; videoUrl?: string; opacity?: number;
   start?: number | null;  // detik ABSOLUT di timeline (undefined/null = ikut klip)
   dur?: number;           // detik tampil saat mode lepas (default: durasi klip)
   row?: number;           // v8.5: baris jalur pilihan pengguna di track
@@ -1218,6 +1218,40 @@ export async function preloadStickerImages(urls: string[]): Promise<void> {
   })));
 }
 
+// 🎬 v19.53 OVERLAY VIDEO — cache video overlay (PiP) supaya preview & render offline
+// bisa drawImage langsung. Video diputar diam-diam (muted, loop) & currentTime disetel
+// per frame sesuai waktu timeline.
+const STICKER_VID_CACHE = new Map<string, HTMLVideoElement | "loading" | "err">();
+export function ensureStickerVideo(url: string): HTMLVideoElement | null {
+  if (!url) return null;
+  const cur = STICKER_VID_CACHE.get(url);
+  if (cur && cur !== "loading" && cur !== "err") return cur as HTMLVideoElement;
+  if (cur === "loading" || cur === "err") return null;
+  STICKER_VID_CACHE.set(url, "loading");
+  const v = document.createElement("video");
+  v.muted = true; v.loop = true; v.playsInline = true; v.preload = "auto";
+  v.crossOrigin = "anonymous";
+  v.onloadeddata = () => STICKER_VID_CACHE.set(url, v);
+  v.onerror = () => STICKER_VID_CACHE.set(url, "err");
+  v.src = url;
+  v.play().catch(() => {});
+  return null;
+}
+export async function preloadStickerVideos(urls: string[]): Promise<void> {
+  await Promise.all(urls.map(u => new Promise<void>(res => {
+    const cur = STICKER_VID_CACHE.get(u);
+    if (cur === "err" || (cur && cur !== "loading")) return res();
+    ensureStickerVideo(u);
+    const check = () => {
+      const c = STICKER_VID_CACHE.get(u);
+      if (c && c !== "loading" && c !== "err") return res();
+      if (c === "err") return res();
+      setTimeout(check, 150);
+    };
+    check();
+  })));
+}
+
 /* ---------- STIKER ANIMASI (orisinal, digambar kode) ---------- */
 export interface AnimStickerDef { id: string; label: string; cat: string; draw: (ctx: CanvasRenderingContext2D, s: number, t: number, spec?: Uint8Array | Float32Array | number[] | null) => void; }
 function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -1610,7 +1644,31 @@ export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: num
     ctx.globalAlpha = alpha * (st.opacity ?? 1);
     ctx.translate(st.x * W, st.y * H);
     if (st.rot) ctx.rotate(st.rot * Math.PI / 180);
-    if (st.img) {
+    if (st.videoUrl) {
+      // 🎬 v19.53 OVERLAY VIDEO (PiP): frame disetel mengikuti waktu timeline (loop)
+      const v = ensureStickerVideo(st.videoUrl);
+      if (v && v.readyState >= 2 && v.videoWidth) {
+        const vd = v.duration > 0 ? v.duration : 4;
+        const local = st.start == null ? absT : Math.max(0, absT - (st.start || 0));
+        const vt = ((local % vd) + vd) % vd;
+        if (Math.abs((v.currentTime || 0) - vt) > 0.12 && !v.seeking) { try { v.currentTime = vt; } catch {} }
+        const iw = v.videoWidth, ih = v.videoHeight;
+        const w = px * 2, h = px * 2 * (ih / iw);
+        ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = px * 0.12;
+        ctx.drawImage(v, -w / 2, -h / 2, w, h);
+      } else {
+        // placeholder saat video belum siap (atau gagal muat)
+        const w = px * 2;
+        ctx.fillStyle = "rgba(20,20,26,0.85)"; ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = Math.max(1.5, px * 0.05);
+        const rr = px * 0.25;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(-w / 2, -w / 2, w, w, rr);
+        else ctx.rect(-w / 2, -w / 2, w, w);
+        ctx.fill(); ctx.stroke();
+        ctx.font = `${px * 0.9}px system-ui,sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillStyle = "#fff"; ctx.fillText("🎬", 0, 0);
+      }
+    } else if (st.img) {
       const img = ensureStickerImage(st.img);
       if (img) {
         const iw = img.naturalWidth, ih = img.naturalHeight;
