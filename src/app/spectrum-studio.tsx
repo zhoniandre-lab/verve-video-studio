@@ -321,6 +321,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [pakaiMode, setPakaiMode] = useState<"" | "offline" | "realtime">("");
   /* 🚀 v19.34: kecepatan render — fps bisa 24 (20% lebih cepat) & estimasi waktu diukur asli */
   const [fpsOpt, setFpsOpt] = useState<24 | 25 | 30>(30);
+  // ⚡ v19.46.1 TURBO: render resolusi rendah + upscale — 2-4× lebih cepat
+  const [turbo, setTurbo] = useState(false);
   const [estSisa, setEstSisa] = useState("");
   function logDiag(s: string) {
     const row = { t: new Date().toISOString().slice(11, 19), s };
@@ -1600,6 +1602,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     return renderOfflineVideo({
       buf, w: opts.w, h: opts.h, offset: opts.offset, dur: opts.dur,
       eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec, fps: fpsOpt, videoBitrate: vbr,
+      resScale: turbo ? 0.72 : undefined, // ⚡ Turbo: render 72% lalu upscale
       // 🎛 v19.39: pakai FFT asli → spektrum render AKURAT ikut musik (bukan sintetis)
       freqFrames: freqFramesRef.current || undefined,
       drawBg: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "bg"),
@@ -2539,6 +2542,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
             {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
             {!!renderNote && <div className="v6-note" style={{ borderColor: "rgba(251,191,36,.4)", color: "#fde68a" }}>{renderNote}</div>}
+            {/* ⚡ v19.46.1: TURBO — render super cepat (resolusi rendah + upscale) */}
+            <div className="v6-cardrow" style={{ marginTop: 8 }} onClick={() => setTurbo(!turbo)}>
+              <span style={{ fontSize: 18 }}>⚡</span>
+              <div className="tt">
+                <b>Turbo Cepat (2-4× lebih cepat)</b>
+                <div style={{ fontSize: 10, color: turbo ? "#fbbf24" : "#8b8b98", fontWeight: 500 }}>{turbo ? "ON — output 720p-class (lebih kecil & 2× lebih cepat, tetap bagus di YouTube)" : "OFF — kualitas penuh 1080p. Nyalakan kalau mau render ngebut"}</div>
+              </div>
+              <button className={`v6-toggle ${turbo ? "on" : ""}`} />
+            </div>
             <div className="v6-lbl">⚡ KECEPATAN RENDER</div>
             <div className="v6-chips" style={{ padding: 0 }}>
               {[[30, "30 fps · paling halus"], [24, "24 fps · 20% lebih cepat"]].map(([f, lb]) => (

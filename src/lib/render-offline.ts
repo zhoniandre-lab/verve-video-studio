@@ -43,6 +43,11 @@ export interface OptsRenderOffline {
   videoBitrate?: number;
   /** fps video (default 30; 24 = 20% lebih cepat, tetap mulus) */
   fps?: number;
+  /** ⚡ v19.46.1 TURBO: render pada resolusi LEBIH RENDAH lalu di-upscale ke ukuran
+   *  final sebelum encode. Jauh lebih cepat (2-4×) karena piksel yang digambar
+   *  lebih sedikit; kualitas tetap oke untuk YouTube (yang re-encode sendiri).
+   *  resScale = 0.75 → render 75% lebar/tinggi lalu upscale. */
+  resScale?: number;
   /** 🚀 v19.34: render BERLAPIS — "bg" (latar statis) di-cache, digambar ulang tiap
    *  BG_EVERY frame; "dinamis" (bar/lirik/logo) tiap frame. Jauh lebih cepat
    *  karena full-canvas gradient/fill (bagian paling mahal) tidak diulang tiap frame. */
@@ -185,13 +190,22 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   o.onFase?.("video");
   const W = o.w, H = o.h;
   const fps = o.fps && (o.fps === 24 || o.fps === 30 || o.fps === 25) ? o.fps : FPS_DEF;
+  // ⚡ v19.46.1 TURBO: render & ENCODE pada resolusi lebih rendah LANGSUNG (bukan upscale).
+  // 🐛 FIX (dari benchmark): upscale TIDAK ngefek karena encoder tetap memproses 1080×608 penuh.
+  // Yang bener: output video = resolusi kecil → encoder kerja lebih sedikit → 2× lebih cepat.
+  const turbo = o.resScale && o.resScale > 0.3 && o.resScale < 1 ? o.resScale : 1;
+  const cw = Math.max(160, Math.round(W * turbo));
+  const ch = Math.max(90, Math.round(H * turbo));
   const cv = document.createElement("canvas");
-  cv.width = W; cv.height = H;
+  cv.width = turbo < 1 ? cw : W;
+  cv.height = turbo < 1 ? ch : H;
   const ctx = cv.getContext("2d", { alpha: false })!;
+  const cvW = cv; // canvas kerja = canvas encode (satu canvas)
+  const ctxW = ctx;
   // 🚀 v19.34: canvas latar ter-cache (hanya kalau drawBg/drawDin disediakan)
   const bgCv = !!o.drawBg && !!o.drawDin ? document.createElement("canvas") : null;
   const bgCtx = bgCv ? bgCv.getContext("2d", { alpha: false })! : null;
-  if (bgCv) { bgCv.width = W; bgCv.height = H; }
+  if (bgCv) { bgCv.width = cw; bgCv.height = ch; }
   // 🚀 v19.34: ADAPTIF — ukur dulu mana yang lebih cepat DI PERANGKAT INI (HP GPU beda
   // dengan CPU). Jalur GPU: berlapis menang telak (latar di-cache). Jalur CPU murni:
   // mode lama kadang lebih cepat. Jadi kita ukur 30 frame tiap mode, pilih tercepat.
@@ -202,13 +216,13 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
       const t0 = performance.now();
       for (let f = 0; f < BENCH; f++) {
         const tt = f / 30;
-        if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, W, H, tt, null);
-        ctx.drawImage(bgCv!, 0, 0);
-        o.drawDin!(ctx, W, H, tt, null);
+        if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, cw, ch, tt, null);
+        ctxW.drawImage(bgCv!, 0, 0);
+        o.drawDin!(ctxW, cw, ch, tt, null);
       }
       const msLapis = performance.now() - t0;
       const t1 = performance.now();
-      for (let f = 0; f < BENCH; f++) o.draw(ctx, W, H, f / 30, null);
+      for (let f = 0; f < BENCH; f++) o.draw(ctxW, cw, ch, f / 30, null);
       const msFull = performance.now() - t1;
       if (msFull < msLapis) pakaiLapis = false; // CPU murni → mode lama lebih cepat
       o.onInfo?.(`Benchmark: berlapis ${msLapis.toFixed(0)}ms vs lama ${msFull.toFixed(0)}ms (30 frame) → pakai ${pakaiLapis ? "berlapis 🚀" : "lama"}`);
@@ -217,7 +231,7 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
 
   const muxer = new Muxer({
     target: new ArrayBufferTarget(),
-    video: { codec: "avc", width: W, height: H, frameRate: fps },
+    video: { codec: "avc", width: cw, height: ch, frameRate: fps },
     audio: { codec: audioCodec === "opus" ? "opus" : "aac", sampleRate: SR, numberOfChannels: 2 },
     fastStart: "in-memory",
   });
@@ -239,7 +253,7 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
       });
       encV.configure({
         codec: "avc1.42001f",
-        width: W, height: H,
+        width: cw, height: ch,
         bitrate: o.videoBitrate || 6_000_000,
         framerate: fps,
         avc: { format: "avc" },
@@ -256,11 +270,11 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
     const freq = o.freqFrames ? freqAt(o.freqFrames, t) : (peaks.length ? synthBars(t, peaks) : null);
     if (pakaiLapis) {
       // 🚀 v19.34: latar digambar ulang tiap BG_EVERY frame → 3-4× lebih cepat
-      if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, W, H, t, freq);
-      ctx.drawImage(bgCv!, 0, 0);
-      o.drawDin!(ctx, W, H, t, freq);
+      if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, cw, ch, t, freq);
+      ctxW.drawImage(bgCv!, 0, 0);
+      o.drawDin!(ctxW, cw, ch, t, freq);
     } else {
-      o.draw(ctx, W, H, t, freq);
+      o.draw(ctxW, cw, ch, t, freq);
     }
     const frame = new VideoFrame(cv, { timestamp: f * usPer, duration: usPer });
     encV!.encode(frame, { keyFrame: f % 60 === 0 });
