@@ -4735,6 +4735,10 @@ function TimelineV6(p: any) {
   const tlPtrs = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchZRef = useRef<{ d0: number; vx: number; base: number } | null>(null);
   const zoomAnchorRef = useRef<{ t: number; vx: number } | null>(null);
+  // 🖐 v19.52 PAN + TAP-SEEK AREA KOSONG: sentuh area kosong track = boleh geser konten timeline
+  // (native scroll horizontal) + TAP = pindah playhead ke posisi itu. Sebelumnya area kosong "mati"
+  // karena pointer capture di wrapper mematikan scroll native & tidak ada aksi apa pun.
+  const tlPanRef = useRef<{ pid: number; x0: number; moved: boolean } | null>(null);
   const suppressSeekRef = useRef(false);
   const [, force] = useState(0);
   // v8.4 ANGKAT JALUR: tekan-tahan objek lalu seret VERTIKAL (atau tahan lama diam) = SELURUH jalurnya ikut jari, bebas dipindah ke mana saja
@@ -4809,8 +4813,13 @@ function TimelineV6(p: any) {
     if (p.playing && p.onPlayStop) { p.onPlayStop(); }
     scrubHoldRef.current = true;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+    // 🖐 v19.52: elemen objek (klip/chip) punya handler sendiri → jangan pan area ini.
+    const tgt = e.target as HTMLElement;
+    const isObj = !!tgt?.closest?.(".v6e-clip,.v6e-audioclip,.v6e-textchip,.hdl,.v6e-track-addbtn,.v6e-rail-tile");
     if (tlPtrs.current.size >= 2) {
+      // JARI KE-2 → cubit zoom: capture pointer hanya di sini (2 jari) supaya pinch stabil;
+      // 1 jari TIDAK di-capture lagi — native scroll horizontal di area kosong hidup kembali.
+      try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       const pts = [...tlPtrs.current.values()];
       const el = scrollRef.current;
       if (el) {
@@ -4821,11 +4830,40 @@ function TimelineV6(p: any) {
       }
       dragRef.current = null; // batalkan drag klip/trim saat mencubit
       clearTimeout(armTRef.current);
+      tlPanRef.current = null;
+    } else {
+      // 1 jari di AREA KOSONG → siapkan tap-seek & geser (native scroll) — dilepas tanpa aksi = seek.
+      // Window listener: jari lepas di LUAR wrapper tetap ketahuan (tanpa capture 1 jari).
+      tlPanRef.current = isObj ? null : { pid: e.pointerId, x0: e.clientX, moved: false };
+      if (!isObj) {
+        const fin = (ev: PointerEvent) => {
+          window.removeEventListener("pointerup", fin);
+          window.removeEventListener("pointercancel", fin);
+          onWrapUp(ev as unknown as React.PointerEvent);
+        };
+        window.addEventListener("pointerup", fin);
+        window.addEventListener("pointercancel", fin);
+      }
     }
   }
   function onWrapMove(e: React.PointerEvent) {
     if (!tlPtrs.current.has(e.pointerId)) return;
     tlPtrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // 🖐 v19.52: 1 jari area kosong — kalau konten TIDAK bisa digeser (timeline pendek),
+    // geser = pindah playhead (fallback scrub) biar area kosong tetap "hidup".
+    const pan = tlPanRef.current;
+    if (pan && pan.pid === e.pointerId && tlPtrs.current.size === 1) {
+      if (Math.abs(e.clientX - pan.x0) > 6) pan.moved = true;
+      if (pan.moved && dispTotal) {
+        const el = scrollRef.current;
+        if (el && el.scrollWidth <= el.clientWidth + 2 && p.onSeek) {
+          const r = el.getBoundingClientRect();
+          const x = e.clientX - r.left + el.scrollLeft - halfW;
+          p.onSeek(clampN(x / PXS0, 0, Math.max(0, dispTotal - 0.01)));
+        }
+      }
+      return;
+    }
     const pz = pinchZRef.current;
     if (pz && tlPtrs.current.size >= 2) {
       const pts = [...tlPtrs.current.values()];
@@ -4837,6 +4875,19 @@ function TimelineV6(p: any) {
     }
   }
   function onWrapUp(e: React.PointerEvent) {
+    // 🖐 v19.52: TAP area kosong (tanpa gerak & bukan dibatalkan browser) = pindah playhead ke situ
+    const pan = tlPanRef.current;
+    if (pan && pan.pid === e.pointerId) {
+      tlPanRef.current = null;
+      if (!pan.moved && e.type !== "pointercancel" && dispTotal && p.onSeek) {
+        const el = scrollRef.current;
+        if (el) {
+          const r = el.getBoundingClientRect();
+          const x = e.clientX - r.left + el.scrollLeft - halfW;
+          p.onSeek(clampN(x / PXS0, 0, Math.max(0, dispTotal - 0.01)));
+        }
+      }
+    }
     tlPtrs.current.delete(e.pointerId);
     if (tlPtrs.current.size < 2) { pinchZRef.current = null; zoomAnchorRef.current = null; }
     if (tlPtrs.current.size === 0) scrubHoldRef.current = false;
