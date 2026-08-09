@@ -53,7 +53,8 @@ T("spectrum: import gambarTeksCustom/FONT_OPTS", /gambarTeksCustom/.test(src) &&
 T("spectrum: state floatSpec (spektrum mini drag/cubit)", /floatSpec/.test(src) && /floatPos/.test(src));
 T("spectrum: state frameOn/frameStyle", /frameOn/.test(src) && /frameStyle/.test(src));
 T("spectrum: state textCustom/textStyle", /textCustom/.test(src) && /textStyle/.test(src));
-T("spectrum: UI section 'Spektrum Mini' / 'Frame' / 'Teks'", /Spektrum Mini/.test(src) && /Frame Layout/.test(src) && /Teks \(tulis, font, warna, 3D\)/.test(src));
+T("spectrum: UI grid kartu (UI_CARDS) berisi Mini/Frame/Teks", /UI_CARDS/.test(src) && /\{ id: "spektrumMini"/.test(src) && /\{ id: "frame"/.test(src) && /\{ id: "teks"/.test(src));
+T("spectrum: grid kartu dirender (ATURAN CEPAT)", /ATURAN CEPAT/.test(src) && /gridTemplateColumns/.test(src));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI FRAME-TEKS GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI FRAME & TEKS HIJAU!");

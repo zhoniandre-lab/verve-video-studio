@@ -66,6 +66,19 @@ const LAYER_DEFS = [
   { id: "partikel", label: "✨ Partikel (ember)" },
   { id: "subscribe", label: "🔔 Tombol Subscribe" },
 ];
+/** 💎 v19.46: UI KONSEP A — grid kartu 2 kolom untuk navigasi setting Visual */
+const UI_CARDS = [
+  { id: "gaya", ic: "📊", label: "Gaya Spectrum", sub: "12 tipe" },
+  { id: "subscribe", ic: "📣", label: "Subscribe", sub: "gaya · teks · durasi" },
+  { id: "frame", ic: "🖼️", label: "Frame", sub: "8 bingkai mewah" },
+  { id: "teks", ic: "✏️", label: "Teks", sub: "font · warna · 3D" },
+  { id: "spektrumMini", ic: "🎯", label: "Spektrum Mini", sub: "drag & cubit" },
+  { id: "spektrum", ic: "🎛️", label: "Setting Bars", sub: "jumlah · glow · warna" },
+  { id: "latar", ic: "🌌", label: "Latar", sub: "gradasi · foto · AI" },
+  { id: "lapisan", ic: "🧩", label: "Lapisan", sub: "tampil / sembunyi" },
+  { id: "gambar", ic: "🖼️", label: "Gambar", sub: "multi-gambar" },
+  { id: "preset", ic: "💾", label: "Preset", sub: "simpan / muat" },
+];
 const BG_GRADS = [
   { id: "g0", css: ["#05070f", "#0e7490"], label: "Samudra Malam" },
   { id: "g1", css: ["#12061f", "#7c3aed"], label: "Ungu Nebula" },
@@ -1923,11 +1936,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className={`v6-chip ${ratio === "16:9" ? "on" : ""}`} onClick={() => setRatio("16:9")}>▭ 16:9 YouTube</button>
               <button className={`v6-chip ${ratio === "9:16" ? "on" : ""}`} onClick={() => setRatio("9:16")}>▯ 9:16 Shorts</button>
             </div>
-            <button onClick={() => toggleSec("gaya")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🎨</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Gaya & Template</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.gaya ? "▴" : "▾"}</span>
-            </button>
+            {/* 💎 v19.46: GRID KARTU — Konsep A. Ketuk kartu → panel isinya muncul di bawah */}
+            <div className="v6-lbl">🎛️ ATURAN CEPAT</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "4px 14px 2px" }}>
+              {UI_CARDS.map(c => {
+                const buka = !!secOpen[c.id];
+                return (
+                  <button key={c.id} onClick={() => toggleSec(c.id)}
+                    style={{ background: buka ? "linear-gradient(160deg,#16102a,#0e0e18)" : "#0e0e18",
+                      border: buka ? "1.5px solid rgba(139,92,246,.6)" : "1px solid #1e1e2c",
+                      borderRadius: 14, padding: "12px 10px", textAlign: "center", cursor: "pointer", position: "relative" }}>
+                    <span style={{ fontSize: 22, display: "block" }}>{c.ic}</span>
+                    <b style={{ fontSize: 10.5, display: "block", marginTop: 4, color: "#e6e8f0" }}>{c.label}</b>
+                    <small style={{ fontSize: 8.5, color: "#7c8698", display: "block", marginTop: 1 }}>{c.sub}</small>
+                    <span style={{ position: "absolute", top: 8, right: 8, width: 8, height: 8, borderRadius: "50%", background: buka ? "#22c55e" : "#2a2a3a" }} />
+                  </button>
+                );
+              })}
+            </div>
             {secOpen.gaya && (
               <>
             <div className="v6-lbl">GAYA SPECTRUM</div>
@@ -1945,11 +1971,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               </>
             )}
             {/* 🎯 v19.44: SPEKTRUM MINI — drag & cubit */}
-            <button onClick={() => toggleSec("spektrumMini")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🎯</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Spektrum Mini (bisa di-drag & di-cubit)</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.spektrumMini ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.spektrumMini && (
               <>
                 <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setFloatSpec(!floatSpec)}>
@@ -1969,11 +1991,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               </>
             )}
             {/* 🖼️ v19.44: FRAME LAYOUT */}
-            <button onClick={() => toggleSec("frame")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🖼️</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Frame Layout (bingkai mewah)</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.frame ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.frame && (
               <>
                 <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setFrameOn(!frameOn)}>
@@ -1994,11 +2012,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               </>
             )}
             {/* ✏️ v19.44: TEKS */}
-            <button onClick={() => toggleSec("teks")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>✏️</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Teks (tulis, font, warna, 3D)</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.teks ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.teks && (
               <>
                 <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setTextOn(!textOn)}>
@@ -2051,11 +2065,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 )}
               </>
             )}
-            <button onClick={() => toggleSec("subscribe")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>📣</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Tombol Subscribe (klik untuk semua setting)</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.subscribe ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.subscribe && (
               <>
             {/* 🔔 v19.40: TOMBOL SUBSCRIBE ANIMASI */}
@@ -2127,11 +2137,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             )}
               </>
             )}
-            <button onClick={() => toggleSec("lapisan")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🧩</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Lapisan (tampil/sembunyi & transparansi)</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.lapisan ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.lapisan && (
               <>
             {/* 🧩 v19.36: LAPISAN */}
@@ -2152,11 +2158,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
               </>
             )}
-            <button onClick={() => toggleSec("spektrum")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🎛️</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Setting Spektrum (layout, warna, bar)</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.spektrum ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.spektrum && (
               <>
             {/* 🎛️ v19.14 KUSTOMISASI PRO — layout, geser, slider, ikut-beat */}
@@ -2220,11 +2222,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
               </>
             )}
-            <button onClick={() => toggleSec("latar")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🌌</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Latar & Suasana</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.latar ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.latar && (
               <>
             <div className="v6-lbl">🧹 EFEK DEKORATIF OTOMATIS (default BERSIH — nyalakan kalau mau)</div>
@@ -2302,11 +2300,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
               </>
             )}
-            <button onClick={() => toggleSec("gambar")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>🖼️</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Gambar, Logo & Judul</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.gambar ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.gambar && (
               <>
             {/* 🖼️ v19.15 MODE MULTI-GAMBAR — perjelas apa maksudnya */}
@@ -2368,11 +2362,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <input className="v6-inp" placeholder="cth: Hujan di Jendela — 1 Hour Loop" value={title} onChange={e => setTitle(e.target.value)} />
               </>
             )}
-            <button onClick={() => toggleSec("preset")} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#12121e", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: "10px 12px", marginTop: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 14 }}>💾</span>
-              <b style={{ flex: 1, fontSize: 12.5, textAlign: "left", color: "#e6e8f0" }}>Simpan / Muat Preset</b>
-              <span style={{ color: "#8b93a3", fontSize: 12 }}>{secOpen.preset ? "▴" : "▾"}</span>
-            </button>
+            
             {secOpen.preset && (
               <>
             {/* 💾 v19.15 SIMPAN PRESET KUSTOM */}
