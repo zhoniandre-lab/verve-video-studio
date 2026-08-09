@@ -240,10 +240,29 @@ export async function generateImage(prompt: string, styleSuffix?: string, opts?:
 }
 
 // ===== TTS =====
+// 🐛 FIX v19.48: TTS tahan banting — "Audio 400" terjadi kalau model yang dipakai
+// ditolak provider (model deprecated / tidak dikenali). Sekarang coba BEBERAPA
+// model otomatis (stepaudio → tts-1 → gpt-4o-mini-tts) + beberapa format.
 export async function generateSpeech(text: string, voice = "alloy", model?: string): Promise<string> {
-  const b64: string = await retry(() => postJson("/audio/speech",
-    { model: model || DEFAULT_TTS_MODEL, input: text.slice(0, 3500), voice, response_format: "mp3" }, 120));
-  return `data:audio/mp3;base64,${b64}`;
+  const teks = text.slice(0, 3500);
+  const models = model ? [model] : [DEFAULT_TTS_MODEL, "tts-1", "gpt-4o-mini-tts"];
+  const formats = ["mp3", "wav", "aac"];
+  let lastErr: any = null;
+  for (const m of models) {
+    for (const fmt of formats) {
+      try {
+        const b64: string = await retry(() => postJson("/audio/speech",
+          { model: m, input: teks, voice, response_format: fmt }, 120));
+        return `data:audio/${fmt === "mp3" ? "mpeg" : fmt};base64,${b64}`;
+      } catch (e: any) {
+        lastErr = e;
+        // kalau 401/403 (key salah) jangan buang waktu coba model lain
+        if (e?.status === 401 || e?.status === 403) throw e;
+        // 400 = model/format ditolak → coba berikutnya
+      }
+    }
+  }
+  throw lastErr || new ApiError("TTS gagal di semua model", 500, "/audio/speech");
 }
 
 // ===== VIDEO =====
