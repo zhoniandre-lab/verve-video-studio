@@ -37,18 +37,24 @@ async function sinkron(): Promise<{ item: ReturnType<typeof katalogKurasi>; sumb
   const semuaMentah: Mentah[] = [];
   const error: string[] = [];
   const sumberOk: string[] = [];
-  for (const s of SUMBER_EKSTERNAL) {
-    try {
-      const teks = await ambilTeks(s.url);
-      if (!teks) { error.push(s.label); continue; }
-      if (s.id === "awesome-free-llm-apis") semuaMentah.push(...parseAwesomeFreeLlmApis(teks));
-      else if (s.id === "free-for-dev") semuaMentah.push(...parseFreeForDev(teks));
-      else if (s.id === "free-ai-tools") semuaMentah.push(...parseFreeAiTools(teks));
-      else if (s.id === "awesome-image-to-video") semuaMentah.push(...parseI2vTable(teks));
-      else semuaMentah.push(...parseAwesomeAiTools(teks));
-      sumberOk.push(s.label);
-    } catch { error.push(s.label); }
-  }
+  // 🐛 v19.54: jalankan PARALEL (dulu berurutan: 5 × 12 dtk = bisa lewat batas 60 dtk Vercel)
+  const hasil = await Promise.allSettled(SUMBER_EKSTERNAL.map(async (s) => {
+    const teks = await ambilTeks(s.url);
+    if (!teks) throw new Error("kosong");
+    if (s.id === "awesome-free-llm-apis") return parseAwesomeFreeLlmApis(teks);
+    if (s.id === "free-for-dev") return parseFreeForDev(teks);
+    if (s.id === "free-ai-tools") return parseFreeAiTools(teks);
+    if (s.id === "awesome-image-to-video") return parseI2vTable(teks);
+    return parseAwesomeAiTools(teks);
+  }));
+  hasil.forEach((h, i) => {
+    if (h.status === "fulfilled") {
+      semuaMentah.push(...h.value);
+      sumberOk.push(SUMBER_EKSTERNAL[i].label);
+    } else {
+      error.push(SUMBER_EKSTERNAL[i].label);
+    }
+  });
   return { item: gabungItems(kurasi, semuaMentah), sumber: sumberOk, error };
 }
 

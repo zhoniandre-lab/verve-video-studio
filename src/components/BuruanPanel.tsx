@@ -55,7 +55,10 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
   const [cache, setCache] = useState(false);
   const [sumberOk, setSumberOk] = useState<string[]>([]);
   const [sumberErr, setSumberErr] = useState<string[]>([]);
-  const [seen, setSeen] = useState<string[]>([]);
+  // 🐛 v19.54: badge NEW pakai `baruIds` (hasil fetch terakhir) — DULU pakai state `seen`
+  // yang rawan race (seen state ≠ localStorage → badge NEW nyala di item yang sudah dilihat).
+  // `baruIds` = id item yang benar-benar baru muncul sejak kunjungan terakhir (seen tersimpan).
+  const [baruIds, setBaruIds] = useState<string[]>([]);
   // Dompet Bansos — kolom isi key buat item yang mau disimpan
   const [keyIsi, setKeyIsi] = useState("");
   const [modelIsi, setModelIsi] = useState("");
@@ -69,7 +72,6 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
   }
   useEffect(() => {
     setStatusMap(bacaStatus());
-    try { setSeen(JSON.parse(localStorage.getItem(BURUAN_KEY_SEEN) || "[]") as string[]); } catch { setSeen([]); }
     setLaporMap(bacaLapor());
     muat(false);
   }, []);
@@ -84,14 +86,19 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
       setCache(!!j.cache);
       setSumberOk(j.sumber || []);
       setSumberErr(j.error || []);
-      // tandai "baru" yang belum pernah dilihat (id yang ada sekarang tapi belum di seen)
+      // 🐛 v19.54 FIX: baca seen dari localStorage LANGSUNG (dulu pakai state `seen`
+      // dari closure render pertama = [] → SEMUA item dianggap baru tiap buka panel,
+      // badge NEW nyala terus & info "🆕 N buruan baru" muncul terus)
+      let seenLokal: string[] = [];
+      try { seenLokal = JSON.parse(localStorage.getItem(BURUAN_KEY_SEEN) || "[]") as string[]; } catch {}
       const daftarBaru: BuruanItem[] = j.item || [];
       const ids: string[] = daftarBaru.map((i) => i.id);
-      const baru = daftarBaru.filter((i) => !seen.includes(i.id));
+      const baru = daftarBaru.filter((i) => !seenLokal.includes(i.id));
       setInfo(baru.length ? `🆕 ${baru.length} buruan baru dari sinkronisasi!` : "");
+      // badge NEW hanya untuk yang baru MUNCUL (kunjungan pertama = semua baru → tanpa badge, biar bersih)
+      setBaruIds(seenLokal.length && baru.length ? baru.map((i) => i.id) : []);
       // simpan seen = semua id yang terlihat
-      const gabung: string[] = Array.from(new Set<string>([...seen, ...ids]));
-      setSeen(gabung);
+      const gabung: string[] = Array.from(new Set<string>([...seenLokal, ...ids]));
       try { localStorage.setItem(BURUAN_KEY_SEEN, JSON.stringify(gabung)); } catch {}
     } catch (e: any) {
       setMsg(`⚠️ ${e?.message || "Gagal ambil data"}`);
@@ -111,14 +118,16 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
     });
   }, [items, q, kat, hanyaStabil, laporMap]);
 
-  /* 🎯 Panduan cepat per kebutuhan — pilih "mau bikin apa" → langsung set pencarian */
-  const PANDUAN = [
-    { emoji: "🖼️➡️🎬", judul: "Bikin gambar jadi BERGERAK", q: "gambar bergerak", desc: "Kling · Hailuo · Vidu · PixVerse · Viggle — upload foto, jadi video" },
-    { emoji: "🎬✨", judul: "Bikin video AI dari teks", q: "text-to-video", desc: "Hailuo · Pika · Wan · Haiper · InVideo" },
-    { emoji: "🧑‍💬", judul: "Bikin orang bicara (avatar)", q: "avatar", desc: "HeyGen · D-ID — foto jadi presenter ngomong" },
-    { emoji: "🎵", judul: "Bikin lagu / musik", q: "musik", desc: "Suno · Udio — lagu orisinal dari prompt" },
-    { emoji: "🗣️", judul: "Bikin narasi suara", q: "suara", desc: "ElevenLabs · Edge TTS — suara natural" },
-    { emoji: "💬🧠", judul: "Otak/chat gratis buat Verve", q: "llm", desc: "Groq · Cerebras · Gemini · Mistral — simpan ke Dompet Bansos" },
+  /* 🎯 Panduan cepat per kebutuhan — pilih "mau bikin apa" → langsung set kategori + pencarian.
+     🐛 v19.54 FIX: dulu cuma set q (mis. "musik") padahal teks item Suno/Udio TIDAK mengandung
+     kata "musik" → tombol panduan tidak nemu apa-apa. Sekarang set kategori juga. */
+  const PANDUAN: { emoji: string; judul: string; q: string; kat: KategoriId | ""; desc: string }[] = [
+    { emoji: "🖼️➡️🎬", judul: "Bikin gambar jadi BERGERAK", q: "gambar bergerak", kat: "gambar-video", desc: "Kling · Hailuo · Vidu · PixVerse · Viggle — upload foto, jadi video" },
+    { emoji: "🎬✨", judul: "Bikin video AI dari teks", q: "text-to-video", kat: "gambar-video", desc: "Hailuo · Pika · Wan · Haiper · InVideo" },
+    { emoji: "🧑‍💬", judul: "Bikin orang bicara (avatar)", q: "avatar", kat: "gambar-video", desc: "HeyGen · D-ID — foto jadi presenter ngomong" },
+    { emoji: "🎵", judul: "Bikin lagu / musik", q: "", kat: "musik", desc: "Suno · Udio — lagu orisinal dari prompt" },
+    { emoji: "🗣️", judul: "Bikin narasi suara", q: "", kat: "suara", desc: "ElevenLabs · Edge TTS — suara natural" },
+    { emoji: "💬🧠", judul: "Otak/chat gratis buat Verve", q: "", kat: "chat", desc: "Groq · Cerebras · Gemini · Mistral — simpan ke Dompet Bansos" },
   ];
 
   function setStatus(id: string, s: StatusBuruan) {
@@ -186,7 +195,9 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
           <b style={{ fontSize: 13, flex: 1 }}>🏹 {i.nama}</b>
           {i.keyUrl
             ? <a className="v6e-export" style={{ textDecoration: "none", background: "#22c55e", color: "#052e16" }} href={i.keyUrl} target="_blank" rel="noreferrer">🔑 Ambil API Key ↗</a>
-            : <a className="v6e-export" style={{ textDecoration: "none" }} href={i.url} target="_blank" rel="noreferrer">Buka situs ↗</a>}
+            : i.url
+              ? <a className="v6e-export" style={{ textDecoration: "none" }} href={i.url} target="_blank" rel="noreferrer">Buka situs ↗</a>
+              : <span className="v6e-export" style={{ textDecoration: "none", opacity: .5 }}>🔎 Cari di mesin pencari</span>}
         </header>
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px 90px" }}>
           <div className="v6-cardrow" style={{ cursor: "default", marginTop: 4 }}>
@@ -274,7 +285,7 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
         <div className="v6-lbl" style={{ marginTop: 8 }}>🎯 MAU BIKIN APA? (ketuk → langsung muncul daftarnya)</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {PANDUAN.map((p) => (
-            <button key={p.q} onClick={() => { setQ(p.q); setKat(""); }}
+            <button key={p.judul} onClick={() => { setQ(p.q); setKat(p.kat); }}
               style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.35)", borderRadius: 12, padding: "9px 12px", cursor: "pointer" }}>
               <span style={{ fontSize: 20 }}>{p.emoji}</span>
               <span style={{ flex: 1 }}>
@@ -322,7 +333,7 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
                   <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                     {!!laporMap[i.id] && <span style={{ background: "#7f1d1d", color: "#fecaca", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>💀 Dilaporkan</span>}
                     {i.stabil === "ubah" && <span title="Kebijakan sering berubah" style={{ fontSize: 10 }}>⚠️</span>}
-                    {!seen.includes(i.id) && <span style={{ background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>NEW</span>}
+                    {baruIds.includes(i.id) && <span style={{ background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>NEW</span>}
                   </div>
                   <span className="arr">›</span>
                 </div>

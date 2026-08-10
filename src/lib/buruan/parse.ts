@@ -46,7 +46,7 @@ export function skorMudah(teks: string): number {
   let s = 3;
   if (/no credit card|tanpa kartu|free signup|email|github account|google account/.test(t)) s += 2;
   // hukuman kartu HANYA kalau bukan "no credit card" (kata "no" membatalkan)
-  if (/credit card required|kartu kredit/.test(t) && !/no credit card|tanpa kartu/.test(t)) s -= 2;
+  if (/credit card|kartu kredit/.test(t) && !/no credit card|tanpa kartu/.test(t)) s -= 2;
   if (/trial|limited|waitlist/.test(t)) s -= 1;
   return Math.max(1, Math.min(5, s));
 }
@@ -91,7 +91,7 @@ export function parseAwesomeFreeLlmApis(teks: string): Mentah[] {
         nama = hteks.trim();
         base = "";
       }
-      gratis = ""; base = base || "";
+      gratis = "";
     } else if (/^##\s+/.test(line)) {
       seksi = line.replace(/^##\s+/, "").trim();
     } else if (nama) {
@@ -140,7 +140,6 @@ export function parseFreeForDev(teks: string): Mentah[] {
 export function parseFreeAiTools(teks: string): Mentah[] {
   const out: Mentah[] = [];
   const lines = teks.split(/\r?\n/);
-  let nama = "";
   for (const raw of lines) {
     const line = raw.trim();
     if (line.startsWith("|") && !line.startsWith("| ---") && !line.startsWith("|--")) {
@@ -165,7 +164,7 @@ export function parseFreeAiTools(teks: string): Mentah[] {
       continue;
     }
     const h = line.match(/^#{1,3}\s+(.+)$/);
-    if (h) { nama = h[1]; continue; }
+    if (h) { continue; } // heading — bukan item (nama heading TIDAK dipakai)
     const bullet = line.match(/^[-*]\s+(.+)$/);
     if (!bullet || !/free/i.test(bullet[1])) continue;
     const { nama: nm, url, desc } = pisahLink(bullet[1]);
@@ -189,6 +188,8 @@ export function parseI2vTable(teks: string): Mentah[] {
   let diTabel = false;
   for (const raw of lines) {
     const line = raw.trim();
+    // 🐛 v19.54: tabel lain di file yang sama tidak boleh ikut (reset saat heading baru)
+    if (/^#{1,3}\s+/.test(line)) { diTabel = false; continue; }
     if (line.startsWith("| #") || line.startsWith("|#")) { diTabel = true; continue; }
     if (diTabel && line.startsWith("|") && !line.includes("---")) {
       const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
@@ -263,12 +264,22 @@ export function dedupeMentah(list: Mentah[]): Mentah[] {
   return [...seen.values()];
 }
 
+/** 🐛 v19.54: bersihkan sisa markdown dari teks sumber (mis. "**NEW: **", "`kode`", "*em*") */
+export function bersihMarkdown(s: string): string {
+  return String(s || "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/^\*+|\*+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Ubah Mentah → BuruanItem (id stabil dari nama). */
 export function mentahKeItem(m: Mentah, now = Date.now()): BuruanItem {
   const id = "src_" + m.nama.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40) + "_" + (m.url ? m.url.length : 0);
   return {
-    id, nama: m.nama, url: m.url, kategori: m.kategori, gratis: m.gratis, jenis: m.jenis,
-    syarat: m.syarat, mudah: m.mudah, desc: m.desc, baseUrl: m.baseUrl,
+    id, nama: bersihMarkdown(m.nama), url: m.url, kategori: m.kategori, gratis: bersihMarkdown(m.gratis), jenis: m.jenis,
+    syarat: bersihMarkdown(m.syarat), mudah: m.mudah, desc: bersihMarkdown(m.desc), baseUrl: m.baseUrl,
     integrasi: m.baseUrl ? "api-key" : "ui",
     // 🛡 v19.35.3: item dari sumber eksternal BELUM diverifikasi → "cek"
     stabil: "cek",
