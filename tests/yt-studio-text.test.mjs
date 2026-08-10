@@ -136,5 +136,9 @@ T("fix 2,0 jt → 2000000", P.parseStudioNumber("2,0 jt") === 2000000, String(P.
 T("fix 169.063 (titik ribuan) → 169063", P.parseStudioNumber("169.063") === 169063, String(P.parseStudioNumber("169.063")));
 T("fix 4,8% → 4.8", P.parseStudioNumber("4,8%") === 4.8, String(P.parseStudioNumber("4,8%")));
 
+// 🐛 v19.55.1 FIX: jam di pojok screenshot HP (mis. "01.19") TIDAK boleh jadi views
+T("fix jam tidak jadi views", P.extractStudioText("Penayangan\n01.19\n169,0 rb\nRasio klik-tayang dari tayangan\n4,8%", "long").views === 169000, JSON.stringify(P.extractStudioText("Penayangan\n01.19\n169,0 rb\nRasio klik-tayang dari tayangan\n4,8%", "long")));
+T("fix jam 18.01 juga", P.extractStudioText("18.01\nPenayangan\n169,0 rb", "long").views === 169000, JSON.stringify(P.extractStudioText("18.01\nPenayangan\n169,0 rb", "long")));
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI TEXT PARSER GAGAL`); process.exit(1); }
 console.log("\n🏁 TEXT PARSER SEHAT — paste teks screenshot siap");

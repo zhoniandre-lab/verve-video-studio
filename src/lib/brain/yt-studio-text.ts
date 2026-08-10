@@ -131,10 +131,25 @@ function candidate(lines: string[], i: number): string {
         break;
       }
     }
+    // 🐛 v19.55.1 FIX: skip baris yang mirip JAM (pojok screenshot HP, mis. "01.19" / "18.01")
+    // — dulu baris ini diambil sebagai angka metrik (views jadi "18" dari jam!)
+    // TAPI jangan skip kalau label saat ini = durasi (mis. "Rata-rata durasi tonton 1.47" = 1:47, bukan jam)
+    if (looksLikeClock(next) && !isAvgView(norm(cur)) && !isDuration(norm(cur))) {
+      continue;
+    }
     out.push(next);
     if (hasNumeric(next)) break;
   }
   return out.join(" ").trim();
+}
+
+/** Deteksi teks yang berbentuk jam (HH:MM / HH.MM) — bukan data metrik. */
+function looksLikeClock(s: string): boolean {
+  const t = String(s || "").trim();
+  const m = t.match(/^(\d{1,2})[.:](\d{2})$/);
+  if (!m) return false;
+  const h = Number(m[1]), mm = Number(m[2]);
+  return h >= 0 && h <= 23 && mm <= 59;
 }
 
 function findCandidate(lines: string[], ok: (normalizedLine: string, rawLine: string) => boolean): string {

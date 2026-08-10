@@ -419,6 +419,8 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
 
   const show = (ran || !!views || !!ctr || !!ret30 || !!impressions || !!retPct || !!watchH) && confirmed;
   const adaAngka = !!views || !!ctr || !!ret30 || !!impressions || !!retPct || !!watchH;
+  // 👨‍🏫 v19.55.1: petunjuk jelas kalau angka sudah masuk tapi belum dikonfirmasi
+  const belumKonfirmasi = adaAngka && !confirmed;
   const ringEmoji = kompas.ringkasan.level === "danger" ? "🚨" : kompas.ringkasan.level === "warn" ? "⚠️" : kompas.ringkasan.level === "ok" ? "✅" : "🧭";
 
   return (
@@ -522,20 +524,20 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
 
         <label className="gd-field wide"><span>Judul video (opsional)</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="contoh: IBU Aku Kangen" /></label>
         <div className="gd-grid">
-          {metric("👁 Views", views, setViews, "169000")}
-          {metric("🕐 Waktu tonton (jam)", watchH, setWatchH, "12400")}
-          {metric("🎯 CTR %", ctr, setCtr, "4,8")}
-          {metric("⏱ Retensi %", ret30, setRet30, "61")}
-          {metric("➕ Subscriber +", subs, setSubs, "668")}
-          {metric("🔁 Penonton kembali %", retPct, setRetPct, "3,8")}
+          {metric("👁 Views", views, setViews, "cth: 169000")}
+          {metric("🕐 Waktu tonton (jam)", watchH, setWatchH, "cth: 10000")}
+          {metric("🎯 CTR %", ctr, setCtr, "cth: 4,8")}
+          {metric("⏱ Retensi %", ret30, setRet30, "cth: 61")}
+          {metric("➕ Subscriber +", subs, setSubs, "cth: 668")}
+          {metric("🔁 Penonton kembali %", retPct, setRetPct, "cth: 3,8")}
         </div>
 
         <details className="gd-advanced" style={{ marginTop: 10 }}>
           <summary>➕ Opsional: impressions · durasi · avg view · likes · komentar · umur · sumber tayangan</summary>
           <div className="gd-grid" style={{ marginTop: 8 }}>
-            {metric("Impressions", impressions, setImpressions, "1600000")}
-            {metric("Durasi", dur, setDur, "5:49", "text")}
-            {metric("Avg View", avd, setAvd, "3:33", "text")}
+            {metric("Impressions", impressions, setImpressions, "cth: 1600000")}
+            {metric("Durasi", dur, setDur, "cth: 5:49", "text")}
+            {metric("Avg View", avd, setAvd, "cth: 3:33", "text")}
             {metric("Likes", likes, setLikes, "—")}
             {metric("Comments", comments, setComments, "—")}
             {metric("Umur upload (jam)", age, setAge, "—")}
@@ -570,6 +572,14 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       </div>
 
       {/* ================= LANGKAH 3 · HASIL ================= */}
+      {belumKonfirmasi && !show && (
+        <div className="gd-card" style={{ borderColor: "rgba(94,234,212,.4)", background: "rgba(25,194,184,.06)" }}>
+          <div className="gd-label">LANGKAH 3 · HASIL</div>
+          <p style={{ fontSize: 12.5, color: "#a7f3d0", lineHeight: 1.5, margin: 0 }}>
+            ⬆️ <b>Angka sudah masuk.</b> Sekarang tekan tombol <b style={{ color: "#5eead4" }}>✅ Benar — analisis!</b> di Langkah 2 di atas — biar aku nilai kondisi channel lo.
+          </p>
+        </div>
+      )}
       {show && (
         <div className="gd-card">
           <div className="gd-label">LANGKAH 3 · HASIL</div>
