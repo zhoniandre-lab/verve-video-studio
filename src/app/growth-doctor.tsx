@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { diagnoseGrowth, parseClockToSec, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
-import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, compareSnapshotToBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
+import { diagnoseGrowth, parseClockToSec, kompasChannel, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
+import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
@@ -115,6 +115,10 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [comments, setComments] = useState("");
   const [subs, setSubs] = useState("");
   const [age, setAge] = useState("");
+  // 👨‍🏫 v19.55 ANALIS CHANNEL: metrik inti baru + gerbang konfirmasi
+  const [retPct, setRetPct] = useState(""); // penonton kembali %
+  const [watchH, setWatchH] = useState(""); // waktu tonton (jam)
+  const [confirmed, setConfirmed] = useState(false); // data sudah dikonfirmasi benar
   const [ran, setRan] = useState(false);
   const [ledger, setLedger] = useState<GrowthLedger>(() => emptyGrowthLedger());
   const [savedMsg, setSavedMsg] = useState("");
@@ -197,7 +201,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     if (r.uploadAgeHours != null) setAge(String(r.uploadAgeHours));
     if (r.traffic.length) setTrafficFacts(r.traffic);
     if (r.audience.length) setAudienceFacts(r.audience);
-    setRan(true);
+    setRan(true); setConfirmed(true); // 👨‍🏫 v19.55: user menekan "Pakai" = konfirmasi eksplisit
     setStudioTextMsg(`${replace ? "🧹 Reset + " : "✅ "}Data teks dipakai. ${textCoverageText(r)}`);
   };
   const ocrStudioShot = async (f?: File | null) => {
@@ -234,8 +238,8 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       }
       setStudioText(text);
       setStudioTextResult(out);
-      applyStudioText(out, false);
-      setOcrMsg(out.parsedFields.length ? `✅ Screenshot terbaca otomatis. ${textCoverageText(out)}` : "⚠️ OCR jalan, tapi angka Studio belum dikenali. Coba screenshot lebih dekat/crop bagian analytics.");
+      setConfirmed(false); // 👨‍🏫 v19.55: OCR TIDAK langsung masuk — user konfirmasi dulu ("Pakai")
+      setOcrMsg(out.parsedFields.length ? `✅ Screenshot terbaca. Cek angkanya di bawah, tekan "Pakai" kalau udah bener. ${textCoverageText(out)}` : "⚠️ OCR jalan, tapi angka Studio belum dikenali. Coba screenshot lebih dekat/crop bagian analytics.");
     } catch (e) {
       setOcrMsg(`⚠️ ${e instanceof Error ? e.message : "OCR gagal"}`);
     } finally { setOcrBusy(false); }
@@ -323,7 +327,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       if (m.comments != null) setComments(String(m.comments));
       if (m.subscribersGained != null) setSubs(String(m.subscribersGained));
       if (Array.isArray(j.traffic) && j.traffic.length) setTrafficFacts(j.traffic);
-      setRan(true);
+      setRan(true); setConfirmed(true); // 👨‍🏫 v19.55: data dari API resmi = langsung valid
       const viewNote = m.analyticsViews != null && m.publicViews != null && m.publicViews > m.analyticsViews ? ` Views pakai public terbaru ${m.publicViews} (Analytics finalized ${m.analyticsViews}).` : "";
       const warn = j.warnings?.length ? j.warnings[0] : "Read-only, aman.";
       setYtMsg(`✅ Data analytics masuk.${viewNote} ${warn}`);
@@ -369,13 +373,20 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     uploadAgeHours: num(age),
     trafficSources: trafficFacts,
     audienceFacts,
-  }), [mode, title, symptom, views, impressions, ctr, dur, avd, ret30, likes, comments, subs, age, trafficFacts, audienceFacts]);
+    // 👨‍🏫 v19.55: penonton kembali — manual, atau auto dari fakta audiens ("Penonton baru 96,2%" → kembali = 100-96,2)
+    returningPct: retPct !== ""
+      ? num(retPct)
+      : (() => {
+          const b = (audienceFacts || []).find((x) => /baru|new/i.test(x.label));
+          return b && Number.isFinite(Number(b.pct)) ? Math.max(0, Math.min(100, 100 - Number(b.pct))) : undefined;
+        })(),
+    watchTimeHours: num(watchH),
+  }), [mode, title, symptom, views, impressions, ctr, dur, avd, ret30, likes, comments, subs, age, trafficFacts, audienceFacts, retPct, watchH]);
 
   const dx = useMemo(() => diagnoseGrowth(input), [input]);
+  const kompas = useMemo(() => kompasChannel(input), [input]); // 👨‍🏫 v19.55 kompas warna
   const baseline = useMemo(() => computeGrowthBaseline(ledger.snapshots || [], { mode }), [ledger.snapshots, mode]);
   const currentSnap = useMemo(() => createGrowthSnapshot(input, dx), [input, dx]);
-  const baselineCmp = useMemo(() => compareSnapshotToBaseline(currentSnap, baseline), [currentSnap, baseline]);
-  const show = ran || !!views || !!ctr || !!ret30 || !!impressions;
   const studioTextSummary = studioTextResult ? summarizeStudioText(studioTextResult) : null;
   const saveSnapshot = () => {
     if (!input.views && !input.impressions && !input.ctrPct) { setSavedMsg("Isi minimal views/impressions/CTR dulu"); return; }
@@ -406,48 +417,47 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     </label>
   );
 
+  const show = (ran || !!views || !!ctr || !!ret30 || !!impressions || !!retPct || !!watchH) && confirmed;
+  const adaAngka = !!views || !!ctr || !!ret30 || !!impressions || !!retPct || !!watchH;
+  const ringEmoji = kompas.ringkasan.level === "danger" ? "🚨" : kompas.ringkasan.level === "warn" ? "⚠️" : kompas.ringkasan.level === "ok" ? "✅" : "🧭";
+
   return (
     <div className="gd-wrap">
       <div className="gd-top">
         <button onClick={onExit}>×</button>
-        <div><b>🩺 Dokter Channel</b><span>Kenapa video sepi? Aku baca gejalanya & kasih tindakan.</span></div>
+        <div><b>👨‍🏫 Analis Channel</b><span>Baca data channel → jelasin → kasih langkah. Kayak konsultan.</span></div>
       </div>
 
-      <div className="gd-hero">
-        <i />
-        <b>Growth Doctor</b>
-        <p>Bukan cuma analytics. VERVE menjawab: <strong>Kenapa</strong>, <strong>Kok bisa</strong>, <strong>Seharusnya</strong>, lalu kasih aksi.</p>
-      </div>
-
+      {/* ================= LANGKAH 1 · MASUKKAN DATA ================= */}
       <div className="gd-card">
-        <div className="gd-label">MODE VIDEO</div>
-        <div className="gd-seg">
-          {([["long", "YouTube Long"], ["shorts", "Shorts"], ["reels", "Reels/TikTok"]] as [GrowthMode, string][]).map(([id, lb]) => (
-            <button key={id} className={mode === id ? "on" : ""} onClick={() => setMode(id)}>{lb}</button>
-          ))}
-        </div>
-      </div>
+        <div className="gd-label">LANGKAH 1 · MASUKKAN DATA</div>
+        <p style={{ fontSize: 11.5, color: "#c7d2e5", lineHeight: 1.5, marginBottom: 10 }}>Pilih cara termudah. Semua angka ditampilkan ulang buat lo konfirmasi — <b>nggak ada yang asal masuk</b>.</p>
 
-      <div className="gd-card">
-        <div className="gd-label">GEJALA CEPAT</div>
-        <div className="gd-chips">
-          {["video sepi", "klik rendah", "keluar awal", "view turun", "shorts mentok", "judul lemah", "thumbnail lemah"].map((s) => (
-            <button key={s} className={symptom === s ? "on" : ""} onClick={() => setSymptom(s)}>{s}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="gd-card gd-youtube">
-        <div className="gd-label">🔐 YOUTUBE RESMI — READ ONLY</div>
-        <p>Aman untuk channel: VERVE cuma minta izin baca data analytics. Tidak ada scope upload, edit, hapus, atau komentar.</p>
+        {/* --- Pintu A: YouTube resmi (paling akurat) --- */}
         {!ytStatus?.configured ? (
           <div className="gd-ytnote warn">Belum aktif di server: {(ytStatus?.missing || ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_OAUTH_COOKIE_SECRET"]).join(", ")}</div>
         ) : ytStatus.connected ? (
           <div className="gd-ytconnected">
             <b>✅ Terhubung{ytStatus.channel?.title ? `: ${ytStatus.channel.title}` : ""}</b>
-            <span>Mode read-only · YouTube Analytics API resmi</span>
-            <div className="gd-textactions"><button onClick={loadYtVideos} disabled={ytBusy}>📺 Muat Video</button><button className="muted" onClick={disconnectYt} disabled={ytBusy}>Putus</button></div>
-            <div className="gd-yturl"><input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="Tempel URL video YouTube" /><button onClick={applyYoutubeUrl} disabled={ytBusy}>Baca URL</button></div>
+            <span>API resmi read-only — angka mustahil salah</span>
+            <div className="gd-textactions">
+              <button onClick={loadYtVideos} disabled={ytBusy}>📺 Muat Video</button>
+              <button className="muted" onClick={disconnectYt} disabled={ytBusy}>Putus</button>
+            </div>
+            <div className="gd-yturl">
+              <input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="Tempel URL video YouTube" />
+              <button onClick={applyYoutubeUrl} disabled={ytBusy}>Baca URL</button>
+            </div>
+            {!!ytVideos.length && (
+              <div className="gd-ytvideos">
+                {ytVideos.slice(0, 6).map((v) => (
+                  <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy}>
+                    <b>{v.title}</b>
+                    <span>{v.viewCount?.toLocaleString("id-ID") || 0} views · {v.likeCount ?? "?"} 👍 · {v.commentCount ?? "?"} 💬</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="gd-textactions" style={{ gridTemplateColumns: "1fr" }}>
               <button onClick={syncBrainDoctor} disabled={brainSyncBusy} style={{ borderColor: "#19c2b877", background: "#04212b", color: "#a5f3fc" }}>
                 {brainSyncBusy ? "⏳ Otak sedang belajar..." : "🧠 Sync Otak Belajar (pola judul ikut update)"}
@@ -457,65 +467,183 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             {!!brainSyncMsg && <em>{brainSyncMsg}</em>}
           </div>
         ) : (
-          <button className="gd-ytconnect" onClick={() => { location.href = "/api/youtube/oauth/start"; }}>🔗 Hubungkan YouTube</button>
+          <button className="gd-ytconnect" onClick={() => { location.href = "/api/youtube/oauth/start"; }}>
+            🔗 Hubungkan YouTube
+            <small style={{ display: "block", fontSize: 10, opacity: .75, marginTop: 3 }}>paling akurat — data dari API resmi, otomatis</small>
+          </button>
         )}
         {!!ytMsg && <em>{ytMsg}</em>}
-        {!!ytVideos.length && (
-          <div className="gd-ytvideos">
-            {ytVideos.slice(0, 8).map((v) => (
-              <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy}>
-                <b>{v.title}</b>
-                <span>{v.viewCount?.toLocaleString("id-ID") || 0} views · {v.likeCount ?? "?"} likes · {v.commentCount ?? "?"} comments</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
 
-      <div className="gd-card gd-ocrbox">
-        <div className="gd-label">⚡ BACA SCREENSHOT OTOMATIS</div>
-        <p>Upload screenshot YouTube Studio apa saja. VERVE akan OCR, ambil angka yang terbaca, lalu isi form otomatis. Bisa upload beberapa screenshot satu per satu.</p>
-        <label className={`gd-ocrpick ${ocrBusy ? "busy" : ""}`}>{ocrBusy ? "⏳ Membaca..." : "📸 Upload Screenshot"}
-          <input type="file" accept="image/*" hidden disabled={ocrBusy} onChange={(e) => { ocrStudioShot(e.target.files?.[0]); e.currentTarget.value = ""; }} />
-        </label>
-        {ocrPreview ? <img className="gd-ocrpreview" src={ocrPreview} alt="preview screenshot" /> : null}
-        {!!ocrMsg && <em>{ocrMsg}</em>}
-        {studioTextResult && studioTextSummary && (
-          <div className="gd-textpreview">
-            <b>Aku membaca:</b>
-            <div className="gd-textmetrics">
-              <span>Views <strong>{studioTextResult.views ?? "?"}</strong></span>
-              <span>Impr <strong>{studioTextResult.impressions ?? "?"}</strong></span>
-              <span>CTR <strong>{studioTextResult.ctrPct ?? "?"}%</strong></span>
-              <span>Avg <strong>{studioTextResult.avgViewSec != null ? secToClock(studioTextResult.avgViewSec) : "?"}</strong></span>
-              <span>Watch <strong>{studioTextResult.watchTimeHours != null ? `${studioTextResult.watchTimeHours} jam` : "?"}</strong></span>
-              <span>Ret <strong>{studioTextResult.retention30Pct ?? "?"}%</strong></span>
-              <span>Dur <strong>{studioTextResult.durationSec != null ? secToClock(studioTextResult.durationSec) : "?"}</strong></span>
+        {/* --- Pintu B: screenshot OCR --- */}
+        <div style={{ marginTop: 12 }}>
+          <label className={`gd-ocrpick ${ocrBusy ? "busy" : ""}`} style={{ display: "block", textAlign: "center" }}>
+            {ocrBusy ? "⏳ Membaca..." : "📸 Upload Screenshot YouTube Studio"}
+            <input type="file" accept="image/*" hidden disabled={ocrBusy} onChange={(e) => { ocrStudioShot(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+          </label>
+          {ocrPreview ? <img className="gd-ocrpreview" src={ocrPreview} alt="preview screenshot" /> : null}
+          {!!ocrMsg && <em>{ocrMsg}</em>}
+          {studioTextResult && studioTextSummary && (
+            <div className="gd-textpreview">
+              <b>Aku membaca:</b>
+              <div className="gd-textmetrics">
+                <span>Views <strong>{studioTextResult.views ?? "?"}</strong></span>
+                <span>Impr <strong>{studioTextResult.impressions ?? "?"}</strong></span>
+                <span>CTR <strong>{studioTextResult.ctrPct ?? "?"}%</strong></span>
+                <span>Avg <strong>{studioTextResult.avgViewSec != null ? secToClock(studioTextResult.avgViewSec) : "?"}</strong></span>
+                <span>Watch <strong>{studioTextResult.watchTimeHours != null ? `${studioTextResult.watchTimeHours} jam` : "?"}</strong></span>
+                <span>Ret <strong>{studioTextResult.retention30Pct ?? "?"}%</strong></span>
+                <span>Dur <strong>{studioTextResult.durationSec != null ? secToClock(studioTextResult.durationSec) : "?"}</strong></span>
+              </div>
+              <small>Terbaca: {studioTextSummary.found.join(", ") || "belum ada"}</small>
+              <small>Belum ada: {studioTextSummary.missing.join(", ") || "lengkap"}</small>
+              {!!studioTextSummary.extra.length && <small>Ekstra: {studioTextSummary.extra.slice(0, 6).join(" · ")}</small>}
+              <div className="gd-textactions">
+                <button onClick={() => applyStudioText(studioTextResult)}>✅ Pakai (angka udah bener)</button>
+                <button className="muted" onClick={() => applyStudioText(studioTextResult, true)}>🧹 Reset + Pakai</button>
+              </div>
             </div>
-            <small>Terbaca: {studioTextSummary.found.join(", ") || "belum ada"}</small>
-            <small>Belum ada: {studioTextSummary.missing.join(", ") || "lengkap"}</small>
-            {!!studioTextSummary.extra.length && <small>Ekstra: {studioTextSummary.extra.slice(0, 6).join(" · ")}</small>}
-            {studioTextResult.notes.map((n, i) => <small key={i}>Catatan: {n}</small>)}
+          )}
+          <details className="gd-textedit" style={{ marginTop: 8 }}>
+            <summary style={{ fontSize: 11, color: "#bfdbfe" }}>✏️ Koreksi teks OCR / paste manual</summary>
+            <textarea value={studioText} onChange={(e) => setStudioText(e.target.value)} placeholder={"Kalau OCR kurang rapi, edit/paste teks di sini lalu tekan Baca Ulang."} />
             <div className="gd-textactions">
-              <button onClick={() => applyStudioText(studioTextResult)}>✅ Pakai/Gabung</button>
-              <button className="muted" onClick={() => applyStudioText(studioTextResult, true)}>🧹 Reset + Pakai</button>
+              <button onClick={() => { const out = parseStudioTextBox(); if (out) applyStudioText(out); }}>🔎 Baca Ulang</button>
+              <button className="muted" onClick={() => { setStudioText(""); setStudioTextResult(null); setStudioTextMsg(""); setOcrMsg(""); }}>hapus teks</button>
+            </div>
+            {!!studioTextMsg && <em>{studioTextMsg}</em>}
+          </details>
+        </div>
+      </div>
+
+      {/* ================= LANGKAH 2 · ISI / KONFIRMASI ================= */}
+      <div className="gd-card">
+        <div className="gd-label">LANGKAH 2 · ISI / KONFIRMASI ANGKA</div>
+        <p style={{ fontSize: 11.5, color: "#c7d2e5", lineHeight: 1.5, marginBottom: 10 }}>6 angka inti cukup. Yang kosong akan gue tandai — analisis tetap jalan tapi kurang tajam.</p>
+
+        <label className="gd-field wide"><span>Judul video (opsional)</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="contoh: IBU Aku Kangen" /></label>
+        <div className="gd-grid">
+          {metric("👁 Views", views, setViews, "169000")}
+          {metric("🕐 Waktu tonton (jam)", watchH, setWatchH, "12400")}
+          {metric("🎯 CTR %", ctr, setCtr, "4,8")}
+          {metric("⏱ Retensi %", ret30, setRet30, "61")}
+          {metric("➕ Subscriber +", subs, setSubs, "668")}
+          {metric("🔁 Penonton kembali %", retPct, setRetPct, "3,8")}
+        </div>
+
+        <details className="gd-advanced" style={{ marginTop: 10 }}>
+          <summary>➕ Opsional: impressions · durasi · avg view · likes · komentar · umur · sumber tayangan</summary>
+          <div className="gd-grid" style={{ marginTop: 8 }}>
+            {metric("Impressions", impressions, setImpressions, "1600000")}
+            {metric("Durasi", dur, setDur, "5:49", "text")}
+            {metric("Avg View", avd, setAvd, "3:33", "text")}
+            {metric("Likes", likes, setLikes, "—")}
+            {metric("Comments", comments, setComments, "—")}
+            {metric("Umur upload (jam)", age, setAge, "—")}
+          </div>
+          {!!(trafficFacts.length || audienceFacts.length) && (
+            <div className="gd-extra-facts" style={{ marginTop: 8 }}>
+              {trafficFacts.slice(0, 4).map((x) => <span key={`t-${x.key}`}>Traffic: {x.label} {x.pct}%</span>)}
+              {audienceFacts.slice(0, 4).map((x, i) => <span key={`a-${x.key}-${i}`}>Audiens: {x.label} {x.pct}%</span>)}
+            </div>
+          )}
+        </details>
+
+        {/* 🧾 Gerbang konfirmasi — anti angka ngawur */}
+        {adaAngka && !confirmed && (
+          <div style={{ marginTop: 12, border: "1px solid rgba(94,234,212,.45)", borderRadius: 16, padding: 11, background: "rgba(25,194,184,.07)" }}>
+            <b style={{ fontSize: 12, color: "#5eead4" }}>🧾 Yang aku baca:</b>
+            <div style={{ fontSize: 12, color: "#e2e8f0", margin: "6px 0", lineHeight: 1.6 }}>
+              {views ? <>👁 Views: <b>{Number(views).toLocaleString("id-ID")}</b><br /></> : null}
+              {watchH ? <>🕐 Waktu tonton: <b>{Number(watchH).toLocaleString("id-ID")} jam</b><br /></> : null}
+              {ctr ? <>🎯 CTR: <b>{ctr}%</b><br /></> : null}
+              {ret30 ? <>⏱ Retensi: <b>{ret30}%</b><br /></> : null}
+              {subs ? <>➕ Subscriber +: <b>{Number(subs).toLocaleString("id-ID")}</b><br /></> : null}
+              {retPct ? <>🔁 Penonton kembali: <b>{retPct}%</b></> : null}
+            </div>
+            <div className="gd-textactions">
+              <button onClick={() => { setConfirmed(true); setRan(true); }}>✅ Benar — analisis!</button>
+              <button className="muted" onClick={() => setConfirmed(false)}>✏️ Perbaiki dulu</button>
             </div>
           </div>
         )}
-        <details className="gd-textedit">
-          <summary>✏️ Koreksi teks OCR / paste manual</summary>
-          <textarea value={studioText} onChange={(e) => setStudioText(e.target.value)} placeholder={"Kalau OCR kurang rapi, edit/paste teks di sini lalu tekan Baca Ulang."} />
-          <div className="gd-textactions">
-            <button onClick={() => { const out = parseStudioTextBox(); if (out) applyStudioText(out); }}>🔎 Baca Ulang</button>
-            <button className="muted" onClick={() => { setStudioText(""); setStudioTextResult(null); setStudioTextMsg(""); setOcrMsg(""); }}>hapus teks</button>
-          </div>
-          {!!studioTextMsg && <em>{studioTextMsg}</em>}
-        </details>
+        <button className="gd-diagnose" onClick={() => { setConfirmed(true); setRan(true); }}>🩺 Analisis Sekarang</button>
       </div>
 
-      <details className="gd-card gd-csvbox gd-advanced">
-        <summary>📥 Opsional: CSV YouTube Studio</summary>
-        <p>Kalau bro punya CSV dari Studio desktop/laptop, upload di sini. Mode utama sekarang cukup upload screenshot otomatis.</p>
+      {/* ================= LANGKAH 3 · HASIL ================= */}
+      {show && (
+        <div className="gd-card">
+          <div className="gd-label">LANGKAH 3 · HASIL</div>
+          <div className={`gd-status ${kompas.ringkasan.level === "info" ? "" : kompas.ringkasan.level}`} style={kompas.ringkasan.level === "info" ? { background: "#101622", borderColor: "#ffffff25" } : undefined}>
+            <span>{ringEmoji}</span>
+            <div><b>{kompas.ringkasan.title}</b><p>{kompas.ringkasan.text}</p></div>
+          </div>
+
+          {kompas.items.length > 0 && (
+            <>
+              <div className="gd-label" style={{ marginTop: 14 }}>🧭 KOMPAS METRIK</div>
+              <div className="gd-scoregrid">
+                {kompas.items.map((k) => (
+                  <div className={`gd-score ${k.level === "info" ? "" : k.level}`} key={k.id} style={k.level === "info" ? { borderColor: "#ffffff20" } : undefined}>
+                    <span>{k.label}</span><b>{k.value}</b><em>{k.note}</em>
+                    <i style={{ width: k.level === "ok" ? "100%" : k.level === "warn" ? "55%" : "25%" }} />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <details open style={{ marginTop: 12 }}>
+            <summary style={{ fontSize: 11, fontWeight: 950, color: "#bfdbfe", cursor: "pointer", listStyle: "none" }}>🔬 ANALISIS LENGKAP (Kenapa · Kok Bisa · Seharusnya)</summary>
+            <div className={`gd-proof ${dx.confidence.level}`} style={{ marginTop: 8 }}>
+              <div className="head"><b>Bukti & Keyakinan</b><span>{dx.confidence.level.toUpperCase()} · {dx.confidence.score}/100</span></div>
+              <p>{dx.confidence.reason}</p>
+              <details>
+                <summary>Fakta yang dipakai ({dx.facts.length || 0})</summary>
+                {(dx.facts.length ? dx.facts : ["Belum ada fakta metrik yang cukup."]).map((f, i) => <em key={i}>• {f}</em>)}
+              </details>
+              <details>
+                <summary>Data yang masih kurang</summary>
+                {dx.missingData.slice(0, 8).map((m, i) => <em key={i}>• {m}</em>)}
+              </details>
+            </div>
+            <div className="gd-kkk">
+              <section><b>❓ Kenapa</b>{dx.kenapa.map((x, i) => <p key={i}>{x}</p>)}</section>
+              <section><b>🧠 Kok Bisa</b>{dx.kokBisa.map((x, i) => <p key={i}>{x}</p>)}</section>
+              <section><b>🎯 Seharusnya</b>{dx.seharusnya.map((x, i) => <p key={i}>{x}</p>)}</section>
+            </div>
+            <div className="gd-actions">
+              <div className="gd-label">AKSI CEPAT</div>
+              {dx.actions.map((a) => (
+                <button key={a.id} onClick={() => copy(`${a.title}\n${a.detail}`)}>
+                  <b>{a.cta}</b><span>{a.detail}</span>
+                </button>
+              ))}
+            </div>
+            <button className="gd-copy" onClick={() => copy(dx.planText)}>📋 Salin Rencana Aksi Lengkap</button>
+          </details>
+        </div>
+      )}
+
+      {/* ================= LANJUTAN (jarang dipakai) ================= */}
+      <details className="gd-card gd-advanced">
+        <summary>⚙️ Lanjutan: mode video · gejala · baseline · eksperimen · CSV</summary>
+
+        <div className="gd-label" style={{ marginTop: 8 }}>MODE VIDEO</div>
+        <div className="gd-seg">
+          {([["long", "YouTube Long"], ["shorts", "Shorts"], ["reels", "Reels/TikTok"]] as [GrowthMode, string][]).map(([id, lb]) => (
+            <button key={id} className={mode === id ? "on" : ""} onClick={() => setMode(id)}>{lb}</button>
+          ))}
+        </div>
+
+        <div className="gd-label" style={{ marginTop: 12 }}>GEJALA CEPAT</div>
+        <div className="gd-chips">
+          {["video sepi", "klik rendah", "keluar awal", "view turun", "shorts mentok", "judul lemah", "thumbnail lemah"].map((s) => (
+            <button key={s} className={symptom === s ? "on" : ""} onClick={() => setSymptom(s)}>{s}</button>
+          ))}
+        </div>
+
+        <div className="gd-label" style={{ marginTop: 12 }}>CSV (opsional — desktop)</div>
+        <p style={{ fontSize: 11, color: "#94a3b8" }}>Kalau lo punya file CSV dari YouTube Studio, upload di sini.</p>
         <label className="gd-csvpick">📂 Import CSV
           <input type="file" accept=".csv,text/csv" hidden onChange={(e) => { importCsv(e.target.files?.[0]); e.currentTarget.value = ""; }} />
         </label>
@@ -523,56 +651,21 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
         {!!csvRows.length && (
           <div className="gd-csvrows">
             <button className="save" onClick={saveCsvBaseline}>📊 Simpan {csvRows.length} baris jadi baseline</button>
-            {csvRows.slice(0, 8).map((r) => {
-              const c = summarizeStudioRow(r);
-              return (
-                <button key={`${r.rowIndex}-${r.title}`} onClick={() => applyRow(r)}>
-                  <b>{r.title}</b>
-                  <span>Views {r.views ?? "?"} · Impr {r.impressions ?? "?"} · CTR {r.ctrPct ?? "?"}% · Ret {r.retention30Pct ?? "?"}%</span>
-                  <small>CSV isi: {c.found.join(", ") || "belum ada"}</small>
-                </button>
-              );
-            })}
+            {csvRows.slice(0, 5).map((r) => (
+              <button key={`${r.rowIndex}-${r.title}`} onClick={() => applyRow(r)}>
+                <b>{r.title}</b>
+                <span>Views {r.views ?? "?"} · Impr {r.impressions ?? "?"} · CTR {r.ctrPct ?? "?"}% · Ret {r.retention30Pct ?? "?"}%</span>
+              </button>
+            ))}
           </div>
         )}
-      </details>
 
-      <div className="gd-card">
-        <div className="gd-label">DATA CEPAT</div>
-        <label className="gd-field wide"><span>Judul video</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="contoh: Doa Ibu, Warisan Terindah" /></label>
-        <div className="gd-grid">
-          {metric("Views", views, setViews, "120")}
-          {metric("Impressions", impressions, setImpressions, "—")}
-          {metric("CTR %", ctr, setCtr, "—")}
-          {metric("Durasi", dur, setDur, "—", "text")}
-          {metric("Avg View", avd, setAvd, "—", "text")}
-          {metric("Retention/Avg %", ret30, setRet30, "—")}
-          {metric("Likes", likes, setLikes, "—")}
-          {metric("Comments", comments, setComments, "—")}
-          {metric("Subs +", subs, setSubs, "—")}
-          {metric("Umur upload (jam)", age, setAge, "—")}
-        </div>
-        {!!(trafficFacts.length || audienceFacts.length) && (
-          <div className="gd-extra-facts">
-            {trafficFacts.slice(0, 4).map((x) => <span key={`t-${x.key}`}>Traffic: {x.label} {x.pct}%</span>)}
-            {audienceFacts.slice(0, 4).map((x, i) => <span key={`a-${x.key}-${i}`}>Audiens: {x.label} {x.pct}%</span>)}
-          </div>
-        )}
-        <button className="gd-diagnose" onClick={() => setRan(true)}>🩺 Diagnosa Sekarang</button>
-      </div>
-
-      <div className="gd-ledger">
-        <div className="gd-label">BASELINE CHANNEL</div>
+        <div className="gd-label" style={{ marginTop: 12 }}>BASELINE & EKSPERIMEN</div>
         <div className="gd-basegrid">
           <span><b>{baseline.sample}</b><em>snapshot</em></span>
           <span><b>{baseline.ctrMedian ?? "?"}%</b><em>CTR median</em></span>
           <span><b>{baseline.retention30Median ?? "?"}%</b><em>Ret30 median</em></span>
           <span><b>{baseline.avdPctMedian ?? "?"}%</b><em>AVD median</em></span>
-        </div>
-        <div className="gd-indexes">
-          <i>CTR index: {baselineCmp.ctrIndex ?? "?"}×</i>
-          <i>Hook index: {baselineCmp.retentionIndex ?? "?"}×</i>
-          <i>Eng index: {baselineCmp.engagementIndex ?? "?"}×</i>
         </div>
         <div className="gd-ledger-actions">
           <button onClick={saveSnapshot}>💾 Simpan Snapshot</button>
@@ -580,10 +673,9 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           <button className="danger" onClick={clearLedger}>🧹 Reset Baseline</button>
         </div>
         {!!savedMsg && <p>{savedMsg}</p>}
-        {!!ledger.experiments.length && <small>Eksperimen aktif: {ledger.experiments.filter(e => e.status === "pending").length} pending · total {ledger.experiments.length}</small>}
         {!!ledger.experiments.length && (
           <div className="gd-exp-list">
-            {ledger.experiments.slice(0, 5).map((e) => (
+            {ledger.experiments.slice(0, 3).map((e) => (
               <div className={`gd-exp ${e.status}`} key={e.id}>
                 <b>{statusEmoji(e.status)} {e.videoTitle}</b>
                 <span>{e.issueCode} · target {e.targetMetric} ≥ {e.targetValue}</span>
@@ -593,58 +685,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             ))}
           </div>
         )}
-      </div>
-
-      {show && (
-        <div className="gd-result">
-          <div className={`gd-status ${dx.status.level}`}>
-            <span>{dx.status.level === "danger" ? "🚨" : dx.status.level === "warn" ? "⚠️" : "✅"}</span>
-            <div><b>{dx.status.title}</b><p>{dx.status.summary}</p></div>
-          </div>
-
-          <div className={`gd-proof ${dx.confidence.level}`}>
-            <div className="head"><b>🔬 Bukti & Keyakinan</b><span>{dx.confidence.level.toUpperCase()} · {dx.confidence.score}/100</span></div>
-            <p>{dx.confidence.reason}</p>
-            <details open>
-              <summary>Fakta yang dipakai ({dx.facts.length || 0})</summary>
-              {(dx.facts.length ? dx.facts : ["Belum ada fakta metrik yang cukup."]).map((f, i) => <em key={i}>• {f}</em>)}
-            </details>
-            <details>
-              <summary>Issue + bukti ({dx.issues.length || 0})</summary>
-              {dx.issues.map((iss) => <em key={iss.code}>• {iss.code} [{iss.confidence}] — {iss.evidence.join("; ")}</em>)}
-            </details>
-            <details>
-              <summary>Data yang masih kurang</summary>
-              {dx.missingData.slice(0, 8).map((m, i) => <em key={i}>• {m}</em>)}
-            </details>
-          </div>
-
-          <div className="gd-scoregrid">
-            {dx.scores.map((s) => (
-              <div className={`gd-score ${s.level}`} key={s.id}>
-                <span>{s.label}</span><b>{s.value}</b><em>{s.note}</em>
-                <i style={{ width: `${s.value}%` }} />
-              </div>
-            ))}
-          </div>
-
-          <div className="gd-kkk">
-            <section><b>❓ Kenapa</b>{dx.kenapa.map((x, i) => <p key={i}>{x}</p>)}</section>
-            <section><b>🧠 Kok Bisa</b>{dx.kokBisa.map((x, i) => <p key={i}>{x}</p>)}</section>
-            <section><b>🎯 Seharusnya</b>{dx.seharusnya.map((x, i) => <p key={i}>{x}</p>)}</section>
-          </div>
-
-          <div className="gd-actions">
-            <div className="gd-label">AKSI CEPAT</div>
-            {dx.actions.map((a) => (
-              <button key={a.id} onClick={() => copy(`${a.title}\n${a.detail}`)}>
-                <b>{a.cta}</b><span>{a.detail}</span>
-              </button>
-            ))}
-          </div>
-          <button className="gd-copy" onClick={() => copy(dx.planText)}>📋 Salin Rencana Aksi Lengkap</button>
-        </div>
-      )}
+      </details>
     </div>
   );
 }

@@ -127,5 +127,14 @@ Penghasil...`;
   T("screenshot HP performa video mobile 144 views", r.views === 144 && r.ctrPct === 3.6 && r.avgViewSec === 123 && r.durationSec === 335 && r.uploadAgeHours === 93, JSON.stringify(r));
 }
 
+// 🐛 v19.55 FIX BUG: "169,063 rb" (OCR angka dengan pemisah ribuan + satuan rb) TIDAK boleh jadi 169.063.000
+T("fix 169,063 rb → 169063 (bukan 169 juta)", P.parseStudioNumber("169,063 rb") === 169063, String(P.parseStudioNumber("169,063 rb")));
+T("fix 169 rb → 169000", P.parseStudioNumber("169 rb") === 169000, String(P.parseStudioNumber("169 rb")));
+T("fix 166,1 rb → 166100", P.parseStudioNumber("166,1 rb") === 166100, String(P.parseStudioNumber("166,1 rb")));
+T("fix 12,4 rb → 12400", P.parseStudioNumber("12,4 rb") === 12400, String(P.parseStudioNumber("12,4 rb")));
+T("fix 2,0 jt → 2000000", P.parseStudioNumber("2,0 jt") === 2000000, String(P.parseStudioNumber("2,0 jt")));
+T("fix 169.063 (titik ribuan) → 169063", P.parseStudioNumber("169.063") === 169063, String(P.parseStudioNumber("169.063")));
+T("fix 4,8% → 4.8", P.parseStudioNumber("4,8%") === 4.8, String(P.parseStudioNumber("4,8%")));
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI TEXT PARSER GAGAL`); process.exit(1); }
 console.log("\n🏁 TEXT PARSER SEHAT — paste teks screenshot siap");

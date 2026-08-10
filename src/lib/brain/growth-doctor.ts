@@ -24,6 +24,10 @@ export type GrowthInput = {
   trafficSources?: GrowthTrafficSource[];
   audienceFacts?: GrowthAudienceFact[];
   symptom?: string;
+  /** 👨‍🏫 v19.55 ANALIS CHANNEL: % penonton yang BALIK (dari tab Audiens) */
+  returningPct?: number;
+  /** 👨‍🏫 v19.55: waktu tonton total (jam) — biasanya rentang 28 hari */
+  watchTimeHours?: number;
 };
 
 export type GrowthScore = { id: string; label: string; value: number; level: GrowthLevel; note: string };
@@ -288,4 +292,93 @@ export function diagnoseGrowth(input: GrowthInput): GrowthDiagnosis {
     actions,
     planText,
   };
+}
+
+/* =====================================================================
+   👨‍🏫 v19.55 ANALIS CHANNEL — KOMPAS WARNA
+   Verdict per metrik (hijau/kuning/merah) + ringkasan kondisi channel.
+   Matematika PASTI (nggak bisa bohong), ambang dari sesi konsultasi:
+   CTR ≥5% 🟢 · Retensi ≥60% 🟢 · Penonton kembali ≥15% 🟢 · Konversi ≥2% 🟢
+   ===================================================================== */
+export type KompasLevel = "ok" | "warn" | "danger" | "info";
+export type KompasItem = { id: string; label: string; value: string; level: KompasLevel; note: string };
+export type KompasResult = { items: KompasItem[]; ringkasan: { level: KompasLevel; title: string; text: string } };
+
+export function kompasChannel(input: GrowthInput): KompasResult {
+  const items: KompasItem[] = [];
+  const ctr = input.ctrPct != null && input.ctrPct > 0
+    ? input.ctrPct
+    : input.impressions && input.views && input.impressions > 0
+      ? (input.views / input.impressions) * 100
+      : null;
+
+  if (ctr != null) {
+    const lvl: KompasLevel = ctr >= 5 ? "ok" : ctr >= 3 ? "warn" : "danger";
+    items.push({
+      id: "ctr", label: "🎯 CTR", value: `${pct(ctr)}%`, level: lvl,
+      note: lvl === "ok" ? "Packaging juara — thumbnail + judul menang di feed"
+        : lvl === "warn" ? "Thumbnail perlu dievaluasi (target 5%+)"
+        : "Thumbnail kalah di feed — ganti thumbnail/judul",
+    });
+  }
+
+  const ret = input.retention30Pct != null ? input.retention30Pct : null;
+  if (ret != null) {
+    const lvl: KompasLevel = ret >= 60 ? "ok" : ret >= 40 ? "warn" : "danger";
+    items.push({
+      id: "ret", label: "⏱ Retensi", value: `${pct(ret)}%`, level: lvl,
+      note: lvl === "ok" ? "Isi disukai — top 10% long-form, pertahankan formula"
+        : lvl === "warn" ? "Masih layak disebar — periksa hook 3 detik"
+        : "Hook/perpanjangan bermasalah — bikin hook lebih cepat",
+    });
+  }
+
+  if (input.views && input.subs != null && input.views > 0) {
+    const conv = (input.subs / input.views) * 100;
+    const lvl: KompasLevel = conv >= 2 ? "ok" : conv >= 1 ? "warn" : "danger";
+    items.push({
+      id: "conv", label: "➕ Konversi Sub", value: `${pct(conv)}%`, level: lvl,
+      note: lvl === "ok" ? "CTA subscribe jalan — pertahankan"
+        : lvl === "warn" ? "CTA perlu diperkuat (target 2%)"
+        : "CTA lemah — minta subscribe di detik 10–20",
+    });
+  }
+
+  if (input.returningPct != null) {
+    const r = input.returningPct;
+    const lvl: KompasLevel = r >= 15 ? "ok" : r >= 8 ? "warn" : "danger";
+    items.push({
+      id: "retv", label: "🔁 Penonton Kembali", value: `${pct(r)}%`, level: lvl,
+      note: lvl === "ok" ? "Mulai jadi komunitas — luar biasa"
+        : lvl === "warn" ? "Masih singgahan — pasang end screen + CTA"
+        : "Orang cuma singgah — end screen + CTA + playlist (target 15%)",
+    });
+  }
+
+  if (input.watchTimeHours != null && input.watchTimeHours > 0) {
+    const perHari = input.watchTimeHours / 28; // asumsi rentang 28 hari
+    const lvl: KompasLevel = perHari >= 11 ? "ok" : perHari >= 4 ? "warn" : "danger";
+    items.push({
+      id: "wt", label: "🕐 Waktu Tonton", value: `${Math.round(input.watchTimeHours)} jam/28hr`, level: lvl,
+      note: lvl === "ok" ? "Jauh di atas ambang monetisasi (11 jam/hari)"
+        : lvl === "warn" ? "Mendekati ambang monetisasi (11 jam/hari)"
+        : "Masih jauh dari ambang monetisasi (11 jam/hari)",
+    });
+  }
+
+  const okCount = items.filter((i) => i.level === "ok").length;
+  const dangerCount = items.filter((i) => i.level === "danger").length;
+  let ringkasan: KompasResult["ringkasan"];
+  if (!items.length) {
+    ringkasan = { level: "info", title: "Belum ada data", text: "Masukkan data dulu biar aku nilai kondisi channel lo." };
+  } else if (dangerCount >= 2 && okCount <= 1) {
+    ringkasan = { level: "danger", title: "🔴 CHANNEL PERLU DIBENAHI", text: "Banyak titik merah. Kerjakan urut: CTA + end screen (penonton kembali), lalu thumbnail/judul." };
+  } else if (dangerCount >= 1) {
+    ringkasan = { level: "warn", title: "🟡 ADA YANG PERLU DIPERBAIKI", text: "Sebagian jalan — titik hijau pertahankan, titik merah dibenahi dulu (CTA/end screen, lalu thumbnail)." };
+  } else if (okCount >= 3) {
+    ringkasan = { level: "ok", title: "🟢 CHANNEL SEHAT", text: "Packaging & isi jalan. Pertahankan formula, perbanyak varian, sambungkan dengan end screen & playlist." };
+  } else {
+    ringkasan = { level: "warn", title: "🟡 CUKUP SEHAT", text: "Arahnya bagus. Lengkapi data (retensi, penonton kembali) biar analisis makin tajam." };
+  }
+  return { items, ringkasan };
 }

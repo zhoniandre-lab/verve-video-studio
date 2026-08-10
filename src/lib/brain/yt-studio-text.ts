@@ -63,14 +63,16 @@ const norm = (s: string) => stripBom(s)
 
 function round1(n: number): number { return Math.round(n * 10) / 10; }
 
-function parseStudioNumber(v: string): number | undefined {
+export function parseStudioNumber(v: string): number | undefined {
   let s = String(v || "").trim().toLowerCase();
   if (!s || s === "-" || s === "—") return undefined;
+  // deteksi satuan: rb/ribu/k → ×1000, jt/juta/m → ×1jt
   let mul = 1;
-  if (/\brb\b|ribu|\bk\b/.test(s)) mul = 1000;
-  if (/\bjt\b|juta|\bm\b/.test(s)) mul = 1_000_000;
+  if (/\b(rb|ribu|k)\b/.test(s)) mul = 1000;
+  if (/\b(jt|juta|m)\b/.test(s)) mul = 1_000_000;
   s = s.replace(/%/g, "").replace(/[^0-9,.-]/g, "");
   if (!s) return undefined;
+  // normalisasi pemisah desimal vs ribuan (konvensi Indonesia: titik=ribuan, koma=desimal)
   if (s.includes(",") && s.includes(".")) {
     const lastComma = s.lastIndexOf(","), lastDot = s.lastIndexOf(".");
     if (lastComma > lastDot) s = s.replace(/\./g, "").replace(",", ".");
@@ -83,8 +85,12 @@ function parseStudioNumber(v: string): number | undefined {
     const parts = s.split(".");
     if (parts.length === 2 && parts[1].length === 3) s = parts.join("");
   }
-  const n = Number(s);
-  return Number.isFinite(n) ? round1(n * mul) : undefined;
+  const raw = Number(s);
+  if (!Number.isFinite(raw)) return undefined;
+  // 🐛 FIX v19.55: kalau angka SUDAH besar (≥1000), satuan "rb/jt" itu DUPLIKAT dari
+  // OCR (mis. "169,063 rb" → 169063) → JANGAN dikali lagi. Dulu: 169063 × 1000 = 169.063.000!
+  const hasil = raw >= 1000 ? raw : round1(raw * mul);
+  return Number.isFinite(hasil) ? round1(hasil) : undefined;
 }
 
 function parseStudioDuration(v: string): number | undefined {
