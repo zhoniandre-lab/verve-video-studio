@@ -21,6 +21,9 @@ export type GrowthMetrics = {
   subs: number;
   engagementPct: number | null;
   viewsPerHour: number | null;
+  // 👨‍🏫 v19.59: metrik inti Analis Channel — biar tren mingguan lengkap
+  watchTimeHours: number | null;
+  returningPct: number | null;
 };
 
 export type GrowthSnapshot = {
@@ -93,7 +96,11 @@ export function metricsFromInput(input: GrowthInput): GrowthMetrics {
   const subs = hasNum(input.subs) ? Math.max(0, num(input.subs)) : 0;
   const engagementPct = views > 0 && (likesKnown || commentsKnown) ? ((likes + comments) / views) * 100 : null;
   const viewsPerHour = num(input.uploadAgeHours) > 0 ? views / num(input.uploadAgeHours) : null;
-  return { views, impressions, ctrPct: round1(ctrPct), durationSec, avgViewSec, avdPct: round1(avdPct), retention30Pct: round1(retention30Pct), likes, comments, subs, engagementPct: round1(engagementPct), viewsPerHour: round1(viewsPerHour) };
+  const wtGiven = num(input.watchTimeHours, NaN);
+  const watchTimeHours = Number.isFinite(wtGiven) && wtGiven > 0 ? Math.round(wtGiven * 10) / 10 : null;
+  const rpGiven = num(input.returningPct, NaN);
+  const returningPct = Number.isFinite(rpGiven) && rpGiven >= 0 ? Math.round(rpGiven * 10) / 10 : null;
+  return { views, impressions, ctrPct: round1(ctrPct), durationSec, avgViewSec, avdPct: round1(avdPct), retention30Pct: round1(retention30Pct), likes, comments, subs, engagementPct: round1(engagementPct), viewsPerHour: round1(viewsPerHour), watchTimeHours, returningPct };
 }
 
 export function createGrowthSnapshot(input: GrowthInput, diagnosis?: GrowthDiagnosis, nowMs = Date.now()): GrowthSnapshot {

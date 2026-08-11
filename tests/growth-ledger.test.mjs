@@ -56,5 +56,17 @@ T("ledger simpan snapshot+experiment", ledger.snapshots.length === 1 && ledger.e
 ledger = L.updateExperimentInLedger(ledger, graded);
 T("updateExperimentInLedger mengganti status", ledger.experiments[0].status === "success" && ledger.experiments.length === 1);
 
+
+// 👨‍🏫 v19.59 TAHAP 2: metrik baru (waktu tonton & penonton kembali) ikut tersimpan
+{
+  const snap = L.createGrowthSnapshot({ title: "Tren", mode: "long", views: 169000, ctrPct: 4.8, retention30Pct: 61, watchTimeHours: 10000, returningPct: 3.8, subs: 668 }, undefined, 1500);
+  T("snapshot simpan watchTimeHours", snap.metrics.watchTimeHours === 10000, String(snap.metrics.watchTimeHours));
+  T("snapshot simpan returningPct", snap.metrics.returningPct === 3.8, String(snap.metrics.returningPct));
+  T("snapshot simpan subs", snap.metrics.subs === 668);
+  const m = L.metricsFromInput({ views: 100, ctrPct: 5, watchTimeHours: 12.5, returningPct: 20 });
+  T("metricsFromInput watchTime 12.5", m.watchTimeHours === 12.5);
+  T("metricsFromInput returning 20", m.returningPct === 20);
+  T("metricsFromInput tanpa data → null", L.metricsFromInput({ views: 10 }).watchTimeHours === null && L.metricsFromInput({ views: 10 }).returningPct === null);
+}
 if (gagal) { console.error(`\n💥 ${gagal} UJI GROWTH LEDGER GAGAL`); process.exit(1); }
 console.log("\n🏁 GROWTH LEDGER SEHAT — baseline dan eksperimen siap");

@@ -404,6 +404,24 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     if (!input.views && !input.impressions && !input.ctrPct) { setSavedMsg("Isi minimal views/impressions/CTR dulu"); return; }
     persistLedger(addSnapshotToLedger(ledger, createGrowthSnapshot(input, dx)), "📊 Snapshot performa tersimpan");
   };
+  // 👨‍🏫 v19.59 TAHAP 2: AUTO-SIMPAN snapshot tiap analisis (tanpa pesan spam).
+  // Dedupe HANYA kalau data IDENTIK (views sama) & <90 menit — analisis dengan
+  // data baru (views beda) TETAP tersimpan biar tren naik/turun tergambar.
+  const autoSnap = () => {
+    if (!input.views && !input.impressions && !input.ctrPct) return;
+    const snaps = ledger.snapshots || [];
+    const last = snaps[snaps.length - 1];
+    if (last && last.metrics.views === Math.max(0, Number(input.views) || 0) && Date.now() - last.at < 90 * 60 * 1000) return;
+    const next = addSnapshotToLedger(ledger, createGrowthSnapshot(input, dx));
+    setLedger(next);
+    try { localStorage.setItem(GROWTH_LEDGER_KEY, JSON.stringify(next)); } catch {}
+  };
+  // 👨‍🏫 v19.59: data tren — snapshot terurut naik, maks 12 terakhir
+  const trenSnaps = useMemo(() => {
+    const arr = [...(ledger.snapshots || [])].sort((a, b) => a.at - b.at);
+    return arr.slice(-12);
+  }, [ledger.snapshots]);
+  const trenReady = trenSnaps.length >= 2;
   const makeExperiment = () => {
     if (!show) { setSavedMsg("Diagnosa dulu sebelum bikin eksperimen"); return; }
     const exp = createExperimentFromDiagnosis(input, dx, baseline);
@@ -580,12 +598,12 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
               {retPct ? <>🔁 Penonton kembali: <b>{retPct}%</b></> : null}
             </div>
             <div className="gd-textactions">
-              <button onClick={() => { setConfirmed(true); setRan(true); }}>✅ Benar — analisis!</button>
+              <button onClick={() => { autoSnap(); setConfirmed(true); setRan(true); }}>✅ Benar — analisis!</button>
               <button className="muted" onClick={() => setConfirmed(false)}>✏️ Perbaiki dulu</button>
             </div>
           </div>
         )}
-        <button className="gd-diagnose" onClick={() => { setConfirmed(true); setRan(true); }}>🩺 Analisis Sekarang</button>
+        <button className="gd-diagnose" onClick={() => { autoSnap(); setConfirmed(true); setRan(true); }}>🩺 Analisis Sekarang</button>
       </div>
 
       {/* ================= LANGKAH 3 · HASIL ================= */}
@@ -648,6 +666,67 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             </div>
             <button className="gd-copy" onClick={() => copy(dx.planText)}>📋 Salin Rencana Aksi Lengkap</button>
           </details>
+        </div>
+      )}
+
+      {/* 👨‍🏫 v19.59 TAHAP 2: TREN CHANNEL — riwayat snapshot auto-simpan */}
+      {(trenReady || trenSnaps.length === 1) && (
+        <div className="gd-card">
+          <div className="gd-label">📈 TREN CHANNEL</div>
+          {trenSnaps.length === 1 ? (
+            <p style={{ fontSize: 12, color: "#c7d2e5", lineHeight: 1.5, margin: 0 }}>
+              Snapshot pertama tersimpan ✅ — analisis lagi lain waktu (data baru) biar tren mulai tergambar.
+            </p>
+          ) : (
+            <>
+              <p style={{ fontSize: 10.5, color: "#8b8b98", lineHeight: 1.4, margin: "0 0 8px" }}>
+                Auto-tersimpan tiap kali lo analisis · {trenSnaps.length} titik terakhir · yang naik = hijau, turun = merah
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {(
+                  [
+                    { label: "👁 Views", key: "views" as const, warna: "#22d3ee", fmt: (v: number) => v >= 1000 ? `${Math.round(v / 1000)}rb` : String(v) },
+                    { label: "🎯 CTR %", key: "ctrPct" as const, warna: "#a78bfa", fmt: (v: number) => `${v}%` },
+                    { label: "⏱ Retensi %", key: "retention30Pct" as const, warna: "#4ade80", fmt: (v: number) => `${v}%` },
+                    { label: "🔁 Penonton kembali %", key: "returningPct" as const, warna: "#fbbf24", fmt: (v: number) => `${v}%` },
+                    { label: "🕐 Waktu tonton (jam)", key: "watchTimeHours" as const, warna: "#f472b6", fmt: (v: number) => String(v) },
+                    { label: "➕ Subscriber +", key: "subs" as const, warna: "#34d399", fmt: (v: number) => String(v) },
+                  ] as const
+                ).map((m) => {
+                  const vals = trenSnaps.map((s) => s.metrics[m.key]).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+                  if (vals.length < 2) return null;
+                  const min = Math.min(...vals), max = Math.max(...vals);
+                  const span = max - min || 1;
+                  const W = 150, H = 52, pad = 4;
+                  const pts = vals.map((v, i) => `${(pad + (i / (vals.length - 1)) * (W - pad * 2)).toFixed(1)},${(H - pad - ((v - min) / span) * (H - pad * 2)).toFixed(1)}`).join(" ");
+                  const naik = vals[vals.length - 1] >= vals[0];
+                  const last = m.fmt(vals[vals.length - 1]);
+                  const first = m.fmt(vals[0]);
+                  return (
+                    <div key={m.key} style={{ border: "1px solid #ffffff14", borderRadius: 14, padding: 8, background: "#080d15" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                        <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 800 }}>{m.label}</span>
+                        <span style={{ fontSize: 13, fontWeight: 900, color: naik ? "#4ade80" : "#f87171" }}>{last} {naik ? "▲" : "▼"}</span>
+                      </div>
+                      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: "block" }}>
+                        <polyline points={pts} fill="none" stroke={m.warna} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                        <circle cx={Number(pts.split(" ").pop()?.split(",")[0])} cy={Number(pts.split(" ").pop()?.split(",")[1])} r={2.6} fill={m.warna} />
+                      </svg>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#64748b" }}>
+                        <span>{first}</span><span>→</span><span>{last}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, color: "#64748b" }}>
+                  Terakhir: {new Date(trenSnaps[trenSnaps.length - 1].at).toLocaleString("id-ID", { day: "2-digit", month: "short" })}
+                </span>
+                <button className="gd-chip" style={{ fontSize: 10, color: "#fca5a5", border: "1px solid #ef444466", background: "none", borderRadius: 999, padding: "4px 10px", cursor: "pointer" }} onClick={() => { if (confirm("Hapus semua riwayat tren di HP ini?")) clearLedger(); }}>🧹 Hapus riwayat</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
