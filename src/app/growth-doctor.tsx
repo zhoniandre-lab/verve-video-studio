@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { diagnoseGrowth, parseClockToSec, kompasChannel, type GrowthInput, type GrowthMode } from "@/lib/brain/growth-doctor";
 import { addExperimentToLedger, addSnapshotToLedger, computeGrowthBaseline, createExperimentFromDiagnosis, createGrowthSnapshot, emptyGrowthLedger, gradeExperiment, GROWTH_LEDGER_KEY, updateExperimentInLedger, type GrowthExperiment, type GrowthLedger } from "@/lib/brain/growth-ledger";
 import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/lib/brain/yt-studio-csv";
@@ -122,6 +122,19 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [ran, setRan] = useState(false);
   const [ledger, setLedger] = useState<GrowthLedger>(() => emptyGrowthLedger());
   const [savedMsg, setSavedMsg] = useState("");
+  // 👨‍🏫 v19.60 TAHAP 3: MODE KONSULTASI — tanya bebas, dijawab kayak guru
+  const [chatLog, setChatLog] = useState<{ role: "me" | "ai"; text: string; source?: "ai" | "offline" }[]>([]);
+  const [chatQ, setChatQ] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [chatLog]);
+  const PERTANYAAN_CEPAT = [
+    "Kenapa penonton aku nggak balik-balik?",
+    "CTR aku gimana? Step by step biar naik",
+    "Biar subscriber naik gimana?",
+    "Kasih ide konten lanjutan (part 2)",
+    "Channel aku sehat nggak sekarang?",
+  ];
   const [csvRows, setCsvRows] = useState<YtStudioCsvRow[]>([]);
   const [csvMsg, setCsvMsg] = useState("");
   const [studioText, setStudioText] = useState("");
@@ -422,6 +435,36 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     return arr.slice(-12);
   }, [ledger.snapshots]);
   const trenReady = trenSnaps.length >= 2;
+  // 👨‍🏫 v19.60: kirim pertanyaan ke Analis (AI online dulu, offline fallback)
+  const kirimChat = async (q: string) => {
+    const pertanyaan = q.trim();
+    if (!pertanyaan || chatBusy) return;
+    setChatLog((l) => [...l, { role: "me", text: pertanyaan }]);
+    setChatQ(""); setChatBusy(true);
+    try {
+      const r = await fetch("/api/analis/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: pertanyaan,
+          data: {
+            title: title || undefined,
+            views: num(views) || undefined,
+            watchTimeHours: num(watchH) || undefined,
+            ctrPct: num(ctr) || undefined,
+            retention30Pct: num(ret30) || undefined,
+            subs: num(subs) || undefined,
+            returningPct: input.returningPct ?? undefined,
+            traffic: trafficFacts.slice(0, 3),
+          },
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      const reply = j?.reply || "Hmm, aku nggak bisa jawab sekarang — coba lagi ya bro.";
+      setChatLog((l) => [...l, { role: "ai", text: reply, source: j?.source === "offline" ? "offline" : "ai" }]);
+    } catch {
+      setChatLog((l) => [...l, { role: "ai", text: "⚠️ Jaringan bermasalah — coba lagi ya bro.", source: "offline" }]);
+    } finally { setChatBusy(false); }
+  };
   const makeExperiment = () => {
     if (!show) { setSavedMsg("Diagnosa dulu sebelum bikin eksperimen"); return; }
     const exp = createExperimentFromDiagnosis(input, dx, baseline);
@@ -729,6 +772,46 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           )}
         </div>
       )}
+
+      {/* 👨‍🏫 v19.60 TAHAP 3: MODE KONSULTASI — tanya bebas kayak guru */}
+      <div className="gd-card">
+        <div className="gd-label">💬 TANYA ANALIS — KONSULTASI BEBAS</div>
+        <p style={{ fontSize: 11, color: "#c7d2e5", lineHeight: 1.5, margin: "0 0 8px" }}>
+          Tanya apa aja — jawaban pakai data channel lo + cara mikir konsultan. Bisa tanya berulang sampai lo paham.
+        </p>
+        {PERTANYAAN_CEPAT.map((p) => (
+          <button key={p} className="gd-chip" style={{ fontSize: 10.5, color: "#a5f3fc", border: "1px solid #19c2b855", background: "rgba(25,194,184,.08)", borderRadius: 999, padding: "6px 12px", margin: "0 6px 6px 0", cursor: "pointer" }} onClick={() => kirimChat(p)}>{p}</button>
+        ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8, maxHeight: 260, overflowY: "auto" }}>
+          {!chatLog.length && (
+            <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", padding: "14px 0" }}>
+              Belum ada obrolan — ketuk pertanyaan di atas atau ketik sendiri di bawah 👇
+            </div>
+          )}
+          {chatLog.map((m, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: m.role === "me" ? "flex-end" : "flex-start" }}>
+              <div style={{
+                maxWidth: "88%", padding: "9px 12px", borderRadius: 14, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap",
+                background: m.role === "me" ? "rgba(25,194,184,.16)" : "#101622",
+                border: m.role === "me" ? "1px solid #19c2b844" : "1px solid #ffffff14",
+                color: m.role === "me" ? "#a7f3d0" : "#e2e8f0",
+              }}>
+                {m.role === "ai" && m.source === "offline" && <span style={{ fontSize: 9, color: "#fbbf24", fontWeight: 800 }}>🛡 OFFLINE · </span>}
+                {m.role === "ai" && m.source !== "offline" && <span style={{ fontSize: 9, color: "#22d3ee", fontWeight: 800 }}>⚡ ANALIS · </span>}
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {chatBusy && (
+            <div style={{ fontSize: 11, color: "#94a3b8", padding: "4px 0" }}>👨‍🏫 Analis lagi mikir…</div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder="Ketik pertanyaan… misal: kenapa video part 2 cuma 6 ribu views?" value={chatQ} onChange={(e) => setChatQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") kirimChat(chatQ); }} />
+          <button className="gd-diagnose" style={{ minHeight: 44, marginTop: 0, width: "auto", padding: "0 16px" }} disabled={chatBusy} onClick={() => kirimChat(chatQ)}>{chatBusy ? "⏳" : "➤"}</button>
+        </div>
+      </div>
 
       {/* ================= LANJUTAN (jarang dipakai) ================= */}
       <details className="gd-card gd-advanced">
