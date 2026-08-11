@@ -99,7 +99,7 @@ function textCoverageText(r: YtStudioTextResult): string {
 
 type YtStatus = { configured: boolean; connected: boolean; missing?: string[]; error?: string; channel?: { id?: string; title?: string; thumbnail?: string } | null };
 type YtVideo = { id: string; title: string; publishedAt?: string; durationSec?: number; viewCount?: number; likeCount?: number; commentCount?: number; url?: string };
-type YtMetricPayload = { ok?: boolean; error?: string; video?: Partial<YtVideo>; metrics?: { views?: number | null; analyticsViews?: number | null; publicViews?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
+type YtMetricPayload = { ok?: boolean; error?: string; video?: Partial<YtVideo>; metrics?: { views?: number | null; analyticsViews?: number | null; publicViews?: number | null; impressions?: number | null; ctrPct?: number | null; avgViewSec?: number | null; averageViewPercentage?: number | null; likes?: number | null; comments?: number | null; subscribersGained?: number | null; estimatedMinutesWatched?: number | null }; traffic?: YtStudioTextResult["traffic"]; warnings?: string[] };
 
 export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [mode, setMode] = useState<GrowthMode>("long");
@@ -294,7 +294,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
     try {
       // Reset dulu supaya data video lama/placeholder tidak terlihat seperti hasil video baru.
       setTitle(v.title || ""); setViews(""); setImpressions(""); setCtr(""); setDur(""); setAvd(""); setRet30(""); setLikes(""); setComments(""); setSubs(""); setAge("");
-      setTrafficFacts([]); setAudienceFacts([]);
+      setWatchH(""); setRetPct(""); setTrafficFacts([]); setAudienceFacts([]);
       if (v.title) setTitle(v.title);
       if (v.durationSec) setDur(secToClock(v.durationSec));
       if (v.likeCount != null) setLikes(String(v.likeCount));
@@ -326,11 +326,23 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
       if (m.likes != null) setLikes(String(m.likes));
       if (m.comments != null) setComments(String(m.comments));
       if (m.subscribersGained != null) setSubs(String(m.subscribersGained));
+      // 🐛 v19.55.2 FIX: estimatedMinutesWatched (dari API) TIDAK pernah dipetakan ke
+      // kolom Waktu tonton — datanya ada tapi kolom selalu kosong. Kini masuk (menit → jam).
+      if (m.estimatedMinutesWatched != null && Number.isFinite(Number(m.estimatedMinutesWatched))) {
+        const jam = Math.round((Number(m.estimatedMinutesWatched) / 60) * 10) / 10;
+        if (jam > 0) setWatchH(String(jam));
+      }
       if (Array.isArray(j.traffic) && j.traffic.length) setTrafficFacts(j.traffic);
       setRan(true); setConfirmed(true); // 👨‍🏫 v19.55: data dari API resmi = langsung valid
       const viewNote = m.analyticsViews != null && m.publicViews != null && m.publicViews > m.analyticsViews ? ` Views pakai public terbaru ${m.publicViews} (Analytics finalized ${m.analyticsViews}).` : "";
-      const warn = j.warnings?.length ? j.warnings[0] : "Read-only, aman.";
-      setYtMsg(`✅ Data analytics masuk.${viewNote} ${warn}`);
+      const warn = j.warnings?.length ? j.warnings[0] : "";
+      // 👨‍🏫 v19.55.2: pesan JUJUR — apa yang masuk otomatis & apa yang tidak (keterbatasan API)
+      const masuk = ["👁 Views", m.estimatedMinutesWatched != null ? "🕐 Waktu tonton" : null, m.averageViewPercentage != null ? "⏱ Retensi" : null, m.subscribersGained != null ? "➕ Subscriber" : null].filter(Boolean).join(" · ");
+      const kurang = [!m.impressions ? "CTR" : null, !m.averageViewPercentage ? "Retensi" : null].filter(Boolean);
+      const kurangNote = kurang.length
+        ? ` Kolom ${kurang.join(" & ")}: YouTube API nggak nyediain — isi manual atau upload screenshot Studio.`
+        : "";
+      setYtMsg(`✅ Data otomatis masuk: ${masuk || "views"}.${viewNote}${kurangNote} ${warn}`.trim());
     } catch (e) { setYtMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal membaca analytics"}`); }
     finally { setYtBusy(false); }
   };
@@ -531,6 +543,11 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           {metric("➕ Subscriber +", subs, setSubs, "cth: 668")}
           {metric("🔁 Penonton kembali %", retPct, setRetPct, "cth: 3,8")}
         </div>
+        {/* 👨‍🏫 v19.55.2: jujur soal kolom mana yang bisa otomatis dari koneksi YouTube */}
+        <p style={{ fontSize: 10.5, color: "#8b8b98", lineHeight: 1.5, margin: "8px 0 0" }}>
+          💡 <b>Otomatis dari koneksi YouTube:</b> Views · Waktu tonton · Retensi · Subscriber.<br />
+          <b>Harus manual/screenshot:</b> CTR & Penonton kembali — YouTube API resmi nggak nyediain (cuma ada di layar Studio).
+        </p>
 
         <details className="gd-advanced" style={{ marginTop: 10 }}>
           <summary>➕ Opsional: impressions · durasi · avg view · likes · komentar · umur · sumber tayangan</summary>
