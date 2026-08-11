@@ -507,13 +507,18 @@ function seekVid(v: HTMLVideoElement, t: number): Promise<void> {
     //    Jika video diperlambat (slow-mo), posisi detiknya bergerak sangat lambat (misal hanya bertambah 6ms per frame).
     //    Kita lewatkan (skip) seek jika perbedaan waktu dari seek terakhir < 0.032 detik (setara interval frame 30fps).
     //    Ini menghemat hingga 80% operasi seek GPU di HP kentang pada klip slow-mo dengan hasil visual yang tetap 100% sempurna!
-    if (Math.abs(last - t) < 0.032) return res();
+    // 🐛 v19.58 FIX LELET: threshold dinaikkan 0.032 → 0.066 (≈2 frame @30fps). Untuk klip video
+    //    kecepatan normal, tiap frame posisi naik 0.033s — dulu hampir SELALU seek (0.033 > 0.032)
+    //    → 12.600 frame × seek = 20-50 menit render video 7 menit di HP! Sekarang seek cukup tiap
+    //    2 frame (frame yang sama diulang 1× = judder sangat halus, praktis tak terlihat di konten
+    //    gerak lambat/cerita) → jumlah seek TERPOTONG ~50-60%.
+    if (Math.abs(last - t) < 0.066) return res();
     
     (v as any)._lastSeekT = t;
     let done = false;
     const fin = () => { if (done) return; done = true; v.removeEventListener("seeked", fin); res(); };
     v.addEventListener("seeked", fin);
-    setTimeout(fin, 300); // 📦 v13.13: batas tunggu 300ms cukup aman untuk lari cepat
+    setTimeout(fin, 80); // 🐛 v19.58: dulu 300ms — kalau decoder lambat, render ngeblokir 300ms/frame! 80ms cukup (frame berikutnya tetap digambar)
     try { v.currentTime = t; } catch { fin(); }
   });
 }
@@ -2144,13 +2149,20 @@ async function renderWebCodecs(b:any){
   const px = canvas.width * canvas.height;
   const lvl = px <= 1280 * 720 ? "1f" : px <= 1920 * 1080 ? "28" : px <= 2560 * 1440 ? "32" : "34";
   const candCodecs = [`avc1.4200${lvl}`, `avc1.6400${lvl}`, `avc1.4d00${lvl}`];
+  // 🐛 v19.58: probe SEKALIGUS dengan hardwareAcceleration — prefer-hardware dulu (ngebut),
+  // fallback no-preference (software encoder) supaya HP tanpa HW encoder TETAP JALAN
+  // (dulu: probe tanpa HW → supported, configure prefer-hardware → encoder error/closed → crash!)
+  const hwPrefs: ("prefer-hardware" | "no-preference")[] = ["prefer-hardware", "no-preference"];
   let vCfg: any = null;
-  for (const codec of candCodecs) {
-    try {
-      const cfg = { codec, width: canvas.width, height: canvas.height, bitrate: prof.videoBitrate, framerate: fps };
-      const s = await (window as any).VideoEncoder.isConfigSupported(cfg);
-      if (s?.supported) { vCfg = cfg; break; }
-    } catch {}
+  for (const hw of hwPrefs) {
+    for (const codec of candCodecs) {
+      try {
+        const cfg = { codec, width: canvas.width, height: canvas.height, bitrate: prof.videoBitrate, framerate: fps, hardwareAcceleration: hw as any };
+        const s = await (window as any).VideoEncoder.isConfigSupported(cfg);
+        if (s?.supported) { vCfg = { ...cfg, hardwareAcceleration: hw }; break; }
+      } catch {}
+    }
+    if (vCfg) break;
   }
   if (!vCfg) {
     throw new Error(`Encoder HP tidak sanggup ${canvas.width}x${canvas.height}@${fps} — turunkan resolusi ke 1080p/720p ya bro.`);
@@ -2178,12 +2190,23 @@ async function renderWebCodecs(b:any){
     output:(chunk:any,meta:any)=>{ muxer.addVideoChunk(chunk,meta); vidChunks++; },
     error:(e:any)=>console.error("[VideoEncoder]",e),
   });
+  // 🐛 v19.58 FIX LELET: dulu SELALU "realtime". Sekarang PROBE: kalau latencyMode "quality"
+  // didukung (encoder ngebut, fast-as-possible) → pakai; kalau tidak → "realtime" (aman).
+  // Headless/software encoder (tanpa GPU) sering menolak "quality" diam-diam → paksa realtime.
+  let latencyMode: "quality" | "realtime" = "realtime";
+  const isHeadless = typeof navigator !== "undefined" && /HeadlessChrome/i.test(navigator.userAgent);
+  if (!isHeadless) {
+    try {
+      const s = await (window as any).VideoEncoder.isConfigSupported({ ...vCfg, latencyMode: "quality" });
+      if (s?.supported) latencyMode = "quality";
+    } catch { /* anggap tidak didukung → realtime */ }
+  }
   videoEncoder.configure({
     ...vCfg,
-    bitrateMode:"variable",
-    latencyMode:"realtime", // 🩹 v16.8 GLOBAL MOBILE COMPATIBILITY: Setel ke "realtime" agar 100% kompatibel dan lancar tanpa crash di HP mana pun (Samsung, Xiaomi, Oppo, Vivo, dll.). "quality" sering ditolak oleh driver HP non-Samsung!
-    hardwareAcceleration:"prefer-hardware",
-    avc:{format:"avc"},
+    bitrateMode: "variable",
+    latencyMode,
+    hardwareAcceleration: vCfg.hardwareAcceleration || "prefer-hardware", // 🐛 v19.58: pakai hasil probe
+    avc: { format: "avc" },
   });
 
   let audioEncoder:any=null,audioEncDone:Promise<void>|null=null;
@@ -2421,7 +2444,7 @@ async function renderWebCodecs(b:any){
     // dramatically increasing rendering speeds (up to 3-5x faster on fast devices)
     // while keeping the main UI thread completely responsive.
     const nowYield = performance.now();
-    const yieldInterval = mobileOptimized ? 30 : 50;
+    const yieldInterval = mobileOptimized ? 60 : 50; // 🐛 v19.58: 30→60ms — tiap yield di HP nunda 10ms; interval 30 = overhead 33%, 60 = 17%
     if (nowYield - lastYield > yieldInterval || f === totalFrames - 1) {
       onProgress?.(f/totalFrames);
       const delay = mobileOptimized ? 10 : 0;

@@ -3986,6 +3986,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const blob = await renderSlideshow({
         images: useSlides.map(s => s.imageUrl),
         videos: useSlides.map(s => s.videoUrl || null), // 🎬 v11.8: klip animasi ikut di-render
+        // 🐛 v19.58 FIX LELET BESAR: timeline TIDAK pernah dikirim → cache lapisan
+        // (useV5fast) MATI → tiap frame di-paint PENUH (gambar+kenburns+transisi+filter+
+        // caption+teks+stiker+spektrum) = 100-200ms/frame di HP → 7 menit = 40-50 menit!
+        // Dengan timeline → lapisan A di-cache → paint per frame cuma lapisan hidup.
+        timeline: timeline as any,
         audioUrl: audioUrl || undefined,
         slideDuration,
         transitionDuration: transitionDur,
