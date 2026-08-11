@@ -115,6 +115,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [bgGrad, setBgGrad] = useState("g0");
   const [bgColor, setBgColor] = useState("#0a0a12");
   const [bgImg, setBgImg] = useState("");
+  // 🎬 v19.56: VIDEO LATAR — upload video sendiri → jadi background bergerak,
+  // audio video otomatis jadi sumber spektrum & lirik
+  const [videoBg, setVideoBg] = useState("");
+  const videoBgSesiRef = useRef(false); // true = blob sesi (terlalu besar utk disimpan)
   // 🎨 v19.11: BACKGROUND AI OTOMATIS — ketik suasana → generate background sinematik
   const [bgPrompt, setBgPrompt] = useState("");
   const [bgAiBusy, setBgAiBusy] = useState(false);
@@ -345,6 +349,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const bufRef = useRef<AudioBuffer | null>(null);
   const startAtRef = useRef(0);
   const bgImgRef = useRef<HTMLImageElement | null>(null);
+  const videoBgRef = useRef<HTMLVideoElement | null>(null); // 🎬 v19.56 video latar
   useEffect(() => {
     if (!logoImg) { logoImgRef.current = null; return; }
     const im = new Image(); im.onload = () => { logoImgRef.current = im; }; im.src = logoImg;
@@ -371,6 +376,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const preset = {
         nama, at: Date.now(),
         specStyle, specColor, themeId, bgType, bgGrad, bgColor, bgImg: bgImg.slice(0, 20000),
+        videoBg: videoBgSesiRef.current ? "" : videoBg.slice(0, 1500000), // 🎬 v19.56
         overlay, layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
         layerVis, layerOp,
@@ -394,6 +400,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setSpecStyle(p.specStyle || "bars"); setSpecColor(p.specColor || "#22d3ee"); setThemeId(p.themeId || "");
       setBgType(p.bgType || "grad"); setBgGrad(p.bgGrad || "g0"); setBgColor(p.bgColor || "#06060c");
       if (p.bgImg) setBgImg(p.bgImg);
+      if (p.videoBg) { setVideoBg(p.videoBg); videoBgSesiRef.current = false; } // 🎬 v19.56
       setOverlay(p.overlay || "none");
       setLayoutId(p.layoutId || "logo-tengah"); setLogoPos(p.logoPos || { x: 0.5, y: 0.42 }); setTitlePos(p.titlePos || { x: 0.5, y: 0.05 });
       setBarCount(p.barCount || 64); setLogoScale(p.logoScale || 1); setRotSpeed(p.rotSpeed ?? 0.5); setGlowInt(p.glowInt ?? 1);
@@ -527,6 +534,28 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
     } catch (e: any) { setErr("Audio tidak bisa dibaca: " + (e?.message || "")); }
     setMBusy(false);
+  }
+
+  // 🎬 v19.56: upload VIDEO sebagai latar — audio video otomatis jadi sumber spektrum & lirik
+  function uploadVideoLatar(f?: File | null) {
+    if (!f) return;
+    if (!f.type.startsWith("video/")) { setErr("Pilih file video dulu bro"); return; }
+    if (f.size > 12 * 1024 * 1024) { setErr("Video maks ±12MB — perpendek dulu ya (2-3 menit cukup)"); return; }
+    const nama = f.name.replace(/\.[^.]+$/, "").slice(0, 40);
+    if (f.size <= 2 * 1024 * 1024) {
+      const r = new FileReader();
+      r.onload = () => {
+        const url = r.result as string;
+        setVideoBg(url); videoBgSesiRef.current = false;
+        void loadAudio(url, nama); // spektrum & lirik ikut audio video
+      };
+      r.readAsDataURL(f);
+    } else {
+      const url = URL.createObjectURL(f);
+      setVideoBg(url); videoBgSesiRef.current = true;
+      void loadAudio(url, nama);
+      setErr(""); // bersihkan error lama — video besar jalan sebagai sesi
+    }
   }
 
   /* 🎤 v19.17 AUTO-PAS LIRIK — transkripsi Whisper → lirik + timing PERSIS audio (bukan dibagi rata) */
@@ -664,6 +693,21 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
     vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.28)");
     ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    }
+
+    // 🎬 v19.56: VIDEO LATAR — digambar TIAP FRAME (lapis dinamis) biar gerakannya mulus
+    // di preview & render. Waktu video disinkronkan ke audio (loop) → spektrum & lirik
+    // selalu nyambung sama visual.
+    if (videoBgRef.current && videoBgRef.current.readyState >= 2 && videoBgRef.current.videoWidth) {
+      const vv = videoBgRef.current;
+      const vd = vv.duration > 0 ? vv.duration : 4;
+      const vt = ((t % vd) + vd) % vd;
+      if (Math.abs((vv.currentTime || 0) - vt) > 0.08 && !vv.seeking) { try { vv.currentTime = vt; } catch {} }
+      const vir = vv.videoWidth / vv.videoHeight, vcr = W / H;
+      let vsw = vv.videoWidth, vsh = vv.videoHeight, vsx = 0, vsy = 0;
+      if (vir > vcr) { vsw = vv.videoHeight * vcr; vsx = (vv.videoWidth - vsw) / 2; } else { vsh = vv.videoWidth / vcr; vsy = (vv.videoHeight - vsh) / 2; }
+      ctx.drawImage(vv, vsx, vsy, vsw, vsh, 0, 0, W, H);
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
     }
 
     // bars dari analyser atau dummy berdenyut
@@ -1427,6 +1471,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!bgImg) { bgImgRef.current = null; return; }
     const im = new Image(); im.onload = () => { bgImgRef.current = im; }; im.src = bgImg;
   }, [bgImg]);
+  // 🎬 v19.56: siapkan elemen video latar (muted, loop) — sinkron per frame di drawScene
+  useEffect(() => {
+    if (!videoBg) { videoBgRef.current = null; return; }
+    const v = document.createElement("video");
+    v.muted = true; v.loop = true; v.playsInline = true; v.preload = "auto";
+    v.crossOrigin = "anonymous";
+    v.src = videoBg;
+    v.play().catch(() => {});
+    videoBgRef.current = v;
+    return () => { try { v.pause(); } catch {} videoBgRef.current = null; };
+  }, [videoBg]);
   useEffect(() => { ensureFontsLoaded().catch(() => {}); }, []);
 
   /* pratinjau audio */
@@ -1905,6 +1960,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 loadAudio(URL.createObjectURL(f), f.name.replace(/\.[^.]+$/, "").slice(0, 40));
               }} />
             </label>
+            {/* 🎬 v19.56: upload VIDEO — audio video jadi musik + video jadi latar */}
+            <label className="v6-cardrow" style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 20 }}>🎬</span>
+              <div className="tt">Upload VIDEO dari HP (audio video jadi musik + latar)<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{videoBg ? `✅ ${videoBgSesiRef.current ? "video aktif (sesi)" : "video aktif sebagai latar"}` : "mp4/webm · maks ±12MB"}</div></div>
+              <span className="arr">›</span>
+              <input type="file" accept="video/*" hidden onChange={e => { uploadVideoLatar(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+            </label>
             {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
             <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>🔬 Angka "terbaca" = durasi yang benar-benar dibaca browser. Kalau beda jauh dari durasi asli lagu, hasil render pasti ikut pendek — convert ulang file dulu.</p>
             {audioUrl && <button className="v6-bigcta" style={{ background: "#22c55e" }} onClick={() => setStep(1)}>Lanjut: Visual ›</button>}
@@ -2292,6 +2354,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   const r = new FileReader(); r.onload = () => setBgImg(r.result as string); r.readAsDataURL(f);
                 }} />
               </label>
+            )}
+            {/* 🎬 v19.56: VIDEO LATAR — upload video sendiri, audio ikut jadi spektrum */}
+            <label className="v6-cardrow" style={{ marginTop: 4 }}>
+              <span style={{ fontSize: 20 }}>🎬</span><div className="tt">{videoBg ? "✅ Video dipilih — ganti?" : "Pilih VIDEO latar (audio video jadi spektrum & lirik)"}</div><span className="arr">›</span>
+              <input type="file" accept="video/*" hidden onChange={e => { uploadVideoLatar(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+            </label>
+            {videoBg && (
+              <div className="v6-note" style={{ marginTop: 4 }}>
+                🎬 Video aktif sebagai latar — audio video dipakai buat spektrum & lirik.
+                {videoBgSesiRef.current ? " ⚠️ Ukuran besar → hanya bertahan sesi ini (refresh hilang)." : ""}
+                <button className="v6-chip" style={{ marginLeft: 8 }} onClick={() => { setVideoBg(""); videoBgSesiRef.current = false; }}>✕ Hapus video</button>
+              </div>
             )}
             <div className="v6-lbl">OVERLAY SUASANA</div>
             <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap" }}>

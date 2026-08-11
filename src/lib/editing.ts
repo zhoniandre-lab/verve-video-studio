@@ -1717,9 +1717,17 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
     const wBaru = sedang.reduce((a, b) => (b.start > a.start ? b : a));
     lineNo = wBaru.line;
   } else {
-    const aktif = words.filter(w => t >= w.start - 0.05 && t <= w.end + 0.25);
-    if (!aktif.length) return;
-    lineNo = aktif[aktif.length - 1].line; // baris yang paling baru (bukan paling lama)
+    const aktif = words.filter(w => t >= w.start - 0.6 && t <= w.end + 0.8);
+    if (aktif.length) {
+      lineNo = aktif[aktif.length - 1].line; // baris yang paling baru (bukan paling lama)
+    } else {
+      // 🐛 FIX v19.56: di celah timing (gap antar kata/baris) lirik HILANG total → kelihatan
+      // "keluar-keluar"/blink. Sekarang: TAHAN baris terakhir yang sudah lewat sampai baris
+      // berikutnya mulai — lirik tidak pernah kosong di tengah lagu.
+      const sudahLewat = words.filter(w => t >= w.end);
+      if (!sudahLewat.length) return; // belum ada kata yang mulai — wajar belum tampil
+      lineNo = sudahLewat[sudahLewat.length - 1].line;
+    }
   }
   const lineWords = words.filter(w => w.line === lineNo);
   const exact = words.find(w => t >= w.start && t < w.end && w.line === lineNo);
