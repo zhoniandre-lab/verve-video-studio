@@ -1632,6 +1632,8 @@ export const ANIM_STICKERS: AnimStickerDef[] = [
 export const ANIM_STICKER_MAP: Record<string, AnimStickerDef> = Object.fromEntries(ANIM_STICKERS.map(a => [a.id, a]));
 export const STICKER_ANIM_CATS: { id: string; label: string }[] = [
   { id: "sosmed", label: "🔥 Sosmed" }, { id: "musik", label: "🎵 Musik" }, { id: "suasana", label: "✨ Suasana" },
+  // 🌈 v19.57: kategori SPESIAL spektrum — biar gampang ditemukan di editor utama
+  { id: "spektrum", label: "🌈 Spektrum" },
 ];
 
 /* ---------- PAINTER STIKER v6 (anim + gambar + emoji) ---------- */

@@ -1085,6 +1085,7 @@ const MAIN_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "edit",    icon: "✂️",  label: "Edit" },
   { id: "sihir_film", icon: "🎬", label: "Sihir Film", bdg: "NEW" },
   { id: "audio",   icon: "🎵",  label: "Audio" },
+  { id: "spektrum", icon: "🌈", label: "Spektrum", bdg: "NEW" },
   { id: "teks",    icon: "🔤",  label: "Teks" },
   { id: "efek",    icon: "☆",   label: "Efek" },
   { id: "overlay", icon: "🖼️", label: "Overlay" },
@@ -2282,6 +2283,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (t === "avatar") return;
     if (t === "sesuaikan") { setTool("filter"); setSheetTab("sesuaikan"); return; }
     if (t === "overlay") { setTool("stiker"); setSheetTab("overlayimg"); return; }
+    // 🌈 v19.57: SPEKTRUM — satu ketukan langsung pasang visualizer musik di klip
+    if (t === "spektrum") {
+      if (!slides.length) { setTool("media"); return; }
+      addSticker("@bars");
+      flash(!(musicUrl || ttsUrl || voiceUrl)
+        ? "🌈 Spektrum musik dipasang — upload musik dulu (🎵 Audio) biar ikut irama lagu!"
+        : "🌈 Spektrum musik dipasang — geser/cubit & atur waktunya di track. Coba juga @wavepro & @ring di panel Stiker → Spektrum");
+      return;
+    }
     setTool(cur => cur === t ? null : t); setSheetTab("");
     if (t === "teks" && !slides.length) setTool("media");
   }
@@ -6603,6 +6613,14 @@ function StikerSheet({ api: A, tab0, onClose }: any) {
             <div className="v6-searchbar">🔍<input placeholder="Cari: subscribe, rec, kupu, api…" value={q} onChange={e => setQ(e.target.value)} /></div>
             <ChipRow items={[...STICKER_ANIM_CATS.map(c => ({ id: c.id, label: c.label })), ...STICKER_CATS.map(c => ({ id: c.id, label: c.label }))]} cur={cat} onPick={setCat} />
             <div className="v6-grid4">
+              {/* 🌈 v19.57: kategori SPEKTRUM — 3 visualizer musik yang paling dicari */}
+              {cat === "spektrum" && ANIM_STICKERS
+                .filter(a => ["@bars", "@wavepro", "@ring"].includes(a.id) && (!q || a.label.toLowerCase().includes(q.toLowerCase())))
+                .map(a => (
+                  <button key={a.id} className="v6-gcell" onClick={() => A.addSticker(a.id)} title="Spektrum musik — ikut irama lagu">
+                    <span className="e">{ANIM_STICKER_PREVIEW[a.id] || "🌈"}</span><span className="l">{a.label} ✨</span>
+                  </button>
+                ))}
               {["sosmed", "musik", "suasana"].includes(cat) && ANIM_STICKERS
                 .filter(a => a.cat === cat && (!q || a.label.toLowerCase().includes(q.toLowerCase())))
                 .map(a => (
