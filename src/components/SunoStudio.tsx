@@ -155,9 +155,26 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <p style={{ fontSize: 10.5, color: "#8b8b98", margin: "6px 0" }}>{PROVIDERS.find((p) => p.id === prov)?.hint}</p>
         <div style={{ display: "flex", gap: 6 }}>
           <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com" : "Tempel API key"} value={key} onChange={(e) => saveKey(prov, e.target.value)} />
-          <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
+          {prov === "suno-resmi" ? (
+            <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href="https://suno.com" target="_blank" rel="noreferrer">🔗 Buka suno.com & login ↗</a>
+          ) : (
+            <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
+          )}
         </div>
         <div className="v6-note" style={{ marginTop: 6 }}>Apiframe sudah MATI (blok) — dipakai Kie / Sunor / Suno Resmi. Kalau kredit satu provider habis, ganti provider/key di atas — langsung lanjut, nggak perlu keluar.</div>
+        {prov === "suno-resmi" && (
+          <div style={{ marginTop: 8, border: "1px solid #ffffff1a", borderRadius: 12, padding: 10, background: "#0a0e16" }}>
+            <b style={{ fontSize: 11.5, color: "#a5f3fc" }}>📋 CARA AMBIL COOKIE SUNO (5 langkah)</b>
+            <ol style={{ fontSize: 10.5, color: "#cbd5e1", lineHeight: 1.6, margin: "6px 0 0", paddingLeft: 18 }}>
+              <li>Buka <b>suno.com</b> di HP → login akun (bisa pakai Google).</li>
+              <li>Ketuk ikon <b>⋮ / menu browser</b> → pilih <b>"Situs" / "Site settings"</b> (Chrome) atau <b>"Pengaturan situs"</b>.</li>
+              <li>Cari bagian <b>Cookie</b> → ketuk <b>"Lihat semua cookie"</b>.</li>
+              <li>Salin <b>SEMUA teks cookie</b> yang muncul (format: nama=nilai; nama2=nilai2…).</li>
+              <li>Tempel di kolom di atas → Generate. (Akun gratis: 50 kredit/hari ±10 lagu.)</li>
+            </ol>
+            <p style={{ fontSize: 10, color: "#8b8b98", margin: "6px 0 0" }}>⚠️ Cookie ini rahasia — jangan dibagikan ke siapa pun.</p>
+          </div>
+        )}
         {/* 🔑 v19.62: GERBANG GANTI KEY — muncul otomatis kalau kredit habis/key ditolak */}
         {gantiKey && (
           <div style={{ marginTop: 10, border: "1px solid rgba(251,191,36,.5)", borderRadius: 12, padding: 10, background: "rgba(251,191,36,.08)" }}>
