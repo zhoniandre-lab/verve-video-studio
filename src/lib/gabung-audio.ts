@@ -63,3 +63,41 @@ export function bufferToWav(buf: AudioBuffer): ArrayBuffer {
   }
   return ab;
 }
+
+// 🎵 v19.61 FIX KEPOTONG: gabung BEBERAPA URL audio (segmen lagu Suno panjang)
+// jadi 1 audio utuh di browser. fetch tiap URL (lewat proxify biar lolos CORS) →
+// decode → concat → WAV blob. Kalau salah satu gagal, segmen itu dilewati.
+export async function gabungUrlAudio(urls: string[], proxify?: (u: string) => string): Promise<string> {
+  if (!urls || !urls.length) throw new Error("Tidak ada segmen audio.");
+  if (urls.length === 1) return urls[0];
+  const AC: any = typeof window !== "undefined" && (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!AC) return urls[0];
+  const actx: AudioContext = new AC();
+  try {
+    const bufs: AudioBuffer[] = [];
+    for (const u of urls) {
+      try {
+        const r = await fetch(proxify ? proxify(u) : u);
+        const ab = await r.arrayBuffer();
+        const buf = await actx.decodeAudioData(ab);
+        if (buf && buf.length > 0) bufs.push(buf);
+      } catch { /* segmen gagal — lewati */ }
+    }
+    if (!bufs.length) return urls[0];
+    const sampleRate = bufs[0].sampleRate;
+    const total = bufs.reduce((n, b) => n + b.length, 0);
+    const ch = Math.max(1, Math.min(2, bufs[0].numberOfChannels));
+    const out = actx.createBuffer(ch, total, sampleRate);
+    let off = 0;
+    for (const b of bufs) {
+      for (let c = 0; c < ch; c++) {
+        const src = b.numberOfChannels > c ? b.getChannelData(c) : b.getChannelData(0);
+        out.getChannelData(c).set(src, off);
+      }
+      off += b.length;
+    }
+    return URL.createObjectURL(new Blob([bufferToWav(out)], { type: "audio/wav" }));
+  } finally {
+    try { actx.close(); } catch {}
+  }
+}

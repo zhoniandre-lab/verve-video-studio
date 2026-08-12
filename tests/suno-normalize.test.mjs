@@ -7,7 +7,7 @@ import ts from "typescript";
 const enc = (s) => `data:text/javascript;base64,${Buffer.from(s).toString("base64")}`;
 const srcTs = readFileSync(new URL("../src/lib/suno-normalize.ts", import.meta.url), "utf8");
 const js = ts.transpileModule(srcTs, { compilerOptions: { module: ts.ModuleKind.ES2020, target: ts.ScriptTarget.ES2020 } }).outputText;
-const { normalizeLagu, cariAudioRekursif } = await import(enc(js));
+const { normalizeLagu, cariAudioRekursif, kumpulAudioRekursif } = await import(enc(js));
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -56,6 +56,28 @@ T("Sunor failure → error", s6.status === "error");
 /* 11. cariAudioRekursif: URL di kedalaman mana pun */
 const deep = { a: { b: { c: [{ d: { streamUrl: "https://deep/audio.wav" } }] } } };
 T("cariAudioRekursif tembus kedalaman", cariAudioRekursif(deep) === "https://deep/audio.wav");
+
+
+/* 12. v19.61: KUMPULKAN SEMUA segmen audio (lagu panjang) — bukan cuma pertama */
+const multi = {
+  data: {
+    task_id: "tsk-90", status: "success",
+    output: { sunoData: [
+      { audio_url: "https://cdn/seg1.mp3", duration: 240 },
+      { audio_url: "https://cdn/seg2.mp3", duration: 240 },
+      { audio_url: "https://cdn/seg3.mp3", duration: 240 },
+    ] },
+  },
+};
+const m = normalizeLagu(multi, "sunor");
+T("Sunor multi-segmen: audio_urls = 3", Array.isArray(m.audio_urls) && m.audio_urls.length === 3, String(m.audio_urls?.length));
+T("Sunor multi-segmen: audio_url = segmen pertama", m.audio_url === "https://cdn/seg1.mp3");
+T("kumpulAudioRekursif kumpulkan semua URL", kumpulAudioRekursif(multi).filter(u => u.startsWith("https://cdn/")).length === 3);
+T("kumpulAudioRekursif tembus nested (2 kemunculan, dedupe di normalize)", kumpulAudioRekursif({ url: "https://a/1.mp3", nested: { url: "https://a/1.mp3" } }).filter(u => u === "https://a/1.mp3").length === 2);
+
+/* 13. Kie multi-segmen juga */
+const mk = normalizeLagu({ code: 200, data: { status: "SUCCESS", response: { sunoData: [ { audioUrl: "https://k/1.mp3" }, { audioUrl: "https://k/2.mp3" } ] } } }, "kie");
+T("Kie multi-segmen: audio_urls = 2", Array.isArray(mk.audio_urls) && mk.audio_urls.length === 2, String(mk.audio_urls?.length));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI NORMALISASI GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI NORMALISASI HIJAU — polling bisa mengekstrak hasil dari semua format!");

@@ -19,7 +19,7 @@ import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarize
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
 import { clearDraftMirror, deleteDraftMirror, listDraftMirrorMetas, mergeDraftMetas, mirrorDraft, mirrorDrafts, readDraftMirror } from "@/lib/guard/draft-idb"; // 🗄️ mirror draft IndexedDB
-import { gabungChunksDataUrl } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS cadangan → 1 audio
+import { gabungChunksDataUrl, gabungUrlAudio } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS · 🎵 v19.61 gabung segmen lagu Suno
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -784,6 +784,7 @@ function LabPage({ gotoEditor, go }: { gotoEditor: (id?: string, cmd?: any) => v
   const cards = [
     { ic: "🧠", t: "Pembuat AI", d: "Ide → judul → visual → musik otomatis jadi proyek", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
     { ic: "🎵", t: "Musik AI (Suno)", d: "Buat lagu/instrumen orisinal bebas royalti", act: () => gotoEditor(undefined, { tool: "musik" }) },
+    { ic: "🎤", t: "Suno Studio (Khusus)", d: "Menu khusus generate lagu — utuh & langsung pakai di Spectrum", act: () => { location.href = "/suno"; } },
     { ic: "🗣️", t: "Teks ke Audio", d: "Narasi suara AI dari teks (id-ID)", act: () => gotoEditor(undefined, { tool: "tts" }) },
     { ic: "🎨", t: "Gambar AI", d: "Generate visual sinematik utk klip", act: () => gotoEditor(undefined, { tool: "media" }) },
     { ic: "🎬", t: "Video AI", d: "Teks/gambar → video pendek (beta)", act: () => gotoEditor(undefined, { tool: "videoai" }) },
@@ -1052,9 +1053,9 @@ function SayaPage({ refresh }: { refresh: () => void }) {
         <input className="v6-inp" placeholder="Tempel API key di sini (kosongkan = mode gratis)" value={key} onChange={e => setKey(e.target.value)} />
         <div className="v6-lbl">PROVIDER</div>
         <select className="v6-inp" value={prov} onChange={e => setProv(e.target.value)}>
-          <option value="kie">🥇 Kie.ai (direkomendasikan, gratis 5.000 kredit)</option>
-          <option value="apiframe">Apiframe.ai</option>
-          <option value="sunor">Sunor.cc</option>
+          <option value="kie">🥇 Kie.ai (utama — gratis 5.000 kredit)</option>
+          <option value="sunor">☀️ Sunor.cc</option>
+          <option value="suno-resmi">🎵 Suno Resmi (cookie akun — 50 kredit/hari)</option>
         </select>
         <div className="v6-note">💡 Tanpa key, VERVE pakai generator musik gratis (lebih lambat). Key disimpan <b>hanya di HP kamu</b> (localStorage), tidak dikirim ke mana pun kecuali ke provider musik saat generate.</div>
         <button className="v6-btn" style={{ marginTop: 10, width: "100%" }} onClick={save}>💾 Simpan</button>
@@ -2947,6 +2948,23 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setLoading(null); setTimeout(() => setStageText(""), 100);
   }
   /* ---------- SUNO ---------- */
+  // 🎵 v19.61 FIX KEPOTONG: terima hasil lagu AI (langsung/polling) —
+  // kalau provider kasih BEBERAPA segmen (lagu 4-8 mnt), GABUNG jadi 1 audio utuh.
+  async function terimaLaguAI(data: any, namaFallback: string) {
+    let urls: string[] = [];
+    if (Array.isArray(data?.audio_urls) && data.audio_urls.length) urls = data.audio_urls.filter((u: any) => typeof u === "string" && u.startsWith("http"));
+    else if (typeof data?.audio_url === "string" && data.audio_url.startsWith("http")) urls = [data.audio_url];
+    if (!urls.length) return null;
+    let url = urls[0];
+    if (urls.length > 1) {
+      const gabung = await gabungUrlAudio(urls, proxify).catch(() => null);
+      if (gabung) { url = gabung; flash(`🎵 Lagu digabung dari ${urls.length} segmen — utuh, nggak kepotong!`); }
+    }
+    setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName((data?.title || namaFallback || "Lagu AI").slice(0, 60));
+    try { const d = await getAudioDuration(url); if (d > 0.5) setMusicDur(d); } catch {}
+    return url;
+  }
+
   async function doSuno() {
     try {
       const title = (mTitle || "").trim() || (projTitle || "").trim();
@@ -2972,10 +2990,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const data = await r.json().catch(() => ({}));
         if (!r.ok || data.error) throw new Error(data.error || data.message || `Error ${r.status}`);
         const id = data.taskId || data.task_id || data.id;
-        if (data.audio_url || data.audioUrl || data.url) {
-          const url = data.audio_url || data.audioUrl || data.url;
-          setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(mTitle || "Lagu AI");
-          try { const d = await getAudioDuration(url); if (d>0.5) setMusicDur(d); } catch {}
+        if (data.audio_url || data.audioUrl || data.url || data.audio_urls?.length) {
+          await terimaLaguAI(data, mTitle); // 🎵 v19.61: gabung segmen kalau ada
           setMStatus("selesai"); setMTask(""); setPollUi(p => ({ ...p, last: "berhasil ✅" }));
           try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
           flash("✅ Lagu AI selesai langsung — masuk track audio");
@@ -3019,12 +3035,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           const wd = setTimeout(() => { try{ ac.abort(); }catch{} }, 40000);
           const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers: hdrs, cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
           const pd = await pr.json().catch(() => ({}));
-          const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
+          const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url || (pd.audio_urls?.length ? pd.audio_urls[0] : "");
           if (url) {
             clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-            setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(mTitle || "Lagu AI");
-            try { const d = await getAudioDuration(url); if (d>0.5) setMusicDur(d); } catch {}
+            await terimaLaguAI(pd, mTitle); // 🎵 v19.61: gabung segmen kalau ada
             setMStatus("selesai"); setMTask("");
             setPollUi(p => ({ ...p, last: "berhasil ✅" }));
             try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}

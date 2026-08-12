@@ -5,12 +5,15 @@
    asli tiap provider (tests/suno-normalize.test.mjs).
    ===================================================================== */
 
-export type ProvLagu = "kie" | "apiframe" | "sunor";
+export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi";
 
 export interface HasilNormal {
   id?: string;
   status: "pending" | "completed" | "error";
   audio_url?: string;
+  /** 🐛 v19.61 FIX KEPOTONG: SEMUA URL audio yang ditemukan (lagu panjang =
+     beberapa segmen). Client GABUNG kalau >1 → lagu 8 menit tuntas. */
+  audio_urls?: string[];
   title?: string;
   image_url?: string;
   duration?: number;
@@ -41,6 +44,29 @@ export function cariAudioRekursif(o: any, dalem = 0, cakup?: Set<any>): string {
   return "";
 }
 
+/** 🐛 v19.61: KUMPULKAN SEMUA URL audio di kedalaman mana pun (bukan cuma pertama).
+ *  Lagu Suno panjang (4-8 menit) sering dikembalikan provider sebagai BEBERAPA segmen —
+ *  dulu cuma segmen pertama yang diambil → lagu 'kepotong tidak tuntas'. */
+export function kumpulAudioRekursif(o: any, dalem = 0, cakup?: Set<any>): string[] {
+  const out: string[] = [];
+  if (!o || typeof o !== "object" || dalem > 8) return out;
+  const seen = cakup || new Set<any>();
+  if (seen.has(o)) return out;
+  seen.add(o);
+  if (Array.isArray(o)) {
+    for (const it of o) out.push(...kumpulAudioRekursif(it, dalem + 1, seen));
+    return out;
+  }
+  for (const k of ["audio_url", "audioUrl", "stream_url", "streamUrl", "streamAudioUrl", "url", "audio"]) {
+    const v = o[k];
+    if (typeof v === "string" && /^https?:\/\//.test(v)) out.push(v);
+  }
+  for (const k of Object.keys(o)) out.push(...kumpulAudioRekursif(o[k], dalem + 1, seen));
+  return out;
+}
+function unik(list: string[]): string[] {
+  return Array.from(new Set(list.filter((x) => typeof x === "string" && x.startsWith("http"))));
+}
 /** Normalisasi respons Kie.ai — generate & poll. */
 export function normalizeKie(d: any): HasilNormal {
   if (d?.code !== 200 && d?.code !== 0) {
@@ -54,10 +80,12 @@ export function normalizeKie(d: any): HasilNormal {
   if (st === "SUCCESS" || st === "FIRST_SUCCESS" || st === "COMPLETED" || st === "DONE") {
     const items = data.response?.sunoData || data.response?.data || data.sunoData || data.response || [];
     const first: any = Array.isArray(items) ? (items[0] || {}) : items;
+    const urls = unik([...kumpulAudioRekursif(data.response), ...kumpulAudioRekursif(data)]);
     return {
       id: data.taskId || data.id || first.id || "",
       status: "completed",
-      audio_url: cariAudioRekursif(first) || cariAudioRekursif(data.response) || cariAudioRekursif(data),
+      audio_url: urls[0] || "",
+      audio_urls: urls,
       title: first.title || "",
       image_url: first.imageUrl || "",
       duration: first.duration,
@@ -78,10 +106,12 @@ export function normalizeSunor(d: any): HasilNormal {
     const out = d0.output ?? d0.result ?? d0.data ?? {};
     const first: any = Array.isArray(out) ? (out[0] || {})
       : (out.sunoData?.[0] || out.songs?.[0] || out.clips?.[0] || (Array.isArray(out.data) ? out.data[0] : null) || out || {});
+    const urls = unik([...kumpulAudioRekursif(out), ...kumpulAudioRekursif(d0)]);
     return {
       id: d0.task_id || d0.id || first.id || "",
       status: "completed",
-      audio_url: cariAudioRekursif(first) || cariAudioRekursif(out) || cariAudioRekursif(d0),
+      audio_url: urls[0] || "",
+      audio_urls: urls,
       title: first.title || d0.title || "",
       image_url: first.image_url || first.imageUrl || first.cover_url || "",
       duration: first.duration,
@@ -117,6 +147,7 @@ export function normalizeGeneric(d: any): HasilNormal {
 export function normalizeLagu(d: any, provider: ProvLagu): HasilNormal {
   if (provider === "kie") return normalizeKie(d);
   if (provider === "sunor") return normalizeSunor(d);
+  // suno-resmi (studio-api) respons {id} / {clips:[{audio_url}]} — mirip generic
   return normalizeGeneric(d);
 }
 

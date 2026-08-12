@@ -18,12 +18,15 @@ import { normalizeLagu as normalize, mapModelKie, mapModelGeneric } from "../../
  */
 export const dynamic = "force-dynamic";
 
-type Provider = "kie" | "apiframe" | "sunor";
+type Provider = "kie" | "apiframe" | "sunor" | "suno-resmi";
 
 const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   kie:      { base: "https://api.kie.ai/api/v1", label: "Kie.ai" },
   apiframe: { base: "https://apiframe.ai/api",   label: "apiframe.ai" },
   sunor:    { base: "https://sunor.cc",            label: "Sunor.cc" }, // v10.5: subdomain api.* MATI di DNS — endpoint resmi ada di domain utama
+  // 🎵 v19.61 PROVIDER BARU: SUNO RESMI (studio-api) — pakai COOKIE akun suno.com
+  // gratis (50 kredit/hari). Key = cookie session dari suno.com (lihat Bot Buruan → Suno).
+  "suno-resmi": { base: "https://studio-api.suno.ai", label: "Suno Resmi (cookie akun)" },
 };
 
 /** 🛡 v19.35.4: provider yang TERVERIFIKASI mati (semua endpoint 404) — jangan pernah dipakai.
@@ -38,6 +41,7 @@ function detectProvider(rawKey: string, hdrProvider?: string): Provider {
   if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
   if (k.startsWith("snr_") || k.startsWith("sunor_") || k.startsWith("sk_live")) return "sunor"; // v10.5: kunci asli Sunor = sk_live_…
   if (k.startsWith("afk_") || k.startsWith("af_")) return "apiframe";
+  if (k.includes("suno") || k.startsWith("__Secure-") || k.includes("session=")) return "suno-resmi"; // 🎵 v19.61 cookie suno.com
   // Hex 32+ tanpa prefix — asumsikan Kie.ai (Kie ngasih key hex murni).
   if (/^[a-f0-9]{24,}$/i.test(k)) return "kie";
   return "kie";
@@ -126,6 +130,27 @@ function buildBody(payload: any, provider: Provider): any {
     return body;
   }
 
+  // 🎵 v19.61 SUNO RESMI (studio-api) — POST /api/v1/music (cookie akun suno.com)
+  if (provider === "suno-resmi") {
+    const body: any = {
+      title: finalTitle,
+      prompt: isCustom ? finalLyrics.slice(0, 5000) : finalPrompt.slice(0, 500),
+      tags: styleStr.slice(0, 480),
+      mv: "chirp-v3-5",
+      instrumental: !!instrumental,
+    };
+    if (isCustom) {
+      body.lyrics = finalLyrics.slice(0, 5000);
+      body.custom = true;
+      body.prompt = finalLyrics.slice(0, 5000);
+      body.style = styleStr.slice(0, 480);
+      body.tags = styleStr.slice(0, 480);
+    }
+    if (vocalGender === "male") body.gender = "male";
+    else if (vocalGender === "female") body.gender = "female";
+    return body;
+  }
+
   // ☀️ v10.5 SUNOR RESMI — POST /api/v1/task {model:"suno", task_type:"music", input:{…}} (dok sunor.cc/suno-api)
   if (provider === "sunor") {
     const input: any = { make_instrumental: !!instrumental, tags: styleStr.slice(0, 480) };
@@ -157,19 +182,24 @@ function buildBody(payload: any, provider: Provider): any {
   return body;
 }
 
-function buildHeaders(key: string): Record<string,string> {
+function buildHeaders(key: string, provider?: Provider): Record<string,string> {
   const h: Record<string,string> = { "Content-Type": "application/json" };
-  if (key) {
-    const rawKey = key.replace(/^Bearer\s+/i, "");
-    h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
-    h["apikey"] = rawKey;
-    h["x-api-key"] = rawKey;
+  if (!key) return h;
+  // 🎵 v19.61: Suno Resmi pakai COOKIE (session suno.com), bukan Authorization
+  if (provider === "suno-resmi") {
+    h["Cookie"] = key;
+    return h;
   }
+  const rawKey = key.replace(/^Bearer\s+/i, "");
+  h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
+  h["apikey"] = rawKey;
+  h["x-api-key"] = rawKey;
   return h;
 }
 
 function getEndpoints(provider: Provider, base: string, forStatus?: string): string[] {
   if (forStatus) {
+    if (provider === "suno-resmi") return [`${base}/api/v1/feed/${forStatus}`, `${base}/api/v1/feed/${forStatus}/clips`]; // 🎵 v19.61
     if (provider === "sunor") return [`${base}/api/v1/task/${forStatus}`]; // v10.5: GET task/{id}
     if (provider === "kie") {
       return [
@@ -185,6 +215,9 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
       `${base}/feed/${forStatus}`,
       `${base}/v1/feed/${forStatus}`,
     ];
+  }
+  if (provider === "suno-resmi") {
+    return [`${base}/api/v1/music`, `${base}/api/v1/music/custom`]; // 🎵 v19.61 (custom dipakai kalau lirik)
   }
   if (provider === "kie") {
     return [`${base}/generate`];
@@ -209,7 +242,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "apiframe.ai sudah MATI (endpoint 404). Pilih 🥇 Kie.ai atau Sunor.cc di panel Provider — dan tambah key-nya di 🔑 Setelan API Key.", status: "provider_mati", provider }, { status: 502 });
     }
     const body = buildBody(payload, provider);
-    const headers = buildHeaders(key);
+    const headers = buildHeaders(key, provider);
     const endpoints = getEndpoints(provider, base);
 
     // 🎛 BOS (L3.5): kill switch + batas harian untuk fitur musik — sebelum keluar duit Suno
@@ -308,7 +341,7 @@ export async function GET(req: Request) {
     if (provider === "apiframe") {
       return NextResponse.json({ status: "error", error: "apiframe.ai sudah MATI — pilih Kie.ai atau Sunor.cc." });
     }
-    const headers = buildHeaders(key);
+    const headers = buildHeaders(key, provider);
     const endpoints = getEndpoints(provider, base, id);
 
     for (const url of endpoints) {
