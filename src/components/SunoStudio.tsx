@@ -19,8 +19,11 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [title, setTitle] = useState("");
   const [style, setStyle] = useState("");
   const [lyrics, setLyrics] = useState("");
-  const [instrumental, setInstrumental] = useState(false);
+  // 🎤 v19.62: pilihan VOKAL — auto / pria / wanita / instrumen
+  const [vokal, setVokal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
   const [model, setModel] = useState("suno-v5");
+  // 🔑 v19.62: gerbang ganti key — muncul otomatis kalau kredit habis
+  const [gantiKey, setGantiKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [taskId, setTaskId] = useState("");
@@ -51,12 +54,15 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     const tick = setInterval(() => setPollUi((p) => ({ ...p, elapsed: Math.round((Date.now() - ts) / 1000) })), 1000);
     tickTimer.current = tick;
     try {
+      const instrumental = vokal === "instrumental";
       const r = await fetch("/api/hcnsec/music", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Suno-Key": key.trim(), "X-Suno-Provider": prov },
         body: JSON.stringify({
           title: title.trim(), prompt: style.trim(), lyrics: instrumental ? undefined : lyrics.trim(),
           genre: "", tags: style.trim(), custom: lyrics.trim().length > 30 && !instrumental,
-          model, instrumental, _raw_title: title.trim(), _raw_style: style.trim(), _raw_lyrics: lyrics.trim(),
+          model, instrumental,
+          vocalGender: vokal === "male" ? "male" : vokal === "female" ? "female" : undefined,
+          _raw_title: title.trim(), _raw_style: style.trim(), _raw_lyrics: lyrics.trim(),
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -70,7 +76,12 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       setTaskId(id); setStatus("⏳ Lagu diproses — polling jalan…");
       await poll(id);
     } catch (e: any) {
-      setStatus(`❌ ${e?.message || "Gagal generate"}`);
+      const msg = e?.message || "Gagal generate";
+      setStatus(`❌ ${msg}`);
+      // 🔑 v19.62: kredit habis / key ditolak → langsung tawarkan GANTI KEY tanpa keluar
+      if (/kredit|credit|quota|saldo|balance|insufficient|habis|401|402|403|invalid/i.test(msg)) {
+        setGantiKey(true);
+      }
     } finally { setBusy(false); clearInterval(tick); }
   };
 
@@ -82,6 +93,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         const j = await r.json().catch(() => ({}));
         if (j.audio_url || j.audio_urls?.length) { await pakaiHasil(j); return; }
         if (j.status === "error" || j.error) throw new Error(j.error || "Provider error");
+        if (r.status === 401 || r.status === 402) throw new Error((j?.error || "Kredit habis / key ditolak"));
       } catch (e: any) {
         if (i >= 60) throw e;
       }
@@ -136,13 +148,31 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       </div>
 
       <div className="gd-card">
-        <div className="gd-label">PROVIDER</div>
+        <div className="gd-label">PROVIDER & KEY</div>
         <select className="v6-inp" value={prov} onChange={(e) => saveKey(e.target.value, key)}>
           {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
         <p style={{ fontSize: 10.5, color: "#8b8b98", margin: "6px 0" }}>{PROVIDERS.find((p) => p.id === prov)?.hint}</p>
-        <input className="v6-inp" style={{ marginTop: 4 }} placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com (buka suno.com → login → DevTools → Application → Cookies → salin semua)" : "Tempel API key"} value={key} onChange={(e) => saveKey(prov, e.target.value)} />
-        <div className="v6-note" style={{ marginTop: 6 }}>Apiframe sudah MATI (blok) — dipakai Kie / Sunor / Suno Resmi.</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com" : "Tempel API key"} value={key} onChange={(e) => saveKey(prov, e.target.value)} />
+          <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
+        </div>
+        <div className="v6-note" style={{ marginTop: 6 }}>Apiframe sudah MATI (blok) — dipakai Kie / Sunor / Suno Resmi. Kalau kredit satu provider habis, ganti provider/key di atas — langsung lanjut, nggak perlu keluar.</div>
+        {/* 🔑 v19.62: GERBANG GANTI KEY — muncul otomatis kalau kredit habis/key ditolak */}
+        {gantiKey && (
+          <div style={{ marginTop: 10, border: "1px solid rgba(251,191,36,.5)", borderRadius: 12, padding: 10, background: "rgba(251,191,36,.08)" }}>
+            <b style={{ fontSize: 12, color: "#fde68a" }}>🔑 Ganti key / pindah provider — biar langsung lanjut</b>
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+              {PROVIDERS.map((p) => (
+                <button key={p.id} className={`v6-chip ${prov === p.id ? "on" : ""}`} onClick={() => saveKey(p.id, "")}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <input className="v6-inp" style={{ marginTop: 8 }} placeholder="Tempel key/cookie BARU di sini…" onChange={(e) => saveKey(prov, e.target.value)} />
+            <button className="v6-chip" style={{ marginTop: 8, borderColor: "#fde68a55", color: "#fde68a" }} onClick={() => setGantiKey(false)}>✅ Selesai — tutup panel</button>
+          </div>
+        )}
       </div>
 
       <div className="gd-card">
@@ -152,9 +182,15 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <label className="gd-field wide"><span>Lirik (kosongkan = instrumental / gaya bebas)</span>
           <textarea className="v6-inp v6-ta" rows={4} style={{ minHeight: 90 }} value={lyrics} onChange={(e) => setLyrics(e.target.value)} placeholder={"Tulis lirik (≥30 huruf biar mode custom aktif)…\n[Verse]\nIbu…"} />
         </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-          <button className={`v6-chip ${instrumental ? "on" : ""}`} onClick={() => setInstrumental(!instrumental)}>🎹 Instrumen saja</button>
-          <select className="v6-inp" style={{ flex: 1, minWidth: 130 }} value={model} onChange={(e) => setModel(e.target.value)}>
+        <div className="v6-lbl" style={{ marginTop: 6 }}>VOKAL</div>
+        <div className="v6-chips" style={{ padding: 0 }}>
+          {([["auto", "🎤 Auto"], ["male", "👨 Pria"], ["female", "👩 Wanita"], ["instrumental", "🎹 Instrumen"]] as const).map(([id, lb]) => (
+            <button key={id} className={`v6-chip ${vokal === id ? "on" : ""}`} onClick={() => setVokal(id)}>{lb}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+          <span style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 800 }}>Model</span>
+          <select className="v6-inp" style={{ flex: 1, minWidth: 0 }} value={model} onChange={(e) => setModel(e.target.value)}>
             {MODELS.map((m) => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎" : ""}</option>)}
           </select>
         </div>
