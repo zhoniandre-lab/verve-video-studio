@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from "react";
 const PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama)", hint: "Key dari kie.ai → API Keys", keyUrl: "https://kie.ai/api-key" },
   { id: "sunor", label: "☀️ Sunor.cc", hint: "Key dari sunor.cc (sk_live_…)", keyUrl: "https://sunor.cc" },
-  { id: "suno-resmi", label: "🎵 Suno Resmi (cookie akun)", hint: "Cookie session suno.com — akun gratis 50 kredit/hari (lihat Bot Buruan → Suno)", keyUrl: "https://suno.com" },
+  // 🎵 v19.63: Suno Resmi dinonaktifkan SEMENTARA — balas 503 terus dari server
+  // (butuh cara akses khusus & sering sibuk). Nanti diaktifkan lagi kalau stabil.
+  // { id: "suno-resmi", label: "🎵 Suno Resmi (cookie akun)", hint: "Cookie session suno.com — akun gratis 50 kredit/hari (lihat Bot Buruan → Suno)", keyUrl: "https://suno.com" },
 ];
 const MODELS = ["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"];
 
@@ -102,6 +104,9 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   };
 
   // 🎵 v19.61: gabung segmen kalau >1 → lagu utuh
+  // 🎵 v19.63 FIX "lagu kosong": validasi audio SEBELUM bilang berhasil.
+  // Dulu: kalau durasi nggak terukur (0), tetap tampil "✅ Lagu jadi" padahal
+  // bisa jadi file 0 byte/rusak → buang waktu & kredit. Sekarang: decode wajib.
   const pakaiHasil = async (j: any) => {
     let urls: string[] = [];
     if (Array.isArray(j?.audio_urls) && j.audio_urls.length) urls = j.audio_urls.filter((u: any) => typeof u === "string" && u.startsWith("http"));
@@ -114,17 +119,32 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       if (g) { url = g; notice = ` (digabung ${urls.length} segmen — utuh)`; }
     }
     if (!url) throw new Error("Provider tidak kasih audio.");
-    // ukur durasi
+    // 🐛 v19.63: UKUR & VALIDASI — coba LANGSUNG url asli dulu, baru proxy.
+    // Kalau gagal decode / 0 byte → ERROR jelas (bukan "jadi" palsu 0:00).
     let dur = 0;
-    try {
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
-      const ac = new AC();
-      const r = await fetch(url.startsWith("/") ? url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
-      const buf = await ac.decodeAudioData(await r.arrayBuffer());
-      dur = buf.duration; ac.close();
-    } catch {}
+    let bytes = 0;
+    let lastErr = "gagal";
+    const cobaDecode = async (src: string): Promise<boolean> => {
+      try {
+        const r = await fetch(src);
+        const ab = await r.arrayBuffer();
+        bytes = ab.byteLength;
+        if (bytes < 1000) { lastErr = `file terlalu kecil (${bytes} byte)`; return false; }
+        const AC = window.AudioContext || (window as any).webkitAudioContext;
+        const ac = new AC();
+        const buf = await ac.decodeAudioData(ab);
+        dur = buf.duration; ac.close();
+        return true;
+      } catch (e: any) { lastErr = e?.message || "gagal decode"; return false; }
+    };
+    const okDecode = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
+      ? await cobaDecode(url)
+      : (await cobaDecode(url)) || (await cobaDecode(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`));
+    if (!okDecode) {
+      throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
+    }
     const h = { url, title: j?.title || title || "Lagu AI", dur };
-    setHasil(h); setStatus(`✅ Lagu jadi${notice} — ${dur ? `±${Math.round(dur)} dtk` : ""}. Bisa langsung dipakai di bawah.`);
+    setHasil(h); setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB). Bisa langsung dipakai di bawah.`);
     try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ ...h, at: Date.now() })); } catch {}
   };
 

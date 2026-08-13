@@ -76,12 +76,19 @@ export async function gabungUrlAudio(urls: string[], proxify?: (u: string) => st
   try {
     const bufs: AudioBuffer[] = [];
     for (const u of urls) {
-      try {
-        const r = await fetch(proxify ? proxify(u) : u);
-        const ab = await r.arrayBuffer();
-        const buf = await actx.decodeAudioData(ab);
-        if (buf && buf.length > 0) bufs.push(buf);
-      } catch { /* segmen gagal — lewati */ }
+      // 🐛 v19.63: coba LANGSUNG url asli dulu (banyak CDN kasih CORS *) — baru proxy
+      const ambil = async (src: string): Promise<AudioBuffer | null> => {
+        try {
+          const r = await fetch(src);
+          const ab = await r.arrayBuffer();
+          if (!ab.byteLength) return null;
+          const buf = await actx.decodeAudioData(ab);
+          return buf && buf.length > 0 ? buf : null;
+        } catch { return null; }
+      };
+      let buf = await ambil(u);
+      if (!buf && proxify) buf = await ambil(proxify(u));
+      if (buf) bufs.push(buf);
     }
     if (!bufs.length) return urls[0];
     const sampleRate = bufs[0].sampleRate;
