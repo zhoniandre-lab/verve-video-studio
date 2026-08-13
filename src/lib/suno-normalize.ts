@@ -5,7 +5,7 @@
    asli tiap provider (tests/suno-normalize.test.mjs).
    ===================================================================== */
 
-export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka";
+export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi";
 
 export interface HasilNormal {
   id?: string;
@@ -152,7 +152,8 @@ export function normalizeSunor(d: any): HasilNormal {
 export function normalizeGeneric(d: any): HasilNormal {
   const items = d.data || (Array.isArray(d) ? d : [d]);
   const first = items[0] || d || {};
-  const audioUrl = cariAudioRekursif(first) || cariAudioRekursif(d);
+  const urls = unik(kumpulAudioRekursif(d)); // 🎵 v19.69: SEMUA segmen (lagu panjang)
+  const audioUrl = urls[0] || cariAudioRekursif(first) || cariAudioRekursif(d);
   let status = (first.status || d.status || "pending").toString().toLowerCase();
   if (audioUrl && (status === "pending" || status === "processing" || status === "submitted" || status === "queued")) {
     status = "completed";
@@ -163,6 +164,7 @@ export function normalizeGeneric(d: any): HasilNormal {
     id: first.id || d.id || d.task_id || "",
     status: status as any,
     audio_url: audioUrl,
+    audio_urls: urls,
     title: first.title || d.title || "",
     image_url: first.image_url || first.cover || first.image || d.image_url || "",
   };
