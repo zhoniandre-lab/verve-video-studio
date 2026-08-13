@@ -525,12 +525,26 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             </div>
             {!!ytVideos.length && (
               <div className="gd-ytvideos">
-                {ytVideos.slice(0, 6).map((v) => (
-                  <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy}>
-                    <b>{v.title}</b>
-                    <span>{v.viewCount?.toLocaleString("id-ID") || 0} views · {v.likeCount ?? "?"} 👍 · {v.commentCount ?? "?"} 💬</span>
-                  </button>
-                ))}
+                {/* 🖼️ v19.65 TAHAP 4: BANDINGKAN THUMBNAIL — lihat visual mana yang meledak vs sepi */}
+                <div style={{ fontSize: 10.5, color: "#a5f3fc", fontWeight: 800, marginBottom: 6 }}>🖼️ BANDINGKAN THUMBNAIL (urutan: paling meledak → paling sepi)</div>
+                {[...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).slice(0, 8).map((v, idx) => {
+                  const th: any = (v as any).thumbnails;
+                  const thUrl = th?.medium?.url || th?.high?.url || th?.default?.url || "";
+                  const views = v.viewCount || 0;
+                  const maxViews = Math.max(1, ...ytVideos.map((x) => x.viewCount || 0));
+                  const status = views >= maxViews * 0.5 ? "🔥 meledak" : views >= maxViews * 0.1 ? "🟡 sedang" : "💤 sepi";
+                  return (
+                    <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", borderRadius: 12, padding: 6, background: "#0a0e16", border: "1px solid #ffffff12", marginBottom: 5, cursor: "pointer" }}>
+                      {thUrl ? <img src={thUrl} alt="" style={{ width: 52, height: 34, objectFit: "cover", borderRadius: 6, flex: "0 0 auto" }} /> : <span style={{ width: 52, height: 34, borderRadius: 6, background: "#141824", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>🎬</span>}
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.title}</b>
+                        <span style={{ fontSize: 9.5, color: "#8b8b98" }}>#{idx + 1} · {views.toLocaleString("id-ID")} views · {status}</span>
+                      </span>
+                      <span className="arr">›</span>
+                    </button>
+                  );
+                })}
+                <div style={{ fontSize: 9.5, color: "#64748b", marginTop: 4 }}>Ketuk video → data analytics-nya keisi di atas. Pola yang kelihatan: yang meledak biasanya thumbnail wajah + teks besar + kontras. 👀</div>
               </div>
             )}
             <div className="gd-textactions" style={{ gridTemplateColumns: "1fr" }}>
