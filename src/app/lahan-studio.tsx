@@ -21,7 +21,7 @@ import {
   solutionFor, monetizationHint, deviceAdvice, DATA_GAPS,
 } from "@/lib/brain/audience";
 import { analyzeBrainPatterns } from "@/lib/brain/pattern-insight";
-import { gabungChunksDataUrl, gabungUrlAudio } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS · 🎵 v19.61 gabung segmen lagu Suno
+import { gabungChunksDataUrl } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS
 import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru";
 import { NICHES, isSongNiche, nicheAiLabel, nicheById, wizardSteps } from "@/lib/brain/niche";
 import { resetJikaPerangkatBeda, tandaiPerangkat, deviceSama } from "@/lib/device-scope";
@@ -1292,18 +1292,15 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null; }
   }
 
-  // 🎵 v19.61 FIX KEPOTONG: kalau provider kasih BEBERAPA segmen (lagu 4-8 mnt),
-  // gabung jadi 1 audio utuh di browser.
+  // 🎵 v19.77: JANGAN gabung 2 variasi Suno. Satu generate = satu lagu (versi pertama).
   async function laguUtuh(pd: any): Promise<{ url: string; notice?: string }> {
-    let urls: string[] = [];
-    if (Array.isArray(pd?.audio_urls) && pd.audio_urls.length) urls = pd.audio_urls.filter((u: any) => typeof u === "string" && u.startsWith("http"));
-    else if (typeof pd?.audio_url === "string" && pd.audio_url.startsWith("http")) urls = [pd.audio_url];
-    if (!urls.length) return { url: "" };
-    if (urls.length === 1) return { url: urls[0] };
-    const prox = (u: string) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`;
-    const gabung = await gabungUrlAudio(urls, prox).catch(() => null);
-    if (gabung) return { url: gabung, notice: `🎵 Lagu digabung dari ${urls.length} segmen — utuh, nggak kepotong!` };
-    return { url: urls[0] };
+    const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
+    const clips = pilihKlipDariHasil(pd);
+    if (!clips.length) return { url: "" };
+    const notice = clips.length > 1
+      ? `🎵 Dipakai versi A (1 lagu). Provider kasih ${clips.length} variasi terpisah — tidak digabung jadi dua nada.`
+      : undefined;
+    return { url: clips[0].url, notice };
   }
 
   async function checkOnce(id: string): Promise<"done" | "pending"> {
@@ -1628,7 +1625,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (!r || !r.ok || j.error) throw Object.assign(new Error(j.error || `HTTP ${r ? r.status : "?"}`), { code: j.status });
     const dur = Number(j.duration);
     if (j.audio_url || j.audio_urls?.length) { // provider langsung kasih audio tanpa polling
-      const u = await laguUtuh(j); // 🎵 v19.61: gabung segmen kalau ada
+      const u = await laguUtuh(j); // 🎵 v19.77: satu lagu (versi A)
       if (u.notice) setTtsMsg(u.notice);
       finishSong({ url: u.url || j.audio_url, title: j.title || selTitle, duration: isFinite(dur) && dur > 0 ? dur : undefined, image: j.image_url });
       return;

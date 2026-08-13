@@ -19,7 +19,7 @@ import { createJob, failJob, finishJob, readJob, saveJob, setJobStage, summarize
 import { clearMaterialCache } from "@/lib/guard/material-cache"; // 🧺 cache gudang video HP
 import { cloneImportedProject, makeProjectBackupEnvelope, normalizeProjectBackupPayload, safeBackupName } from "@/lib/guard/project-backup"; // 💾 backup/restore proyek JSON
 import { clearDraftMirror, deleteDraftMirror, listDraftMirrorMetas, mergeDraftMetas, mirrorDraft, mirrorDrafts, readDraftMirror } from "@/lib/guard/draft-idb"; // 🗄️ mirror draft IndexedDB
-import { gabungChunksDataUrl, gabungUrlAudio } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS · 🎵 v19.61 gabung segmen lagu Suno
+import { gabungChunksDataUrl } from "@/lib/gabung-audio"; // 🧩 v19.49 gabung potongan TTS
 import {
   TRANSITIONS, ANIM_IN, ANIM_OUT, ANIM_LOOP, EFFECTS, FILTERS, TEXT_FONTS, TEXT_ANIMS,
   TEXT_TEMPLATES, TEXT_COLORS, STICKER_CATS, ANIM_STICKERS, STICKER_ANIM_CATS,
@@ -2954,19 +2954,14 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setLoading(null); setTimeout(() => setStageText(""), 100);
   }
   /* ---------- SUNO ---------- */
-  // 🎵 v19.61 FIX KEPOTONG: terima hasil lagu AI (langsung/polling) —
-  // kalau provider kasih BEBERAPA segmen (lagu 4-8 mnt), GABUNG jadi 1 audio utuh.
+  // 🎵 v19.77: JANGAN gabung 2 variasi Suno jadi 1 file dua nada.
   async function terimaLaguAI(data: any, namaFallback: string) {
-    let urls: string[] = [];
-    if (Array.isArray(data?.audio_urls) && data.audio_urls.length) urls = data.audio_urls.filter((u: any) => typeof u === "string" && u.startsWith("http"));
-    else if (typeof data?.audio_url === "string" && data.audio_url.startsWith("http")) urls = [data.audio_url];
-    if (!urls.length) return null;
-    let url = urls[0];
-    if (urls.length > 1) {
-      const gabung = await gabungUrlAudio(urls, proxify).catch(() => null);
-      if (gabung) { url = gabung; flash(`🎵 Lagu digabung dari ${urls.length} segmen — utuh, nggak kepotong!`); }
-    }
-    setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName((data?.title || namaFallback || "Lagu AI").slice(0, 60));
+    const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
+    const clips = pilihKlipDariHasil(data);
+    if (!clips.length) return null;
+    const url = clips[0].url;
+    if (clips.length > 1) flash(`🎵 Dipakai versi A (1 lagu). Ada ${clips.length} variasi terpisah — tidak digabung.`);
+    setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName((clips[0].title || data?.title || namaFallback || "Lagu AI").slice(0, 60));
     try { const d = await getAudioDuration(url); if (d > 0.5) setMusicDur(d); } catch {}
     return url;
   }
@@ -2997,7 +2992,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (!r.ok || data.error) throw new Error(data.error || data.message || `Error ${r.status}`);
         const id = data.taskId || data.task_id || data.id;
         if (data.audio_url || data.audioUrl || data.url || data.audio_urls?.length) {
-          await terimaLaguAI(data, mTitle); // 🎵 v19.61: gabung segmen kalau ada
+          await terimaLaguAI(data, mTitle); // 🎵 v19.77: satu lagu (versi A)
           setMStatus("selesai"); setMTask(""); setPollUi(p => ({ ...p, last: "berhasil ✅" }));
           try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}
           flash("✅ Lagu AI selesai langsung — masuk track audio");
@@ -3045,7 +3040,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           if (url) {
             clearInterval(itv); clearInterval(tickElapsed); if (tickRef.current) clearInterval(tickRef.current);
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-            await terimaLaguAI(pd, mTitle); // 🎵 v19.61: gabung segmen kalau ada
+            await terimaLaguAI(pd, mTitle); // 🎵 v19.77: satu lagu (versi A)
             setMStatus("selesai"); setMTask("");
             setPollUi(p => ({ ...p, last: "berhasil ✅" }));
             try { localStorage.removeItem(SUNO_TASK_KEY); } catch {}

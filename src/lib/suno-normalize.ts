@@ -7,13 +7,22 @@
 
 export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi";
 
+export interface KlipLagu {
+  url: string;
+  title?: string;
+  duration?: number;
+  image_url?: string;
+  id?: string;
+}
+
 export interface HasilNormal {
   id?: string;
   status: "pending" | "completed" | "error";
   audio_url?: string;
-  /** 🐛 v19.61 FIX KEPOTONG: SEMUA URL audio yang ditemukan (lagu panjang =
-     beberapa segmen). Client GABUNG kalau >1 → lagu 8 menit tuntas. */
+  /** URL tiap VERSI lagu (bukan potongan). JANGAN digabung jadi 1 file. */
   audio_urls?: string[];
+  /** 🎵 v19.77: tiap item = SATU lagu utuh (Suno selalu kasih 2 variasi). */
+  clips?: KlipLagu[];
   title?: string;
   image_url?: string;
   duration?: number;
@@ -67,6 +76,109 @@ export function kumpulAudioRekursif(o: any, dalem = 0, cakup?: Set<any>): string
 function unik(list: string[]): string[] {
   return Array.from(new Set(list.filter((x) => typeof x === "string" && x.startsWith("http"))));
 }
+
+const KEY_AUDIO_UTAMA = ["audio_url", "audioUrl"] as const;
+const KEY_AUDIO_STREAM = ["stream_url", "streamUrl", "streamAudioUrl"] as const;
+
+/** Satu URL terbaik per objek lagu — utamakan file jadi, bukan stream preview. */
+export function urlAudioDariObj(o: any): string {
+  if (!o || typeof o !== "object") return "";
+  const bagus = (v: unknown) => typeof v === "string" && /^https?:\/\//.test(v) && !/\.(jpg|jpeg|png|webp|gif|svg)(\?|$)/i.test(v);
+  for (const k of KEY_AUDIO_UTAMA) { if (bagus(o[k])) return o[k]; }
+  for (const k of KEY_AUDIO_STREAM) { if (bagus(o[k])) return o[k]; }
+  for (const k of ["url", "audio"]) {
+    const v = o[k];
+    if (bagus(v) && /\.(mp3|wav|m4a|ogg|flac|aac|opus)(\?|$)/i.test(String(v))) return String(v);
+  }
+  return "";
+}
+
+function objekLagu(o: any): boolean {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+  return KEY_AUDIO_UTAMA.some((k) => typeof o[k] === "string") || KEY_AUDIO_STREAM.some((k) => typeof o[k] === "string");
+}
+
+/**
+ * 🎵 v19.77: ambil KLIP = satu lagu utuh per item (sunoData/songs/clips/data).
+ * Bukan dump semua URL (audio+stream+variasi) — itu yang bikin 2 lagu beda
+ * kesambung jadi 1 file ±13 menit.
+ */
+export function ambilKlipLagu(root: any): KlipLagu[] {
+  const clips: KlipLagu[] = [];
+  const seenUrl = new Set<string>();
+  const seenId = new Set<string>();
+  const push = (o: any) => {
+    const url = urlAudioDariObj(o);
+    if (!url) return;
+    const id = String(o.id || o.clip_id || o.clipId || o.song_id || o.songId || "");
+    if (id && seenId.has(id)) return;
+    if (seenUrl.has(url)) return;
+    if (id) seenId.add(id);
+    seenUrl.add(url);
+    const dur = Number(o.duration || o.duration_seconds || o.durationSeconds);
+    clips.push({
+      url,
+      title: typeof o.title === "string" ? o.title : (typeof o.name === "string" ? o.name : undefined),
+      duration: isFinite(dur) && dur > 0 ? dur : undefined,
+      image_url: o.image_url || o.imageUrl || o.cover_url || o.image || undefined,
+      id: id || undefined,
+    });
+  };
+  const walk = (o: any, dalem = 0, seen?: Set<any>) => {
+    if (!o || typeof o !== "object" || dalem > 8) return;
+    const cakup = seen || new Set<any>();
+    if (cakup.has(o)) return;
+    cakup.add(o);
+    if (Array.isArray(o)) {
+      const lagu = o.filter(objekLagu);
+      if (lagu.length) {
+        for (const it of lagu) push(it);
+        for (const it of o) { if (!objekLagu(it)) walk(it, dalem + 1, cakup); }
+        return;
+      }
+      for (const it of o) walk(it, dalem + 1, cakup);
+      return;
+    }
+    for (const k of ["sunoData", "songs", "clips", "tracks"]) {
+      if (Array.isArray(o[k])) walk(o[k], dalem + 1, cakup);
+    }
+    if (objekLagu(o)) push(o);
+    for (const k of Object.keys(o)) {
+      if (k === "sunoData" || k === "songs" || k === "clips" || k === "tracks") continue;
+      walk(o[k], dalem + 1, cakup);
+    }
+  };
+  walk(root);
+  return clips;
+}
+
+/** Kalau struktur aneh (tidak ada objek lagu), jatuh ke kumpulan URL unik — tetap 1 URL = 1 versi. */
+export function clipsDariRespons(d: any): KlipLagu[] {
+  const clips = ambilKlipLagu(d);
+  if (clips.length) return clips;
+  return unik(kumpulAudioRekursif(d)).map((url) => ({ url }));
+}
+
+/** Client: ambil daftar versi dari jawaban API / storage. JANGAN concat. */
+export function pilihKlipDariHasil(j: any): KlipLagu[] {
+  if (Array.isArray(j?.clips) && j.clips.length) {
+    return j.clips.filter((c: any) => c && typeof c.url === "string" && /^https?:\/\//.test(c.url));
+  }
+  const dariObj = clipsDariRespons(j);
+  if (dariObj.length) return dariObj;
+  const urls: string[] = [];
+  if (Array.isArray(j?.audio_urls)) {
+    for (const u of j.audio_urls) if (typeof u === "string" && u.startsWith("http")) urls.push(u);
+  } else if (typeof j?.audio_url === "string" && j.audio_url.startsWith("http")) {
+    urls.push(j.audio_url);
+  }
+  return unik(urls).map((url) => ({
+    url,
+    title: typeof j?.title === "string" ? j.title : undefined,
+    duration: Number(j?.duration) > 0 ? Number(j.duration) : undefined,
+    image_url: j?.image_url,
+  }));
+}
 /** Normalisasi respons Kie.ai — generate & poll. */
 export function normalizeKie(d: any): HasilNormal {
   if (d?.code !== 200 && d?.code !== 0) {
@@ -80,15 +192,17 @@ export function normalizeKie(d: any): HasilNormal {
   if (st === "SUCCESS" || st === "FIRST_SUCCESS" || st === "COMPLETED" || st === "DONE") {
     const items = data.response?.sunoData || data.response?.data || data.sunoData || data.response || [];
     const first: any = Array.isArray(items) ? (items[0] || {}) : items;
-    const urls = unik([...kumpulAudioRekursif(data.response), ...kumpulAudioRekursif(data)]);
+    let clips = clipsDariRespons(data.response?.sunoData ? data.response : data);
+    if (!clips.length) clips = clipsDariRespons(data);
     return {
       id: data.taskId || data.id || first.id || "",
       status: "completed",
-      audio_url: urls[0] || "",
-      audio_urls: urls,
-      title: first.title || "",
-      image_url: first.imageUrl || "",
-      duration: first.duration,
+      audio_url: clips[0]?.url || "",
+      audio_urls: clips.map((c) => c.url),
+      clips,
+      title: clips[0]?.title || first.title || "",
+      image_url: clips[0]?.image_url || first.imageUrl || "",
+      duration: clips[0]?.duration ?? first.duration,
     };
   }
   if (st.includes("FAIL") || st.includes("ERROR")) {
@@ -104,15 +218,16 @@ export function normalizeMureka(d: any): HasilNormal {
   const statusRaw = String(d?.status || d?.state || d?.code || "").toLowerCase();
   const taskId = d?.task_id || d?.taskId || d?.id || "";
   if (statusRaw && /success|succeeded|completed|done|finished/.test(statusRaw)) {
-    const urls = unik(kumpulAudioRekursif(d));
+    const clips = clipsDariRespons(d);
     return {
       id: taskId,
       status: "completed",
-      audio_url: urls[0] || "",
-      audio_urls: urls,
-      title: d?.title || d?.song?.title || "",
-      image_url: d?.cover_url || d?.image_url || "",
-      duration: Number(d?.duration || d?.song?.duration || 0) || undefined,
+      audio_url: clips[0]?.url || "",
+      audio_urls: clips.map((c) => c.url),
+      clips,
+      title: clips[0]?.title || d?.title || d?.song?.title || "",
+      image_url: clips[0]?.image_url || d?.cover_url || d?.image_url || "",
+      duration: clips[0]?.duration || Number(d?.duration || d?.song?.duration || 0) || undefined,
     };
   }
   if (statusRaw && /fail|error|exception/.test(statusRaw)) {
@@ -131,15 +246,16 @@ export function normalizeSunor(d: any): HasilNormal {
     const out = d0.output ?? d0.result ?? d0.data ?? {};
     const first: any = Array.isArray(out) ? (out[0] || {})
       : (out.sunoData?.[0] || out.songs?.[0] || out.clips?.[0] || (Array.isArray(out.data) ? out.data[0] : null) || out || {});
-    const urls = unik([...kumpulAudioRekursif(out), ...kumpulAudioRekursif(d0)]);
+    const clips = clipsDariRespons(out.sunoData || out.songs || out.clips || out);
     return {
       id: d0.task_id || d0.id || first.id || "",
       status: "completed",
-      audio_url: urls[0] || "",
-      audio_urls: urls,
-      title: first.title || d0.title || "",
-      image_url: first.image_url || first.imageUrl || first.cover_url || "",
-      duration: first.duration,
+      audio_url: clips[0]?.url || "",
+      audio_urls: clips.map((c) => c.url),
+      clips,
+      title: clips[0]?.title || first.title || d0.title || "",
+      image_url: clips[0]?.image_url || first.image_url || first.imageUrl || first.cover_url || "",
+      duration: clips[0]?.duration ?? first.duration,
     };
   }
   if (st === "failure" || st === "error" || st === "failed" || st === "timeout") {
@@ -148,12 +264,12 @@ export function normalizeSunor(d: any): HasilNormal {
   return { id: d0.task_id || d0.id || "", status: "pending" };
 }
 
-/** Normalisasi provider generik suno-compatible (dipakai apiframe dulu — sekarang mati, tapi dijaga). */
+/** Normalisasi provider generik (MusicAPI / AIMusicAPI / suno-resmi). */
 export function normalizeGeneric(d: any): HasilNormal {
   const items = d.data || (Array.isArray(d) ? d : [d]);
   const first = items[0] || d || {};
-  const urls = unik(kumpulAudioRekursif(d)); // 🎵 v19.69: SEMUA segmen (lagu panjang)
-  const audioUrl = urls[0] || cariAudioRekursif(first) || cariAudioRekursif(d);
+  const clips = clipsDariRespons(d); // 🎵 v19.77: tiap URL = 1 versi, bukan segmen
+  const audioUrl = clips[0]?.url || cariAudioRekursif(first) || cariAudioRekursif(d);
   let status = (first.status || d.status || "pending").toString().toLowerCase();
   if (audioUrl && (status === "pending" || status === "processing" || status === "submitted" || status === "queued")) {
     status = "completed";
@@ -164,9 +280,11 @@ export function normalizeGeneric(d: any): HasilNormal {
     id: first.id || d.id || d.task_id || "",
     status: status as any,
     audio_url: audioUrl,
-    audio_urls: urls,
-    title: first.title || d.title || "",
-    image_url: first.image_url || first.cover || first.image || d.image_url || "",
+    audio_urls: clips.length ? clips.map((c) => c.url) : (audioUrl ? [audioUrl] : []),
+    clips,
+    title: clips[0]?.title || first.title || d.title || "",
+    image_url: clips[0]?.image_url || first.image_url || first.cover || first.image || d.image_url || "",
+    duration: clips[0]?.duration ?? first.duration,
   };
 }
 

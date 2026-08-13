@@ -191,10 +191,12 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     const wd = setTimeout(() => ac.abort(), 40000);
     const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
     const pd = await r.json().catch(() => ({}));
-    const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
+    const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
+    const clips = pilihKlipDariHasil(pd);
+    const url = clips[0]?.url || pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
     if (url) {
-      const dur = Number(pd.duration);
-      finishSong({ url, title: pd.title || defaultTitle || "Lagu AI", duration: isFinite(dur) && dur > 0 ? dur : undefined });
+      const dur = Number(clips[0]?.duration ?? pd.duration);
+      finishSong({ url, title: clips[0]?.title || pd.title || defaultTitle || "Lagu AI", duration: isFinite(dur) && dur > 0 ? dur : undefined });
       return "done";
     }
     if (pd.status === "error" || pd.error) throw new Error(pd.error || "Provider gagal generate");

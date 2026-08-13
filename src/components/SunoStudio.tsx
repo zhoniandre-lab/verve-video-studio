@@ -1,10 +1,10 @@
 "use client";
 /* 🎵 v19.61 SUNO STUDIO — menu KHUSUS Generate Lagu di dashboard.
-   Fokus satu hal: bikin lagu AI → dapat audio UTUH (segmen digabung) → pakai.
-   Provider: Kie.ai · Sunor.cc · Suno Resmi (cookie akun suno.com, 50 kredit/hari).
-   Hasil tersimpan di localStorage 'verve_suno_hasil' → bisa langsung dipakai
-   di Spectrum Studio / Editor (mereka baca storage ini). */
+   🎵 v19.77: SATU generate = SATU lagu. Provider Suno kasih 2 variasi —
+   ditampilkan TERPISAH (A/B), JANGAN digabung jadi 1 file dua nada.
+   Hasil tersimpan di localStorage 'verve_suno_hasil' → Spectrum / Editor. */
 import { useEffect, useRef, useState } from "react";
+import { pilihKlipDariHasil, type KlipLagu } from "@/lib/suno-normalize";
 
 const PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama)", hint: "Key dari kie.ai → API Keys", keyUrl: "https://kie.ai/api-key" },
@@ -37,6 +37,9 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [taskId, setTaskId] = useState("");
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "" });
   const [hasil, setHasil] = useState<{ url: string; urls?: string[]; previewUrl?: string; title: string; dur: number } | null>(null);
+  const [klipList, setKlipList] = useState<KlipLagu[]>([]);
+  const [klipIdx, setKlipIdx] = useState(0);
+  const [modeHasil, setModeHasil] = useState<"satu" | "dua">("satu");
   const pollTimer = useRef<any>(null);
   const tickTimer = useRef<any>(null);
 
@@ -57,7 +60,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const generate = async () => {
     if (!title.trim()) { setStatus("⚠️ Isi judul lagu dulu."); return; }
     if (!key.trim() && prov !== "suno-resmi") { setStatus("⚠️ Tempel API key provider dulu (atau pilih Suno Resmi + cookie akun)."); return; }
-    setBusy(true); setStatus("⏳ Mengirim ke provider…"); setHasil(null); setTaskId("");
+    setBusy(true); setStatus("⏳ Mengirim ke provider…"); setHasil(null); setKlipList([]); setKlipIdx(0); setTaskId("");
     const ts = Date.now();
     const tick = setInterval(() => setPollUi((p) => ({ ...p, elapsed: Math.round((Date.now() - ts) / 1000) })), 1000);
     tickTimer.current = tick;
@@ -109,24 +112,22 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     }
   };
 
-  // 🎵 v19.61: gabung segmen kalau >1 → lagu utuh
-  // 🎵 v19.63 FIX "lagu kosong": validasi audio SEBELUM bilang berhasil.
-  // Dulu: kalau durasi nggak terukur (0), tetap tampil "✅ Lagu jadi" padahal
-  // bisa jadi file 0 byte/rusak → buang waktu & kredit. Sekarang: decode wajib.
+  // 🎵 v19.77: JANGAN gabung 2 variasi Suno jadi 1 file. Satu URL = satu lagu.
+  // 🎵 v19.63: validasi decode sebelum bilang berhasil.
   const pakaiHasil = async (j: any) => {
-    let urls: string[] = [];
-    if (Array.isArray(j?.audio_urls) && j.audio_urls.length) urls = j.audio_urls.filter((u: any) => typeof u === "string" && u.startsWith("http"));
-    else if (typeof j?.audio_url === "string" && j.audio_url.startsWith("http")) urls = [j.audio_url];
-    let url = urls[0] || "";
-    let notice = "";
-    if (urls.length > 1) {
-      const { gabungUrlAudio } = await import("@/lib/gabung-audio");
-      const g = await gabungUrlAudio(urls, (u) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`).catch(() => null);
-      if (g) { url = g; notice = ` (digabung ${urls.length} segmen — utuh)`; }
-    }
+    const clips = pilihKlipDariHasil(j);
+    if (!clips.length) throw new Error("Provider tidak kasih audio.");
+    setKlipList(clips);
+    const idx = 0;
+    setKlipIdx(idx);
+    await kunciKlip(clips[idx], clips, j?.title);
+  };
+
+  const kunciKlip = async (klip: KlipLagu, semua: KlipLagu[], judulInduk?: string, idxPakai?: number) => {
+    const url = klip.url;
     if (!url) throw new Error("Provider tidak kasih audio.");
-    // 🐛 v19.63: UKUR & VALIDASI — coba LANGSUNG url asli dulu, baru proxy.
-    // Kalau gagal decode / 0 byte → ERROR jelas (bukan "jadi" palsu 0:00).
+    const idx = typeof idxPakai === "number" ? idxPakai : Math.max(0, semua.findIndex((c) => c.url === klip.url));
+    setKlipIdx(idx);
     let dur = 0;
     let bytes = 0;
     let lastErr = "gagal";
@@ -149,16 +150,12 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     if (!okDecode) {
       throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
     }
-    // 🐛 v19.71 FIX player 0:00: MP3 Suno sering tanpa metadata durasi → <audio> nampilin
-    // 0:00 walau file valid (decode sukses). Preview pakai WAV hasil decode (durasi pasti),
-    // download & Spectrum tetap pakai file asli (MP3 lebih kecil).
     let previewUrl: string | undefined;
     try {
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       const ac = new AC();
       const r = await fetch(url.startsWith("/") ? url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
       const buf = await ac.decodeAudioData(await r.arrayBuffer());
-      // mono 22050Hz biar ringan (preview doang)
       const mono = ac.createBuffer(1, buf.length, 22050);
       const src = buf.getChannelData(0), dst = mono.getChannelData(0);
       const step = buf.sampleRate / 22050;
@@ -167,11 +164,18 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       previewUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
       ac.close();
     } catch { previewUrl = undefined; }
-    // 🐛 v19.73 PERSISTEN: simpan URL ASLI (semua segmen) — blob hasil gabung cuma
-    // hidup sesi ini; URL asli bisa dipakai ulang (Spectrum gabung otomatis lagi).
-    const h = { url, urls, previewUrl, title: j?.title || title || "Lagu AI", dur };
-    setHasil(h); setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB). Bisa langsung dipakai di bawah.`);
-    try { const simpan = { urls, url, title: h.title, dur, at: Date.now() }; localStorage.setItem("verve_suno_hasil", JSON.stringify(simpan)); } catch {}
+    const huruf = idx === 0 ? "A" : idx === 1 ? "B" : String(idx + 1);
+    const notice = semua.length > 1
+      ? (modeHasil === "dua" ? ` · versi ${huruf} (ada ${semua.length} pilihan terpisah)` : ` · versi ${huruf} (1 lagu, bukan digabung)`)
+      : "";
+    const h = { url, urls: [url], previewUrl, title: klip.title || judulInduk || title || "Lagu AI", dur };
+    setHasil(h);
+    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB).`);
+    try {
+      localStorage.setItem("verve_suno_hasil", JSON.stringify({
+        url, urls: [url], clips: semua, pilih: idx, title: h.title, dur, at: Date.now(),
+      }));
+    } catch {}
   };
 
   // 🐛 v19.72 FIX: blob:/data: TIDAK boleh lewat proxy (proxy tolak → 'URL tidak valid').
@@ -268,6 +272,14 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
             {MODELS.map((m) => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎" : ""}</option>)}
           </select>
         </div>
+        <div className="v6-lbl" style={{ marginTop: 8 }}>HASIL GENERATE</div>
+        <div className="v6-chips" style={{ padding: 0 }}>
+          <button className={`v6-chip ${modeHasil === "satu" ? "on" : ""}`} onClick={() => setModeHasil("satu")}>1️⃣ Satu lagu</button>
+          <button className={`v6-chip ${modeHasil === "dua" ? "on" : ""}`} onClick={() => setModeHasil("dua")}>🆎 2 pilihan terpisah</button>
+        </div>
+        <p style={{ fontSize: 10.5, color: "#8b8b98", margin: "6px 0 0", lineHeight: 1.45 }}>
+          Provider Suno selalu bikin 2 variasi. Dulu dua-duanya <b>digabung 1 file</b> (jadi ±13 menit, dua nada beda). Sekarang: <b>satu lagu</b> = pakai versi A saja. <b>2 pilihan</b> = A dan B terpisah, kamu pilih. Tidak pernah disambung.
+        </p>
         <button className="gd-diagnose" disabled={busy} onClick={generate}>{busy ? "⏳ Lagi bikin lagu…" : "🎵 Generate Lagu"}</button>
         {!!status && <p style={{ fontSize: 12, color: status.startsWith("✅") ? "#86efac" : status.startsWith("❌") ? "#fca5a5" : "#fbbf24", margin: "8px 0 0", lineHeight: 1.5 }}>{status}</p>}
         {!!taskId && busy && <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>Cek #{pollUi.attempt} · {pollUi.elapsed}s · {pollUi.last} — lagu panjang bisa 2-5 menit</p>}
@@ -277,12 +289,30 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <div className="gd-card" style={{ borderColor: "rgba(34,197,94,.4)" }}>
           <div className="gd-label">✅ LAGU JADI</div>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>{hasil.title}{hasil.dur ? ` · ±${Math.round(hasil.dur)} dtk` : ""}</div>
+          {klipList.length > 1 && (
+            <div style={{ margin: "6px 0 10px" }}>
+              <p style={{ fontSize: 11, color: "#86efac", margin: "0 0 6px", lineHeight: 1.45 }}>
+                Ada {klipList.length} versi <b>terpisah</b> (bukan 1 file dua lagu). Pilih yang mau dipakai:
+              </p>
+              <div className="v6-chips" style={{ padding: 0 }}>
+                {klipList.map((c, i) => (
+                  <button
+                    key={c.url + i}
+                    className={`v6-chip ${klipIdx === i ? "on" : ""}`}
+                    onClick={() => { void kunciKlip(c, klipList, hasil.title, i).catch((e: any) => setStatus(`❌ ${e?.message || "Gagal buka versi"}`)); }}
+                  >
+                    {i === 0 ? "🅰️ Versi A" : i === 1 ? "🅱️ Versi B" : `Versi ${i + 1}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <audio controls preload="metadata" src={hasil.previewUrl || srcAman(hasil.url)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
-            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ urls: hasil.urls, url: hasil.url, title: hasil.title, dur: hasil.dur, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
+            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ urls: [hasil.url], url: hasil.url, title: hasil.title, dur: hasil.dur, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
           </div>
-          <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Hasil tersimpan otomatis — Spectrum & Editor bakal nawarin "Pakai hasil generate" pas dibuka.</p>
+          <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Yang tersimpan = lagu yang sedang dipilih (satu file, satu gaya). Tidak disambung ke versi lain.</p>
         </div>
       )}
     </div>

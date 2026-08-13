@@ -112,15 +112,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
     } catch {}
   }, []); // eslint-disable-line
-  // 🐛 v19.73 PERSISTEN: kalau tersimpan BEBERAPA segmen (lagu panjang), gabung ulang
-  // pas dipakai — blob lama mati setelah refresh, URL asli tetap hidup.
+  // 🎵 v19.77: JANGAN gabung urls — itu 2 variasi Suno, bukan potongan.
+  // Pakai url terpilih saja (satu lagu).
   const pakaiHasilSuno = async (h: { url: string; urls?: string[]; title: string; dur?: number }) => {
-    if (h.urls && h.urls.length > 1) {
-      const { gabungUrlAudio } = await import("@/lib/gabung-audio");
-      const g = await gabungUrlAudio(h.urls, (u) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`).catch(() => null);
-      if (g) { onSunoSong(g, h.title, h.dur); setHasilSuno(null); return; }
-    }
-    onSunoSong(h.url, h.title, h.dur);
+    const satu = (h.url && (h.url.startsWith("http") || h.url.startsWith("blob:") || h.url.startsWith("/")))
+      ? h.url
+      : (Array.isArray(h.urls) ? h.urls.find((u) => typeof u === "string" && u.startsWith("http")) : "");
+    if (!satu) return;
+    onSunoSong(satu, h.title, h.dur);
     setHasilSuno(null);
   };
   const [audioUrl, setAudioUrl] = useState("");

@@ -64,9 +64,9 @@ export function bufferToWav(buf: AudioBuffer): ArrayBuffer {
   return ab;
 }
 
-// 🎵 v19.61 FIX KEPOTONG: gabung BEBERAPA URL audio (segmen lagu Suno panjang)
-// jadi 1 audio utuh di browser. fetch tiap URL (lewat proxify biar lolos CORS) →
-// decode → concat → WAV blob. Kalau salah satu gagal, segmen itu dilewati.
+// 🧩 Gabung BEBERAPA URL audio berurutan (TTS potongan / rantai narasi).
+// 🎵 v19.77: JANGAN pakai ini untuk hasil Suno — 2 URL = 2 VARIASI lagu utuh,
+// bukan segmen. Menggabung = 1 file dua nada beda (±13 menit).
 export async function gabungUrlAudio(urls: string[], proxify?: (u: string) => string): Promise<string> {
   if (!urls || !urls.length) throw new Error("Tidak ada segmen audio.");
   if (urls.length === 1) return urls[0];
