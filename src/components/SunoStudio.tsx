@@ -36,7 +36,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [status, setStatus] = useState("");
   const [taskId, setTaskId] = useState("");
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "" });
-  const [hasil, setHasil] = useState<{ url: string; previewUrl?: string; title: string; dur: number } | null>(null);
+  const [hasil, setHasil] = useState<{ url: string; urls?: string[]; previewUrl?: string; title: string; dur: number } | null>(null);
   const pollTimer = useRef<any>(null);
   const tickTimer = useRef<any>(null);
 
@@ -167,9 +167,11 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       previewUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
       ac.close();
     } catch { previewUrl = undefined; }
-    const h = { url, previewUrl, title: j?.title || title || "Lagu AI", dur };
+    // 🐛 v19.73 PERSISTEN: simpan URL ASLI (semua segmen) — blob hasil gabung cuma
+    // hidup sesi ini; URL asli bisa dipakai ulang (Spectrum gabung otomatis lagi).
+    const h = { url, urls, previewUrl, title: j?.title || title || "Lagu AI", dur };
     setHasil(h); setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB). Bisa langsung dipakai di bawah.`);
-    try { const simpan = { url, title: h.title, dur, at: Date.now() }; localStorage.setItem("verve_suno_hasil", JSON.stringify(simpan)); } catch {}
+    try { const simpan = { urls, url, title: h.title, dur, at: Date.now() }; localStorage.setItem("verve_suno_hasil", JSON.stringify(simpan)); } catch {}
   };
 
   // 🐛 v19.72 FIX: blob:/data: TIDAK boleh lewat proxy (proxy tolak → 'URL tidak valid').
@@ -278,7 +280,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           <audio controls preload="metadata" src={hasil.previewUrl || srcAman(hasil.url)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
-            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ ...hasil, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
+            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ urls: hasil.urls, url: hasil.url, title: hasil.title, dur: hasil.dur, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
           </div>
           <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Hasil tersimpan otomatis — Spectrum & Editor bakal nawarin "Pakai hasil generate" pas dibuka.</p>
         </div>

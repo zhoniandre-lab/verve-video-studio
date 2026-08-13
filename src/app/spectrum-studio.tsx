@@ -102,7 +102,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   /* musik */
   // 🎵 v19.61: hasil generate dari Suno Studio (/suno) — disimpan di localStorage,
   // Spectrum nawarin "Pakai" biar langsung jadi musik + spektrum.
-  const [hasilSuno, setHasilSuno] = useState<{ url: string; title: string; dur: number } | null>(null);
+  const [hasilSuno, setHasilSuno] = useState<{ url: string; urls?: string[]; title: string; dur: number } | null>(null);
   useEffect(() => {
     try {
       const raw = localStorage.getItem("verve_suno_hasil");
@@ -112,6 +112,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
     } catch {}
   }, []); // eslint-disable-line
+  // 🐛 v19.73 PERSISTEN: kalau tersimpan BEBERAPA segmen (lagu panjang), gabung ulang
+  // pas dipakai — blob lama mati setelah refresh, URL asli tetap hidup.
+  const pakaiHasilSuno = async (h: { url: string; urls?: string[]; title: string; dur?: number }) => {
+    if (h.urls && h.urls.length > 1) {
+      const { gabungUrlAudio } = await import("@/lib/gabung-audio");
+      const g = await gabungUrlAudio(h.urls, (u) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`).catch(() => null);
+      if (g) { onSunoSong(g, h.title, h.dur); setHasilSuno(null); return; }
+    }
+    onSunoSong(h.url, h.title, h.dur);
+    setHasilSuno(null);
+  };
   const [audioUrl, setAudioUrl] = useState("");
   // 🎵 v19.29: panel generate lagu (Suno) — sama persis dengan di Lahan
   const [showSuno, setShowSuno] = useState(false);
@@ -1983,7 +1994,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             {hasilSuno && !audioUrl && (
               <div style={{ border: "1px solid rgba(34,197,94,.4)", borderRadius: 12, padding: 10, background: "rgba(34,197,94,.07)", marginTop: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 800 }}>🎵 Hasil generate tersimpan: {hasilSuno.title}{hasilSuno.dur ? ` (±${Math.round(hasilSuno.dur)} dtk)` : ""}</div>
-                <button className="v6-bigcta" style={{ marginTop: 6, background: "#22c55e", color: "#052e16" }} onClick={() => { onSunoSong(hasilSuno.url, hasilSuno.title, hasilSuno.dur); setHasilSuno(null); }}>✅ Pakai lagu ini</button>
+                <button className="v6-bigcta" style={{ marginTop: 6, background: "#22c55e", color: "#052e16" }} onClick={() => void pakaiHasilSuno(hasilSuno)}>✅ Pakai lagu ini</button>
               </div>
             )}
             {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
