@@ -153,10 +153,11 @@ export async function hitungFreqFramesChunked(
   return { frames, fps, bins, durationSec: total };
 }
 
-/** Ambil frame frekuensi pada detik t dengan LERP antar frame (halus). */
-export function freqAt(fr: FreqFrames, t: number): Uint8Array {
+/** Ambil frame frekuensi pada detik t dengan LERP antar frame (halus).
+ *  `buf` opsional — reuse array biar render tidak alokasi tiap frame. */
+export function freqAt(fr: FreqFrames, t: number, buf?: Uint8Array): Uint8Array {
   const { frames, fps, bins } = fr;
-  if (!frames.length) return new Uint8Array(bins);
+  if (!frames.length) return buf && buf.length === bins ? (buf.fill(0), buf) : new Uint8Array(bins);
   if (frames.length === 1) return frames[0];
   const x = Math.max(0, Math.min(frames.length - 1, t * fps));
   const i0 = Math.floor(x);
@@ -164,7 +165,7 @@ export function freqAt(fr: FreqFrames, t: number): Uint8Array {
   const fr2 = x - i0;
   if (fr2 < 0.001 || i0 === i1) return frames[i0];
   const a = frames[i0], b = frames[i1];
-  const out = new Uint8Array(bins);
+  const out = buf && buf.length === bins ? buf : new Uint8Array(bins);
   for (let i = 0; i < bins; i++) out[i] = Math.round(a[i] + (b[i] - a[i]) * fr2);
   return out;
 }

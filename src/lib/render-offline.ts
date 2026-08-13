@@ -60,17 +60,57 @@ export interface OptsRenderOffline {
   onInfo?: (s: string) => void;
 }
 
+/** Macroblock H.264 = 16px. Ukuran bukan kelipatan 16 → banyak HP jatuh ke encoder SOFTWARE (3–10× lebih lambat). */
+export function align16(n: number): number {
+  return Math.max(16, Math.round(n / 16) * 16);
+}
+
+export type CfgVideoEnc = {
+  codec: string;
+  width: number;
+  height: number;
+  bitrate: number;
+  framerate: number;
+  hardwareAcceleration?: "prefer-hardware" | "no-preference";
+  latencyMode?: "quality" | "realtime";
+  avc?: { format: "avc" };
+};
+
+/** Pilih config encoder yang DIDUKUNG perangkat — hardware dulu, lalu software. */
+export async function pilihConfigVideo(w: number, h: number, fps: number, bitrate: number): Promise<CfgVideoEnc | null> {
+  const W = typeof window !== "undefined" ? (window as any) : null;
+  if (!W?.VideoEncoder?.isConfigSupported) return null;
+  const cw = align16(w), ch = align16(h);
+  const px = cw * ch;
+  const lvl = px <= 1280 * 720 ? "1f" : px <= 1920 * 1080 ? "28" : "32";
+  const codecs = [`avc1.4d00${lvl}`, `avc1.6400${lvl}`, `avc1.4200${lvl}`];
+  const hws: Array<"prefer-hardware" | "no-preference"> = ["prefer-hardware", "no-preference"];
+  const lats: Array<"quality" | "realtime"> = ["quality", "realtime"];
+  for (const hw of hws) {
+    for (const codec of codecs) {
+      for (const latencyMode of lats) {
+        const cfg: CfgVideoEnc = {
+          codec, width: cw, height: ch, bitrate, framerate: fps,
+          hardwareAcceleration: hw, latencyMode, avc: { format: "avc" },
+        };
+        try {
+          const s = await W.VideoEncoder.isConfigSupported(cfg);
+          if (s?.supported) return cfg;
+        } catch { /* browser menolak field tertentu — coba kombinasi lain */ }
+      }
+    }
+  }
+  return null;
+}
+
 export async function cekRenderOfflineMampu(): Promise<{ ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" }> {
   try {
     const W = window as any;
     if (!W.VideoEncoder || !W.AudioEncoder || !W.VideoFrame || !W.AudioData) {
       return { ok: false, alasan: "WebCodecs tidak didukung browser ini (pakai Chrome/Edge terbaru)" };
     }
-    const vc = await W.VideoEncoder.isConfigSupported({
-      codec: "avc1.42001f", width: 640, height: 360, bitrate: 1_000_000, framerate: 30,
-      avc: { format: "avc" },
-    }).catch(() => null);
-    if (!vc?.supported) return { ok: false, alasan: "Encoder H.264 tidak didukung browser ini" };
+    const probed = await pilihConfigVideo(640, 360, 30, 1_000_000);
+    if (!probed) return { ok: false, alasan: "Encoder H.264 tidak didukung browser ini" };
     const acAac = await W.AudioEncoder.isConfigSupported({
       codec: "mp4a.40.2", sampleRate: 44100, numberOfChannels: 2, bitrate: 128_000,
     }).catch(() => null);
@@ -190,44 +230,26 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   o.onFase?.("video");
   const W = o.w, H = o.h;
   const fps = o.fps && (o.fps === 24 || o.fps === 30 || o.fps === 25) ? o.fps : FPS_DEF;
-  // ⚡ v19.46.1 TURBO: render & ENCODE pada resolusi lebih rendah LANGSUNG (bukan upscale).
-  // 🐛 FIX (dari benchmark): upscale TIDAK ngefek karena encoder tetap memproses 1080×608 penuh.
-  // Yang bener: output video = resolusi kecil → encoder kerja lebih sedikit → 2× lebih cepat.
+  // ⚡ v19.46.1 TURBO: encode LANGSUNG di resolusi kecil (bukan upscale ke 1080).
+  // 🐛 v19.75: SELALU align16 — 1080 % 16 = 8 → banyak HP Chrome jatuh ke encoder SOFTWARE (3–10× lambat).
   const turbo = o.resScale && o.resScale > 0.3 && o.resScale < 1 ? o.resScale : 1;
-  const cw = Math.max(160, Math.round(W * turbo));
-  const ch = Math.max(90, Math.round(H * turbo));
+  const cw = align16(Math.max(160, Math.round(W * turbo)));
+  const ch = align16(Math.max(90, Math.round(H * turbo)));
+  const px = cw * ch;
+  let bitrate = o.videoBitrate;
+  if (!bitrate) {
+    const base = px <= 640 * 360 ? 1_800_000 : px <= 848 * 480 ? 2_400_000 : px <= 1280 * 720 ? 3_200_000 : 4_500_000;
+    bitrate = dur > 40 * 60 ? Math.min(base, 2_400_000) : dur > 10 * 60 ? Math.min(base, 3_000_000) : base;
+  }
   const cv = document.createElement("canvas");
-  cv.width = turbo < 1 ? cw : W;
-  cv.height = turbo < 1 ? ch : H;
+  cv.width = cw;
+  cv.height = ch;
   const ctx = cv.getContext("2d", { alpha: false })!;
-  const cvW = cv; // canvas kerja = canvas encode (satu canvas)
-  const ctxW = ctx;
-  // 🚀 v19.34: canvas latar ter-cache (hanya kalau drawBg/drawDin disediakan)
   const bgCv = !!o.drawBg && !!o.drawDin ? document.createElement("canvas") : null;
   const bgCtx = bgCv ? bgCv.getContext("2d", { alpha: false })! : null;
   if (bgCv) { bgCv.width = cw; bgCv.height = ch; }
-  // 🚀 v19.34: ADAPTIF — ukur dulu mana yang lebih cepat DI PERANGKAT INI (HP GPU beda
-  // dengan CPU). Jalur GPU: berlapis menang telak (latar di-cache). Jalur CPU murni:
-  // mode lama kadang lebih cepat. Jadi kita ukur 30 frame tiap mode, pilih tercepat.
-  let pakaiLapis = !!o.drawBg && !!o.drawDin;
-  if (pakaiLapis) {
-    try {
-      const BENCH = 30;
-      const t0 = performance.now();
-      for (let f = 0; f < BENCH; f++) {
-        const tt = f / 30;
-        if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, cw, ch, tt, null);
-        ctxW.drawImage(bgCv!, 0, 0);
-        o.drawDin!(ctxW, cw, ch, tt, null);
-      }
-      const msLapis = performance.now() - t0;
-      const t1 = performance.now();
-      for (let f = 0; f < BENCH; f++) o.draw(ctxW, cw, ch, f / 30, null);
-      const msFull = performance.now() - t1;
-      if (msFull < msLapis) pakaiLapis = false; // CPU murni → mode lama lebih cepat
-      o.onInfo?.(`Benchmark: berlapis ${msLapis.toFixed(0)}ms vs lama ${msFull.toFixed(0)}ms (30 frame) → pakai ${pakaiLapis ? "berlapis 🚀" : "lama"}`);
-    } catch { pakaiLapis = false; }
-  }
+  // 🐛 v19.75: SKIP benchmark 60× drawScene (buang 1–3 dtk di HP). Pakai berlapis kalau tersedia.
+  const pakaiLapis = !!o.drawBg && !!o.drawDin;
 
   const muxer = new Muxer({
     target: new ArrayBufferTarget(),
@@ -241,6 +263,11 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   const totalFrames = Math.round(dur * fps);
   const usPer = 1e6 / fps;
   let vCfg: EncodedVideoChunkMetadata["decoderConfig"] | undefined;
+  const probed = await pilihConfigVideo(cw, ch, fps, bitrate);
+  const encCfg: CfgVideoEnc = probed || {
+    codec: "avc1.42001f", width: cw, height: ch, bitrate, framerate: fps, avc: { format: "avc" },
+  };
+  o.onInfo?.(`Encoder: ${encCfg.codec} ${cw}×${ch} @${fps}fps ${(bitrate / 1e6).toFixed(1)}Mbps hw=${encCfg.hardwareAcceleration || "?"} lat=${encCfg.latencyMode || "?"} lapis=${pakaiLapis}`);
   let encV: VideoEncoder | null = null;
   await new Promise<void>((res, rej) => {
     try {
@@ -251,44 +278,43 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
         },
         error: (e) => rej(e instanceof Error ? e : new Error(String(e))),
       });
-      encV.configure({
-        codec: "avc1.42001f",
-        width: cw, height: ch,
-        bitrate: o.videoBitrate || 6_000_000,
-        framerate: fps,
-        avc: { format: "avc" },
-      });
+      try {
+        encV.configure(encCfg);
+      } catch {
+        // field hw/latency ditolak di beberapa Chrome Android — fallback Baseline polos
+        encV.configure({
+          codec: "avc1.42001f", width: cw, height: ch, bitrate, framerate: fps, avc: { format: "avc" },
+        });
+        o.onInfo?.("Encoder: fallback avc1.42001f (configure HW ditolak)");
+      }
       res();
     } catch (e) { rej(e instanceof Error ? e : new Error(String(e))); }
   });
 
   const peaks = o.peaks || [];
+  const freqBuf = o.freqFrames ? new Uint8Array(o.freqFrames.bins) : null;
   const visibel = () => (typeof document !== "undefined" ? document.visibilityState !== "hidden" : true);
+  const kfSetiap = Math.max(24, fps * 2);
   for (let f = 0; f < totalFrames; f++) {
     const t = off0 + f / fps;
-    // 🎛 v19.39: pakai FFT ASLI kalau ada — kalau tidak, fallback synthBars
-    const freq = o.freqFrames ? freqAt(o.freqFrames, t) : (peaks.length ? synthBars(t, peaks) : null);
+    // 🎛 v19.39 / v19.75: FFT asli + reuse buffer (jangan new Uint8Array tiap frame)
+    const freq = o.freqFrames ? freqAt(o.freqFrames, t, freqBuf!) : (peaks.length ? synthBars(t, peaks) : null);
     if (pakaiLapis) {
-      // 🚀 v19.34: latar digambar ulang tiap BG_EVERY frame → 3-4× lebih cepat
       if (f % BG_EVERY === 0) o.drawBg!(bgCtx!, cw, ch, t, freq);
-      ctxW.drawImage(bgCv!, 0, 0);
-      o.drawDin!(ctxW, cw, ch, t, freq);
+      ctx.drawImage(bgCv!, 0, 0);
+      o.drawDin!(ctx, cw, ch, t, freq);
     } else {
-      o.draw(ctxW, cw, ch, t, freq);
+      o.draw(ctx, cw, ch, t, freq);
     }
     const frame = new VideoFrame(cv, { timestamp: f * usPer, duration: usPer });
-    encV!.encode(frame, { keyFrame: f % 60 === 0 });
+    encV!.encode(frame, { keyFrame: f % kfSetiap === 0 });
     frame.close();
-    // 🐛 FIX v19.33.2: HORMATI BACKPRESSURE encoder! Kalau kita lempar frame lebih cepat
-    // dari kemampuan encoder (HP lama/encoder software), antrian encoder membengkak →
-    // memory meledak → renderer crash. Tunggu sampai antrian < 30 sebelum lanjut.
-    while (encV!.encodeQueueSize > 30) {
-      await new Promise((r) => setTimeout(r, 10));
+    while (encV!.encodeQueueSize > 24) {
+      await new Promise((r) => setTimeout(r, 8));
     }
-    if ((f & 31) === 0) {
+    // 🐛 v19.75: yield lebih jarang (64 frame) — setTimeout(0) tiap 32 frame nahan encoder HW
+    if ((f & 63) === 0) {
       o.onProg?.(0.15 + 0.83 * ((f + 1) / totalFrames));
-      // 🚀 v19.34: yield hanya saat tab terlihat — di background tab (layar mati)
-      // timer di-throttle browser → tanpa yield render malah makin cepat.
       if (visibel()) await new Promise((r) => setTimeout(r, 0));
     }
   }

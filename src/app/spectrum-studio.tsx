@@ -324,7 +324,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [err, setErr] = useState("");
   /* 🎬 v19.32 DUAL RENDER — sekali render → 2 video:
      1) Long (rasio dipilih) 2) Short 9:16 NATIVE 30 dtk dari bagian paling seru.
-     Short di-render ulang layout 9:16 asli (608×1080) → TIDAK ADA yang kepotong. */
+     Short di-render ulang layout 9:16 asli (720×1280) → TIDAK ADA yang kepotong. */
   const [dualRender, setDualRender] = useState(false);
   const [shortDur, setShortDur] = useState(30); // ⏱ default 30 detik (permintaan user)
   const [shortStart, setShortStart] = useState(0); // detik awal short (deteksi otomatis / geser manual)
@@ -346,9 +346,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [renderFase, setRenderFase] = useState<"audio" | "video" | "mux" | "">("");
   const [pakaiMode, setPakaiMode] = useState<"" | "offline" | "realtime">("");
   /* 🚀 v19.34: kecepatan render — fps bisa 24 (20% lebih cepat) & estimasi waktu diukur asli */
-  const [fpsOpt, setFpsOpt] = useState<24 | 25 | 30>(30);
-  // ⚡ v19.46.1 TURBO: render resolusi rendah + upscale — 2-4× lebih cepat
-  const [turbo, setTurbo] = useState(false);
+  const [fpsOpt, setFpsOpt] = useState<24 | 25 | 30>(24);
+  // ⚡ v19.46.1 / v19.75: Turbo default ON — 720p HD + 24fps jauh lebih cepat di HP
+  const [turbo, setTurbo] = useState(true);
+  const renderingRef = useRef(false);
   const [estSisa, setEstSisa] = useState("");
   function logDiag(s: string) {
     const row = { t: new Date().toISOString().slice(11, 19), s };
@@ -468,7 +469,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   }
   const barsRef = useRef<Float32Array>(new Float32Array(128)); // 🐛 FIX v19.17.1: harus ≥ barCount maks (128) — dulu 64 → naikkan bar >64 bikin NaN
 
-  const dim = useMemo(() => ratio === "9:16" ? { w: 608, h: 1080 } : { w: 1080, h: 608 }, [ratio]);
+  const dim = useMemo(() => ratio === "9:16" ? { w: 720, h: 1280 } : { w: 1280, h: 720 }, [ratio]);
   const tpl = useMemo(() => CC_TEMPLATES.find(t => t.id === ccTpl) || CC_TEMPLATES[1], [ccTpl]);
   const rgb = useMemo(() => {
     const m = specColor.replace("#", ""); const v = m.length === 3 ? m.split("").map(c => c + c).join("") : m;
@@ -691,7 +692,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
   }
 
-  const drawScene = useCallback((ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq?: Uint8Array | null, lapis?: "semua" | "bg" | "dinamis") => {
+  const drawScene = useCallback((ctx: CanvasRenderingContext2D, W: number, H: number, t: number, freq?: Uint8Array | null, lapis?: "semua" | "bg" | "dinamis", cepat?: boolean) => {
     // 🚀 v19.34: render BERLAPIS — "bg" (latar: gradient/glow/bintang — di-cache, murah)
     // vs "dinamis" (bar/lirik/logo — tiap frame). Preview tetap "semua" = identik seperti dulu.
     const bgOnly = lapis === "bg";
@@ -857,7 +858,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       grad3.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.65 + 130))},${Math.min(255, Math.round(g2 * 0.55 + 110))},255)`);
       grad3.addColorStop(0.82, `rgb(${Math.min(255, Math.round(r * 0.4 + 205))},${Math.min(255, Math.round(g2 * 0.35 + 190))},255)`);
       grad3.addColorStop(1, `rgb(${Math.min(255, Math.round(r * 0.3 + 225))},${Math.min(255, Math.round(g2 * 0.25 + 220))},255)`);
-      // reflection bawah (flip) + glow
+      // reflection bawah (flip) — dilewati saat render cepat (mahal di HP)
+      if (!cepat) {
       ctx.save(); ctx.globalAlpha = 0.26; ctx.translate(0, baseY + 4); ctx.scale(1, -0.45);
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(3, v * H * 0.4);
@@ -868,6 +870,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.fill();
       }
       ctx.restore();
+      }
       // bars utama + glow MURAH (lighter — tanpa shadowBlur yang bikin HP berat)
       ctx.save(); ctx.globalCompositeOperation = "lighter";
       const glowBg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.5);
@@ -880,18 +883,21 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(3, v * H * 0.62);
         const x = i * bw + bw * 0.16, w = bw * 0.68, r2 = bw * 0.3;
+        if (!cepat) {
         // shadow lembut (premium)
         ctx.fillStyle = `rgba(0,0,0,0.25)`;
         ctx.beginPath();
         if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + 1.5, baseY - h + 1.5, w, h, r2);
         else ctx.rect(x + 1.5, baseY - h + 1.5, w, h);
         ctx.fill();
+        }
         // bar utama
         ctx.fillStyle = grad3;
         ctx.beginPath();
         if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x, baseY - h, w, h, r2);
         else ctx.rect(x, baseY - h, w, h);
         ctx.fill();
+        if (!cepat) {
         // highlight kiri atas (glossy)
         ctx.fillStyle = "rgba(255,255,255,0.18)";
         ctx.fillRect(x + w * 0.12, baseY - h, w * 0.16, h);
@@ -901,6 +907,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.fillStyle = "rgba(255,255,255,0.95)";
         if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5, 2.5);
         else ctx.fillRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5);
+        }
       }
       // lingkar bass di bawah tengah — 🧹 v19.45.1: hanya kalau fx.ring ON
       if (fx.ring) {
@@ -1127,7 +1134,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.22, baseY - peakF[i] - 4, bw * 0.56, 4, 2);
         else ctx.fillRect(i * bw + bw * 0.22, baseY - peakF[i] - 4, bw * 0.56, 4);
       }
-      // ember api di dasar
+      // ember api di dasar — dilewati saat render cepat
+      if (!cepat) {
       ctx.save(); ctx.globalCompositeOperation = "lighter";
       for (let i = 0; i < 24; i++) {
         const ex = ((i * 83 + Math.floor(t * 26) * 17) % W);
@@ -1137,6 +1145,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.beginPath(); ctx.arc(ex, ey, 1 + (i % 3) + bass, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
+      }
     } else { // dots/partikel
       ctx.save();
       for (let i = 0; i < N; i++) {
@@ -1282,7 +1291,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       // sinar (god rays) berputar
       ctx.translate(cx, cy); ctx.rotate(t * rotSpeed);
       ctx.globalCompositeOperation = "lighter";
-      const RAYS = 12;
+      const RAYS = cepat ? 0 : 12;
       for (let i = 0; i < RAYS; i++) {
         const ang0 = (i / RAYS) * Math.PI * 2;
         ctx.save(); ctx.rotate(ang0);
@@ -1339,7 +1348,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     // 👑 v19.13 PRO PACK: EMBER NAIK — partikel ringan (murah, tanpa shadowBlur)
     // 🧩 v19.36: lapisan partikel — bisa disembunyikan
-    if (layerVis.partikel !== false) {
+    if (!cepat && layerVis.partikel !== false) {
     ctx.save(); ctx.globalAlpha = layerOp.partikel ?? 1;
     if (!embersRef.current.length) {
       for (let i = 0; i < 30; i++) embersRef.current.push({
@@ -1471,6 +1480,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     fx]); // 🐛 FIX v19.15.1: semua param kustomisasi wajib jadi dep — tanpa ini slider/drag nggak ngefek di preview
 
   const tick = useCallback(() => {
+    if (renderingRef.current) { rafRef.current = null; return; }
     const cv = cvRef.current; if (!cv) return;
     const ctx = cv.getContext("2d") as CanvasRenderingContext2D | null; if (!ctx) return;
     const t = srcRef.current ? actxRef.current!.currentTime - startAtRef.current : performance.now() / 1000;
@@ -1485,6 +1495,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   /* mulai loop pratinjau (tanpa audio → t pakai jam biasa) */
   function startPreviewLoop() {
+    if (renderingRef.current) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(tick);
   }
@@ -1577,7 +1588,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   /* 🎬 v19.32: satu sesi render (dipakai untuk Long ATAU Short).
      offset = detik mulai audio; dur = durasi video.
-     Untuk SHORT: layout canvas 9:16 native (608×1080) → tampilan UTUH, nggak ada kepotong,
+     Untuk SHORT: layout canvas 9:16 native (720×1280) → tampilan UTUH, nggak ada kepotong,
      dan waktu visual = offset + waktu lokal → lirik & denyut sinkron dengan audio. */
   async function renderSatu(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void; fps?: number }): Promise<Blob> {
     await ensureFontsLoaded().catch(() => {});
@@ -1635,7 +1646,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const gambar = (): boolean => {
         const lt = actx.currentTime - startAt;
         analyser.getByteFrequencyData(barsLocal as any);
-        drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal);
+        drawScene(ctx, W, H, Math.max(0, o + lt), barsLocal, undefined, true);
         // 🐛 FIX v19.26: throttle progress — setState tiap frame bikin HP berat/stutter
         // 🛡 v19.32.1: progress naik walau rAF mati (interval yang gambar), update hemat (≥0.4%)
         const p = clampN(lt / d, 0, 1);
@@ -1671,17 +1682,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const peaks = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
     // 🚀 v19.34: bitrate otomatis — video panjang pakai bitrate sedikit lebih rendah
     // (tetap tajam di HP/YouTube, tapi file & memori jauh lebih ringan)
-    const vbr = opts.dur > 40 * 60 ? 3_500_000 : opts.dur > 10 * 60 ? 4_500_000 : 6_000_000;
-    logDiag(`Render offline ${opts.w}×${opts.h} · ${fpsOpt}fps · ${(vbr / 1e6).toFixed(1)} Mbps · lapis=${true}`);
+    const px = opts.w * opts.h;
+    const base = px <= 1280 * 720 ? 3_200_000 : 4_500_000;
+    const vbr = opts.dur > 40 * 60 ? 2_400_000 : opts.dur > 10 * 60 ? 3_000_000 : base;
+    logDiag(`Render offline ${opts.w}×${opts.h} · ${fpsOpt}fps · ${(vbr / 1e6).toFixed(1)} Mbps · turbo=${turbo} · cepat=1`);
     return renderOfflineVideo({
       buf, w: opts.w, h: opts.h, offset: opts.offset, dur: opts.dur,
       eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec, fps: fpsOpt, videoBitrate: vbr,
-      resScale: turbo ? 0.72 : undefined, // ⚡ Turbo: render 72% lalu upscale
+      resScale: turbo ? 0.72 : undefined, // ⚡ Turbo: encode 72% (lalu align16 di mesin)
       // 🎛 v19.39: pakai FFT asli → spektrum render AKURAT ikut musik (bukan sintetis)
       freqFrames: freqFramesRef.current || undefined,
-      drawBg: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "bg"),
-      drawDin: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "dinamis"),
-      draw: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq),
+      drawBg: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "bg", true),
+      drawDin: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, "dinamis", true),
+      draw: (ctx, W, H, t, freq) => drawScene(ctx, W, H, t, freq, undefined, true),
       onProg: opts.onProg,
       onFase: (f) => setRenderFase(f),
       onInfo: (s) => logDiag(s),
@@ -1709,13 +1722,20 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } else {
       setRenderNote("");
     }
+    renderingRef.current = true;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     setRendering(true); setProgress(0); setErr("");
     setVideoUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setVideoBlob(null);
     setShortUrl(u => { if (u) URL.revokeObjectURL(u); return ""; }); setShortBlob(null);
     // 🚀 v19.34: estimasi waktu & kecepatan DIUKUR dari render yang sedang berjalan (bukan tebakan)
     const tMulai = Date.now();
-    const buatEst = (p: number, target: number) => {
-      const el = (Date.now() - tMulai) / 1000;
+    let lastProgAt = 0;
+    const catatProg = (p: number, scale: number, off: number, target: number) => {
+      const now = Date.now();
+      if (now - lastProgAt < 400 && p < 0.99) return;
+      lastProgAt = now;
+      setProgress(off + p * scale);
+      const el = (now - tMulai) / 1000;
       if (p > 0.03 && el > 3) {
         const sisa = (el / p) * (1 - p);
         const kecepatan = el / Math.max(0.001, p * target);
@@ -1728,12 +1748,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       let longBlob: Blob;
       try {
         longBlob = pakai === "offline"
-          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => { setProgress(dualRender ? p * 0.62 : p); buatEst(p, total); } })
-          : await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => { setProgress(dualRender ? p * 0.62 : p); buatEst(p, total); } });
+          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) })
+          : await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) });
       } catch (e: any) {
         if (pakai === "offline") {
           logDiag(`Mode offline gagal (${e?.message || e}) → fallback realtime`);
-          longBlob = await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => { setProgress(dualRender ? p * 0.62 : p); buatEst(p, total); } });
+          longBlob = await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) });
         } else throw e;
       }
       setVideoBlob(longBlob);
@@ -1753,12 +1773,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         let shortBlob: Blob;
         try {
           shortBlob = pakai === "offline"
-            ? await renderOffline({ w: 608, h: 1080, offset: o, dur: d, audioCodec: mampu.audioCodec, onProg: p => { setProgress(0.62 + p * 0.38); buatEst(p, d); } })
-            : await renderSatu({ w: 608, h: 1080, offset: o, dur: d, fps: fpsOpt, onProg: p => { setProgress(0.62 + p * 0.38); buatEst(p, d); } });
+            ? await renderOffline({ w: 720, h: 1280, offset: o, dur: d, audioCodec: mampu.audioCodec, onProg: p => catatProg(p, 0.38, 0.62, d) })
+            : await renderSatu({ w: 720, h: 1280, offset: o, dur: d, fps: fpsOpt, onProg: p => catatProg(p, 0.38, 0.62, d) });
         } catch (e: any) {
           if (pakai === "offline") {
             logDiag(`Mode offline short gagal (${e?.message || e}) → fallback realtime`);
-            shortBlob = await renderSatu({ w: 608, h: 1080, offset: o, dur: d, fps: fpsOpt, onProg: p => { setProgress(0.62 + p * 0.38); buatEst(p, d); } });
+            shortBlob = await renderSatu({ w: 720, h: 1280, offset: o, dur: d, fps: fpsOpt, onProg: p => catatProg(p, 0.38, 0.62, d) });
           } else throw e;
         }
         setShortBlob(shortBlob);
@@ -1775,7 +1795,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setEstSisa("");
     } catch (e: any) { setErr(e?.message || "Render gagal"); setEstSisa(""); }
     lepasWakeLock(); // 🛡 layar boleh mati lagi setelah selesai
+    renderingRef.current = false;
     setRendering(false);
+    startPreviewLoop();
   }
   function fadeGain(actx: AudioContext, next: AudioNode, total: number): AudioNode {
     const g = actx.createGain();
@@ -2585,7 +2607,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             <div className="v6-cardrow" style={{ cursor: "default" }}>
               <span style={{ fontSize: 18 }}>ℹ️</span>
               <div className="tt" style={{ fontSize: 11.5 }}>
-                {dim.w}×{dim.h}px · 30fps · {fmtD(Math.min(duration, (shorts && !dualRender) ? 59.5 : duration))} · EQ {eq} · kompresi {comp}% {fades ? "· fade" : ""}
+                {dim.w}×{dim.h}px · {fpsOpt}fps · {fmtD(Math.min(duration, (shorts && !dualRender) ? 59.5 : duration))} · EQ {eq} · kompresi {comp}% {fades ? "· fade" : ""}
               </div>
             </div>
 
@@ -2632,7 +2654,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                         ▶ Pratinjau bagian ini
                       </button>
                     </div>
-                    <p className="v6-note">💡 Short di-render ulang dengan layout 9:16 asli (608×1080) — bukan hasil potong dari 16:9, jadi tampilan selalu utuh. Lirik & denyut ikut pas di bagian yang dipilih.</p>
+                    <p className="v6-note">💡 Short di-render ulang dengan layout 9:16 asli (720×1280) — bukan hasil potong dari 16:9, jadi tampilan selalu utuh. Lirik & denyut ikut pas di bagian yang dipilih.</p>
                   </>
                 ) : (
                   <div className="v6-note">ℹ️ Musik cuma {fmtD(duration)} — short akan memakai seluruh musik dari awal.</div>
@@ -2647,7 +2669,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <span style={{ fontSize: 18 }}>⚡</span>
               <div className="tt">
                 <b>Turbo Cepat (2-4× lebih cepat)</b>
-                <div style={{ fontSize: 10, color: turbo ? "#fbbf24" : "#8b8b98", fontWeight: 500 }}>{turbo ? "ON — output 720p-class (lebih kecil & 2× lebih cepat, tetap bagus di YouTube)" : "OFF — kualitas penuh 1080p. Nyalakan kalau mau render ngebut"}</div>
+                <div style={{ fontSize: 10, color: turbo ? "#fbbf24" : "#8b8b98", fontWeight: 500 }}>{turbo ? "ON — encode ~72% (align 16px, encoder hardware HP) · tetap bagus di YouTube" : "OFF — 720p HD penuh (1280×720 / 720×1280). Matikan cuma kalau mau lebih tajam"}</div>
               </div>
               <button className={`v6-toggle ${turbo ? "on" : ""}`} />
             </div>

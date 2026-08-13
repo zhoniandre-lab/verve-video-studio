@@ -1840,7 +1840,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (capRef.current.length) paintPreviewCaptions(ctx, W, H, capRef.current, tt, capStyleRef.current, { sizeRatio: ccRef.current.ccSize, yRatio: ccRef.current.ccY });
     // stiker & teks lepas waktu (punya start/dur sendiri — digeser di track)
     let specArr: Uint8Array | undefined; // 🌈 v13.4: stiker @bars minum frekuensi dari analyser yang SUDAH terpasang utk beat
-    const wantBars = sl.some((x) => (optsRef.current[x.id]?.stickers || []).some((z: StickerItem) => z.emoji === "@bars" && z.start != null && tt >= z.start && tt < z.start + (z.dur || 3)));
+    const SPEC_LIVE: Record<string, 1> = { "@bars": 1, "@wavepro": 1, "@ring": 1, "@wave": 1, "@eq": 1 };
+    const wantBars = sl.some((x) => (optsRef.current[x.id]?.stickers || []).some((z: StickerItem) => {
+      if (!SPEC_LIVE[z.emoji]) return false;
+      const dd = z.dur && z.dur > 0 ? z.dur : 3;
+      if (z.start != null) return tt >= z.start && tt < z.start + dd;
+      return sl[L.idx]?.id === x.id; // nempel klip — hidup selama klip ini tampil
+    }));
     if (wantBars && analyserRef.current) {
       const an = analyserRef.current;
       if (!specU8Ref.current || specU8Ref.current.length !== an.frequencyBinCount) specU8Ref.current = new Uint8Array(an.frequencyBinCount);
@@ -2287,13 +2293,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (t === "avatar") return;
     if (t === "sesuaikan") { setTool("filter"); setSheetTab("sesuaikan"); return; }
     if (t === "overlay") { setTool("stiker"); setSheetTab("overlayimg"); return; }
-    // 🌈 v19.57: SPEKTRUM — satu ketukan langsung pasang visualizer musik di klip
+    // 🌈 v19.75: SPEKTRUM — buka panel pilih gaya (bukan diam-diam pasang @bars)
     if (t === "spektrum") {
       if (!slides.length) { setTool("media"); return; }
-      addSticker("@bars");
-      flash(!(musicUrl || ttsUrl || voiceUrl)
-        ? "🌈 Spektrum musik dipasang — upload musik dulu (🎵 Audio) biar ikut irama lagu!"
-        : "🌈 Spektrum musik dipasang — geser/cubit & atur waktunya di track. Coba juga @wavepro & @ring di panel Stiker → Spektrum");
+      setTool(cur => cur === "spektrum" ? null : "spektrum"); setSheetTab("");
       return;
     }
     setTool(cur => cur === t ? null : t); setSheetTab("");
@@ -5724,6 +5727,7 @@ const ANIM_STICKER_PREVIEW: Record<string, string> = {
   "@ikuti": "🔴👆", "@like": "👍", "@lonceng": "🔔", "@rec": "🔴", "@wave": "🎚️", "@eq": "📶",
   "@butterfly": "🦋", "@confetti": "🎉", "@kaset": "📼", "@panah": "⬇️", "@love": "❤️", "@kilau": "✨",
   "@nada": "🎵", "@api": "🔥", "@subs": "👍🔔",
+  "@bars": "📊", "@wavepro": "🌊", "@ring": "💍",
 };
 
 /* ==================================================================
@@ -6375,6 +6379,27 @@ function EditorSheets({ tool, setTool, sheetTab, setSheetTab, api }: any) {
 
   /* ---------------- EKSPOR ---------------- */
   if (tool === "ekspor") return <EksporSheet api={A} onClose={close} />;
+
+  /* ---------------- SPEKTRUM (v19.75: panel pilih gaya, bukan dump stiker diam-diam) ---------------- */
+  if (tool === "spektrum") return (
+    <SheetShell title="🌈 Spektrum musik" onClose={close}>
+      <div className="v6-sheet-body">
+        <div className="v6-note">Pilih gaya visualizer — ikut irama lagu di timeline. Geser & cubit di preview. Upload musik dulu di 🎵 Audio biar bar hidup.</div>
+        <div className="v6-grid4">
+          {([
+            { id: "@bars", ic: "📊", lb: "Bars klasik" },
+            { id: "@wavepro", ic: "🌊", lb: "Wave pro" },
+            { id: "@ring", ic: "💍", lb: "Ring" },
+          ] as const).map(g => (
+            <button key={g.id} className="v6-gcell" onClick={() => { A.addSticker(g.id); }}>
+              <span className="e">{g.ic}</span><span className="l">{g.lb}</span>
+            </button>
+          ))}
+        </div>
+        <div className="v6-note">💡 Butuh video spektrum penuh (lirik karaoke + ekspor 1 jam)? Buka <b>Spectrum Studio</b> dari dashboard — bukan dari sini.</div>
+      </div>
+    </SheetShell>
+  );
 
   return null;
 }
