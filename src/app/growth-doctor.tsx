@@ -540,7 +540,7 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
                         <b style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.title}</b>
                         <span style={{ fontSize: 9.5, color: "#8b8b98" }}>#{idx + 1} · {views.toLocaleString("id-ID")} views · {status}</span>
                       </span>
-                      <span className="arr">›</span>
+                      <button onClick={(e) => { e.stopPropagation(); kirimChat(`Kasih ide konten lanjutan (part 2) dari video "${v.title}" yang dapat ${(v.viewCount||0).toLocaleString("id-ID")} views — sesuai pola yang bikin dia meledak.`); }} style={{ background: "rgba(139,92,246,.15)", border: "1px solid #8b5cf655", color: "#c4b5fd", borderRadius: 999, fontSize: 9.5, padding: "4px 8px", whiteSpace: "nowrap", cursor: "pointer" }} title="Minta ide lanjutan dari video ini">💡 Ide</button>
                     </button>
                   );
                 })}
