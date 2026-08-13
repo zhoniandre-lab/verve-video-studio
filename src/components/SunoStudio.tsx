@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 const PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama)", hint: "Key dari kie.ai → API Keys", keyUrl: "https://kie.ai/api-key" },
   { id: "sunor", label: "☀️ Sunor.cc", hint: "Key dari sunor.cc (sk_live_…)", keyUrl: "https://sunor.cc" },
+  { id: "mureka", label: "🎵 Mureka (API resmi)", hint: "Key dari platform.mureka.ai/apiKeys — free credits tanpa kartu", keyUrl: "https://platform.mureka.ai/apiKeys" },
   // 🎵 v19.63: Suno Resmi dinonaktifkan SEMENTARA — balas 503 terus dari server
   // (butuh cara akses khusus & sering sibuk). Nanti diaktifkan lagi kalau stabil.
   // { id: "suno-resmi", label: "🎵 Suno Resmi (cookie akun)", hint: "Cookie session suno.com — akun gratis 50 kredit/hari (lihat Bot Buruan → Suno)", keyUrl: "https://suno.com" },
@@ -181,7 +182,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
             <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
           )}
         </div>
-        <div className="v6-note" style={{ marginTop: 6 }}>Apiframe sudah MATI (blok) — dipakai Kie / Sunor / Suno Resmi. Kalau kredit satu provider habis, ganti provider/key di atas — langsung lanjut, nggak perlu keluar.</div>
+        <div className="v6-note" style={{ marginTop: 6 }}>Apiframe sudah MATI (blok) — dipakai Kie / Sunor / Mureka. Kalau kredit satu provider habis: ganti provider di atas, ATAU daftar akun BARU (email baru) di situsnya buat free credits lagi → ambil key baru → tempel di sini. Langsung lanjut, nggak perlu keluar.</div>
         {prov === "suno-resmi" && (
           <div style={{ marginTop: 8, border: "1px solid #ffffff1a", borderRadius: 12, padding: 10, background: "#0a0e16" }}>
             <b style={{ fontSize: 11.5, color: "#a5f3fc" }}>📋 CARA AMBIL COOKIE SUNO (5 langkah)</b>

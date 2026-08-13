@@ -144,6 +144,7 @@ const SUNO_PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
   { id: "apiframe", label: "apiframe.ai" },
   { id: "sunor", label: "Sunor.cc" },
+  { id: "mureka", label: "🎵 Mureka (API resmi)" },
   { id: "suno-resmi", label: "🎵 Suno Resmi (cookie akun)" },
   { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
 ];

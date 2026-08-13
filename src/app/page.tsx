@@ -1056,6 +1056,7 @@ function SayaPage({ refresh }: { refresh: () => void }) {
         <select className="v6-inp" value={prov} onChange={e => setProv(e.target.value)}>
           <option value="kie">🥇 Kie.ai (utama — gratis 5.000 kredit)</option>
           <option value="sunor">☀️ Sunor.cc</option>
+          <option value="mureka">🎵 Mureka (API resmi — free credits)</option>
           <option value="suno-resmi">🎵 Suno Resmi (cookie akun — 50 kredit/hari)</option>
         </select>
         <div className="v6-note">💡 Tanpa key, VERVE pakai generator musik gratis (lebih lambat). Key disimpan <b>hanya di HP kamu</b> (localStorage), tidak dikirim ke mana pun kecuali ke provider musik saat generate.</div>

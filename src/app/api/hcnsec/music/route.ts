@@ -18,7 +18,7 @@ import { normalizeLagu as normalize, mapModelKie, mapModelGeneric } from "../../
  */
 export const dynamic = "force-dynamic";
 
-type Provider = "kie" | "apiframe" | "sunor" | "suno-resmi";
+type Provider = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka";
 
 const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   kie:      { base: "https://api.kie.ai/api/v1", label: "Kie.ai" },
@@ -27,6 +27,9 @@ const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   // 🎵 v19.61 PROVIDER BARU: SUNO RESMI (studio-api) — pakai COOKIE akun suno.com
   // gratis (50 kredit/hari). Key = cookie session dari suno.com (lihat Bot Buruan → Suno).
   "suno-resmi": { base: "https://studio-api.suno.ai", label: "Suno Resmi (cookie akun)" },
+  // 🎵 v19.64 PROVIDER BARU: MUREKA (API RESMI) — platform.mureka.ai/apiKeys,
+  // free credits tanpa kartu, lagu vokal + lirik + instrumental.
+  mureka: { base: "https://api.mureka.ai", label: "Mureka" },
 };
 
 /** 🛡 v19.35.4: provider yang TERVERIFIKASI mati (semua endpoint 404) — jangan pernah dipakai.
@@ -42,6 +45,7 @@ function detectProvider(rawKey: string, hdrProvider?: string): Provider {
   if (k.startsWith("snr_") || k.startsWith("sunor_") || k.startsWith("sk_live")) return "sunor"; // v10.5: kunci asli Sunor = sk_live_…
   if (k.startsWith("afk_") || k.startsWith("af_")) return "apiframe";
   if (k.includes("suno") || k.startsWith("__Secure-") || k.includes("session=")) return "suno-resmi"; // 🎵 v19.61 cookie suno.com
+  if (k.startsWith("mrk_") || k.startsWith("mureka")) return "mureka"; // 🎵 v19.64
   // Hex 32+ tanpa prefix — asumsikan Kie.ai (Kie ngasih key hex murni).
   if (/^[a-f0-9]{24,}$/i.test(k)) return "kie";
   return "kie";
@@ -127,6 +131,17 @@ function buildBody(payload: any, provider: Provider): any {
       if (vocalGender === "male") body.vocalGender = "m";
       else if (vocalGender === "female") body.vocalGender = "f";
     }
+    return body;
+  }
+
+  // 🎵 v19.64 MUREKA — POST /v1/song/generate (Bearer key, free credits)
+  if (provider === "mureka") {
+    const body: any = {
+      lyrics: (finalLyrics || "Instrumental").slice(0, 5000), // lirik WAJIB (kalau kosong → hint instrumental)
+      prompt: [genderWords, styleStr, instrumental ? "instrumental music, no vocals" : ""].map(x => (x || "").trim()).filter(Boolean).join(", ").slice(0, 500) || "pop song",
+      model: "auto",
+      n: 1,
+    };
     return body;
   }
 
@@ -219,6 +234,11 @@ function buildHeaders(key: string, provider?: Provider): Record<string,string> {
     h["Cookie"] = key;
     return h;
   }
+  // 🎵 v19.64 Mureka: Authorization Bearer (seperti OpenAI)
+  if (provider === "mureka") {
+    h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${key.replace(/^Bearer\s+/i, "")}`;
+    return h;
+  }
   const rawKey = key.replace(/^Bearer\s+/i, "");
   h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
   h["apikey"] = rawKey;
@@ -228,6 +248,7 @@ function buildHeaders(key: string, provider?: Provider): Record<string,string> {
 
 function getEndpoints(provider: Provider, base: string, forStatus?: string): string[] {
   if (forStatus) {
+    if (provider === "mureka") return [`${base}/v1/song/query/${forStatus}`]; // 🎵 v19.64 GET /v1/song/query/{task_id}
     if (provider === "suno-resmi") return [`${base}/api/v1/feed/${forStatus}`, `${base}/api/v1/feed/${forStatus}/clips`]; // 🎵 v19.61
     if (provider === "sunor") return [`${base}/api/v1/task/${forStatus}`]; // v10.5: GET task/{id}
     if (provider === "kie") {
@@ -247,6 +268,9 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
   }
   if (provider === "suno-resmi") {
     return [`${base}/api/v1/music`, `${base}/api/v1/music/custom`]; // 🎵 v19.61 (custom dipakai kalau lirik)
+  }
+  if (provider === "mureka") {
+    return [`${base}/v1/song/generate`]; // 🎵 v19.64
   }
   if (provider === "kie") {
     return [`${base}/generate`];

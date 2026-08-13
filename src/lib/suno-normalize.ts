@@ -5,7 +5,7 @@
    asli tiap provider (tests/suno-normalize.test.mjs).
    ===================================================================== */
 
-export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi";
+export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka";
 
 export interface HasilNormal {
   id?: string;
@@ -97,6 +97,31 @@ export function normalizeKie(d: any): HasilNormal {
   return { id: data.taskId || data.id, status: "pending" };
 }
 
+/** 🎵 v19.64 Normalisasi respons Mureka — generate {task_id?} & poll
+ *  GET /v1/song/query/{id} → {status: "success"|"running"|"pending", data:[{song:{audio_url,…}}]…}
+ *  Toleran: pakai kumpulAudioRekursif + deteksi status teks. */
+export function normalizeMureka(d: any): HasilNormal {
+  const statusRaw = String(d?.status || d?.state || d?.code || "").toLowerCase();
+  const taskId = d?.task_id || d?.taskId || d?.id || "";
+  if (statusRaw && /success|succeeded|completed|done|finished/.test(statusRaw)) {
+    const urls = unik(kumpulAudioRekursif(d));
+    return {
+      id: taskId,
+      status: "completed",
+      audio_url: urls[0] || "",
+      audio_urls: urls,
+      title: d?.title || d?.song?.title || "",
+      image_url: d?.cover_url || d?.image_url || "",
+      duration: Number(d?.duration || d?.song?.duration || 0) || undefined,
+    };
+  }
+  if (statusRaw && /fail|error|exception/.test(statusRaw)) {
+    return { id: taskId, status: "error", error: d?.message || d?.error || statusRaw };
+  }
+  // belum selesai / task baru dibuat
+  return { id: taskId || (d?.data?.task_id || ""), status: taskId ? "pending" : "pending" };
+}
+
 /** Normalisasi respons Sunor.cc — generate {data:{task_id}} & poll {data:{status, output}}. */
 export function normalizeSunor(d: any): HasilNormal {
   const d0 = d.data || d || {};
@@ -147,6 +172,7 @@ export function normalizeGeneric(d: any): HasilNormal {
 export function normalizeLagu(d: any, provider: ProvLagu): HasilNormal {
   if (provider === "kie") return normalizeKie(d);
   if (provider === "sunor") return normalizeSunor(d);
+  if (provider === "mureka") return normalizeMureka(d); // 🎵 v19.64
   // suno-resmi (studio-api) respons {id} / {clips:[{audio_url}]} — mirip generic
   return normalizeGeneric(d);
 }
