@@ -1393,7 +1393,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     // lirik karaoke
     if (lirikOn && capWords.length) {
-      paintPreviewCaptions(ctx, W, H, capWords, t, tpl.capStyle, { yRatio: 0.8, sizeRatio: 0.05 });
+      paintPreviewCaptions(ctx, W, H, capWords, t, tpl.capStyle, {
+        yRatio: tpl.yRatio ?? 0.76,
+        sizeRatio: tpl.sizeRatio ?? 0.042,
+        padRatio: 0.08,
+      });
     }
     }
 
@@ -2542,16 +2546,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 {!!lyrMsg && <p style={{ fontSize: 11, color: lyrMsg.startsWith("✅") ? "#86efac" : "#fbbf24", margin: "0 0 6px" }}>{lyrMsg}</p>}
                 {lyrAuto && <p style={{ fontSize: 10, opacity: .7, margin: "0 0 6px" }}>✨ Timing dari deteksi suara asli (Whisper) — setiap kata menyala PERSIS saat dinyanyikan, bukan dibagi rata.</p>}
                 <textarea className="v6-inp v6-ta" style={{ minHeight: 130 }} placeholder={"Tempel lirik di sini — satu baris = satu keterangan.\nKata akan menyala satu per satu pas dinyanyikan ✨"} value={lyricsText} onChange={e => { setLyricsText(e.target.value); setLyrAuto(false); }} />
-                <div className="v6-lbl">TEMPLATE</div>
+                <div className="v6-lbl">TEMPLATE LIRIK ({CC_TEMPLATES.length}) — posisi tengah, tidak ubah timing</div>
                 <div className="v6-rows">
                   {CC_TEMPLATES.map(t => (
-                    <button key={t.id} className={`v6-gcell ${ccTpl === t.id ? "on" : ""}`} style={{ width: 96, height: 68, flex: "0 0 auto", aspectRatio: "auto" }} onClick={() => setCcTpl(t.id)}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, color: t.color, textShadow: "0 1px 3px #000" }}>{t.sample}</span>
+                    <button key={t.id} className={`v6-gcell ${ccTpl === t.id ? "on" : ""}`} style={{ width: 104, height: 72, flex: "0 0 auto", aspectRatio: "auto" }} onClick={() => setCcTpl(t.id)}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: t.color, textShadow: "0 1px 3px #000", padding: "0 4px", textAlign: "center", lineHeight: 1.2 }}>{t.sample}</span>
                       <span className="l">{t.label}</span>
                     </button>
                   ))}
                 </div>
-                <div className="v6-note">⏱ Timing otomatis dibagi rata mengikuti panjang kalimat & durasi lagu — sinkron rapi untuk karaoke (cocok untuk lagu yang liriknya kamu tulis sendiri, mis. dari Musik AI).</div>
+                <div className="v6-note">📍 Template cuma ganti <b>tampilan & posisi</b> (tengah, tidak keluar frame). Waktu kata/baris <b>tidak diubah</b> — auto-pas tetap pas sama audio. Kalau lirik manual, timing dibagi rata per baris seperti semula.</div>
               </>
             )}
             <button className="v6-bigcta" onClick={() => setStep(3)}>Lanjut: Master ›</button>

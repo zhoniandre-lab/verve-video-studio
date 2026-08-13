@@ -46,3 +46,16 @@ export function skalaAgarMuat(widths: number[], groups: number[][], gap: number,
   if (maxG <= maxW) return 1;
   return maxW / maxG;
 }
+
+/** Pecah satu string lirik jadi kata visual — timing tetap di induk, ini cuma buat wrap. */
+export function pecahKalimatKeKata(teks: string): string[] {
+  return String(teks || "").split(/\s+/).filter(Boolean);
+}
+
+/** X kiri baris: selalu TENGAH simetris; kalau masih kebesaran, nempel padding (tidak negatif). */
+export function posisiTengahAman(groupW: number, W: number, pad: number): number {
+  const p = Math.max(0, pad);
+  const inner = Math.max(1, W - p * 2);
+  if (groupW >= inner) return p;
+  return (W - groupW) / 2;
+}

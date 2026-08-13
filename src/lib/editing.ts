@@ -4,7 +4,7 @@
    - Timeline math per-klip (durasi beda-beda + transisi per-sambungan)
    - Painter bersama untuk PREVIEW (page.tsx) & EXPORT (recorder.ts)
    ===================================================================== */
-import { wrapIndices, skalaAgarMuat, lebarGroup } from "./captionwrap"; // 🧾 v19.41: lirik panjang → 2 baris
+import { wrapIndices, skalaAgarMuat, lebarGroup, pecahKalimatKeKata, posisiTengahAman } from "./captionwrap"; // 🧾 v19.41 / v19.76: wrap + tengah aman
 
 export interface ClipText {
   txt: string;
@@ -1180,15 +1180,27 @@ export const ANIM_LOOP: CatItem[] = [
 ];
 
 /* ---------- TEMPLATE KETERANGAN OTOMATIS (CC) ---------- */
-export interface CCTemplate { id: string; label: string; desc: string; capStyle: string; sample: string; color: string; }
+export interface CCTemplate {
+  id: string; label: string; desc: string; capStyle: string; sample: string; color: string;
+  yRatio?: number; sizeRatio?: number;
+}
 export const CC_TEMPLATES: CCTemplate[] = [
-  { id: "standar",  label: "Default",        desc: "Putih tebal, highlight kuning", capStyle: "capcut",    sample: "Rubah coklat yang cepat", color: "#ffffff" },
-  { id: "karaoke",  label: "Karaoke Glow",   desc: "Kata aktif menyala kuning",     capStyle: "karaoke",   sample: "Ikut kata demi kata",     color: "#fde047" },
-  { id: "tebal",    label: "Tebal Bersih",   desc: "Putih tebal tanpa warna",       capStyle: "boldwhite", sample: "The quick brown fox",   color: "#ffffff" },
-  { id: "neon",     label: "Neon",           desc: "Glow pink lembut",              capStyle: "neon",      sample: "Cahaya malam",          color: "#ec4899" },
-  { id: "pop",      label: "Pop",            desc: "Kuning ceria kotak",            capStyle: "pop",       sample: "Asik & ramai",           color: "#fde047" },
-  { id: "gradien",  label: "Gradien",        desc: "Warna gradasi halus",           capStyle: "gradient",  sample: "Warna-warni",            color: "#22d3ee" },
-  { id: "indie",    label: "Film Indie",     desc: "Ramping, font Serif, di atas letterbox", capStyle: "indie", sample: "Subtitel Dokumenter", color: "#ffffff" },
+  { id: "standar",   label: "Default",        desc: "Putih tebal, highlight kuning", capStyle: "capcut",    sample: "Rubah coklat yang cepat", color: "#ffffff" },
+  { id: "karaoke",   label: "Karaoke Glow",   desc: "Kata aktif menyala kuning",     capStyle: "karaoke",   sample: "Ikut kata demi kata",     color: "#fde047" },
+  { id: "tebal",     label: "Tebal Bersih",   desc: "Putih tebal tanpa warna",       capStyle: "boldwhite", sample: "The quick brown fox",   color: "#ffffff" },
+  { id: "neon",      label: "Neon",           desc: "Glow pink lembut",              capStyle: "neon",      sample: "Cahaya malam",          color: "#ec4899" },
+  { id: "pop",       label: "Pop",            desc: "Kuning ceria kotak",            capStyle: "pop",       sample: "Asik & ramai",           color: "#fde047" },
+  { id: "gradien",   label: "Gradien",        desc: "Warna gradasi halus",           capStyle: "gradient",  sample: "Warna-warni",            color: "#22d3ee" },
+  { id: "indie",     label: "Film Indie",     desc: "Ramping, font Serif, di atas letterbox", capStyle: "indie", sample: "Subtitel Dokumenter", color: "#ffffff", yRatio: 0.82, sizeRatio: 0.038 },
+  // 💎 v19.76: template mahal tambahan — visual saja, timing kata TIDAK berubah
+  { id: "emas",      label: "Emas MV",        desc: "Karaoke emas mewah",           capStyle: "emas",      sample: "Rindu yang mahal",       color: "#fbbf24" },
+  { id: "outline",   label: "Outline Tebal",  desc: "Putih + tepi hitam klasik MV", capStyle: "outline",   sample: "Lirik video klip",       color: "#ffffff" },
+  { id: "cyan",      label: "Cyan Spectrum",  desc: "Nyala cyan ikut vokal",        capStyle: "cyan",      sample: "Gelombang suara",        color: "#22d3ee" },
+  { id: "boxhitam",  label: "Kotak Hitam",    desc: "Subtitle bioskop di kotak",    capStyle: "boxhitam",  sample: "Keterangan jernih",      color: "#ffffff", yRatio: 0.80, sizeRatio: 0.038 },
+  { id: "boxedkara", label: "Karaoke Box",    desc: "Kata aktif di pill emas",      capStyle: "boxedkara", sample: "Nyanyi kata per kata",   color: "#fde047" },
+  { id: "dual",      label: "Dua Nada",       desc: "Abu lembut + merah muda aktif", capStyle: "dual",     sample: "Suara yang hangat",      color: "#fb7185" },
+  { id: "bar",       label: "Bar Bawah",      desc: "Garis emas di bawah baris",    capStyle: "bar",       sample: "Lirik rapi tengah",      color: "#fbbf24" },
+  { id: "serifgold", label: "Serif Emas",     desc: "Huruf elegan, kata aktif emas", capStyle: "serifgold", sample: "Kisah yang indah",      color: "#f59e0b", yRatio: 0.78, sizeRatio: 0.040 },
 ];
 
 /* ---------- STIKER GAMBAR (overlay foto) ---------- */
@@ -1695,6 +1707,8 @@ export function paintStickersV6(ctx: CanvasRenderingContext2D, W: number, H: num
 /* ---------- CAPTION PAINTER (preview & Spectrum Studio) ---------- */
 export interface CapWord { text: string; start: number; end: number; line: number; }
 // 🚀 v19.45: cache lebar teks (ukur sekali, dipakai ribuan frame) — render jauh lebih cepat
+// 🐛 v19.76: kunci cache WAJIB ikut ukuran font — dulu fontKey cuma "pop"/"indie"
+// sehingga setelah skala, measure lama (lebih lebar) dipakai lagi → x negatif → lirik keluar kiri.
 const _wCache = new Map<string, number>();
 function _cw(ctx: CanvasRenderingContext2D, fontKey: string, teks: string): number {
   const k = fontKey + "|" + teks;
@@ -1707,7 +1721,7 @@ function _cw(ctx: CanvasRenderingContext2D, fontKey: string, teks: string): numb
   return w;
 }
 
-export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H: number, words: CapWord[], t: number, capStyle: string, opts?: { yRatio?: number; sizeRatio?: number }) {
+export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H: number, words: CapWord[], t: number, capStyle: string, opts?: { yRatio?: number; sizeRatio?: number; padRatio?: number }) {
   if (!words || !words.length) return;
   // 🐛 FIX v19.45: pilih baris yang PALING RELEVAN (bukan baris pertama yang aktif).
   // Dulu: baris lama yang masih dalam window (+0.25s) terus "menang" → baris baru
@@ -1734,68 +1748,110 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
   const lineWords = words.filter(w => w.line === lineNo);
   const exact = words.find(w => t >= w.start && t < w.end && w.line === lineNo);
 
-  // 🎭 v17.6 INDIE FILM STYLE: Turunkan lirik sedikit lebih dekat ke letterbox jika menggunakan gaya Indie
-  const isIndie = capStyle === "indie";
-  const y = isIndie ? ((opts?.yRatio ?? 0.78) * H + H * 0.04) : (opts?.yRatio ?? 0.78) * H;
-  let fs = isIndie ? Math.max(10, (opts?.sizeRatio ?? 0.055) * H * 0.75) : Math.max(12, (opts?.sizeRatio ?? 0.055) * H);
-  const gap = fs * 0.25;
+  // 🎭 v17.6 / v19.76: posisi & ukuran — TENGAH simetris, tidak nempel pinggir frame
+  const isIndie = capStyle === "indie" || capStyle === "serifgold";
+  const y = isIndie ? ((opts?.yRatio ?? 0.76) * H + H * 0.02) : (opts?.yRatio ?? 0.76) * H;
+  let fs = isIndie ? Math.max(10, (opts?.sizeRatio ?? 0.044) * H * 0.88) : Math.max(12, (opts?.sizeRatio ?? 0.044) * H);
+  let gap = fs * 0.22;
+  const padX = W * Math.max(0.05, opts?.padRatio ?? 0.08);
+  const maxW = Math.max(40, W - padX * 2);
+
+  // 🐛 v19.76: auto-pas sering kirim SATU CapWord = satu baris utuh ("Tapi kau sudah…").
+  // Wrap per-kata VISUAL saja — start/end induk tidak diubah, nyanyi tetap pas.
+  const toks: { text: string; src: CapWord }[] = [];
+  for (const w of lineWords) {
+    const parts = pecahKalimatKeKata(w.text);
+    if (!parts.length) continue;
+    if (parts.length === 1) toks.push({ text: w.text, src: w });
+    else for (const p of parts) toks.push({ text: p, src: w });
+  }
+  if (!toks.length) return;
 
   ctx.save();
-  // Gunakan font Serif elegan untuk gaya Film Indie dokumenter
-  const fontKey = isIndie ? "indie" : "pop";
-  ctx.font = isIndie 
-    ? `600 ${fs}px 'Playfair Display','Lora',Georgia,serif`
-    : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
-
+  const fontFace = isIndie
+    ? `'Playfair Display','Lora',Georgia,serif`
+    : `'Poppins',system-ui,sans-serif`;
+  const fontW = isIndie ? "600" : "900";
+  const pasangFont = () => { ctx.font = `${fontW} ${fs}px ${fontFace}`; };
+  pasangFont();
   ctx.textBaseline = "middle"; ctx.lineJoin = "round";
-  // 🧾 v19.41 + 🐛 FIX v19.45: ukur kata (cache) & BAGI jadi maks 3 baris kalau kepanjangan
-  // (dulu maks 2 + clamp font 0.45 → lirik super panjang masih bisa terpotong di tepi)
-  const maxW = W * 0.92;
-  let widths = lineWords.map(w => _cw(ctx, fontKey, w.text));
+
+  const fontKeyOf = () => `${capStyle}|${fs.toFixed(1)}`;
+  let widths = toks.map(tk => _cw(ctx, fontKeyOf(), tk.text));
   let groups = wrapIndices(widths, gap, maxW, 2);
   const sk = skalaAgarMuat(widths, groups, gap, maxW);
-  if (sk < 0.62 && lineWords.length > 5) {
-    // masih kepanjangan → coba 3 baris
+  if (sk < 0.62 && toks.length > 5) {
     groups = wrapIndices(widths, gap, maxW, 3);
   }
   const sk2 = skalaAgarMuat(widths, groups, gap, maxW);
   if (sk2 < 1) {
     fs *= Math.max(0.3, sk2);
-    ctx.font = isIndie 
-      ? `600 ${fs}px 'Playfair Display','Lora',Georgia,serif`
-      : `900 ${fs}px 'Poppins',system-ui,sans-serif`;
-    widths = lineWords.map(w => _cw(ctx, fontKey, w.text));
+    pasangFont();
+    gap = fs * 0.22;
+    widths = toks.map(tk => _cw(ctx, fontKeyOf(), tk.text));
     groups = wrapIndices(widths, gap, maxW, 3);
+    const sk3 = skalaAgarMuat(widths, groups, gap, maxW);
+    if (sk3 < 1) {
+      fs *= Math.max(0.3, sk3);
+      pasangFont();
+      gap = fs * 0.22;
+      widths = toks.map(tk => _cw(ctx, fontKeyOf(), tk.text));
+    }
   }
   const G = groups.length;
-  const lineH = fs * 0.62;
-  // kalau 2-3 baris, naikkan sedikit biar tetap di area bawah (tidak mentok)
-  const y0 = G > 1 ? y - lineH * (G - 1) * 0.5 : y;
+  const lineH = fs * 1.22;
+  let y0 = G > 1 ? y - lineH * (G - 1) * 0.5 : y;
+  const yMax = H * 0.90, yMin = H * 0.56;
+  if (y0 + lineH * Math.max(0, G - 1) > yMax) y0 = yMax - lineH * Math.max(0, G - 1);
+  if (y0 < yMin) y0 = yMin;
 
+  const kataAkhir = lineWords[lineWords.length - 1]; // 🐛 FIX v19.45: ganti referensi active[]
   groups.forEach((gi, gIdx) => {
     const gy = y0 + gIdx * lineH;
     const groupW = lebarGroup(widths, gi, gap);
-    let x = (W - groupW) / 2; ctx.textAlign = "left";
-    const kataAkhir = lineWords[lineWords.length - 1]; // 🐛 FIX v19.45: ganti referensi active[]
+    let x = posisiTengahAman(groupW, W, padX); ctx.textAlign = "left";
+
+    if (capStyle === "boxhitam" || capStyle === "bar") {
+      const bx = x - fs * 0.28, by = gy - fs * 0.62, bw = groupW + fs * 0.56, bh = fs * 1.24;
+      if (capStyle === "boxhitam") {
+        ctx.fillStyle = "rgba(0,0,0,0.62)";
+        roundRectPath(ctx, bx, by, bw, bh, fs * 0.22); ctx.fill();
+      } else {
+        ctx.strokeStyle = "rgba(251,191,36,0.9)"; ctx.lineWidth = Math.max(2, fs * 0.08);
+        ctx.beginPath(); ctx.moveTo(x, gy + fs * 0.58); ctx.lineTo(x + groupW, gy + fs * 0.58); ctx.stroke();
+      }
+    }
+
     gi.forEach((wi) => {
-      const w = lineWords[wi];
+      const tk = toks[wi];
+      const w = tk.src;
       const isActive = exact === w || (!exact && w === kataAkhir);
       let fill = "#ffffff", strokeC = "rgba(0,0,0,0.85)", glow = "";
+      let strokeW = isIndie ? fs * 0.08 : fs * 0.14;
       if (capStyle === "karaoke" || capStyle === "capcut") fill = isActive ? "#ffd93d" : "#ffffff";
       else if (capStyle === "neon") { fill = isActive ? "#ffffff" : "#f9a8d4"; glow = "#ec4899"; }
       else if (capStyle === "pop") { fill = isActive ? "#000000" : "#ffffff"; }
       else if (capStyle === "gradient") fill = isActive ? "#22d3ee" : "#e2e8f0";
       else if (capStyle === "boldwhite" || capStyle === "indie") fill = "#ffffff";
-      if (capStyle === "pop" && isActive) {
-        ctx.fillStyle = "#fde047";
-        roundRectPath(ctx, x - fs * 0.12, gy - fs * 0.75, widths[wi] + fs * 0.24, fs * 1.3, fs * 0.18); ctx.fill();
+      else if (capStyle === "emas") { fill = isActive ? "#fde68a" : "#fff7ed"; glow = isActive ? "#f59e0b" : ""; }
+      else if (capStyle === "outline") { fill = "#ffffff"; strokeW = fs * 0.22; }
+      else if (capStyle === "cyan") { fill = isActive ? "#67e8f9" : "#e0f2fe"; glow = isActive ? "#22d3ee" : ""; }
+      else if (capStyle === "boxhitam") fill = "#ffffff";
+      else if (capStyle === "boxedkara") fill = isActive ? "#111827" : "#ffffff";
+      else if (capStyle === "dual") fill = isActive ? "#fb7185" : "#e2e8f0";
+      else if (capStyle === "bar") fill = isActive ? "#fde68a" : "#ffffff";
+      else if (capStyle === "serifgold") { fill = isActive ? "#fbbf24" : "#fffbeb"; }
+
+      if ((capStyle === "pop" || capStyle === "boxedkara") && isActive) {
+        ctx.fillStyle = capStyle === "boxedkara" ? "#fde047" : "#fde047";
+        roundRectPath(ctx, x - fs * 0.12, gy - fs * 0.58, widths[wi] + fs * 0.24, fs * 1.16, fs * 0.2); ctx.fill();
         ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = fs * 0.06;
-        ctx.strokeText(w.text, x, gy);
+        ctx.strokeText(tk.text, x, gy);
       } else {
-        ctx.strokeStyle = strokeC; ctx.lineWidth = isIndie ? fs * 0.08 : fs * 0.14; ctx.strokeText(w.text, x, gy);
+        ctx.strokeStyle = strokeC; ctx.lineWidth = strokeW; ctx.strokeText(tk.text, x, gy);
       }
-      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.6 : 0.3); }
-      ctx.fillStyle = fill; ctx.fillText(w.text, x, gy);
+      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.55 : 0.28); }
+      ctx.fillStyle = fill; ctx.fillText(tk.text, x, gy);
       ctx.shadowBlur = 0;
       x += widths[wi] + gap;
     });
