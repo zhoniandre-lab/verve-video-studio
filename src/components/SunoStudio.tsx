@@ -36,7 +36,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [status, setStatus] = useState("");
   const [taskId, setTaskId] = useState("");
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "" });
-  const [hasil, setHasil] = useState<{ url: string; title: string; dur: number } | null>(null);
+  const [hasil, setHasil] = useState<{ url: string; previewUrl?: string; title: string; dur: number } | null>(null);
   const pollTimer = useRef<any>(null);
   const tickTimer = useRef<any>(null);
 
@@ -149,9 +149,27 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     if (!okDecode) {
       throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
     }
-    const h = { url, title: j?.title || title || "Lagu AI", dur };
+    // 🐛 v19.71 FIX player 0:00: MP3 Suno sering tanpa metadata durasi → <audio> nampilin
+    // 0:00 walau file valid (decode sukses). Preview pakai WAV hasil decode (durasi pasti),
+    // download & Spectrum tetap pakai file asli (MP3 lebih kecil).
+    let previewUrl: string | undefined;
+    try {
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      const ac = new AC();
+      const r = await fetch(url.startsWith("/") ? url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
+      const buf = await ac.decodeAudioData(await r.arrayBuffer());
+      // mono 22050Hz biar ringan (preview doang)
+      const mono = ac.createBuffer(1, buf.length, 22050);
+      const src = buf.getChannelData(0), dst = mono.getChannelData(0);
+      const step = buf.sampleRate / 22050;
+      for (let i = 0; i < dst.length; i++) dst[i] = src[Math.min(src.length - 1, Math.floor(i * step))];
+      const { bufferToWav } = await import("@/lib/gabung-audio");
+      previewUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
+      ac.close();
+    } catch { previewUrl = undefined; }
+    const h = { url, previewUrl, title: j?.title || title || "Lagu AI", dur };
     setHasil(h); setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB). Bisa langsung dipakai di bawah.`);
-    try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ ...h, at: Date.now() })); } catch {}
+    try { const simpan = { url, title: h.title, dur, at: Date.now() }; localStorage.setItem("verve_suno_hasil", JSON.stringify(simpan)); } catch {}
   };
 
   const simpanHasil = async () => {
@@ -246,7 +264,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <div className="gd-card" style={{ borderColor: "rgba(34,197,94,.4)" }}>
           <div className="gd-label">✅ LAGU JADI</div>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>{hasil.title}{hasil.dur ? ` · ±${Math.round(hasil.dur)} dtk` : ""}</div>
-          <audio controls src={hasil.url.startsWith("/") ? hasil.url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(hasil.url)}`} style={{ width: "100%", margin: "4px 0" }} />
+          <audio controls preload="metadata" src={hasil.previewUrl || (hasil.url.startsWith("/") ? hasil.url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(hasil.url)}`)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ ...hasil, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
