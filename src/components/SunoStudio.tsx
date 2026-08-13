@@ -172,11 +172,22 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     try { const simpan = { url, title: h.title, dur, at: Date.now() }; localStorage.setItem("verve_suno_hasil", JSON.stringify(simpan)); } catch {}
   };
 
+  // 🐛 v19.72 FIX: blob:/data: TIDAK boleh lewat proxy (proxy tolak → 'URL tidak valid').
+  // Download & player harus fetch blob/data langsung.
+  const srcAman = (u: string) =>
+    u.startsWith("blob:") || u.startsWith("data:") || u.startsWith("/")
+      ? u
+      : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`;
+
   const simpanHasil = async () => {
     if (!hasil) return;
     try {
-      const r = await fetch(hasil.url.startsWith("/") ? hasil.url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(hasil.url)}`);
+      const r = await fetch(srcAman(hasil.url));
       const blob = await r.blob();
+      if (!blob.size || blob.size < 1000 || (blob.type || "").includes("json")) {
+        setStatus("❌ Download gagal — file yang dikasih provider tidak valid. Coba pakai '🎧 Pakai di Spectrum' (biasanya jalan), atau generate ulang.");
+        return;
+      }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob); a.download = `${(hasil.title || "lagu").replace(/[^\w\- ]+/g, "").slice(0, 40)}.mp3`;
       a.click();
@@ -264,7 +275,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <div className="gd-card" style={{ borderColor: "rgba(34,197,94,.4)" }}>
           <div className="gd-label">✅ LAGU JADI</div>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>{hasil.title}{hasil.dur ? ` · ±${Math.round(hasil.dur)} dtk` : ""}</div>
-          <audio controls preload="metadata" src={hasil.previewUrl || (hasil.url.startsWith("/") ? hasil.url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(hasil.url)}`)} style={{ width: "100%", margin: "4px 0" }} />
+          <audio controls preload="metadata" src={hasil.previewUrl || srcAman(hasil.url)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ ...hasil, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
