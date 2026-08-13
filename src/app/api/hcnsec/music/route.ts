@@ -141,19 +141,22 @@ function buildBody(payload: any, provider: Provider): any {
   }
 
   // 🎵 v19.69 MUSICAPI & AIMUSICAPI — Suno-compatible (Bearer key, kredit gratis)
+  // 🐛 v19.70 FIX: MusicAPI menolak tags > 200 char ('should less than 200') —
+  // batasi 190 biar aman. Style tetap dipertahankan (genre+gender+emosi) tapi ringkas.
   if (provider === "musicapi" || provider === "aimusicapi") {
+    const tagsRingkas = styleStr.slice(0, 190);
     const body: any = {
       custom_mode: isCustom,
       title: finalTitle,
-      tags: styleStr.slice(0, 480),
+      tags: tagsRingkas,
       make_instrumental: !!instrumental,
       mv: provider === "musicapi" ? "sonic-v3-5" : "chirp-v5",
       model: mapModelGeneric(model),
     };
     if (isCustom) {
       body.prompt = finalLyrics.slice(0, 5000);
-      body.style = styleStr.slice(0, 480);
-      body.tags = styleStr.slice(0, 480);
+      body.style = tagsRingkas;
+      body.tags = tagsRingkas;
     } else {
       body.gpt_description_prompt = finalPrompt.slice(0, 500);
     }
