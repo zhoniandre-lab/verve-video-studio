@@ -346,6 +346,18 @@ export async function POST(req: Request) {
               status: "quota_error", provider,
             }, { status: 402 });
           }
+          // 🐛 v19.67: 429 = kuota/rate-limit habis (banyak provider balas 429, bukan 402) —
+          // dulu jadi error mentah bahasa Inggris. Sekarang pesan Indonesia + status quota_error
+          // biar client otomatis buka panel GANTI KEY.
+          if (r.status === 429) {
+            const isQuota = /quota|limit|exceeded|credit/i.test(txt);
+            const pesan = isQuota
+              ? (provider === "mureka"
+                  ? "Kredit Mureka habis / rate limit — free credits udah kepakai. Bikin akun BARU (email baru) di platform.mureka.ai buat free credits lagi, atau ganti provider di atas."
+                  : `Kredit ${PROVIDERS[provider].label} habis / rate limit. Top up, atau daftar akun baru (email baru) buat free credits lagi.`)
+              : `${PROVIDERS[provider].label} nolak (429). Coba lagi sebentar, atau ganti provider.`;
+            return NextResponse.json({ error: pesan, status: "quota_error", provider }, { status: 402 });
+          }
           if (r.status === 504 || r.status === 503 || r.status === 408) {
             lastErr = `${PROVIDERS[provider].label} sedang sibuk (${r.status}), coba lagi...`;
             continue;
