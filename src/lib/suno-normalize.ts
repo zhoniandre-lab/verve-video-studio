@@ -5,7 +5,7 @@
    asli tiap provider (tests/suno-normalize.test.mjs).
    ===================================================================== */
 
-export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi";
+export type ProvLagu = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi" | "sunoapi" | "evolink" | "cometapi" | "ttapi";
 
 export interface KlipLagu {
   url: string;
@@ -139,12 +139,12 @@ export function ambilKlipLagu(root: any): KlipLagu[] {
       for (const it of o) walk(it, dalem + 1, cakup);
       return;
     }
-    for (const k of ["sunoData", "songs", "clips", "tracks"]) {
+    for (const k of ["sunoData", "songs", "clips", "tracks", "result_data", "musics"]) {
       if (Array.isArray(o[k])) walk(o[k], dalem + 1, cakup);
     }
     if (objekLagu(o)) push(o);
     for (const k of Object.keys(o)) {
-      if (k === "sunoData" || k === "songs" || k === "clips" || k === "tracks") continue;
+      if (k === "sunoData" || k === "songs" || k === "clips" || k === "tracks" || k === "result_data" || k === "musics") continue;
       walk(o[k], dalem + 1, cakup);
     }
   };
@@ -288,12 +288,79 @@ export function normalizeGeneric(d: any): HasilNormal {
   };
 }
 
+/** 🎵 v19.78 EvoLink — POST /v1/audios/generations → {id,status:pending}
+ *  GET /v1/tasks/{id} → {status:completed, result_data:[{audio_url,…}]} */
+export function normalizeEvolink(d: any): HasilNormal {
+  const id = String(d?.id || d?.task_id || d?.data?.id || "");
+  const st = String(d?.status || d?.data?.status || "pending").toLowerCase();
+  if (/fail|error|cancel/.test(st)) {
+    const err = (typeof d?.error === "object" ? d.error?.message : d?.error) || d?.message || st;
+    return { id, status: "error", error: String(err) };
+  }
+  const clips = clipsDariRespons(d);
+  if (clips.length && (/complete|success|done/.test(st) || Number(d?.progress) === 100)) {
+    return {
+      id, status: "completed",
+      audio_url: clips[0].url, audio_urls: clips.map((c) => c.url), clips,
+      title: clips[0].title, image_url: clips[0].image_url, duration: clips[0].duration,
+    };
+  }
+  if (id) return { id, status: "pending" };
+  return { id: "", status: "pending" };
+}
+
+/** 🎵 v19.78 CometAPI — POST /suno/submit/music → {data:"taskId"}
+ *  GET /suno/fetch/{id} → {data:{status, data:[{audio_url}]}} */
+export function normalizeComet(d: any): HasilNormal {
+  const id = typeof d?.data === "string" && d.data
+    ? String(d.data)
+    : String(d?.data?.task_id || d?.data?.id || d?.task_id || d?.id || "");
+  const inner = d?.data && typeof d.data === "object" ? d.data : d;
+  const st = String(inner?.status || d?.status || d?.code || "").toLowerCase();
+  if (/fail|error/.test(st) && st !== "success") {
+    return { id, status: "error", error: String(inner?.fail_reason || inner?.message || d?.message || st) };
+  }
+  const clips = clipsDariRespons(inner?.data || inner || d);
+  if (clips.length) {
+    return {
+      id, status: "completed",
+      audio_url: clips[0].url, audio_urls: clips.map((c) => c.url), clips,
+      title: clips[0].title || inner?.title, image_url: clips[0].image_url, duration: clips[0].duration,
+    };
+  }
+  if (id) return { id, status: "pending" };
+  return { id: "", status: "pending" };
+}
+
+/** 🎵 v19.78 TTAPI — POST /suno/v1/music → {status:SUCCESS, data:{jobId}}
+ *  (SUCCESS di sini = job diterima, BUKAN lagu jadi.)
+ *  GET /suno/v2/fetch?jobId= → {status:ON_QUEUE|SUCCESS|FAILED, data:{musics:[{audioUrl}]}} */
+export function normalizeTtapi(d: any): HasilNormal {
+  const jobId = String(d?.data?.jobId || d?.jobId || d?.data?.id || d?.id || "");
+  const st = String(d?.status || d?.data?.status || "").toUpperCase();
+  if (st === "FAILED" || st === "ERROR" || /FAIL/.test(st)) {
+    return { id: jobId, status: "error", error: String(d?.message || d?.data?.failReason || d?.data?.message || st) };
+  }
+  const clips = clipsDariRespons(d?.data?.musics || d?.data || d);
+  if (clips.length && (st === "SUCCESS" || st === "COMPLETED" || st === "DONE")) {
+    return {
+      id: jobId, status: "completed",
+      audio_url: clips[0].url, audio_urls: clips.map((c) => c.url), clips,
+      title: clips[0].title, image_url: clips[0].image_url, duration: clips[0].duration,
+    };
+  }
+  if (jobId) return { id: jobId, status: "pending" };
+  return { id: "", status: "pending" };
+}
+
 /** Normalisasi utuh per provider. */
 export function normalizeLagu(d: any, provider: ProvLagu): HasilNormal {
-  if (provider === "kie") return normalizeKie(d);
+  if (provider === "kie" || provider === "sunoapi") return normalizeKie(d);
   if (provider === "sunor") return normalizeSunor(d);
-  if (provider === "mureka") return normalizeMureka(d); // 🎵 v19.64
-  // suno-resmi (studio-api) respons {id} / {clips:[{audio_url}]} — mirip generic
+  if (provider === "mureka") return normalizeMureka(d);
+  if (provider === "evolink") return normalizeEvolink(d);
+  if (provider === "cometapi") return normalizeComet(d);
+  if (provider === "ttapi") return normalizeTtapi(d);
   return normalizeGeneric(d);
 }
 
@@ -319,4 +386,38 @@ export function mapModelGeneric(modelId: string): string {
   if (m.includes("v4")) return "suno-v4";
   if (m.includes("v3.5")) return "chirp-v3.5";
   return m;
+}
+
+/** 🎵 v19.78 EvoLink: suno-v5.5-beta dst. */
+export function mapModelEvolink(modelId: string): string {
+  const m = String(modelId || "v5.5").toLowerCase();
+  if (m.includes("v5.5") || m.includes("v5_5")) return "suno-v5.5-beta";
+  if (m.includes("v5")) return "suno-v5-beta";
+  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "suno-v4.5plus-beta";
+  if (m.includes("v4.5all") || (m.includes("v4.5") && m.includes("all"))) return "suno-v4.5all-beta";
+  if (m.includes("v4.5")) return "suno-v4.5-beta";
+  if (m.includes("v4")) return "suno-v4-beta";
+  return "suno-v5.5-beta";
+}
+
+/** 🎵 v19.78 CometAPI mv: chirp-crow = v5, chirp-auk = v4.5. */
+export function mapModelComet(modelId: string): string {
+  const m = String(modelId || "v5").toLowerCase();
+  if (m.includes("v5.5") || m.includes("v5_5") || m.includes("v5")) return "chirp-crow";
+  if (m.includes("v4.5")) return "chirp-auk";
+  if (m.includes("v4")) return "chirp-v4";
+  if (m.includes("v3.5") || m.includes("v3_5")) return "chirp-v3-5";
+  return "chirp-crow";
+}
+
+/** 🎵 v19.78 TTAPI mv: chirp-v5-5 / chirp-v5. */
+export function mapModelTtapi(modelId: string): string {
+  const m = String(modelId || "v5.5").toLowerCase();
+  if (m.includes("v5.5") || m.includes("v5_5")) return "chirp-v5-5";
+  if (m.includes("v5")) return "chirp-v5";
+  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "chirp-v4-5-plus";
+  if (m.includes("v4.5")) return "chirp-v4-5";
+  if (m.includes("v4")) return "chirp-v4";
+  if (m.includes("v3.5") || m.includes("v3_5")) return "chirp-v3-5";
+  return "chirp-v5-5";
 }

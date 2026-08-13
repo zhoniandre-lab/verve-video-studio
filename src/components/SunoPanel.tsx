@@ -7,22 +7,13 @@
  * Hasil dikirim lewat callback `onSong(url, title, duration)`.
  */
 import { useEffect, useRef, useState } from "react";
+import { META_PROV_SUNO, LINK_AMBIL_KEY, LINK_DASH_PROV } from "@/lib/suno-providers";
 
 const SUNO_KEYS_KEY = "verve_suno_keys_v1";
-const SUNO_PROVIDERS = [
-  { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
-  { id: "sunor", label: "Sunor.cc" },
-];
-const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
-  kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key). Daftar baru dapat 5.000 kredit." },
-  sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
-};
+const SUNO_PROVIDERS = META_PROV_SUNO;
+const PROVIDER_KEY_LINK = LINK_AMBIL_KEY;
 /** 🛡 v19.35.4: dashboard tempat cek hasil manual kalau polling lama */
-const PROVIDER_DASH: Record<string, string> = {
-  kie: "https://kie.ai/playground",
-  sunor: "https://sunor.cc",
-  apiframe: "https://apiframe.ai",
-};
+const PROVIDER_DASH: Record<string, string> = { ...LINK_DASH_PROV, apiframe: "https://apiframe.ai" };
 const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
 const SUNO_MODELS = [

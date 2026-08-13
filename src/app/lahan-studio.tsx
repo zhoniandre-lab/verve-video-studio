@@ -124,9 +124,13 @@ const SUNO_KEYS_KEY = "verve_suno_keys_v1";
 /** Link resmi buat ambil/generate API key — satu klik, kayak panel Kampung Music */
 const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
   kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key)" },
-  apiframe: { url: "https://apiframe.ai", hint: "Login apiframe.ai → dashboard → API Keys" },
   sunor: { url: "https://sunor.cc", hint: "Login sunor.cc → dashboard → API Key" },
-  aimusic: { url: "", hint: "mode gratis — tanpa key (sering penuh)" },
+  musicapi: { url: "https://musicapi.ai", hint: "Daftar musicapi.ai → dashboard → API key" },
+  aimusicapi: { url: "https://aimusicapi.ai", hint: "Daftar aimusicapi.ai → dashboard → API key" },
+  sunoapi: { url: "https://sunoapi.org/api-key", hint: "Daftar sunoapi.org → API Key Management (akun terpisah dari Kie)" },
+  evolink: { url: "https://evolink.ai/dashboard", hint: "Daftar evolink.ai → Dashboard → API Keys (umumnya berbayar)" },
+  cometapi: { url: "https://www.cometapi.com/console/token", hint: "Daftar cometapi.com → Console → Token" },
+  ttapi: { url: "https://dashboard.ttapi.io/", hint: "Daftar dashboard.ttapi.io → Get API key" },
 };
 function detectProvClient(k: string, fallback: string): string {
   const s = k.toLowerCase().trim();
@@ -142,12 +146,13 @@ function maskKey(k: string): string {
 
 const SUNO_PROVIDERS = [
   { id: "kie", label: "🥇 Kie.ai (utama — lancar dari Indo)" },
-  { id: "apiframe", label: "apiframe.ai" },
-  { id: "sunor", label: "Sunor.cc" },
-  { id: "musicapi", label: "🎧 MusicAPI (75 kredit gratis)" },
-  { id: "aimusicapi", label: "🎧 AIMusicAPI (30 kredit gratis)" },
-  { id: "suno-resmi", label: "🎵 Suno Resmi (cookie akun)" },
-  { id: "aimusic", label: "aimusic.so (gratis — sering penuh)" },
+  { id: "sunor", label: "☀️ Sunor.cc" },
+  { id: "musicapi", label: "🎧 MusicAPI (75 kredit uji)" },
+  { id: "aimusicapi", label: "🎧 AIMusicAPI (30 kredit uji)" },
+  { id: "sunoapi", label: "🟣 SunoAPI.org (akun terpisah)" },
+  { id: "evolink", label: "🧬 EvoLink (Suno v5/v5.5)" },
+  { id: "cometapi", label: "☄️ CometAPI (Suno)" },
+  { id: "ttapi", label: "🧩 TTAPI (Suno v5)" },
 ];
 const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
@@ -2863,7 +2868,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                     🔑 Ambil API key di {SUNO_PROVIDERS.find((p) => p.id === sunoProv)?.label.replace(/^🥇 /, "")} ↗
                   </a>
                 ) : (
-                  <p className="lh-note">aimusic.so = mode gratis tanpa key (sering penuh). Mau lancar: pakai Kie.ai.</p>
+                  <p className="lh-note">Pilih provider di atas, lalu tap tautan Ambil API key.</p>
                 )}
                 <p className="lh-note">1. Tap link di atas → login → {PROVIDER_KEY_LINK[sunoProv]?.hint}.<br />2. Tempel <b>satu kunci per baris</b> di bawah → <b>+ Tambah</b>. Bisa BANYAK kunci: kalau satu habis/ditolak, mesin <b>otomatis pindah kunci berikutnya</b>.</p>
                 <textarea

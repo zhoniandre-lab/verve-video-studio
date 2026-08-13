@@ -14,10 +14,12 @@ const BASE: Record<string, string> = {
   kie: "https://api.kie.ai/api/v1",
   // 🐛 FIX v19.35.6: Sunor API ada di sunor.cc (subdomain api.sunor.cc MATI di DNS)
   sunor: "https://sunor.cc/api/v1",
+  sunoapi: "https://api.sunoapi.org/api/v1",
 };
 const PROBE: Record<string, string[]> = {
   kie: ["/chat/credit", "/credit", "/user/credit"],
   sunor: ["/user/credits", "/credits", "/credit"],
+  sunoapi: ["/chat/credit", "/credit", "/user/credit"],
 };
 
 function mask(k: string): string {

@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
 import { gerbangFitur } from "../../../../lib/setelan";
-import { normalizeLagu as normalize, mapModelKie, mapModelGeneric } from "../../../../lib/suno-normalize";
+import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelEvolink, mapModelComet, mapModelTtapi } from "../../../../lib/suno-normalize";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -18,7 +18,7 @@ import { normalizeLagu as normalize, mapModelKie, mapModelGeneric } from "../../
  */
 export const dynamic = "force-dynamic";
 
-type Provider = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi";
+type Provider = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi" | "sunoapi" | "evolink" | "cometapi" | "ttapi";
 
 const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   kie:      { base: "https://api.kie.ai/api/v1", label: "Kie.ai" },
@@ -34,6 +34,12 @@ const PROVIDERS: Record<Provider, { base: string; label: string }> = {
   // reseller Suno API dengan kredit gratis (75 & 30), key di dashboard masing-masing.
   musicapi:  { base: "https://api.musicapi.ai",    label: "MusicAPI (75 kredit gratis)" },
   aimusicapi: { base: "https://api.aimusicapi.ai", label: "AIMusicAPI (30 kredit gratis)" },
+  // 🎵 v19.78 PROVIDER BARU (dicek hidup 2026-08-14: 401 tanpa key = endpoint ADA)
+  // sunoapi.org = format Kie (akun/kredit terpisah kalau daftar di sana).
+  sunoapi:  { base: "https://api.sunoapi.org/api/v1", label: "SunoAPI.org" },
+  evolink:  { base: "https://api.evolink.ai",         label: "EvoLink" },
+  cometapi: { base: "https://api.cometapi.com",       label: "CometAPI" },
+  ttapi:    { base: "https://api.ttapi.io",           label: "TTAPI" },
 };
 
 /** 🛡 v19.35.4: provider yang TERVERIFIKASI mati (semua endpoint 404) — jangan pernah dipakai.
@@ -48,10 +54,13 @@ function detectProvider(rawKey: string, hdrProvider?: string): Provider {
   if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
   if (k.startsWith("snr_") || k.startsWith("sunor_") || k.startsWith("sk_live")) return "sunor"; // v10.5: kunci asli Sunor = sk_live_…
   if (k.startsWith("afk_") || k.startsWith("af_")) return "apiframe";
-  if (k.includes("suno") || k.startsWith("__Secure-") || k.includes("session=")) return "suno-resmi"; // 🎵 v19.61 cookie suno.com
+  if (k.startsWith("__secure-") || k.includes("session=") || (k.includes("suno") && k.includes("="))) return "suno-resmi"; // cookie suno.com, bukan key sunoapi.org
   if (k.startsWith("mrk_") || k.startsWith("mureka")) return "mureka"; // 🎵 v19.64
   if (k.startsWith("mus_") || k.startsWith("musicapi")) return "musicapi"; // 🎵 v19.69
   if (k.startsWith("aimus") || k.startsWith("aimusicapi")) return "aimusicapi"; // 🎵 v19.69
+  if (k.startsWith("ttapi") || k.startsWith("tt-") || k.startsWith("tta_")) return "ttapi"; // 🎵 v19.78
+  if (k.startsWith("evo_") || k.startsWith("evolink")) return "evolink";
+  if (k.startsWith("comet") || k.startsWith("sk-comet")) return "cometapi";
   // Hex 32+ tanpa prefix — asumsikan Kie.ai (Kie ngasih key hex murni).
   if (/^[a-f0-9]{24,}$/i.test(k)) return "kie";
   return "kie";
@@ -105,7 +114,7 @@ function buildBody(payload: any, provider: Provider): any {
   // Custom mode AKTIF kalau lirik terisi (>30 char) dan bukan instrumental
   const isCustom = (custom !== false) && finalLyrics.length > 30 && !instrumental;
 
-  if (provider === "kie") {
+  if (provider === "kie" || provider === "sunoapi") {
     const body: any = {
       model: mapModelKie(model),
       customMode: isCustom,
@@ -203,6 +212,36 @@ function buildBody(payload: any, provider: Provider): any {
     return body;
   }
 
+  // 🎵 v19.78 EVOLINK — POST /v1/audios/generations
+  if (provider === "evolink") {
+    return {
+      model: mapModelEvolink(model),
+      custom_mode: isCustom,
+      instrumental: !!instrumental,
+      title: finalTitle,
+      style: styleStr.slice(0, 480),
+      prompt: isCustom ? finalLyrics.slice(0, 5000) : finalPrompt.slice(0, 2000),
+    };
+  }
+
+  // 🎵 v19.78 COMETAPI — POST /suno/submit/music
+  if (provider === "cometapi") {
+    const mv = mapModelComet(model);
+    if (isCustom) {
+      return { prompt: finalLyrics.slice(0, 5000), tags: styleStr.slice(0, 480), mv, title: finalTitle, make_instrumental: !!instrumental };
+    }
+    return { gpt_description_prompt: finalPrompt.slice(0, 500), mv, make_instrumental: !!instrumental, title: finalTitle };
+  }
+
+  // 🎵 v19.78 TTAPI — POST /suno/v1/music
+  if (provider === "ttapi") {
+    const mv = mapModelTtapi(model);
+    if (isCustom) {
+      return { custom: true, instrumental: !!instrumental, mv, title: finalTitle, tags: styleStr.slice(0, 480), prompt: finalLyrics.slice(0, 5000) };
+    }
+    return { custom: false, instrumental: !!instrumental, mv, gpt_description_prompt: finalPrompt.slice(0, 500) };
+  }
+
   // ☀️ v10.5 SUNOR RESMI — POST /api/v1/task {model:"suno", task_type:"music", input:{…}} (dok sunor.cc/suno-api)
   if (provider === "sunor") {
     const input: any = { make_instrumental: !!instrumental, tags: styleStr.slice(0, 480) };
@@ -271,12 +310,18 @@ function buildHeaders(key: string, provider?: Provider): Record<string,string> {
     h["Cookie"] = key;
     return h;
   }
-  // 🎵 v19.64 Mureka: Authorization Bearer (seperti OpenAI)
-  if (provider === "mureka" || provider === "musicapi" || provider === "aimusicapi") {
+  // 🎵 v19.64 Mureka + v19.69 MusicAPI + v19.78 EvoLink/Comet: Authorization Bearer
+  if (provider === "mureka" || provider === "musicapi" || provider === "aimusicapi" || provider === "evolink" || provider === "cometapi") {
     h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${key.replace(/^Bearer\s+/i, "")}`;
     return h;
   }
   const rawKey = key.replace(/^Bearer\s+/i, "");
+  // 🎵 v19.78 TTAPI wajib header TT-API-KEY
+  if (provider === "ttapi") {
+    h["TT-API-KEY"] = rawKey;
+    h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
+    return h;
+  }
   h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
   h["apikey"] = rawKey;
   h["x-api-key"] = rawKey;
@@ -290,7 +335,10 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
     if (provider === "mureka") return [`${base}/v1/song/query/${forStatus}`]; // 🎵 v19.64 GET /v1/song/query/{task_id}
     if (provider === "suno-resmi") return [`${base}/api/v1/feed/${forStatus}`, `${base}/api/v1/feed/${forStatus}/clips`]; // 🎵 v19.61
     if (provider === "sunor") return [`${base}/api/v1/task/${forStatus}`]; // v10.5: GET task/{id}
-    if (provider === "kie") {
+    if (provider === "evolink") return [`${base}/v1/tasks/${forStatus}`];
+    if (provider === "cometapi") return [`${base}/suno/fetch/${forStatus}`];
+    if (provider === "ttapi") return [`${base}/suno/v2/fetch?jobId=${encodeURIComponent(forStatus)}`];
+    if (provider === "kie" || provider === "sunoapi") {
       return [
         `${base}/generate/record-info?taskId=${forStatus}`,
       ];

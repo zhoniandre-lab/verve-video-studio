@@ -5,20 +5,9 @@
    Hasil tersimpan di localStorage 'verve_suno_hasil' → Spectrum / Editor. */
 import { useEffect, useRef, useState } from "react";
 import { pilihKlipDariHasil, type KlipLagu } from "@/lib/suno-normalize";
+import { META_PROV_SUNO } from "@/lib/suno-providers";
 
-const PROVIDERS = [
-  { id: "kie", label: "🥇 Kie.ai (utama)", hint: "Key dari kie.ai → API Keys", keyUrl: "https://kie.ai/api-key" },
-  { id: "sunor", label: "☀️ Sunor.cc", hint: "Key dari sunor.cc (sk_live_…)", keyUrl: "https://sunor.cc" },
-  // 🎵 v19.68: Mureka DINONAKTIFKAN — free credits ternyata cuma buat web app,
-  // API butuh plan berbayar (429 quota sejak akun baru). Biar user nggak buang waktu.
-  // { id: "mureka", label: "🎵 Mureka (API butuh bayar)", hint: "Free credits cuma di web — API wajib top up", keyUrl: "https://platform.mureka.ai/apiKeys" },
-  // 🎵 v19.69: provider BARU (diuji hidup dari server) — MusicAPI & AIMusicAPI
-  { id: "musicapi", label: "🎧 MusicAPI (75 kredit gratis)", hint: "Daftar musicapi.ai → dashboard → API key (free 75 kredit, tanpa kartu)", keyUrl: "https://musicapi.ai" },
-  { id: "aimusicapi", label: "🎧 AIMusicAPI (30 kredit gratis)", hint: "Daftar aimusicapi.ai → dashboard → API key (free 30 kredit)", keyUrl: "https://aimusicapi.ai" },
-  // 🎵 v19.63: Suno Resmi dinonaktifkan SEMENTARA — balas 503 terus dari server
-  // (butuh cara akses khusus & sering sibuk). Nanti diaktifkan lagi kalau stabil.
-  // { id: "suno-resmi", label: "🎵 Suno Resmi (cookie akun)", hint: "Cookie session suno.com — akun gratis 50 kredit/hari (lihat Bot Buruan → Suno)", keyUrl: "https://suno.com" },
-];
+const PROVIDERS = META_PROV_SUNO;
 const MODELS = ["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"];
 
 export default function SunoStudio({ onExit }: { onExit?: () => void }) {
@@ -222,7 +211,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
             <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
           )}
         </div>
-        <div className="v6-note" style={{ marginTop: 6 }}>Apiframe & Mureka dinonaktifkan (mati / API butuh bayar). Provider AKTIF: 🥇 Kie.ai (5.000 kredit) · ☀️ Sunor.cc (25) · 🎧 MusicAPI (75) · 🎧 AIMusicAPI (30). Kalau kredit habis: daftar akun BARU (email baru) di situsnya buat free credits lagi → ambil key baru → tempel di sini.</div>
+        <div className="v6-note" style={{ marginTop: 6 }}>Apiframe & Mureka tetap mati/berbayar API. Provider yang bisa kamu AMBIL KEY-nya: 🥇 Kie · ☀️ Sunor · 🎧 MusicAPI · 🎧 AIMusicAPI · 🟣 SunoAPI.org · 🧬 EvoLink · ☄️ CometAPI · 🧩 TTAPI. Tap 🔗 Ambil key ↗ → daftar di situsnya → salin key → tempel di sini. Jujur: yang gratis cuma kredit uji (Kie/Sunor/MusicAPI/AIMusicAPI). EvoLink/Comet/TTAPI/SunoAPI.org umumnya berbayar setelah uji. Kalau kredit habis: akun email baru di situsnya, atau ganti provider.</div>
         {prov === "suno-resmi" && (
           <div style={{ marginTop: 8, border: "1px solid #ffffff1a", borderRadius: 12, padding: 10, background: "#0a0e16" }}>
             <b style={{ fontSize: 11.5, color: "#a5f3fc" }}>📋 CARA AMBIL COOKIE SUNO (5 langkah)</b>
