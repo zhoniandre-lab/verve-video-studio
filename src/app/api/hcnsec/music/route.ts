@@ -141,24 +141,32 @@ function buildBody(payload: any, provider: Provider): any {
   }
 
   // 🎵 v19.69 MUSICAPI & AIMUSICAPI — Suno-compatible (Bearer key, kredit gratis)
-  // 🐛 v19.70 FIX: MusicAPI menolak tags > 200 char ('should less than 200') —
-  // batasi 190 biar aman. Style tetap dipertahankan (genre+gender+emosi) tapi ringkas.
+  // 🐛 v19.74 FIX KUALITAS: dulu pakai sonic-v3-5 (LEGACY) → hasil 'band jelek',
+  // nggak patuh prompt. Sekarang pilih MODEL TERBARU sesuai pilihan user:
+  //   musicapi: sonic-v5 (terbaik) / sonic-v4-5 (vokal+gender) / v4 / v3-5
+  //   aimusicapi: chirp-v5 / chirp-v4-5 / chirp-v4 / chirp-v3-5
+  // Tags: v4.5+ limit 1000 char → kirim sampai 480 (detail style lebih utuh,
+  // dulu dipotong 190 karena v3-5 cuma 200). gpt_description_prompt max 400.
   if (provider === "musicapi" || provider === "aimusicapi") {
-    const tagsRingkas = styleStr.slice(0, 190);
+    const modelKey = String(model || "v5").toLowerCase();
+    const mv = provider === "musicapi"
+      ? (modelKey.includes("v5") ? "sonic-v5" : modelKey.includes("v4.5") ? "sonic-v4-5" : modelKey.includes("v4") ? "sonic-v4" : "sonic-v3-5")
+      : (modelKey.includes("v5") ? "chirp-v5" : modelKey.includes("v4.5") ? "chirp-v4-5" : modelKey.includes("v4") ? "chirp-v4" : "chirp-v3-5");
+    const tagsPenuh = styleStr.slice(0, 480);
     const body: any = {
       custom_mode: isCustom,
       title: finalTitle,
-      tags: tagsRingkas,
+      tags: tagsPenuh,
       make_instrumental: !!instrumental,
-      mv: provider === "musicapi" ? "sonic-v3-5" : "chirp-v5",
+      mv,
       model: mapModelGeneric(model),
     };
     if (isCustom) {
       body.prompt = finalLyrics.slice(0, 5000);
-      body.style = tagsRingkas;
-      body.tags = tagsRingkas;
+      body.style = tagsPenuh;
+      body.tags = tagsPenuh;
     } else {
-      body.gpt_description_prompt = finalPrompt.slice(0, 500);
+      body.gpt_description_prompt = finalPrompt.slice(0, 380);
     }
     return body;
   }
