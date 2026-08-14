@@ -25,7 +25,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [status, setStatus] = useState("");
   const [taskId, setTaskId] = useState("");
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "" });
-  const [hasil, setHasil] = useState<{ url: string; urls?: string[]; previewUrl?: string; title: string; dur: number } | null>(null);
+  const [hasil, setHasil] = useState<{ url: string; urls?: string[]; previewUrl?: string; title: string; dur: number; trimmed?: boolean } | null>(null);
   const [klipList, setKlipList] = useState<KlipLagu[]>([]);
   const [klipIdx, setKlipIdx] = useState(0);
   const [modeHasil, setModeHasil] = useState<"satu" | "dua">("satu");
@@ -117,9 +117,10 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     if (!url) throw new Error("Provider tidak kasih audio.");
     const idx = typeof idxPakai === "number" ? idxPakai : Math.max(0, semua.findIndex((c) => c.url === klip.url));
     setKlipIdx(idx);
-    let dur = 0;
     let bytes = 0;
     let lastErr = "gagal";
+    let ac: AudioContext | null = null;
+    let buf: AudioBuffer | null = null;
     const cobaDecode = async (src: string): Promise<boolean> => {
       try {
         const r = await fetch(src);
@@ -128,45 +129,48 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         // 🐛 v19.81: file lagu beneran > 2 KB — 2048 byte pas = stub kosong 0 detik.
         if (bytes < 2048) { lastErr = `file terlalu kecil (${bytes} byte)`; return false; }
         const AC = window.AudioContext || (window as any).webkitAudioContext;
-        const ac = new AC();
-        const buf = await ac.decodeAudioData(ab);
-        dur = buf.duration; ac.close();
+        ac = new AC();
+        buf = await ac.decodeAudioData(ab);
         // 🐛 v19.81: decode "sukses" tapi durasi < 1 detik = lagu kosong (0:00).
-        // Provider nyata minimal 1-8 menit — jangan bilang "jadi" buat yang 0 detik.
-        if (!(dur >= 1)) { lastErr = `lagu kosong (${dur.toFixed(2)} dtk)`; return false; }
+        if (!(buf.duration >= 1)) { lastErr = `lagu kosong (${buf.duration.toFixed(2)} dtk)`; return false; }
         return true;
       } catch (e: any) { lastErr = e?.message || "gagal decode"; return false; }
     };
     const okDecode = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
       ? await cobaDecode(url)
       : (await cobaDecode(url)) || (await cobaDecode(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`));
-    if (!okDecode) {
+    if (!okDecode || !buf || !ac) {
       throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
     }
+    // ✂️ v19.82: pangkas EKOR/DEPAN SENYAP — provider kasih file 11-12 menit
+    // padahal lagunya cuma ±5 menit. Satu pilihan = satu lagu, durasi pas isi.
+    let durFinal = buf.duration;
+    let dipangkas = false;
+    let alasanTrim = "";
     let previewUrl: string | undefined;
     try {
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
-      const ac = new AC();
-      const r = await fetch(url.startsWith("/") ? url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
-      const buf = await ac.decodeAudioData(await r.arrayBuffer());
-      const mono = ac.createBuffer(1, buf.length, 22050);
-      const src = buf.getChannelData(0), dst = mono.getChannelData(0);
-      const step = buf.sampleRate / 22050;
-      for (let i = 0; i < dst.length; i++) dst[i] = src[Math.min(src.length - 1, Math.floor(i * step))];
-      const { bufferToWav } = await import("@/lib/gabung-audio");
+      const { potongBuffer, bufferToWav } = await import("@/lib/gabung-audio");
+      const t = potongBuffer(buf, ac);
+      dipangkas = t.dipangkas;
+      alasanTrim = t.alasan || "";
+      durFinal = t.bufBaru.duration;
+      const mono = ac.createBuffer(1, t.bufBaru.length, 22050);
+      const srcCh = t.bufBaru.getChannelData(0), dst = mono.getChannelData(0);
+      const step = t.bufBaru.sampleRate / 22050;
+      for (let i = 0; i < dst.length; i++) dst[i] = srcCh[Math.min(srcCh.length - 1, Math.floor(i * step))];
       previewUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
-      ac.close();
     } catch { previewUrl = undefined; }
+    try { ac.close(); } catch {}
     const huruf = idx === 0 ? "A" : idx === 1 ? "B" : String(idx + 1);
     const notice = semua.length > 1
       ? (modeHasil === "dua" ? ` · versi ${huruf} (ada ${semua.length} pilihan terpisah)` : ` · versi ${huruf} (1 lagu, bukan digabung)`)
       : "";
-    const h = { url, urls: [url], previewUrl, title: klip.title || judulInduk || title || "Lagu AI", dur };
+    const h = { url, urls: [url], previewUrl, title: klip.title || judulInduk || title || "Lagu AI", dur: durFinal, trimmed: dipangkas };
     setHasil(h);
-    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB).`);
+    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(durFinal)} dtk${dipangkas ? ` (${alasanTrim} dipangkas)` : ""} (${(bytes / 1048576).toFixed(1)} MB).`);
     try {
       localStorage.setItem("verve_suno_hasil", JSON.stringify({
-        url, urls: [url], clips: semua, pilih: idx, title: h.title, dur, at: Date.now(),
+        url, urls: [url], clips: semua, pilih: idx, title: h.title, dur: durFinal, at: Date.now(),
       }));
     } catch {}
   };
@@ -181,16 +185,19 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const simpanHasil = async () => {
     if (!hasil) return;
     try {
-      const r = await fetch(srcAman(hasil.url));
+      // ✂️ v19.82: kalau ekor senyap dipangkas → download versi WAV yang sudah PAS durasinya
+      const sumber = hasil.trimmed && hasil.previewUrl ? hasil.previewUrl : srcAman(hasil.url);
+      const r = await fetch(sumber);
       const blob = await r.blob();
       if (!blob.size || blob.size < 2048 || (blob.type || "").includes("json")) {
         setStatus("❌ Download gagal — file yang dikasih provider tidak valid. Coba pakai '🎧 Pakai di Spectrum' (biasanya jalan), atau generate ulang.");
         return;
       }
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = `${(hasil.title || "lagu").replace(/[^\w\- ]+/g, "").slice(0, 40)}.mp3`;
+      const nama = (hasil.title || "lagu").replace(/[^\w\- ]+/g, "").slice(0, 40);
+      a.href = URL.createObjectURL(blob); a.download = `${nama}.${hasil.trimmed ? "wav" : "mp3"}`;
       a.click();
-      setStatus("📥 Download dimulai — cek folder Download HP.");
+      setStatus(`📥 Download dimulai${hasil.trimmed ? " (WAV — durasi sudah pas, ekor senyap dipangkas)" : ""} — cek folder Download HP.`);
     } catch { setStatus("⚠️ Gagal download — coba buka Spectrum lalu pakai hasilnya."); }
   };
 
@@ -303,7 +310,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           <audio controls preload="metadata" src={hasil.previewUrl || srcAman(hasil.url)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
-            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ urls: [hasil.url], url: hasil.url, title: hasil.title, dur: hasil.dur, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
+            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ urls: [hasil.url], url: hasil.url, previewUrl: hasil.previewUrl || undefined, title: hasil.title, dur: hasil.dur, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
           </div>
           <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Yang tersimpan = lagu yang sedang dipilih (satu file, satu gaya). Tidak disambung ke versi lain.</p>
         </div>

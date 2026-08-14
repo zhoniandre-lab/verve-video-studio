@@ -159,7 +159,7 @@ T("route IMPOR audioProbeCukup (bukan cuma probeAudioCukup)", /audioProbeCukup/.
 T("route PAKAI audioProbeCukup di cekUrlAudioValid", /if \(tanpa && audioProbeCukup\(tanpa\)\)/.test(route));
 T("normalize ekspor audioProbeCukup", /export function audioProbeCukup/.test(norm));
 T("klien decode tolak file < 2048 byte (stub)", /bytes < 2048/.test(studio) && !/bytes < 1000/.test(studio));
-T("klien decode tolak durasi < 1 dtk (0:00)", /dur >= 1/.test(studio));
+T("klien decode tolak durasi < 1 dtk (0:00)", /buf\.duration >= 1/.test(studio));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI PROVIDER BARU GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI PROVIDER BARU HIJAU");

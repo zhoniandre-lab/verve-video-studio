@@ -108,3 +108,67 @@ export async function gabungUrlAudio(urls: string[], proxify?: (u: string) => st
     try { actx.close(); } catch {}
   }
 }
+
+/* =====================================================================
+   ✂️ v19.82 PEMANGKAS SENYAP — lagu provider jadi panjang 11-12 menit
+   padahal isinya cuma ±5 menit (ekor senyap / gabungan segmen kosong).
+   Cari jangkauan yang BENAR-BENAR bersuara → sisanya dibuang.
+   ===================================================================== */
+
+/** Deteksi jangkauan audio yang bersuara (MURNI, bisa dites di Node).
+ *  channels = kumpulan kanal PCM (Float32), sr = sample rate.
+ *  Scanning pakai jendela 50 ms, ambang = |sampel| ≥ ambang (default 0.004 ≈ -48 dB).
+ *  → { mulai, akhir } = indeks sampel pertama & terakhir yang bersuara. */
+export function cariJangkauanAudio(channels: Float32Array[], sr: number, ambang = 0.004): { mulai: number; akhir: number } {
+  const n = channels.length && channels[0] ? channels[0].length : 0;
+  if (!n || !sr || !Number.isFinite(sr)) return { mulai: 0, akhir: n };
+  const win = Math.max(1, Math.round(sr * 0.05));
+  const puncak = (i: number): number => {
+    let p = 0;
+    for (let j = 0; j < win; j++) {
+      const s = i + j;
+      if (s >= n) break;
+      for (let c = 0; c < channels.length; c++) {
+        const v = Math.abs(channels[c][s]);
+        if (v > p) p = v;
+      }
+    }
+    return p;
+  };
+  let mulai = 0;
+  for (let i = 0; i + win <= n; i += win) { if (puncak(i) >= ambang) { mulai = i; break; } }
+  let akhir = n;
+  for (let i = n - win; i >= 0; i -= win) { if (puncak(i) >= ambang) { akhir = i + win; break; } }
+  return { mulai, akhir };
+}
+
+/** Potong AudioBuffer ke jangkauan bersuara (kanal & sample rate TETAP).
+ *  Ekor senyap > ekorMin (default 8 dtk) / depan senyap > depanMin (default 3 dtk)
+ *  baru dipangkas — kalau tidak, buffer asli dikembalikan apa adanya.
+ *  → { bufBaru, mulai, akhir, dipangkas, alasan } */
+export function potongBuffer(
+  buf: AudioBuffer,
+  ctx: AudioContext,
+  opts?: { ambang?: number; ekorMin?: number; depanMin?: number }
+): { bufBaru: AudioBuffer; mulai: number; akhir: number; dipangkas: boolean; alasan?: string } {
+  const ambang = opts?.ambang ?? 0.004;
+  const ekorMin = opts?.ekorMin ?? 8;
+  const depanMin = opts?.depanMin ?? 3;
+  const chs: Float32Array[] = [];
+  for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) chs.push(buf.getChannelData(c));
+  const { mulai, akhir } = cariJangkauanAudio(chs, buf.sampleRate, ambang);
+  const ekor = (buf.length - akhir) / buf.sampleRate;
+  const depan = mulai / buf.sampleRate;
+  if (ekor <= ekorMin && depan <= depanMin) return { bufBaru: buf, mulai, akhir, dipangkas: false };
+  const from = Math.max(0, mulai - (depan > depanMin ? Math.round(0.4 * buf.sampleRate) : 0));
+  const to = Math.min(buf.length, akhir + (ekor > ekorMin ? Math.round(0.6 * buf.sampleRate) : 0));
+  const len = Math.max(1024, to - from);
+  const baru = ctx.createBuffer(buf.numberOfChannels, len, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    baru.getChannelData(c).set(buf.getChannelData(c).subarray(from, from + len));
+  }
+  return {
+    bufBaru: baru, mulai: from, akhir: from + len, dipangkas: true,
+    alasan: ekor > ekorMin ? `ekor senyap ${ekor.toFixed(0)} dtk` : `depan senyap ${depan.toFixed(0)} dtk`,
+  };
+}

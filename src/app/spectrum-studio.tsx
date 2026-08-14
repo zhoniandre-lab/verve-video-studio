@@ -102,7 +102,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   /* musik */
   // 🎵 v19.61: hasil generate dari Suno Studio (/suno) — disimpan di localStorage,
   // Spectrum nawarin "Pakai" biar langsung jadi musik + spektrum.
-  const [hasilSuno, setHasilSuno] = useState<{ url: string; urls?: string[]; title: string; dur: number } | null>(null);
+  const [hasilSuno, setHasilSuno] = useState<{ url: string; previewUrl?: string; urls?: string[]; title: string; dur: number } | null>(null);
   useEffect(() => {
     try {
       const raw = localStorage.getItem("verve_suno_hasil");
@@ -113,10 +113,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } catch {}
   }, []); // eslint-disable-line
   // 🎵 v19.77: JANGAN gabung urls — itu 2 variasi Suno, bukan potongan.
-  // Pakai url terpilih saja (satu lagu).
-  const pakaiHasilSuno = async (h: { url: string; urls?: string[]; title: string; dur?: number }) => {
-    const satu = (h.url && (h.url.startsWith("http") || h.url.startsWith("blob:") || h.url.startsWith("/")))
-      ? h.url
+  // Pakai url terpilih saja (satu lagu). v19.82: prefer previewUrl (sudah
+  // dipangkas ekor senyapnya) kalau blob-nya masih hidup; kalau mati → url asli.
+  const pakaiHasilSuno = async (h: { url: string; previewUrl?: string; urls?: string[]; title: string; dur?: number }) => {
+    let pilih = h.previewUrl || h.url;
+    if (h.previewUrl && h.previewUrl.startsWith("blob:")) {
+      try { const p = await fetch(h.previewUrl, { method: "HEAD" }); if (!p.ok) throw 0; } catch { pilih = h.url; }
+    }
+    const satu = (pilih && (pilih.startsWith("http") || pilih.startsWith("blob:") || pilih.startsWith("/")))
+      ? pilih
       : (Array.isArray(h.urls) ? h.urls.find((u) => typeof u === "string" && u.startsWith("http")) : "");
     if (!satu) return;
     onSunoSong(satu, h.title, h.dur);
@@ -517,7 +522,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const r = await fetch(proxify(url));
       const raw = await r.arrayBuffer();
       if (!actxRef.current) actxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const buf = await actxRef.current.decodeAudioData(raw.slice(0));
+      let buf = await actxRef.current.decodeAudioData(raw.slice(0));
+      // ✂️ v19.82: pangkas ekor/depan senyap — file provider bisa 11-12 menit
+      // padahal lagunya cuma ±5 menit. Buffer yang dipakai (visualizer, beat,
+      // FFT, render, durasi) = versi PAS durasinya, bukan file mentah.
+      const { potongBuffer } = await import("@/lib/gabung-audio");
+      buf = potongBuffer(buf, actxRef.current).bufBaru;
       bufRef.current = buf;
       // 🐛 FIX v19.47.1: revoke blob URL audio LAMA (hanya yang dari upload HP) — anti leak memori
       if (audioBlobUrlRef.current && audioBlobUrlRef.current !== url) {
