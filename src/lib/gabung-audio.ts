@@ -172,3 +172,48 @@ export function potongBuffer(
     alasan: ekor > ekorMin ? `ekor senyap ${ekor.toFixed(0)} dtk` : `depan senyap ${depan.toFixed(0)} dtk`,
   };
 }
+
+/** 🎵 v19.83 UKUR DURASI ISI (bukan durasi file).
+ *  File provider sering panjang 11-12 menit padahal lagunya cuma ±5 menit
+ *  (ekor senyap). Angka yang dipakai timeline/render HARUS durasi isi,
+ *  biar "kalau lagu 5 menit ya 5 menit". File TIDAK diubah — cuma diukur.
+ *  Proxify: fungsi pembungkus URL (mis. /api/hcnsec/proxy-audio?url=) —
+ *  blob:/data: dipakai langsung. */
+export async function ukurDurasiIsi(url: string, proxify?: (u: string) => string): Promise<{ dur: number; asliDur: number; dipangkas: boolean }> {
+  try {
+    const fetchSrc = (u: string) => fetch(u);
+    const coba = async (u: string): Promise<ArrayBuffer | null> => {
+      try {
+        const r = await fetchSrc(u);
+        if (!r.ok) return null;
+        const ab = await r.arrayBuffer();
+        return ab && ab.byteLength ? ab : null;
+      } catch { return null; }
+    };
+    let ab = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
+      ? await coba(url)
+      : (await coba(url)) || (proxify ? await coba(proxify(url)) : null);
+    if (!ab) return { dur: 0, asliDur: 0, dipangkas: false };
+    const AC: any = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+    if (!AC) return { dur: 0, asliDur: 0, dipangkas: false };
+    const ctx: AudioContext = new AC(1, 1, 44100);
+    const buf: AudioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
+      try {
+        const p = (ctx as any).decodeAudioData(ab!.slice(0), resolve, reject);
+        if (p && typeof p.then === "function") p.then(resolve, reject);
+      } catch (e) { reject(e); }
+    }).catch(() => null as any);
+    try { ctx.close(); } catch {}
+    if (!buf || !buf.length) return { dur: 0, asliDur: 0, dipangkas: false };
+    const asliDur = buf.duration;
+    const chs: Float32Array[] = [];
+    for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) chs.push(buf.getChannelData(c));
+    const { mulai, akhir } = cariJangkauanAudio(chs, buf.sampleRate, 0.004);
+    const dur = (akhir - mulai) / buf.sampleRate;
+    const ekor = (buf.length - akhir) / buf.sampleRate;
+    const depan = mulai / buf.sampleRate;
+    if (!(dur > 0.5)) return { dur: asliDur, asliDur, dipangkas: false };
+    if (ekor > 8 || depan > 3) return { dur, asliDur, dipangkas: true };
+    return { dur: asliDur, asliDur, dipangkas: false };
+  } catch { return { dur: 0, asliDur: 0, dipangkas: false }; }
+}

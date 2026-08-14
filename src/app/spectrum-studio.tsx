@@ -522,12 +522,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const r = await fetch(proxify(url));
       const raw = await r.arrayBuffer();
       if (!actxRef.current) actxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      let buf = await actxRef.current.decodeAudioData(raw.slice(0));
-      // ✂️ v19.82: pangkas ekor/depan senyap — file provider bisa 11-12 menit
-      // padahal lagunya cuma ±5 menit. Buffer yang dipakai (visualizer, beat,
-      // FFT, render, durasi) = versi PAS durasinya, bukan file mentah.
-      const { potongBuffer } = await import("@/lib/gabung-audio");
-      buf = potongBuffer(buf, actxRef.current).bufBaru;
+      const buf = await actxRef.current.decodeAudioData(raw.slice(0));
       bufRef.current = buf;
       // 🐛 FIX v19.47.1: revoke blob URL audio LAMA (hanya yang dari upload HP) — anti leak memori
       if (audioBlobUrlRef.current && audioBlobUrlRef.current !== url) {

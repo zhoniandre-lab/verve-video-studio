@@ -117,7 +117,7 @@ type DirSnap = {
   board: Board | null; lyrics: string; mStyle: string; selTitle: string;
   sEra: string; sTempo: string; sInstr: string[]; vocal: "auto" | "male" | "female" | "instrumental"; sunoModel: string;
 };
-type SongResult = { url: string; title: string; duration?: number; image?: string };
+type SongResult = { url: string; title: string; duration?: number; image?: string; audio?: string; asliDur?: number };
 type SunoKey = { key: string; provider: string };
 
 const SUNO_KEYS_KEY = "verve_suno_keys_v1";
@@ -608,6 +608,15 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       setVocal((["auto", "male", "female", "instrumental"] as const).includes(j.vocal as never) ? (j.vocal as never) : "auto");
       setTask(j.task || null);
       setSong(j.song || null);
+      // 🎵 v19.83: blob preview hasil trim mati setelah reload — bersihkan,
+      // pindah balik ke URL asli provider (yang tersimpan utuh).
+      if (j.song?.audio && j.song.audio.startsWith("blob:")) {
+        fetch(j.song.audio, { method: "HEAD" }).then((rr) => {
+          if (!rr.ok || rr.status >= 400) {
+            setSong((s) => (s && s.url === j.song.url ? { ...s, audio: undefined } : s));
+          }
+        }).catch(() => setSong((s) => (s && s.url === j.song.url ? { ...s, audio: undefined } : s)));
+      }
       setCharLock(j.charLock || ""); // 🔒 v10.0
       setModelPinned(j.modelPinned || "");
       setSunoModel(j.sunoModel && SUNO_MODELS.some((m) => m.id === j.sunoModel) ? (j.sunoModel as string) : "V4_5PLUS"); // 🎚 v10.3
@@ -714,7 +723,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const doneScenes = useMemo(() => (board ? board.scenes.filter((s) => (s.status === "done" && !!s.url) || (s.vidOn && !!s.vid)) : []), [board]); // 🎞️ v13.11: adegan video stok ikut sah
   const totalDur = song?.duration && song.duration > 0 ? Math.round(song.duration) : Math.max(1, doneScenes.length) * 6;
   // 🛡 v11.2: sumber audio pratinjau — langsung dulu, otomatis pindah ke proxy kalau link langsung gagal
-  const pvSrc = song ? (pvProxy ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(song.url)}` : song.url) : "";
+  const pvSrc = song ? (song.audio || (pvProxy ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(song.url)}` : song.url)) : "";
   const perScene = totalDur / Math.max(1, doneScenes.length);
   const pvIdx = Math.max(0, Math.min(doneScenes.length - 1, Math.floor(pvT / perScene)));
 
@@ -1334,9 +1343,44 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     setTask(null);
     setSong(res);
     flash("✅ Lagu jadi! Auto-terpasang di lahan");
-    void getAudioPeaks(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(res.url)}`, 96)
+    void getAudioPeaks(res.url.startsWith("blob:") ? res.url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(res.url)}`, 96)
       .then((p) => setPeaks(p && p.length ? p : null))
       .catch(() => setPeaks(null));
+    void ukurDanTrimLagu(res);
+  }
+
+  // 🎵 v19.83: ukur DURASI ISI (bukan durasi file). Provider kadang kasih file
+  // 11-12 menit padahal lagunya cuma ±5 menit — angka yang dipakai lahan
+  // (durasi, bagi rata adegan, masuk Studio) harus durasi ISI, persis seperti
+  // hasil asli Suno. Kalau ada ekor senyap, buat versi preview WAV pas durasi.
+  async function ukurDanTrimLagu(res: SongResult) {
+    try {
+      const { ukurDurasiIsi, potongBuffer, bufferToWav } = await import("@/lib/gabung-audio");
+      const prox = (u: string) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`;
+      const u = await ukurDurasiIsi(res.url, prox);
+      if (!(u.dur > 0.5)) return;
+      setSong((s) => (s && s.url === res.url ? { ...s, duration: u.dur, asliDur: u.asliDur } : s));
+      if (!u.dipangkas) return;
+      const src = res.url.startsWith("/") || res.url.startsWith("blob:") ? res.url : prox(res.url);
+      const r = await fetch(src);
+      const ab = await r.arrayBuffer();
+      const AC: any = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+      if (!AC || !ab.byteLength) return;
+      const ctx: AudioContext = new AC(1, 1, 44100);
+      const buf = await ctx.decodeAudioData(ab.slice(0)).catch(() => null);
+      if (!buf) { try { ctx.close(); } catch {} return; }
+      const t = potongBuffer(buf, ctx);
+      const mono = ctx.createBuffer(1, t.bufBaru.length, 22050);
+      const s0 = t.bufBaru.getChannelData(0), dst = mono.getChannelData(0);
+      const step = t.bufBaru.sampleRate / 22050;
+      for (let i = 0; i < dst.length; i++) dst[i] = s0[Math.min(s0.length - 1, Math.floor(i * step))];
+      const blobUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
+      try { ctx.close(); } catch {}
+      setSong((s) => (s && s.url === res.url ? { ...s, audio: blobUrl, duration: t.bufBaru.duration } : s));
+      setPeaks(null);
+      void getAudioPeaks(blobUrl, 96).then((p) => setPeaks(p && p.length ? p : null)).catch(() => null);
+      flash(`✂️ Ekor senyap dipangkas — lagu terukur ±${Math.round(t.bufBaru.duration)} dtk (file asli ${Math.round(u.asliDur)} dtk)`);
+    } catch { /* ukur gagal — biarkan durasi dari provider */ }
   }
 
   function startPolling(t: SongTask, round = 1, base = 0) {
@@ -3013,7 +3057,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                 className="lh-audio"
                 controls
                 preload="metadata"
-                src={song.url}
+                src={song.audio || song.url}
                 onLoadedMetadata={(e) => {
                   if (!song.duration) {
                     const d = e.currentTarget.duration;

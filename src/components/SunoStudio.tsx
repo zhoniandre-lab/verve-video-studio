@@ -142,9 +142,10 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     if (!okDecode || !buf || !ac) {
       throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
     }
+    const asliDur = buf.duration;
     // ✂️ v19.82: pangkas EKOR/DEPAN SENYAP — provider kasih file 11-12 menit
     // padahal lagunya cuma ±5 menit. Satu pilihan = satu lagu, durasi pas isi.
-    let durFinal = buf.duration;
+    let durFinal = asliDur;
     let dipangkas = false;
     let alasanTrim = "";
     let previewUrl: string | undefined;
@@ -167,7 +168,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       : "";
     const h = { url, urls: [url], previewUrl, title: klip.title || judulInduk || title || "Lagu AI", dur: durFinal, trimmed: dipangkas };
     setHasil(h);
-    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(durFinal)} dtk${dipangkas ? ` (${alasanTrim} dipangkas)` : ""} (${(bytes / 1048576).toFixed(1)} MB).`);
+    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(durFinal)} dtk${dipangkas ? ` (file asli ${Math.round(asliDur)} dtk — ${alasanTrim} dipangkas)` : ""} (${(bytes / 1048576).toFixed(1)} MB).`);
     try {
       localStorage.setItem("verve_suno_hasil", JSON.stringify({
         url, urls: [url], clips: semua, pilih: idx, title: h.title, dur: durFinal, at: Date.now(),
@@ -301,7 +302,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
                     className={`v6-chip ${klipIdx === i ? "on" : ""}`}
                     onClick={() => { void kunciKlip(c, klipList, hasil.title, i).catch((e: any) => setStatus(`❌ ${e?.message || "Gagal buka versi"}`)); }}
                   >
-                    {i === 0 ? "🅰️ Versi A" : i === 1 ? "🅱️ Versi B" : `Versi ${i + 1}`}
+                    {i === 0 ? "🅰️ Versi A" : i === 1 ? "🅱️ Versi B" : `Versi ${i + 1}`}{c.duration ? ` · ${Math.round(c.duration)} dtk` : ""}
                   </button>
                 ))}
               </div>
