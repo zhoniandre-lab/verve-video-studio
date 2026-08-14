@@ -36,10 +36,12 @@ T("route: generate evolink /v1/audios/generations", /\/v1\/audios\/generations/.
 T("route: poll evolink /v1/tasks/", /\/v1\/tasks\//.test(route));
 T("route: generate comet /suno/submit/music", /\/suno\/submit\/music/.test(route));
 T("route: poll comet /suno/fetch/", /\/suno\/fetch\//.test(route));
-T("route: generate ttapi /suno/v1/music", /\/suno\/v1\/music/.test(route));
+T("route: generate ttapi HANYA /suno/v1/music (bukan /v1/suno/generate)",
+  /if \(provider === "ttapi"\) return \[`\$\{base\}\/suno\/v1\/music`\]/.test(route));
 T("route: poll ttapi /suno/v2/fetch", /\/suno\/v2\/fetch/.test(route));
 T("route: TT-API-KEY header", /TT-API-KEY/.test(route));
-T("route: sunoapi pakai body Kie", /provider === "kie" \|\| provider === "sunoapi"/.test(route));
+T("route: sunoapi generate pakai /generate kayak Kie", /provider === "kie" \|\| provider === "sunoapi"/.test(route) && /return \[`\$\{base\}\/generate`\]/.test(route));
+T("route: TTAPI tidak boleh nyasar ke /v1/suno/generate", !/ttapi[\s\S]{0,80}v1\/suno\/generate/.test(route));
 T("route: apiframe TETAP ditolak", /provider === "apiframe"/.test(route));
 
 /* ---- normalize ---- */

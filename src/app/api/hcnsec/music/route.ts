@@ -365,9 +365,14 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
   if (provider === "aimusicapi") {
     return [`${base}/api/v1/suno/create`]; // 🎵 v19.69 (terverifikasi 401=hidup)
   }
-  if (provider === "kie") {
+  if (provider === "kie" || provider === "sunoapi") {
     return [`${base}/generate`];
   }
+  // 🎵 v19.79: JANGAN jatuh ke daftar generik — itu yang bikin TTAPI
+  // nyasar ke /v1/suno/generate (404 Route Not Found).
+  if (provider === "evolink") return [`${base}/v1/audios/generations`];
+  if (provider === "cometapi") return [`${base}/suno/submit/music`];
+  if (provider === "ttapi") return [`${base}/suno/v1/music`];
   if (provider === "sunor") return [`${base}/api/v1/task`]; // v10.5: POST task — satu-satunya jalur resmi
   return [
     `${base}/v1/generate`,
@@ -494,7 +499,11 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ error: `AI music error (${PROVIDERS[provider].label}): ${lastErr}`, provider }, { status: 502 });
+    const rawLast = String(lastErr || "");
+    const pesan404 = /404|Route Not Found|Interface Not Found/i.test(rawLast)
+      ? `Endpoint ${PROVIDERS[provider].label} salah/404. Coba generate ulang setelah update, atau ganti provider (Kie/Sunor).`
+      : rawLast;
+    return NextResponse.json({ error: `AI music error (${PROVIDERS[provider].label}): ${pesan404}`, provider }, { status: 502 });
   } catch (e: any) {
     return NextResponse.json({ error: `AI music gagal: ${e.message}` }, { status: 500 });
   }
