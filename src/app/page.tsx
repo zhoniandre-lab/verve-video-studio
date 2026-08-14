@@ -1302,7 +1302,21 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const durAudRef = useRef({ music: 0, tts: 0, voice: 0 });
   useEffect(() => { durAudRef.current = { music: musicDur, tts: ttsDur, voice: voiceDur }; }, [musicDur, ttsDur, voiceDur]);
   // 📏 v13.3 TREK PANJANG MENYEMBUH SENDIRI: durasi audio belum terukur (lagu dari wizard/draft lama) → ukur diam-diam lewat GERBANG AMAN
-  useEffect(() => { if (musicUrl && !musicDur) getAudioDuration(musicUrl).then((d) => { if (d > 0.5) setMusicDur(d); }); }, [musicUrl, musicDur]);
+  // 🎵 v19.86: ukur DURASI REAL (decode isi file) — header provider bisa bohong
+  // (klaim 17:23 padahal isi 8:03) → proyek lama otomatis ikut durasi yang benar.
+  useEffect(() => {
+    if (!musicUrl) return;
+    void (async () => {
+      try {
+        const { ukurDurasiReal } = await import("@/lib/gabung-audio");
+        const d = await ukurDurasiReal(musicUrl, proxify);
+        if (d > 0.5) setMusicDur(d);
+        else if (!musicDur) { const d2 = await getAudioDuration(musicUrl); if (d2 > 0.5) setMusicDur(d2); }
+      } catch {
+        if (!musicDur) getAudioDuration(musicUrl).then((d) => { if (d > 0.5) setMusicDur(d); });
+      }
+    })();
+  }, [musicUrl, musicDur]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (ttsUrl && !ttsDur) getAudioDuration(ttsUrl).then((d) => { if (d > 0.5) setTtsDur(d); }); }, [ttsUrl, ttsDur]);
   useEffect(() => { if (voiceUrl && !voiceDur) getAudioDuration(voiceUrl).then((d) => { if (d > 0.5) setVoiceDur(d); }); }, [voiceUrl, voiceDur]);
   // 🛟 v13.7.1 BRANKAS LAGU — begitu proyek kebuka, salin byte audio ke brankas SEKARANG selagi link masih segar.
@@ -2962,7 +2976,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const url = clips[0].url;
     if (clips.length > 1) flash(`🎵 Dipakai versi A (1 lagu). Ada ${clips.length} variasi terpisah — tidak digabung.`);
     setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName((clips[0].title || data?.title || namaFallback || "Lagu AI").slice(0, 60));
-    try { const d = await getAudioDuration(url); if (d > 0.5) setMusicDur(d); } catch {}
+    // 🎵 v19.86: durasi REAL dari isi file (decode) — header provider bisa bohong
+    // (17:23 padahal isi 8:03) → timeline & video ikut durasi lagu yang benar.
+    try {
+      const { ukurDurasiReal } = await import("@/lib/gabung-audio");
+      const d = await ukurDurasiReal(url, proxify);
+      if (d > 0.5) setMusicDur(d);
+      else { const d2 = await getAudioDuration(url); if (d2 > 0.5) setMusicDur(d2); }
+    } catch {
+      try { const d2 = await getAudioDuration(url); if (d2 > 0.5) setMusicDur(d2); } catch {}
+    }
     return url;
   }
 

@@ -608,6 +608,18 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       setVocal((["auto", "male", "female", "instrumental"] as const).includes(j.vocal as never) ? (j.vocal as never) : "auto");
       setTask(j.task || null);
       setSong(j.song || null);
+      // 🎵 v19.86: draft lama punya durasi dari header yang bohong (17:23 vs isi 8:03)
+      // — ukur ulang diam-diam biar timeline ikut durasi lagu yang benar.
+      const rs = j.song;
+      if (rs?.url) {
+        void (async () => {
+          try {
+            const { ukurDurasiReal } = await import("@/lib/gabung-audio");
+            const d = await ukurDurasiReal(rs.url, (u: string) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`);
+            if (d > 0.5) setSong((s) => (s && s.url === rs.url ? { ...s, duration: d } : s));
+          } catch { /* biarkan */ }
+        })();
+      }
       setCharLock(j.charLock || ""); // 🔒 v10.0
       setModelPinned(j.modelPinned || "");
       setSunoModel(j.sunoModel && SUNO_MODELS.some((m) => m.id === j.sunoModel) ? (j.sunoModel as string) : "V4_5PLUS"); // 🎚 v10.3
@@ -1337,6 +1349,15 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     void getAudioPeaks(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(res.url)}`, 96)
       .then((p) => setPeaks(p && p.length ? p : null))
       .catch(() => setPeaks(null));
+    // 🎵 v19.86: ukur durasi REAL dari isi file (decode) — header provider bisa
+    // bohong (mis. klaim 17:23 padahal isi 8:03). Diam-diam, tanpa motong.
+    void (async () => {
+      try {
+        const { ukurDurasiReal } = await import("@/lib/gabung-audio");
+        const d = await ukurDurasiReal(res.url, (u: string) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`);
+        if (d > 0.5) setSong((s) => (s && s.url === res.url ? { ...s, duration: d } : s));
+      } catch { /* biarkan durasi dari provider */ }
+    })();
   }
 
   function startPolling(t: SongTask, round = 1, base = 0) {
@@ -1700,7 +1721,13 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   }
 
   /** 📻 v13.7: ukur durasi lagu dari metadata audio (langsung → GERBANG) — lagu wizard bisa datang TANPA durasi. */
-  function probeSongDur(url: string): Promise<number> {
+  async function probeSongDur(url: string): Promise<number> {
+    // 🎵 v19.86: decode dulu → durasi REAL (header metadata bisa bohong 17:23 vs isi 8:03)
+    try {
+      const { ukurDurasiReal } = await import("@/lib/gabung-audio");
+      const d = await ukurDurasiReal(url, (u: string) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`);
+      if (d > 0.5) return d;
+    } catch { /* lanjut fallback metadata */ }
     const cands = /^https?:/i.test(url) ? [url, `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`] : [url];
     return new Promise((res) => {
       let settled = false;

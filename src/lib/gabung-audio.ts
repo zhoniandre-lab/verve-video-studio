@@ -108,3 +108,30 @@ export async function gabungUrlAudio(urls: string[], proxify?: (u: string) => st
     try { actx.close(); } catch {}
   }
 }
+
+/** 🎵 v19.86 UKUR DURASI REAL dari ISI file (decode seluruh frame), bukan dari
+ *  header/metadata — header file provider sering BOHONG (mis. klaim 17:23
+ *  padahal isi audio cuma 8:03). Dipakai supaya timeline/video durasinya
+ *  sesuai lagu asli. TIDAK memotong/mengubah apa pun — cuma mengukur. */
+export async function ukurDurasiReal(url: string, proxify?: (u: string) => string): Promise<number> {
+  try {
+    const cands = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
+      ? [url]
+      : [proxify ? proxify(url) : url, url];
+    for (const c of cands) {
+      try {
+        const r = await fetch(c);
+        if (!r.ok) continue;
+        const ab = await r.arrayBuffer();
+        if (!ab.byteLength) continue;
+        const AC: any = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+        if (!AC) return 0;
+        const ctx: AudioContext = new AC(1, 1, 44100);
+        const buf = await ctx.decodeAudioData(ab.slice(0)).catch(() => null);
+        try { ctx.close(); } catch {}
+        if (buf && buf.length) return buf.duration;
+      } catch { continue; }
+    }
+    return 0;
+  } catch { return 0; }
+}
