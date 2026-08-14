@@ -117,31 +117,30 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     if (!url) throw new Error("Provider tidak kasih audio.");
     const idx = typeof idxPakai === "number" ? idxPakai : Math.max(0, semua.findIndex((c) => c.url === klip.url));
     setKlipIdx(idx);
-    let bytes = 0;
     let lastErr = "gagal";
-    let ac: AudioContext | null = null;
-    let buf: AudioBuffer | null = null;
-    const cobaDecode = async (src: string): Promise<boolean> => {
+    const cobaDecode = async (src: string): Promise<{ buf: AudioBuffer; ac: AudioContext; bytes: number } | null> => {
       try {
         const r = await fetch(src);
         const ab = await r.arrayBuffer();
-        bytes = ab.byteLength;
+        const n = ab.byteLength;
         // 🐛 v19.81: file lagu beneran > 2 KB — 2048 byte pas = stub kosong 0 detik.
-        if (bytes < 2048) { lastErr = `file terlalu kecil (${bytes} byte)`; return false; }
+        if (n < 2048) { lastErr = `file terlalu kecil (${n} byte)`; return null; }
         const AC = window.AudioContext || (window as any).webkitAudioContext;
-        ac = new AC();
-        buf = await ac.decodeAudioData(ab);
+        const ac = new AC();
+        const buf = await ac.decodeAudioData(ab);
         // 🐛 v19.81: decode "sukses" tapi durasi < 1 detik = lagu kosong (0:00).
-        if (!(buf.duration >= 1)) { lastErr = `lagu kosong (${buf.duration.toFixed(2)} dtk)`; return false; }
-        return true;
-      } catch (e: any) { lastErr = e?.message || "gagal decode"; return false; }
+        if (!(buf.duration >= 1)) { lastErr = `lagu kosong (${buf.duration.toFixed(2)} dtk)`; try { ac.close(); } catch {} return null; }
+        return { buf, ac, bytes: n };
+      } catch (e: any) { lastErr = e?.message || "gagal decode"; return null; }
     };
-    const okDecode = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
-      ? await cobaDecode(url)
-      : (await cobaDecode(url)) || (await cobaDecode(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`));
-    if (!okDecode || !buf || !ac) {
-      throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
+    const langsung = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:");
+    const d1 = await cobaDecode(url);
+    const d2 = d1 ? d1 : langsung ? null : await cobaDecode(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
+    const dek = d2 || d1;
+    if (!dek) {
+      throw new Error(`Audio hasil tidak valid (${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
     }
+    const { buf, ac, bytes } = dek;
     const asliDur = buf.duration;
     // ✂️ v19.82: pangkas EKOR/DEPAN SENYAP — provider kasih file 11-12 menit
     // padahal lagunya cuma ±5 menit. Satu pilihan = satu lagu, durasi pas isi.

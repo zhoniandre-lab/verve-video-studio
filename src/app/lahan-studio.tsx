@@ -610,12 +610,13 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       setSong(j.song || null);
       // 🎵 v19.83: blob preview hasil trim mati setelah reload — bersihkan,
       // pindah balik ke URL asli provider (yang tersimpan utuh).
-      if (j.song?.audio && j.song.audio.startsWith("blob:")) {
-        fetch(j.song.audio, { method: "HEAD" }).then((rr) => {
+      const jsong = j.song;
+      if (jsong?.audio && jsong.audio.startsWith("blob:")) {
+        fetch(jsong.audio, { method: "HEAD" }).then((rr) => {
           if (!rr.ok || rr.status >= 400) {
-            setSong((s) => (s && s.url === j.song.url ? { ...s, audio: undefined } : s));
+            setSong((s) => (s && s.url === jsong.url ? { ...s, audio: undefined } : s));
           }
-        }).catch(() => setSong((s) => (s && s.url === j.song.url ? { ...s, audio: undefined } : s)));
+        }).catch(() => setSong((s) => (s && s.url === jsong.url ? { ...s, audio: undefined } : s)));
       }
       setCharLock(j.charLock || ""); // 🔒 v10.0
       setModelPinned(j.modelPinned || "");

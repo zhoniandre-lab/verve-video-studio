@@ -71,7 +71,7 @@ console.log("✂️ Menguji pemangkas senyap (cariJangkauanAudio)");
   T("Spectrum prefer previewUrl hasil trim", /h\.previewUrl \|\| h\.url/.test(spectrum));
   T("Lahan ukur durasi ISI setelah lagu jadi", /ukurDanTrimLagu/.test(lahan) && /ukurDurasiIsi\(res\.url, prox\)/.test(lahan));
   T("Lahan preview pakai audio hasil trim", /song\.audio \|\|/.test(lahan));
-  T("Lahan bersihkan blob mati saat restore", /j\.song\?\.audio && j\.song\.audio\.startsWith\("blob:"\)/.test(lahan));
+  T("Lahan bersihkan blob mati saat restore", /jsong\?\.audio && jsong\.audio\.startsWith\("blob:"\)/.test(lahan));
   T("page.tsx ukur durasi ISI di terimaLaguAI", /ukurDurasiIsi\(url, proxify\)/.test(page));
   T("gabung-audio ekspor cariJangkauanAudio + potongBuffer + ukurDurasiIsi", /export function cariJangkauanAudio/.test(src) && /export function potongBuffer/.test(src) && /export async function ukurDurasiIsi/.test(src));
 }
