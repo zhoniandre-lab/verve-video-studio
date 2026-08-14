@@ -143,12 +143,20 @@ export async function ukurDurasiReal(url: string, proxify?: (u: string) => strin
  *  panjang dihitung dari DURASI × rate tujuan: round(dur × rate). Tidak ada
  *  pemotongan — isi utuh, cuma durasi yang benar. Fallback rate lebih rendah
  *  kalau memori HP sempit. Mengembalikan null kalau semua gagal. */
+/** 🔒 v19.88 KUNCI DURASI: hitung jumlah sampel WAV dari DURASI × rate tujuan.
+ *  INI SATU-SATUNYA RUMUS YANG BOLEH DIPAKAI. Jangan pernah pakai
+ *  buf.length langsung — itu sampel @rate ASLI → durasi jadi DOBEL
+ *  (bug v19.81-86: lagu 6:57 jadi 13:54). Dipisah biar bisa diuji murni. */
+export function hitungPanjangWav(dur: number, rate: number): number {
+  return Math.max(1, Math.round(dur * rate));
+}
+
 export function wavDariBuffer(buf: AudioBuffer, ctx: AudioContext, preferRate = 22050): { url: string; dur: number } | null {
   if (!buf || !buf.length) return null;
   const rates = [preferRate, 16000, 12000].filter((r) => r <= buf.sampleRate);
   for (const rate of rates) {
     try {
-      const outLen = Math.max(1, Math.round(buf.duration * rate));
+      const outLen = hitungPanjangWav(buf.duration, rate);
       const mono = ctx.createBuffer(1, outLen, rate);
       const src = buf.getChannelData(0), dst = mono.getChannelData(0);
       const step = buf.sampleRate / rate;
