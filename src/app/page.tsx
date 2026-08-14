@@ -2962,19 +2962,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const url = clips[0].url;
     if (clips.length > 1) flash(`🎵 Dipakai versi A (1 lagu). Ada ${clips.length} variasi terpisah — tidak digabung.`);
     setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName((clips[0].title || data?.title || namaFallback || "Lagu AI").slice(0, 60));
-    try {
-      // 🎵 v19.83: durasi = ISI lagu (bukan durasi file 11-12 menit yang ekornya senyap)
-      const { ukurDurasiIsi } = await import("@/lib/gabung-audio");
-      const u = await ukurDurasiIsi(url, proxify);
-      if (u.dur > 0.5) {
-        setMusicDur(u.dur);
-        if (u.dipangkas) flash(`✂️ Durasi lagu = isi ±${Math.round(u.dur)} dtk (file asli ${Math.round(u.asliDur)} dtk — ekor senyap tidak dipakai)`);
-      } else {
-        const d = await getAudioDuration(url); if (d > 0.5) setMusicDur(d);
-      }
-    } catch {
-      try { const d = await getAudioDuration(url); if (d > 0.5) setMusicDur(d); } catch {}
-    }
+    try { const d = await getAudioDuration(url); if (d > 0.5) setMusicDur(d); } catch {}
     return url;
   }
 

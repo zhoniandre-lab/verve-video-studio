@@ -2,7 +2,8 @@
 /* 🎵 v19.61 SUNO STUDIO — menu KHUSUS Generate Lagu di dashboard.
    🎵 v19.77: SATU generate = SATU lagu. Provider Suno kasih 2 variasi —
    ditampilkan TERPISAH (A/B), JANGAN digabung jadi 1 file dua nada.
-   Hasil tersimpan di localStorage 'verve_suno_hasil' → Spectrum / Editor. */
+   🎵 v19.85: KEMBALI NORMAL — lagu dipakai apa adanya, tidak ada rute
+   ke Spectrum (di Spectrum sudah ada generate lagu sendiri). */
 import { useEffect, useRef, useState } from "react";
 import { pilihKlipDariHasil, type KlipLagu } from "@/lib/suno-normalize";
 import { META_PROV_SUNO } from "@/lib/suno-providers";
@@ -25,19 +26,15 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [status, setStatus] = useState("");
   const [taskId, setTaskId] = useState("");
   const [pollUi, setPollUi] = useState<{ attempt: number; elapsed: number; last: string }>({ attempt: 0, elapsed: 0, last: "" });
-  const [hasil, setHasil] = useState<{ url: string; urls?: string[]; previewUrl?: string; title: string; dur: number; trimmed?: boolean } | null>(null);
+  const [hasil, setHasil] = useState<{ url: string; urls?: string[]; previewUrl?: string; title: string; dur: number } | null>(null);
   const [klipList, setKlipList] = useState<KlipLagu[]>([]);
   const [klipIdx, setKlipIdx] = useState(0);
   const [modeHasil, setModeHasil] = useState<"satu" | "dua">("satu");
   const pollTimer = useRef<any>(null);
   const tickTimer = useRef<any>(null);
 
-  // baca hasil terakhir dari storage
+  // 🧹 v19.85: tidak ada lagi hasil tersimpan di localStorage (rute ke Spectrum dihapus)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("verve_suno_hasil");
-      if (raw) { const h = JSON.parse(raw); if (h?.url) setHasil(h); }
-    } catch {}
     return () => { clearInterval(pollTimer.current); clearInterval(tickTimer.current); };
   }, []);
 
@@ -117,62 +114,53 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     if (!url) throw new Error("Provider tidak kasih audio.");
     const idx = typeof idxPakai === "number" ? idxPakai : Math.max(0, semua.findIndex((c) => c.url === klip.url));
     setKlipIdx(idx);
+    let dur = 0;
+    let bytes = 0;
     let lastErr = "gagal";
-    const cobaDecode = async (src: string): Promise<{ buf: AudioBuffer; ac: AudioContext; bytes: number } | null> => {
+    const cobaDecode = async (src: string): Promise<boolean> => {
       try {
         const r = await fetch(src);
         const ab = await r.arrayBuffer();
-        const n = ab.byteLength;
+        bytes = ab.byteLength;
         // 🐛 v19.81: file lagu beneran > 2 KB — 2048 byte pas = stub kosong 0 detik.
-        if (n < 2048) { lastErr = `file terlalu kecil (${n} byte)`; return null; }
+        if (bytes < 2048) { lastErr = `file terlalu kecil (${bytes} byte)`; return false; }
         const AC = window.AudioContext || (window as any).webkitAudioContext;
         const ac = new AC();
         const buf = await ac.decodeAudioData(ab);
+        dur = buf.duration; ac.close();
         // 🐛 v19.81: decode "sukses" tapi durasi < 1 detik = lagu kosong (0:00).
-        if (!(buf.duration >= 1)) { lastErr = `lagu kosong (${buf.duration.toFixed(2)} dtk)`; try { ac.close(); } catch {} return null; }
-        return { buf, ac, bytes: n };
-      } catch (e: any) { lastErr = e?.message || "gagal decode"; return null; }
+        // Provider nyata minimal 1-8 menit — jangan bilang "jadi" buat yang 0 detik.
+        if (!(dur >= 1)) { lastErr = `lagu kosong (${dur.toFixed(2)} dtk)`; return false; }
+        return true;
+      } catch (e: any) { lastErr = e?.message || "gagal decode"; return false; }
     };
-    const langsung = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:");
-    const d1 = await cobaDecode(url);
-    const d2 = d1 ? d1 : langsung ? null : await cobaDecode(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
-    const dek = d2 || d1;
-    if (!dek) {
-      throw new Error(`Audio hasil tidak valid (${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
+    const okDecode = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
+      ? await cobaDecode(url)
+      : (await cobaDecode(url)) || (await cobaDecode(`/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`));
+    if (!okDecode) {
+      throw new Error(`Audio hasil tidak valid (${(bytes / 1024).toFixed(0)} KB, ${lastErr.slice(0, 60)}) — link provider rusak/kadaluarsa atau butuh auth. Kredit mungkin kepakai. Coba generate ulang / ganti provider.`);
     }
-    const { buf, ac, bytes } = dek;
-    const asliDur = buf.duration;
-    // ✂️ v19.82: pangkas EKOR/DEPAN SENYAP — provider kasih file 11-12 menit
-    // padahal lagunya cuma ±5 menit. Satu pilihan = satu lagu, durasi pas isi.
-    let durFinal = asliDur;
-    let dipangkas = false;
-    let alasanTrim = "";
     let previewUrl: string | undefined;
     try {
-      const { potongBuffer, bufferToWav } = await import("@/lib/gabung-audio");
-      const t = potongBuffer(buf, ac);
-      dipangkas = t.dipangkas;
-      alasanTrim = t.alasan || "";
-      durFinal = t.bufBaru.duration;
-      const mono = ac.createBuffer(1, t.bufBaru.length, 22050);
-      const srcCh = t.bufBaru.getChannelData(0), dst = mono.getChannelData(0);
-      const step = t.bufBaru.sampleRate / 22050;
-      for (let i = 0; i < dst.length; i++) dst[i] = srcCh[Math.min(srcCh.length - 1, Math.floor(i * step))];
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      const ac = new AC();
+      const r = await fetch(url.startsWith("/") ? url : `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`);
+      const buf = await ac.decodeAudioData(await r.arrayBuffer());
+      const mono = ac.createBuffer(1, buf.length, 22050);
+      const src = buf.getChannelData(0), dst = mono.getChannelData(0);
+      const step = buf.sampleRate / 22050;
+      for (let i = 0; i < dst.length; i++) dst[i] = src[Math.min(src.length - 1, Math.floor(i * step))];
+      const { bufferToWav } = await import("@/lib/gabung-audio");
       previewUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
+      ac.close();
     } catch { previewUrl = undefined; }
-    try { ac.close(); } catch {}
     const huruf = idx === 0 ? "A" : idx === 1 ? "B" : String(idx + 1);
     const notice = semua.length > 1
       ? (modeHasil === "dua" ? ` · versi ${huruf} (ada ${semua.length} pilihan terpisah)` : ` · versi ${huruf} (1 lagu, bukan digabung)`)
       : "";
-    const h = { url, urls: [url], previewUrl, title: klip.title || judulInduk || title || "Lagu AI", dur: durFinal, trimmed: dipangkas };
+    const h = { url, urls: [url], previewUrl, title: klip.title || judulInduk || title || "Lagu AI", dur };
     setHasil(h);
-    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(durFinal)} dtk${dipangkas ? ` (file asli ${Math.round(asliDur)} dtk — ${alasanTrim} dipangkas)` : ""} (${(bytes / 1048576).toFixed(1)} MB).`);
-    try {
-      localStorage.setItem("verve_suno_hasil", JSON.stringify({
-        url, urls: [url], clips: semua, pilih: idx, title: h.title, dur: durFinal, at: Date.now(),
-      }));
-    } catch {}
+    setStatus(`✅ Lagu jadi${notice} — ±${Math.round(dur)} dtk (${(bytes / 1048576).toFixed(1)} MB).`);
   };
 
   // 🐛 v19.72 FIX: blob:/data: TIDAK boleh lewat proxy (proxy tolak → 'URL tidak valid').
@@ -185,19 +173,16 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const simpanHasil = async () => {
     if (!hasil) return;
     try {
-      // ✂️ v19.82: kalau ekor senyap dipangkas → download versi WAV yang sudah PAS durasinya
-      const sumber = hasil.trimmed && hasil.previewUrl ? hasil.previewUrl : srcAman(hasil.url);
-      const r = await fetch(sumber);
+      const r = await fetch(srcAman(hasil.url));
       const blob = await r.blob();
       if (!blob.size || blob.size < 2048 || (blob.type || "").includes("json")) {
-        setStatus("❌ Download gagal — file yang dikasih provider tidak valid. Coba pakai '🎧 Pakai di Spectrum' (biasanya jalan), atau generate ulang.");
+        setStatus("❌ Download gagal — file yang dikasih provider tidak valid. Coba generate ulang, atau ganti provider.");
         return;
       }
       const a = document.createElement("a");
-      const nama = (hasil.title || "lagu").replace(/[^\w\- ]+/g, "").slice(0, 40);
-      a.href = URL.createObjectURL(blob); a.download = `${nama}.${hasil.trimmed ? "wav" : "mp3"}`;
+      a.href = URL.createObjectURL(blob); a.download = `${(hasil.title || "lagu").replace(/[^\w\- ]+/g, "").slice(0, 40)}.mp3`;
       a.click();
-      setStatus(`📥 Download dimulai${hasil.trimmed ? " (WAV — durasi sudah pas, ekor senyap dipangkas)" : ""} — cek folder Download HP.`);
+      setStatus("📥 Download dimulai — cek folder Download HP.");
     } catch { setStatus("⚠️ Gagal download — coba buka Spectrum lalu pakai hasilnya."); }
   };
 
@@ -301,7 +286,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
                     className={`v6-chip ${klipIdx === i ? "on" : ""}`}
                     onClick={() => { void kunciKlip(c, klipList, hasil.title, i).catch((e: any) => setStatus(`❌ ${e?.message || "Gagal buka versi"}`)); }}
                   >
-                    {i === 0 ? "🅰️ Versi A" : i === 1 ? "🅱️ Versi B" : `Versi ${i + 1}`}{c.duration ? ` · ${Math.round(c.duration)} dtk` : ""}
+                    {i === 0 ? "🅰️ Versi A" : i === 1 ? "🅱️ Versi B" : `Versi ${i + 1}`}
                   </button>
                 ))}
               </div>
@@ -310,9 +295,8 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           <audio controls preload="metadata" src={hasil.previewUrl || srcAman(hasil.url)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
-            <button className="v6-bigcta" style={{ flex: 1, padding: "10px" }} onClick={() => { try { localStorage.setItem("verve_suno_hasil", JSON.stringify({ urls: [hasil.url], url: hasil.url, previewUrl: hasil.previewUrl || undefined, title: hasil.title, dur: hasil.dur, at: Date.now() })); } catch {} location.href = "/#spectrum"; }}>🎧 Pakai di Spectrum</button>
           </div>
-          <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Yang tersimpan = lagu yang sedang dipilih (satu file, satu gaya). Tidak disambung ke versi lain.</p>
+          <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Lagu dipakai apa adanya dari provider (satu file, satu gaya). Tidak disambung ke versi lain.</p>
         </div>
       )}
     </div>

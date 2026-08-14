@@ -100,33 +100,8 @@ const STEPS = ["Musik", "Visual", "Lirik", "Master", "Ekspor"];
 export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState(0);
   /* musik */
-  // 🎵 v19.61: hasil generate dari Suno Studio (/suno) — disimpan di localStorage,
-  // Spectrum nawarin "Pakai" biar langsung jadi musik + spektrum.
-  const [hasilSuno, setHasilSuno] = useState<{ url: string; previewUrl?: string; urls?: string[]; title: string; dur: number } | null>(null);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("verve_suno_hasil");
-      if (raw) {
-        const h = JSON.parse(raw);
-        if (h?.url && (audioUrl ? h.url !== audioUrl : true)) setHasilSuno(h);
-      }
-    } catch {}
-  }, []); // eslint-disable-line
-  // 🎵 v19.77: JANGAN gabung urls — itu 2 variasi Suno, bukan potongan.
-  // Pakai url terpilih saja (satu lagu). v19.82: prefer previewUrl (sudah
-  // dipangkas ekor senyapnya) kalau blob-nya masih hidup; kalau mati → url asli.
-  const pakaiHasilSuno = async (h: { url: string; previewUrl?: string; urls?: string[]; title: string; dur?: number }) => {
-    let pilih = h.previewUrl || h.url;
-    if (h.previewUrl && h.previewUrl.startsWith("blob:")) {
-      try { const p = await fetch(h.previewUrl, { method: "HEAD" }); if (!p.ok) throw 0; } catch { pilih = h.url; }
-    }
-    const satu = (pilih && (pilih.startsWith("http") || pilih.startsWith("blob:") || pilih.startsWith("/")))
-      ? pilih
-      : (Array.isArray(h.urls) ? h.urls.find((u) => typeof u === "string" && u.startsWith("http")) : "");
-    if (!satu) return;
-    onSunoSong(satu, h.title, h.dur);
-    setHasilSuno(null);
-  };
+  // 🎵 v19.85: rute "hasil Suno dari /suno → Spectrum" DIHAPUS (di sini sudah ada
+  // panel Generate Lagu sendiri). Audio cuma datang dari upload / generate di sini.
   const [audioUrl, setAudioUrl] = useState("");
   // 🎵 v19.29: panel generate lagu (Suno) — sama persis dengan di Lahan
   const [showSuno, setShowSuno] = useState(false);
@@ -2020,13 +1995,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <span className="arr">›</span>
               <input type="file" accept="video/*" hidden onChange={e => { uploadVideoLatar(e.target.files?.[0]); e.currentTarget.value = ""; }} />
             </label>
-            {/* 🎵 v19.61: pakai hasil generate dari Suno Studio */}
-            {hasilSuno && !audioUrl && (
-              <div style={{ border: "1px solid rgba(34,197,94,.4)", borderRadius: 12, padding: 10, background: "rgba(34,197,94,.07)", marginTop: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 800 }}>🎵 Hasil generate tersimpan: {hasilSuno.title}{hasilSuno.dur ? ` (±${Math.round(hasilSuno.dur)} dtk)` : ""}</div>
-                <button className="v6-bigcta" style={{ marginTop: 6, background: "#22c55e", color: "#052e16" }} onClick={() => void pakaiHasilSuno(hasilSuno)}>✅ Pakai lagu ini</button>
-              </div>
-            )}
             {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
             <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>🔬 Angka "terbaca" = durasi yang benar-benar dibaca browser. Kalau beda jauh dari durasi asli lagu, hasil render pasti ikut pendek — convert ulang file dulu.</p>
             {audioUrl && <button className="v6-bigcta" style={{ background: "#22c55e" }} onClick={() => setStep(1)}>Lanjut: Visual ›</button>}
