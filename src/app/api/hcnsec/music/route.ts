@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
 import { gerbangFitur } from "../../../../lib/setelan";
-import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelEvolink, mapModelComet, mapModelTtapi, probeAudioCukup } from "../../../../lib/suno-normalize";
+import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelEvolink, mapModelComet, mapModelTtapi, audioProbeCukup } from "../../../../lib/suno-normalize";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -277,29 +277,37 @@ function buildBody(payload: any, provider: Provider): any {
  *  dikasih ke user. Strategi: coba TANPA auth dulu (simulasi kondisi download
  *  user lewat proxy — paling umum). Kalau gagal, coba DENGAN header provider
  *  untuk diagnosis (link yang butuh auth tidak bisa diunduh publik = beri tahu
- *  jujur, bukan bilang "jadi"). */
+ *  jujur, bukan bilang "jadi").
+ *  🐛 v19.81: v19.80 bikin probeAudioCukup (terima 206 Partial Content) tapi
+ *  LUPA DIPAKAI di sini → CDN Suno/TTAPI balas 206 untuk Range 0-2047, lagu
+ *  yang sudah jadi malah ditolak "file audio tidak valid/kosong (2048 byte)".
+ *  Sekarang pakai audioProbeCukup + baca ukuran asli dari Content-Range. */
 async function cekUrlAudioValid(url: string, headers: Record<string,string>): Promise<{ ok: boolean; msg?: string; bytes?: number }> {
-  const coba = async (h: Record<string,string>): Promise<{ status: number; bytes: number } | null> => {
+  const coba = async (h: Record<string,string>): Promise<{ status: number; bytes: number; total?: number } | null> => {
     try {
       const ac = new AbortController();
       const tm = setTimeout(() => ac.abort(), 10000);
       const r = await fetch(url, { headers: { ...h, Range: "bytes=0-2047" }, signal: ac.signal, cache: "no-store" });
       clearTimeout(tm);
       const buf = await r.arrayBuffer().catch(() => new ArrayBuffer(0));
-      return { status: r.status, bytes: buf.byteLength };
+      // total = ukuran file asli dari "Content-Range: bytes 0-2047/5242880"
+      const cr = r.headers.get("content-range") || "";
+      const m = /\/(\d+)\s*$/.exec(cr);
+      const total = m ? Number(m[1]) : undefined;
+      return { status: r.status, bytes: buf.byteLength, total: Number.isFinite(total) ? total : undefined };
     } catch { return null; }
   };
   const tanpa = await coba({});
-  if (tanpa && tanpa.status === 200 && tanpa.bytes >= 1000) return { ok: true, bytes: tanpa.bytes };
+  if (tanpa && audioProbeCukup(tanpa)) return { ok: true, bytes: tanpa.bytes };
   const dengan = await coba(headers);
-  if (dengan && dengan.status === 200 && dengan.bytes >= 1000) {
+  if (dengan && audioProbeCukup(dengan)) {
     return { ok: false, msg: "butuh autentikasi (tidak bisa diunduh publik) — provider kasih link yang nggak bisa didownload browser." };
   }
   const st = tanpa?.status || dengan?.status || 0;
   if (st === 401 || st === 403) return { ok: false, msg: "link audio butuh autentikasi (401/403) — tidak bisa diunduh publik." };
   if (st === 404) return { ok: false, msg: "link audio sudah hilang (404) — kemungkinan kedaluwarsa." };
   if (st >= 500) return { ok: false, msg: `server audio error (HTTP ${st}).` };
-  return { ok: false, msg: `file audio tidak valid/kosong (${tanpa?.bytes ?? 0} byte).` };
+  return { ok: false, msg: `file audio tidak valid/kosong (${tanpa?.bytes ?? 0} byte) — link provider rusak/kadaluarsa atau cuma stub kosong.` };
 }
 
 function buildHeaders(key: string, provider?: Provider): Record<string,string> {

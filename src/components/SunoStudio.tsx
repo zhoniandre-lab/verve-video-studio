@@ -125,11 +125,15 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         const r = await fetch(src);
         const ab = await r.arrayBuffer();
         bytes = ab.byteLength;
-        if (bytes < 1000) { lastErr = `file terlalu kecil (${bytes} byte)`; return false; }
+        // 🐛 v19.81: file lagu beneran > 2 KB — 2048 byte pas = stub kosong 0 detik.
+        if (bytes < 2048) { lastErr = `file terlalu kecil (${bytes} byte)`; return false; }
         const AC = window.AudioContext || (window as any).webkitAudioContext;
         const ac = new AC();
         const buf = await ac.decodeAudioData(ab);
         dur = buf.duration; ac.close();
+        // 🐛 v19.81: decode "sukses" tapi durasi < 1 detik = lagu kosong (0:00).
+        // Provider nyata minimal 1-8 menit — jangan bilang "jadi" buat yang 0 detik.
+        if (!(dur >= 1)) { lastErr = `lagu kosong (${dur.toFixed(2)} dtk)`; return false; }
         return true;
       } catch (e: any) { lastErr = e?.message || "gagal decode"; return false; }
     };
@@ -179,7 +183,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     try {
       const r = await fetch(srcAman(hasil.url));
       const blob = await r.blob();
-      if (!blob.size || blob.size < 1000 || (blob.type || "").includes("json")) {
+      if (!blob.size || blob.size < 2048 || (blob.type || "").includes("json")) {
         setStatus("❌ Download gagal — file yang dikasih provider tidak valid. Coba pakai '🎧 Pakai di Spectrum' (biasanya jalan), atau generate ulang.");
         return;
       }

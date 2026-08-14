@@ -372,6 +372,20 @@ export function probeAudioCukup(status: number, bytes: number): boolean {
   return status === 200 || status === 206;
 }
 
+/** 🐛 v19.81 PROBE LENGKAP — INI yang dipakai route (v19.80 cuma bikin
+ *  probeAudioCukup tapi LUPA dipasang → lagu jadi masih dibilang kosong).
+ *  total = ukuran file ASLI dari header Content-Range ("bytes 0-2047/5242880").
+ *  - 206 + 2048 byte = CDN kirim potongan yang kita minta → file ≥ 2048 (VALID).
+ *  - 206 + total ≤ 2048 = file beneran cuma 2048 byte (stub kosong) → TOLAK.
+ *  - 200 = file utuh; harus > 2048 byte biar bukan stub 0 detik. */
+export interface ProbeAudio { status: number; bytes: number; total?: number }
+export function audioProbeCukup(p: ProbeAudio): boolean {
+  if (!p || !probeAudioCukup(p.status, p.bytes)) return false;
+  if (typeof p.total === "number" && Number.isFinite(p.total)) return p.total > 2048;
+  if (p.status === 206) return p.bytes >= 2048;
+  return p.bytes > 2048;
+}
+
 /** Peta model ke format Kie. */
 export function mapModelKie(modelId: string): string {
   const m = String(modelId || "v5.5").toLowerCase();

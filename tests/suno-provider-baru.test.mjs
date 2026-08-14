@@ -140,8 +140,26 @@ T("probe: 206 + 2048 byte = valid (bukan kosong)", probeAudioCukup(206, 2048));
 T("probe: 200 + 3000 byte = valid", probeAudioCukup(200, 3000));
 T("probe: 404 + 2048 = TIDAK valid", !probeAudioCukup(404, 2048));
 T("probe: 200 + 10 byte = terlalu kecil", !probeAudioCukup(200, 10));
-T("route pakai probeAudioCukup (bukan cuma status 200)", /probeAudioCukup/.test(route));
 T("normalize ekspor probeAudioCukup", /export function probeAudioCukup/.test(norm));
+
+/* ---- v19.81 PROBE LENGKAP: 206 dipasang di route + tolak stub 2048 byte ---- */
+function audioProbeCukup(p) {
+  if (!p || !probeAudioCukup(p.status, p.bytes)) return false;
+  if (typeof p.total === "number" && Number.isFinite(p.total)) return p.total > 2048;
+  if (p.status === 206) return p.bytes >= 2048;
+  return p.bytes > 2048;
+}
+T("probe-lengkap: 206 + 2048 + total 5 MB = VALID (lagu jadi, bukan kosong)", audioProbeCukup({ status: 206, bytes: 2048, total: 5242880 }));
+T("probe-lengkap: 206 + 2048 tanpa total = VALID", audioProbeCukup({ status: 206, bytes: 2048 }));
+T("probe-lengkap: 200 + 3000 byte = VALID", audioProbeCukup({ status: 200, bytes: 3000 }));
+T("probe-lengkap: 206 + total 2048 = STUB kosong → TOLAK", !audioProbeCukup({ status: 206, bytes: 2048, total: 2048 }));
+T("probe-lengkap: 200 + 2048 byte pas = STUB kosong → TOLAK", !audioProbeCukup({ status: 200, bytes: 2048 }));
+T("probe-lengkap: 404 = TOLAK", !audioProbeCukup({ status: 404, bytes: 2048 }));
+T("route IMPOR audioProbeCukup (bukan cuma probeAudioCukup)", /audioProbeCukup/.test(route));
+T("route PAKAI audioProbeCukup di cekUrlAudioValid", /if \(tanpa && audioProbeCukup\(tanpa\)\)/.test(route));
+T("normalize ekspor audioProbeCukup", /export function audioProbeCukup/.test(norm));
+T("klien decode tolak file < 2048 byte (stub)", /bytes < 2048/.test(studio) && !/bytes < 1000/.test(studio));
+T("klien decode tolak durasi < 1 dtk (0:00)", /dur >= 1/.test(studio));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI PROVIDER BARU GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI PROVIDER BARU HIJAU");
