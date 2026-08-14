@@ -142,15 +142,14 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     const { buf, ac } = dek;
     // 🎵 v19.86: player pakai WAV dari ISI file (decode) — durasi header provider
     // bisa bohong (mis. 17:23 padahal isi 8:03). Satu decode, TANPA motong apa pun.
+    // 🐛 v19.87: FIX durasi DOBEL — createBuffer(1, buf.length, 22050) salah
+    // (buf.length = sampel @44100 → 13:54 padahal isi 6:57). wavDariBuffer
+    // hitung panjang dari durasi × rate tujuan.
     const dur = buf.duration;
     let previewUrl: string | undefined;
     try {
-      const mono = ac.createBuffer(1, buf.length, 22050);
-      const srcCh = buf.getChannelData(0), dst = mono.getChannelData(0);
-      const step = buf.sampleRate / 22050;
-      for (let i = 0; i < dst.length; i++) dst[i] = srcCh[Math.min(srcCh.length - 1, Math.floor(i * step))];
-      const { bufferToWav } = await import("@/lib/gabung-audio");
-      previewUrl = URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" }));
+      const { wavDariBuffer } = await import("@/lib/gabung-audio");
+      previewUrl = wavDariBuffer(buf, ac)?.url;
     } catch { previewUrl = undefined; }
     try { ac.close(); } catch {}
     const huruf = idx === 0 ? "A" : idx === 1 ? "B" : String(idx + 1);

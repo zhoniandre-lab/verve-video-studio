@@ -135,3 +135,56 @@ export async function ukurDurasiReal(url: string, proxify?: (u: string) => strin
     return 0;
   } catch { return 0; }
 }
+
+/** 🎵 v19.87 BUAT WAV PREVIEW dari AudioBuffer hasil decode — DURASI PAS ISI.
+ *  ⚠️ BUG LAMA (v19.81-86): createBuffer(1, buf.length, 22050) — buf.length
+ *  dalam sample rate ASLI (44100) → durasi jadi DOBEL (18,4 jt sampel @22050
+ *  = 13:54 padahal isi 6:57) + ekor senyap dari sampel terakhir. Sekarang
+ *  panjang dihitung dari DURASI × rate tujuan: round(dur × rate). Tidak ada
+ *  pemotongan — isi utuh, cuma durasi yang benar. Fallback rate lebih rendah
+ *  kalau memori HP sempit. Mengembalikan null kalau semua gagal. */
+export function wavDariBuffer(buf: AudioBuffer, ctx: AudioContext, preferRate = 22050): { url: string; dur: number } | null {
+  if (!buf || !buf.length) return null;
+  const rates = [preferRate, 16000, 12000].filter((r) => r <= buf.sampleRate);
+  for (const rate of rates) {
+    try {
+      const outLen = Math.max(1, Math.round(buf.duration * rate));
+      const mono = ctx.createBuffer(1, outLen, rate);
+      const src = buf.getChannelData(0), dst = mono.getChannelData(0);
+      const step = buf.sampleRate / rate;
+      for (let i = 0; i < outLen; i++) dst[i] = src[Math.min(src.length - 1, Math.floor(i * step))];
+      return { url: URL.createObjectURL(new Blob([bufferToWav(mono)], { type: "audio/wav" })), dur: buf.duration };
+    } catch { /* coba rate lebih rendah */ }
+  }
+  return null;
+}
+
+/** 🎵 v19.87 UKUR DURASI REAL + BUAT WAV PREVIEW SEKALIGUS (satu fetch, satu decode).
+ *  Dipakai Lahan biar player & angka durasi konsisten (isi file, bukan header
+ *  yang bisa bohong 15:06 padahal isi 6:57). TIDAK memotong apa pun. */
+export async function ukurDanPreviewWav(url: string, proxify?: (u: string) => string): Promise<{ dur: number; previewUrl: string } | null> {
+  try {
+    const cands = url.startsWith("/") || url.startsWith("blob:") || url.startsWith("data:")
+      ? [url]
+      : [proxify ? proxify(url) : url, url];
+    let ab: ArrayBuffer | null = null;
+    for (const c of cands) {
+      try {
+        const r = await fetch(c);
+        if (!r.ok) continue;
+        ab = await r.arrayBuffer();
+        if (ab && ab.byteLength) break;
+      } catch { continue; }
+    }
+    if (!ab) return null;
+    const AC: any = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+    if (!AC) return null;
+    const ctx: AudioContext = new AC(1, 1, 44100);
+    const buf = await ctx.decodeAudioData(ab.slice(0)).catch(() => null);
+    if (!buf || !buf.length) { try { ctx.close(); } catch {} return null; }
+    const w = wavDariBuffer(buf, ctx);
+    try { ctx.close(); } catch {}
+    if (!w) return null;
+    return { dur: buf.duration, previewUrl: w.url };
+  } catch { return null; }
+}
