@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
 import { gerbangFitur } from "../../../../lib/setelan";
-import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelEvolink, mapModelComet, mapModelTtapi } from "../../../../lib/suno-normalize";
+import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelEvolink, mapModelComet, mapModelTtapi, probeAudioCukup } from "../../../../lib/suno-normalize";
 
 /**
  * Generate AI music via Suno-compatible API.

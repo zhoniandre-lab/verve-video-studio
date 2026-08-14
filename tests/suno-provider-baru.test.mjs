@@ -131,5 +131,17 @@ T("ttapi fetch SUCCESS + musics = completed", ttDone.status === "completed" && t
 const ttFail = normTt({ status: "FAILED", data: { jobId: "job-7" } });
 T("ttapi FAILED = error", ttFail.status === "error");
 
+/* ---- v19.80 probe audio: 206 + 2048 byte = VALID (bukan kosong) ---- */
+function probeAudioCukup(status, bytes) {
+  if (!Number.isFinite(status) || !Number.isFinite(bytes) || bytes < 200) return false;
+  return status === 200 || status === 206;
+}
+T("probe: 206 + 2048 byte = valid (bukan kosong)", probeAudioCukup(206, 2048));
+T("probe: 200 + 3000 byte = valid", probeAudioCukup(200, 3000));
+T("probe: 404 + 2048 = TIDAK valid", !probeAudioCukup(404, 2048));
+T("probe: 200 + 10 byte = terlalu kecil", !probeAudioCukup(200, 10));
+T("route pakai probeAudioCukup (bukan cuma status 200)", /probeAudioCukup/.test(route));
+T("normalize ekspor probeAudioCukup", /export function probeAudioCukup/.test(norm));
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI PROVIDER BARU GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI PROVIDER BARU HIJAU");

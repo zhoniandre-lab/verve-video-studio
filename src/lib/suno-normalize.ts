@@ -364,6 +364,14 @@ export function normalizeLagu(d: any, provider: ProvLagu): HasilNormal {
   return normalizeGeneric(d);
 }
 
+/** 🐛 v19.80 Probe Range audio: CDN Suno/TTAPI balas 206 Partial Content
+ *  + tepat 2048 byte (ukuran potongan yang KITA minta). Itu BUKAN file kosong.
+ *  Dulu cuma terima 200 → lagu jadi malah ditolak. */
+export function probeAudioCukup(status: number, bytes: number): boolean {
+  if (!Number.isFinite(status) || !Number.isFinite(bytes) || bytes < 200) return false;
+  return status === 200 || status === 206;
+}
+
 /** Peta model ke format Kie. */
 export function mapModelKie(modelId: string): string {
   const m = String(modelId || "v5.5").toLowerCase();
