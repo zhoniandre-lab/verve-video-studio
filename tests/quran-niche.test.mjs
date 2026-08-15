@@ -66,3 +66,13 @@ T("preview sinkron dengan audioEl.currentTime", /audioElRef\.current\.currentTim
 T("indikator Ayat X/Y tampil", /Ayat /.test(page) && /totalAyat/.test(page) && /ayatAktif/.test(page));
 T("hidden audio element untuk sinkron", /audioElRef/.test(page) && /audioUrl/.test(page) && /style=\{\{ display: "none" \}\}/.test(page));
 T("kalau belum ada audio → pesan jelas", /Belum ada suara — di langkah 2/.test(page));
+
+/* ---- v20.3: ATUR URUTAN BACAAN (Ayat Kursi dulu, lalu An-Nas dll) ---- */
+T("ItemBacaan & ITEM_AYAT_KURSI ada", /ITEM_AYAT_KURSI/.test(qd) && /dari: 255, sampai: 255/.test(qd));
+T("ambilAyatBanyak terima ItemBacaan[] (urutan)", /items: ItemBacaan\[\]/.test(qd));
+T("default urutan: Ayat Kursi → An-Nas → Al-Falaq → Al-Ikhlas", /ITEM_AYAT_KURSI/.test(page) && /"s114"/.test(page) && /"s113"/.test(page) && /"s112"/.test(page));
+T("tombol naik/turun item ada", /pindahItem\(i, -1\)/.test(page) && /pindahItem\(i, 1\)/.test(page));
+T("tombol hapus item ada", /hapusItem\(i\)/.test(page));
+T("tombol tambah Ayat Kursi ada", /TAMBAH BACAAN/.test(page) && /tambahItem\(ITEM_AYAT_KURSI\)/.test(page));
+T("info urutan tampil (→)", /urutan: \$\{daftar\.map\(\(d\) => d\.nama\)\.join\(" → "\)\}/.test(page));
+T("pilihSurat lama sudah diganti daftarBacaan", !/pilihSurat/.test(page));

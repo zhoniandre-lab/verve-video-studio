@@ -9,7 +9,7 @@
    Spectrum TIDAK disentuh. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  DAFTAR_SURAT, SURAT_DEFAULT, BAHASA, ambilAyatBanyak, gabungAyat, type AyatGabung,
+  DAFTAR_SURAT, ITEM_AYAT_KURSI, BAHASA, ambilAyatBanyak, gabungAyat, type AyatGabung, type ItemBacaan,
 } from "@/lib/quran-data";
 import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } from "@/lib/ambience";
 import { gambarFrameIslami, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
@@ -30,13 +30,34 @@ type ElemenPos = { x: number; y: number };
 
 export default function NicheQuran() {
   const [step, setStep] = useState(0);
-  /* 1️⃣ surat */
-  const [pilihSurat, setPilihSurat] = useState<number[]>(SURAT_DEFAULT);
+  /* 1️⃣ surat — daftar bacaan berURUTAN (atas = dibaca duluan) */
+  const [daftarBacaan, setDaftarBacaan] = useState<ItemBacaan[]>(() => [
+    ITEM_AYAT_KURSI,
+    { id: "s114", suratId: 114, nama: DAFTAR_SURAT.find((x) => x.id === 114)?.nama || "An-Nas", arab: DAFTAR_SURAT.find((x) => x.id === 114)?.arab },
+    { id: "s113", suratId: 113, nama: DAFTAR_SURAT.find((x) => x.id === 113)?.nama || "Al-Falaq", arab: DAFTAR_SURAT.find((x) => x.id === 113)?.arab },
+    { id: "s112", suratId: 112, nama: DAFTAR_SURAT.find((x) => x.id === 112)?.nama || "Al-Ikhlas", arab: DAFTAR_SURAT.find((x) => x.id === 112)?.arab },
+  ]);
   const [bahasa, setBahasa] = useState("id");
   const [ayatList, setAyatList] = useState<AyatGabung[]>([]);
   const [ayatInfo, setAyatInfo] = useState(""); // nama surat terpilih
   const [loadAyat, setLoadAyat] = useState(false);
   const [ayatErr, setAyatErr] = useState("");
+  /* atur urutan: pindah item */
+  function pindahItem(i: number, arah: -1 | 1) {
+    setDaftarBacaan((arr) => {
+      const j = i + arah;
+      if (j < 0 || j >= arr.length) return arr;
+      const copy = [...arr];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
+  }
+  function hapusItem(i: number) {
+    setDaftarBacaan((arr) => arr.filter((_, k) => k !== i));
+  }
+  function tambahItem(it: ItemBacaan) {
+    setDaftarBacaan((arr) => (arr.some((x) => x.id === it.id) ? arr : [...arr, it]));
+  }
   /* 2️⃣ suara */
   const [audioUrl, setAudioUrl] = useState("");
   const [audioDur, setAudioDur] = useState(0);
@@ -123,17 +144,17 @@ export default function NicheQuran() {
     return pvTRef.current;
   }
 
-  /* ---- 1️⃣ ambil ayat ---- */
+  /* ---- 1️⃣ ambil ayat (mengikuti URUTAN daftar bacaan) ---- */
   async function ambilAyat() {
-    if (!pilihSurat.length) { setAyatErr("Pilih minimal satu surat."); return; }
+    if (!daftarBacaan.length) { setAyatErr("Tambah minimal satu surat/ayat."); return; }
     setLoadAyat(true); setAyatErr(""); setMsg("");
     try {
       const edisi = BAHASA.find((b) => b.kode === bahasa)?.edisi || "quran.id.indonesian";
-      const daftar = await ambilAyatBanyak(pilihSurat, edisi);
+      const daftar = await ambilAyatBanyak(daftarBacaan, edisi);
       const g = gabungAyat(daftar);
       setAyatList(g);
-      setAyatInfo(`${g.length} ayat · ${daftar.map((d) => d.nama).join(", ")}`);
-      setMsg(`✅ ${g.length} ayat dimuat (Arab + ${BAHASA.find((b) => b.kode === bahasa)?.label})`);
+      setAyatInfo(`${g.length} ayat · urutan: ${daftar.map((d) => d.nama).join(" → ")}`);
+      setMsg(`✅ ${g.length} ayat dimuat sesuai urutan (Arab + ${BAHASA.find((b) => b.kode === bahasa)?.label})`);
     } catch (e: any) {
       setAyatErr(e?.message || "Gagal ambil ayat — cek koneksi internet.");
     } finally { setLoadAyat(false); }
@@ -512,12 +533,28 @@ export default function NicheQuran() {
       {/* ===== 1️⃣ SURAT ===== */}
       {step === 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800 }}>PILIH SURAT (bisa banyak) — otomatis dari Al-Qur'an</div>
-          <div style={{ maxHeight: 250, overflowY: "auto", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: 6 }}>
-            {DAFTAR_SURAT.map((s) => (
-              <button key={s.id} onClick={() => setPilihSurat((arr) => arr.includes(s.id) ? arr.filter((x) => x !== s.id) : [...arr, s.id])}
-                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 8px", borderRadius: 8, border: "none", background: pilihSurat.includes(s.id) ? "rgba(139,92,246,.25)" : "transparent", color: "#fff", fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 14 }}>{pilihSurat.includes(s.id) ? "✅" : "⬜"}</span>
+          <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800 }}>📋 URUTAN BACAAN <span style={{ color: "#8b8b98", fontWeight: 500 }}>(atas = dibaca duluan)</span></div>
+          {!daftarBacaan.length && <p style={{ fontSize: 11.5, color: "#fbbf24" }}>Belum ada bacaan — tambah dari daftar di bawah.</p>}
+          {daftarBacaan.map((it, i) => (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid rgba(139,92,246,.4)", borderRadius: 10, padding: "7px 8px", background: "rgba(139,92,246,.08)" }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "#c4b5fd", minWidth: 22 }}>{i + 1}.</span>
+              <span style={{ flex: 1, fontSize: 12.5 }}>{it.nama}</span>
+              {it.dari && <span style={{ fontSize: 10, color: "#8b8b98" }}>ayat {it.dari}{it.sampai && it.sampai !== it.dari ? `–${it.sampai}` : ""}</span>}
+              <button onClick={() => pindahItem(i, -1)} disabled={i === 0} style={{ background: "rgba(255,255,255,.08)", border: "none", borderRadius: 8, color: "#fff", width: 30, height: 30, cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.35 : 1 }}>⬆</button>
+              <button onClick={() => pindahItem(i, 1)} disabled={i === daftarBacaan.length - 1} style={{ background: "rgba(255,255,255,.08)", border: "none", borderRadius: 8, color: "#fff", width: 30, height: 30, cursor: i === daftarBacaan.length - 1 ? "default" : "pointer", opacity: i === daftarBacaan.length - 1 ? 0.35 : 1 }}>⬇</button>
+              <button onClick={() => hapusItem(i)} style={{ background: "rgba(239,68,68,.2)", border: "none", borderRadius: 8, color: "#fca5a5", width: 30, height: 30, cursor: "pointer" }}>✕</button>
+            </div>
+          ))}
+          <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800, marginTop: 2 }}>➕ TAMBAH BACAAN</div>
+          <button onClick={() => tambahItem(ITEM_AYAT_KURSI)} disabled={daftarBacaan.some((x) => x.id === "kursi")}
+            style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(212,175,55,.4)", background: "rgba(212,175,55,.08)", color: "#e8d9a0", fontSize: 12, fontWeight: 700, cursor: daftarBacaan.some((x) => x.id === "kursi") ? "default" : "pointer", opacity: daftarBacaan.some((x) => x.id === "kursi") ? 0.45 : 1, textAlign: "left" }}>
+            📌 {ITEM_AYAT_KURSI.nama} {daftarBacaan.some((x) => x.id === "kursi") ? "— sudah ada" : ""}
+          </button>
+          <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: 6 }}>
+            {DAFTAR_SURAT.filter((s) => s.id !== 2).map((s) => (
+              <button key={s.id} onClick={() => tambahItem({ id: `s${s.id}`, suratId: s.id, nama: s.nama, arab: s.arab })}
+                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 8px", borderRadius: 8, border: "none", background: daftarBacaan.some((x) => x.suratId === s.id) ? "rgba(139,92,246,.25)" : "transparent", color: "#fff", fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>
+                <span style={{ fontSize: 13 }}>{daftarBacaan.some((x) => x.suratId === s.id) ? "✅" : "➕"}</span>
                 <span style={{ flex: 1 }}>{s.nama} <span style={{ color: "#8b8b98", fontSize: 11 }}>· {s.ayat} ayat</span></span>
                 <span style={{ fontFamily: "'Scheherazade New',serif", color: "#d4af37", fontSize: 15 }}>{s.arab}</span>
               </button>

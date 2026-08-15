@@ -113,16 +113,32 @@ export async function ambilAyatSurat(suratId: number, edisiTerjemahan: string): 
 }
 
 /** Ambil beberapa surat sekaligus (berurutan sesuai urutan pilihan). */
-export async function ambilAyatBanyak(suratIds: number[], edisi: string, rentang?: { dari: number; sampai: number }): Promise<{ suratId: number; nama: string; arab: string; ayat: AyatQ[] }[]> {
+/** 📌 Item bacaan — urutan array = urutan baca (atas = duluan). */
+export type ItemBacaan = {
+  id: string;
+  suratId: number;
+  nama: string;
+  arab?: string;
+  /** rentang ayat (opsional) — mis. Ayat Kursi = { dari: 255, sampai: 255 } */
+  dari?: number;
+  sampai?: number;
+};
+
+/** Ayat Kursi (Al-Baqarah 255) — item siap pakai. */
+export const ITEM_AYAT_KURSI: ItemBacaan = { id: "kursi", suratId: 2, nama: "Ayat Kursi (Al-Baqarah 255)", arab: "آية الكرسي", dari: 255, sampai: 255 };
+
+/** Ambil ayat sesuai daftar item bacaan (urutan array = urutan baca). */
+export async function ambilAyatBanyak(items: ItemBacaan[], edisi: string): Promise<{ suratId: number; nama: string; arab: string; ayat: AyatQ[] }[]> {
   const out: { suratId: number; nama: string; arab: string; ayat: AyatQ[] }[] = [];
-  for (const id of suratIds) {
-    const s = DAFTAR_SURAT.find((x) => x.id === id);
-    const semua = await ambilAyatSurat(id, edisi);
+  for (const it of items) {
+    const s = DAFTAR_SURAT.find((x) => x.id === it.suratId);
+    const semua = await ambilAyatSurat(it.suratId, edisi);
     let ayat = semua;
-    if (rentang && rentang.dari > 0) {
-      ayat = semua.filter((a) => a.nomor >= rentang.dari && a.nomor <= (rentang.sampai || a.nomor));
+    const dari = it.dari && it.dari > 0 ? it.dari : 0;
+    if (dari > 0) {
+      ayat = semua.filter((a) => a.nomor >= dari && a.nomor <= (it.sampai || dari));
     }
-    out.push({ suratId: id, nama: s?.nama || `Surat ${id}`, arab: s?.arab || "", ayat });
+    out.push({ suratId: it.suratId, nama: it.nama || s?.nama || `Surat ${it.suratId}`, arab: it.arab || s?.arab || "", ayat });
   }
   return out;
 }
