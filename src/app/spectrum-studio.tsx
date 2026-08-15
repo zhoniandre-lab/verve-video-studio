@@ -723,14 +723,22 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       let sumber = "";
       for (let i = 0; i < n; i++) {
         if (n > 1) setBgAiMsg(`🎨 Menggambar ${i + 1}/${n}…`);
-        const r = await fetch("/api/hcnsec/image", {
-          method: "POST", headers: hdr,
-          body: JSON.stringify({ title: `spektrum-bg-${i + 1}`, keyword: "musik", niche: "visualizer", _rawPrompt: true, prompt: `${prompt} (variation ${i + 1} of ${n})` }),
-        });
-        const j = await r.json();
-        if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
-        hasil.push(j.url);
-        sumber = j.sumber || sumber;
+        // 🐛 v19.94: watchdog 55 dtk per percobaan (sama seperti Lahan) — kalau
+        // server lambat, langsung muncul pesan jelas, bukan nunggu 60+ dtk kosong.
+        const ac = new AbortController();
+        const wd = setTimeout(() => ac.abort(), 55000);
+        try {
+          const r = await fetch("/api/hcnsec/image", {
+            method: "POST", headers: hdr, signal: ac.signal,
+            body: JSON.stringify({ title: `spektrum-bg-${i + 1}`, keyword: "musik", niche: "visualizer", _rawPrompt: true, prompt: `${prompt} (variation ${i + 1} of ${n})` }),
+          });
+          const j = await r.json();
+          if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
+          hasil.push(j.url);
+          sumber = j.sumber || sumber;
+        } finally {
+          clearTimeout(wd);
+        }
       }
       const via = sumber === "bansos" ? " via bansos" : "";
       if (n === 1) {

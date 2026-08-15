@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 
 const spec = readFileSync(new URL("../src/app/spectrum-studio.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../src/app/api/hcnsec/image/route.ts", import.meta.url), "utf8");
+const hcnsec = readFileSync(new URL("../src/lib/hcnsec.ts", import.meta.url), "utf8");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -57,3 +58,8 @@ T("route bansos maks 4 model", /\.slice\(0, 4\)/.test(route));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI FITUR SPECTRUM GAGAL`); process.exit(1); }
 console.log("🎉 SEMUA UJI FITUR SPECTRUM HIJAU (v19.90)");
+
+/* ---- v19.94: pagar waktu generate gambar (anti-hang) ---- */
+T("generateImage punya pagar total 40 dtk", /Date\.now\(\) - t0gambar > 40000/.test(hcnsec));
+T("generateImage deklarasi t0gambar", /const t0gambar = Date\.now\(\)/.test(hcnsec));
+T("Spectrum watchdog 55 dtk per percobaan gambar", /setTimeout\(\(\) => ac\.abort\(\), 55000\)/.test(spec));
