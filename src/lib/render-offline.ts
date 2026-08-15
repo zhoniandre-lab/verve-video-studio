@@ -21,6 +21,7 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { buildAudioChain } from "./audio-chain";
 import { freqAt } from "./fft";
 import type { FreqFrames } from "./fft";
+import { sambungAmbience, buatReverbIR, type JenisAmbience } from "./ambience"; // 🌧️🎙️ v20.0
 
 export interface OptsRenderOffline {
   buf: AudioBuffer;
@@ -58,6 +59,11 @@ export interface OptsRenderOffline {
   onFase?: (fase: "audio" | "video" | "mux") => void;
   /** info teknis (mode yang dipilih, dll) — buat laporan di layar */
   onInfo?: (s: string) => void;
+  /** 🌧️ v20.0 SUARA ALAM LATAR (ambience) — hujan/air/petir/upload, volume terpisah
+   *  dari vokal → tidak mengganggu bacaan. */
+  ambience?: { jenis: JenisAmbience; gain: number; buf?: AudioBuffer | null } | null;
+  /** 🎙️ v20.0 REVERB VOKAL — 0..0.6, biar rekaman tidak mentahan (ruang halus). */
+  vocalReverb?: number;
 }
 
 /** Macroblock H.264 = 16px. Ukuran bukan kelipatan 16 → banyak HP jatuh ke encoder SOFTWARE (3–10× lebih lambat). */
@@ -183,6 +189,17 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
     analyser.connect(off.destination);
     src.connect(input);
     src.start(0, off0 + segStart, segDur);
+    // 🌧️ v20.0 SUARA ALAM LATAR — volume sendiri, tidak ikut kompresi vokal
+    if (o.ambience && o.ambience.jenis !== "off") {
+      sambungAmbience(off, off.destination, o.ambience.jenis, o.ambience.gain, off0 + segStart, segDur, o.ambience.buf ?? null);
+    }
+    // 🎙️ v20.0 REVERB VOKAL — dry + wet paralel (ruang halus, bukan gema)
+    if (o.vocalReverb && o.vocalReverb > 0.001) {
+      const conv = off.createConvolver();
+      conv.buffer = buatReverbIR(off, 1.1, 2.4);
+      const wet = off.createGain(); wet.gain.value = Math.min(0.6, o.vocalReverb);
+      input.connect(conv); conv.connect(wet); wet.connect(off.destination);
+    }
     const rendered = await off.startRendering();
     const ch0 = rendered.getChannelData(0);
     const ch1 = rendered.getChannelData(1);

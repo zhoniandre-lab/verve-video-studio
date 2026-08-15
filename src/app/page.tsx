@@ -385,6 +385,7 @@ export default function Page() {
 function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: ScreenId) => void; gotoEditor: (id?: string, cmd?: any) => void }) {
   const tools: { ic: string; lb: string; bb?: string; act: () => void }[] = [
     { ic: "🎤", lb: "Suno Studio", bb: "NEW", act: () => { location.href = "/suno"; } },
+    { ic: "📖", lb: "Niche Qur'an", bb: "NEW", act: () => { location.href = "/quran"; } },
     { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
     { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
     { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
