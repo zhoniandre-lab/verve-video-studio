@@ -32,9 +32,10 @@ const spec = readFileSync(new URL("../src/app/spectrum-studio.tsx", import.meta.
 T("Spectrum import videoloop", /from "@\/lib\/videoloop"/.test(spec));
 T("Spectrum pakai durasiLoopTotal di drawScene", /durasiLoopTotal\(vd, duration \|\| 0, videoLoop\)/.test(spec));
 T("BUG LAMA HAPUS: tidak ada seek currentTime tiap frame", !/currentTime = vt/.test(spec));
-T("video dipindah ke lapis DINAMIS (bukan bg cache)", /!bgOnly && videoBgRef\.current/.test(spec));
-T("video tetap loop kalau masih dalam jatah", /vv\.loop !== masihJalan/.test(spec));
-T("video play kalau paused (anti-hilang)", /masihJalan && vv\.paused\) \{ vv\.play\(\)/.test(spec));
+T("video dipindah ke lapis DINAMIS (bukan bg cache)", /const vA = videoBgRef\.current, vB = videoBg2Ref\.current/.test(spec) && !/f % BG_EVERY/.test(spec));
+T("freeze di frame terakhir kalau jatah habis", /jatah loop habis → freeze di frame terakhir/.test(spec));
+T("video tetap jalan kalau masih dalam jatah", /masihJalan && vCur\.paused\) vCur\.play\(\)/.test(spec));
+T("video play kalau paused (anti-hilang)", /if \(vCur\.paused\) vCur\.play\(\)\.catch/.test(spec));
 T("upload video TIDAK menimpa lagu yang sudah ada", /sudahAdaLagu/.test(spec) && /if \(sudahAdaLagu\)/.test(spec) && !/void loadAudio\(url, nama\); \/\/ spektrum & lirik ikut audio video/.test(spec));
 T("UI pilihan loop ada (auto/1x/2x/3x)", /LOOP VIDEO/.test(spec) && /\[\["auto"/.test(spec));
 T("UI tampilkan hitungan durasi loop", /hitungKaliLoop\(videoDur, duration, videoLoop\)/.test(spec));

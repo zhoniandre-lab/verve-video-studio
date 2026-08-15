@@ -125,6 +125,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 🔁 v19.91: LOOP VIDEO — auto (pas durasi lagu) / 1× / 2× / 3×
   const [videoLoop, setVideoLoop] = useState<ModeLoopVideo>("auto");
   const [videoDur, setVideoDur] = useState(0); // durasi video (dtk) setelah metadata termuat
+  // 🔁 v19.92: LOOP MULUS (seamless) — crossfade pendek di titik sambung biar
+  // mata tak nampak pengulangan. 2 elemen video bergantian; murah (cuma ~0.3 dtk
+  // decode ganda tiap putaran). Bisa dimatikan kalau HP berat.
+  const [videoSeamless, setVideoSeamless] = useState(true);
+  const videoBg2Ref = useRef<HTMLVideoElement | null>(null);
+  const videoCurRef = useRef(0); // 0 = videoBgRef, 1 = videoBg2Ref
+  const videoSwapRef = useRef<{ t0: number } | null>(null);
   // 🎨 v19.11: BACKGROUND AI OTOMATIS — ketik suasana → generate background sinematik
   const [bgPrompt, setBgPrompt] = useState("");
   // 🖼️ v19.90: JUMLAH gambar yang digenerate sekaligus (1 = latar, 2-4 = visual bergantian)
@@ -297,6 +304,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // null = ikut template; angka = override user.
   const [capSize, setCapSize] = useState<number | null>(null);
   const [capY, setCapY] = useState<number | null>(null);
+  // ✏️ v19.92: KENDALI JUDUL — ukuran override (null = ikut layout), ikut bass,
+  // wrap otomatis per baris (judul panjang tidak keluar jalur lagi).
+  const [titleSize, setTitleSize] = useState<number | null>(null);
+  const [titleBeat, setTitleBeat] = useState(true);
+  const pinchTitle = useRef<{ d0: number; s0: number } | null>(null);
+  const wrapCache = useRef<Map<string, string[]>>(new Map());
   // 🎤 v19.17 AUTO-PAS LIRIK (Whisper) — timing persis audio
   const [lyrAuto, setLyrAuto] = useState(false);
   const autoWordsRef = useRef<{ w: string; start: number; end: number; line: number }[]>([]);
@@ -407,6 +420,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         specStyle, specColor, themeId, bgType, bgGrad, bgColor, bgImg: bgImg.slice(0, 20000),
         videoBg: videoBgSesiRef.current ? "" : videoBg.slice(0, 1500000), // 🎬 v19.56
         videoLoop, // 🔁 v19.91: mode loop video ikut tersimpan
+        videoSeamless, // 🔁 v19.92: loop mulus ikut tersimpan
+        titleSize, titleBeat, // ✏️ v19.92: ukuran & ikut-bass judul ikut tersimpan
         overlay, layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
         layerVis, layerOp,
@@ -433,6 +448,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       if (p.bgImg) setBgImg(p.bgImg);
       if (p.videoBg) { setVideoBg(p.videoBg); videoBgSesiRef.current = false; } // 🎬 v19.56
       if (p.videoLoop) setVideoLoop(p.videoLoop); // 🔁 v19.91
+      if (p.videoSeamless !== undefined) setVideoSeamless(!!p.videoSeamless); // 🔁 v19.92
+      if (p.titleSize !== undefined && p.titleSize !== null) setTitleSize(p.titleSize); else setTitleSize(null); // ✏️ v19.92
+      if (p.titleBeat !== undefined) setTitleBeat(!!p.titleBeat); else setTitleBeat(true); // ✏️ v19.92
       setOverlay(p.overlay || "none");
       setLayoutId(p.layoutId || "logo-tengah"); setLogoPos(p.logoPos || { x: 0.5, y: 0.42 }); setTitlePos(p.titlePos || { x: 0.5, y: 0.05 });
       setBarCount(p.barCount || 64); setLogoScale(p.logoScale || 1); setRotSpeed(p.rotSpeed ?? 0.5); setGlowInt(p.glowInt ?? 1);
@@ -771,20 +789,6 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // stutter/kosong di HP); (c) video jalan NATURAL (muted+loop+play), loop 1×/2×/3×/auto
     // via v.loop: masih dalam jatah → loop terus; sudah lewat → loop mati → video selesai
     // sendiri & diam di frame terakhir (mulus, tanpa lompat, ringan).
-    if (!bgOnly && videoBgRef.current && videoBgRef.current.readyState >= 2 && videoBgRef.current.videoWidth) {
-      const vv = videoBgRef.current;
-      const vd = vv.duration > 0 ? vv.duration : 4;
-      const totalPlay = durasiLoopTotal(vd, duration || 0, videoLoop);
-      const masihJalan = t < totalPlay - 0.35;
-      if (vv.loop !== masihJalan) { try { vv.loop = masihJalan; } catch {} }
-      if (masihJalan && vv.paused) { vv.play().catch(() => {}); }
-      const vir = vv.videoWidth / vv.videoHeight, vcr = W / H;
-      let vsw = vv.videoWidth, vsh = vv.videoHeight, vsx = 0, vsy = 0;
-      if (vir > vcr) { vsw = vv.videoHeight * vcr; vsx = (vv.videoWidth - vsw) / 2; } else { vsh = vv.videoWidth / vcr; vsy = (vv.videoHeight - vsh) / 2; }
-      ctx.drawImage(vv, vsx, vsy, vsw, vsh, 0, 0, W, H);
-      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
-    }
-
     // bars dari analyser atau dummy berdenyut
     const N = barCount; // 🎛️ v19.14: jumlah bar bisa diatur
     let bass = 0;
@@ -855,6 +859,60 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
 
     if (!bgOnly) {
+    // 🎬 v19.56 / 🔁 v19.92: VIDEO LATAR — di lapis DINAMIS (tiap frame, bukan bg cache 4
+    // frame) biar gerakan video mulus di preview & RENDER OFFLINE. Loop MULUS (seamless):
+    // 2 elemen video, crossfade ~0,3 dtk di titik sambung → mata tak nampak pengulangan.
+    // Biaya: hanya ~0,3 dtk decode ganda tiap putaran — ringan; bisa dimatikan.
+    const vA = videoBgRef.current, vB = videoBg2Ref.current;
+    const vCur = videoCurRef.current === 0 ? vA : vB;
+    if (vCur && vCur.readyState >= 2 && vCur.videoWidth) {
+      const vd = vCur.duration > 0 ? vCur.duration : 4;
+      const totalPlay = durasiLoopTotal(vd, duration || 0, videoLoop);
+      const masihJalan = t < totalPlay - 0.35;
+      const nLoop = hitungKaliLoop(vd, duration || 0, videoLoop);
+      const drawVid = (v: HTMLVideoElement | null, alpha: number) => {
+        if (!v || v.readyState < 2 || !v.videoWidth || alpha <= 0.01) return;
+        const vir = v.videoWidth / v.videoHeight, vcr = W / H;
+        let vsw = v.videoWidth, vsh = v.videoHeight, vsx = 0, vsy = 0;
+        if (vir > vcr) { vsw = v.videoHeight * vcr; vsx = (v.videoWidth - vsw) / 2; } else { vsh = v.videoWidth / vcr; vsy = (v.videoHeight - vsh) / 2; }
+        ctx.save(); ctx.globalAlpha = (layerOp.gambar ?? 1) * alpha;
+        ctx.drawImage(v, vsx, vsy, vsw, vsh, 0, 0, W, H);
+        ctx.restore();
+      };
+      if (!masihJalan) {
+        // jatah loop habis → freeze di frame terakhir (bukan hitam)
+        try { vA?.pause(); vB?.pause(); } catch {}
+        drawVid(vCur, 1);
+        ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
+      } else if (videoSeamless && nLoop > 1 && !videoSwapRef.current && vd > 0 && vCur.currentTime >= vd - 0.5) {
+        // mulai crossfade: video lain dari awal, 0,3 dtk
+        const other = videoCurRef.current === 0 ? vB : vA;
+        if (other) {
+          try { other.currentTime = 0; other.play().catch(() => {}); } catch {}
+          videoSwapRef.current = { t0: performance.now() };
+        }
+        drawVid(vCur, 1);
+        ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
+      } else if (videoSwapRef.current) {
+        const k = Math.min(1, (performance.now() - videoSwapRef.current.t0) / 300);
+        const other = videoCurRef.current === 0 ? vB : vA;
+        drawVid(vCur, 1 - k);
+        drawVid(other, k);
+        ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
+        if (k >= 1) {
+          const old = vCur;
+          videoCurRef.current = videoCurRef.current === 0 ? 1 : 0;
+          videoSwapRef.current = null;
+          try { old.pause(); old.currentTime = 0; } catch {}
+          try { (videoCurRef.current === 0 ? vA : vB)?.play().catch(() => {}); } catch {}
+        }
+      } else {
+        if (vCur.paused) vCur.play().catch(() => {});
+        drawVid(vCur, 1);
+        ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
+      }
+    }
+
     // 🩰 v19.16 MULTI-GAMBAR "MENARI IKUT IRAMA" — zoom & geser halus mengikuti energi musik
     // (cepat saat drum/bass cepat, syahdu saat lambat). Tetap background, spectrum keliatan.
     // 🧩 v19.36: lapisan — bisa disembunyikan & diatur transparansinya
@@ -1429,17 +1487,45 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     // 👑 v19.13/v19.14 judul pro + info bar ala video visualizer (TRACK / EFFECT)
     // 🎛️ v19.14: posisi judul bisa di-drag bebas
+    // ✏️ v19.92: ukuran bisa di-override (slider/cubit), WRAP otomatis per baris
+    // (judul panjang tidak keluar jalur), dan bisa IKUT BASS (denyut halus).
     if (title.trim()) {
       ctx.textAlign = "center"; ctx.textBaseline = "top";
       const L = LAYOUTS[layoutId] || LAYOUTS["logo-tengah"];
-      const tfs = Math.round(H * 0.055 * L.titleScale);
+      const beatK = titleBeat ? 1 + bass * 0.05 + (bass > 0.52 ? 0.03 : 0) : 1;
+      const tfs = Math.round(H * 0.055 * L.titleScale * (titleSize ?? 1) * beatK);
       const tx = titlePos.x * W, ty = titlePos.y * H;
       ctx.font = `900 ${tfs}px 'Poppins',system-ui,sans-serif`;
+      // Wrap: pecah kata jadi baris yang muat (maks 88% lebar), cache per judul+lebar
+      const maxW = W * 0.88;
+      const ck = `${title}|${Math.round(maxW)}|${tfs}`;
+      let baris = wrapCache.current.get(ck);
+      if (!baris) {
+        baris = (() => {
+          const kata = title.trim().split(/\s+/).filter(Boolean);
+          const out: string[] = [];
+          let cur = "";
+          for (const k of kata) {
+            const coba = cur ? cur + " " + k : k;
+            if (!cur || ctx.measureText(coba).width <= maxW) cur = coba;
+            else { out.push(cur); cur = k; }
+          }
+          if (cur) out.push(cur);
+          return out;
+        })();
+        if (wrapCache.current.size > 60) wrapCache.current.clear();
+        wrapCache.current.set(ck, baris);
+      }
+      const lh = tfs * 1.12;
+      const y0 = ty - ((baris.length - 1) * lh) / 2; // biar tetap di posisi (multi-baris tetap tengah)
       ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = Math.round(tfs * 0.16); ctx.lineJoin = "round";
-      ctx.strokeText(title, tx, ty);
-      const tg = ctx.createLinearGradient(0, ty, 0, ty + tfs);
-      tg.addColorStop(0, "#ffffff"); tg.addColorStop(1, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
-      ctx.fillStyle = tg; ctx.fillText(title, tx, ty);
+      for (let bi = 0; bi < baris.length; bi++) {
+        const by = y0 + bi * lh;
+        ctx.strokeText(baris[bi], tx, by);
+        const tg = ctx.createLinearGradient(0, by, 0, by + tfs);
+        tg.addColorStop(0, "#ffffff"); tg.addColorStop(1, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
+        ctx.fillStyle = tg; ctx.fillText(baris[bi], tx, by);
+      }
     }
 
     // lirik karaoke
@@ -1530,6 +1616,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks, duration, // 🐛 FIX v19.47: subTeks & duration WAJIB di deps (dipakai drawScene)
     capSize, capY, // ✏️ v19.89: ukuran & posisi lirik (dipakai drawScene)
     videoLoop, // 🔁 v19.91: mode loop video (dipakai drawScene)
+    titleSize, titleBeat, // ✏️ v19.92: ukuran & ikut-bass judul (dipakai drawScene)
+    videoSeamless, // 🔁 v19.92: loop mulus video (dipakai drawScene)
     // 🐛 FIX v19.44: state baru (spektrum mini, frame, teks) WAJIB di dep — tanpa ini
     // drawScene pakai closure LAMA → frame/teks/mini tidak pernah muncul.
     floatSpec, floatStyle, floatSize, floatPos,
@@ -1563,16 +1651,30 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!bgImg) { bgImgRef.current = null; return; }
     const im = new Image(); im.onload = () => { bgImgRef.current = im; }; im.src = bgImg;
   }, [bgImg]);
-  // 🎬 v19.56: siapkan elemen video latar (muted, loop) — sinkron per frame di drawScene
+  // 🎬 v19.56: siapkan elemen video latar (muted, loop)
+  // 🔁 v19.92: DUA elemen — elemen kedua untuk crossfade loop mulus (seamless).
+  // Elemen kedua tidak diputar sampai dibutuhkan → tidak menambah beban.
   useEffect(() => {
-    if (!videoBg) { videoBgRef.current = null; return; }
-    const v = document.createElement("video");
-    v.muted = true; v.loop = true; v.playsInline = true; v.preload = "auto";
-    v.crossOrigin = "anonymous";
-    v.src = videoBg;
-    v.play().catch(() => {});
-    videoBgRef.current = v;
-    return () => { try { v.pause(); } catch {} videoBgRef.current = null; };
+    if (!videoBg) {
+      videoBgRef.current = null; videoBg2Ref.current = null;
+      videoCurRef.current = 0; videoSwapRef.current = null;
+      return;
+    }
+    const mk = () => {
+      const v = document.createElement("video");
+      v.muted = true; v.loop = true; v.playsInline = true; v.preload = "auto";
+      v.crossOrigin = "anonymous";
+      v.src = videoBg;
+      return v;
+    };
+    const a = mk(); a.play().catch(() => {});
+    const b = mk(); // siap dipakai saat crossfade
+    videoBgRef.current = a; videoBg2Ref.current = b;
+    videoCurRef.current = 0; videoSwapRef.current = null;
+    return () => {
+      try { a.pause(); } catch {} try { b.pause(); } catch {}
+      videoBgRef.current = null; videoBg2Ref.current = null;
+    };
   }, [videoBg]);
   useEffect(() => { ensureFontsLoaded().catch(() => {}); }, []);
 
@@ -1968,16 +2070,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   const dSub = Math.hypot((a.x + b.x) / 2 - subPos.x * 0 + 0, 0); // dummy
                   const dFloat = Math.hypot(((a.x + b.x) / 2 - (e.target as HTMLElement).getBoundingClientRect().left) / (e.target as HTMLElement).getBoundingClientRect().width - floatPos.x,
                     ((a.y + b.y) / 2 - (e.target as HTMLElement).getBoundingClientRect().top) / (e.target as HTMLElement).getBoundingClientRect().height - floatPos.y);
-                  if (floatSpec && dFloat <= 0.3) {
+                  const mx2 = (a.x + b.x) / 2, my2 = (a.y + b.y) / 2;
+                const rect2 = (e.target as HTMLElement).getBoundingClientRect();
+                const fx2 = (mx2 - rect2.left) / rect2.width, fy2 = (my2 - rect2.top) / rect2.height;
+                const dTitle2 = Math.hypot(fx2 - titlePos.x, fy2 - titlePos.y);
+                if (floatSpec && dFloat <= 0.3) {
                     pinchFloat.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: floatSize };
-                    pinchSub.current = null; pinchCap.current = null;
+                    pinchSub.current = null; pinchCap.current = null; pinchTitle.current = null;
+                  } else if (title.trim() && dTitle2 <= 0.22) {
+                    // ✏️ v19.92: cubit dekat judul → ubah UKURAN JUDUL
+                    pinchTitle.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: titleSize ?? 1 };
+                    pinchSub.current = null; pinchFloat.current = null; pinchCap.current = null;
                   } else if (lirikOn && capWords.length) {
                     // ✏️ v19.89: cubit dekat lirik → ubah UKURAN LIRIK
                     pinchCap.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: capSize ?? tpl.sizeRatio ?? 0.042 };
-                    pinchSub.current = null; pinchFloat.current = null;
+                    pinchSub.current = null; pinchFloat.current = null; pinchTitle.current = null;
                   } else {
                     pinchSub.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: subSize };
-                    pinchFloat.current = null; pinchCap.current = null;
+                    pinchFloat.current = null; pinchCap.current = null; pinchTitle.current = null;
                   }
                   return;
                 }
@@ -1996,6 +2106,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 // ✏️ v19.89: hit-test LIRIK — dekat baris lirik & x di tengah → bisa digeser
                 const capYNow = capY ?? tpl.yRatio ?? 0.76;
                 const dCapt = lirikOn && capWords.length ? Math.hypot(x - 0.5, y - capYNow) : 9;
+                // ✏️ v19.92: hit-test JUDUL pakai KOTAK LEBAR (judul panjang gampang kena),
+                // dicek sebelum logo biar judul menang kalau tumpang tindih
+                const judulKena = title.trim() && Math.abs(x - titlePos.x) <= 0.34 && Math.abs(y - titlePos.y) <= 0.10;
                 if (floatSpec && dFloat <= 0.22) {
                   dragRef.current = { x, y, target: "float" as const };
                 } else if (textOn && dTeks <= 0.16) {
@@ -2003,6 +2116,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   dragRef.current = { x, y, target: "teks" as const };
                 } else if (lirikOn && capWords.length && dCapt <= 0.18) {
                   dragRef.current = { x, y, target: "capt" as const };
+                } else if (judulKena) {
+                  dragRef.current = { x, y, target: "judul" as const };
                 } else if (subOn && dSub <= 0.32) {
                   dragRef.current = { x, y, target: "subscribe" as const };
                 } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
@@ -2017,12 +2132,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               onPointerMove={(e) => {
                 // 🤏 v19.40: PINCH 2 JARI → ubah ukuran tombol subscribe
                 // ✏️ v19.89: + cubit 2 jari dekat lirik → ubah UKURAN LIRIK
-                if (ptrsCanvas.current.size === 2 && (pinchSub.current || pinchFloat.current || pinchCap.current)) {
+                // ✏️ v19.92: + cubit dekat judul → ubah UKURAN JUDUL
+                if (ptrsCanvas.current.size === 2 && (pinchSub.current || pinchFloat.current || pinchCap.current || pinchTitle.current)) {
                   const [a, b] = [...ptrsCanvas.current.values()];
                   const d = Math.hypot(a.x - b.x, a.y - b.y);
                   if (pinchFloat.current && floatSpec) {
                     const s = clampN(pinchFloat.current.s0 * (d / Math.max(1, pinchFloat.current.d0)), 0.08, 0.6);
                     setFloatSize(s);
+                    return;
+                  }
+                  if (pinchTitle.current && title.trim()) {
+                    const s = clampN(pinchTitle.current.s0 * (d / Math.max(1, pinchTitle.current.d0)), 0.5, 2.2);
+                    setTitleSize(s);
                     return;
                   }
                   if (pinchCap.current && lirikOn && capWords.length) {
@@ -2054,7 +2175,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               }}
               onPointerUp={(e) => {
                 ptrsCanvas.current.delete(e.pointerId);
-                if (ptrsCanvas.current.size < 2) { pinchSub.current = null; pinchFloat.current = null; pinchCap.current = null; }
+                if (ptrsCanvas.current.size < 2) { pinchSub.current = null; pinchFloat.current = null; pinchCap.current = null; pinchTitle.current = null; }
                 dragRef.current = null;
                 dragRefText.current = null;
               }}
@@ -2357,6 +2478,21 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             <div className="v6-lbl">✋ GESER POSISI (🐛 FIX: langsung seret di preview — sentuh logo/judul, geser)</div>
             <p style={{ fontSize: 10, opacity: .6, margin: "0 0 4px" }}>Nggak perlu mode lagi — sentuh & seret logo/judul langsung di preview. Logo & judul bisa dipindah bebas kiri/kanan/atas/bawah.</p>
+            {/* ✏️ v19.92: KENDALI JUDUL — ukuran (slider/cubit), ikut bass, wrap otomatis */}
+            <div className="v6-lbl">✏️ JUDUL (ukuran & gerak)</div>
+            <div className="v6-slider-row">
+              <div className="lr"><span>Ukuran judul</span><b>{(titleSize ?? 1).toFixed(1)}×</b></div>
+              <input type="range" min={0.5} max={2.2} step={0.05} value={titleSize ?? 1} onChange={e => setTitleSize(Number(e.target.value))} />
+            </div>
+            <div className="v6-cardrow" style={{ marginTop: 4 }} onClick={() => setTitleBeat(!titleBeat)}>
+              <span style={{ fontSize: 16 }}>🥁</span>
+              <div className="tt"><b>Judul ikut bass</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>judul berdenyut halus mengikuti musik</div></div>
+              <button className={`v6-toggle ${titleBeat ? "on" : ""}`} />
+            </div>
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              <button className="v6-chip" style={{ flex: 1 }} onClick={() => { setTitleSize(null); setTitleBeat(true); }}>↺ Reset judul</button>
+            </div>
+            <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 4px" }}>Judul panjang otomatis turun ke baris berikutnya (tidak keluar layar). Cubit 2 jari di judul = ubah ukuran.</p>
             <div className="v6-lbl">🖼 GAMBAR IKUT BEAT</div>
             <div className="v6-chips" style={{ padding: 0 }}>
               {[["denyut", "💓 Denyut"], ["membesar", "📈 Membesar"], ["statis", "🚫 Statis"]].map(([id, lb]) => (
@@ -2523,6 +2659,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                     ? `📐 ${videoDur.toFixed(1)} dtk × ${hitungKaliLoop(videoDur, duration, videoLoop)}× = ${durasiLoopTotal(videoDur, duration, videoLoop).toFixed(0)} dtk total${videoLoop === "auto" ? ` (lagu ${Math.round(duration)} dtk)` : ""} — tanpa potong, kualitas utuh`
                     : "Auto = hitung otomatis berapa kali diulang sampai pas durasi lagu. Tanpa potong kualitas, mulus."}
                 </p>
+                {/* 🔁 v19.92: LOOP MULUS — crossfade pendek biar mata tak nampak pengulangan */}
+                <div className="v6-cardrow" style={{ marginTop: 6 }} onClick={() => setVideoSeamless(!videoSeamless)}>
+                  <span style={{ fontSize: 16 }}>✨</span>
+                  <div className="tt"><b>Loop mulus</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>crossfade singkat di titik sambung — mata tak nampak pengulangan (biaya kecil)</div></div>
+                  <button className={`v6-toggle ${videoSeamless ? "on" : ""}`} />
+                </div>
               </div>
             )}
             <div className="v6-lbl">OVERLAY SUASANA</div>
