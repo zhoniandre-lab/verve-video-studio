@@ -22,6 +22,7 @@ import { FRAME_STYLES, gambarFrame } from "@/lib/frames"; // 🖼️ v19.44: fra
 import { FONT_OPTS, TEXT_DEFAULT, TEKS_WARNA, gambarTeksCustom } from "@/lib/textstyles"; // ✏️ v19.44: teks custom
 import type { TextStyle } from "@/lib/textstyles";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v19.91: loop video
+import { cariStokVideoSmart, type VidPick } from "@/lib/stockvid"; // 🎞️ v19.95: lemari video stok (Pexels/Pixabay/Coverr)
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -139,6 +140,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 🎨 v19.93: refs panel generate AI — tombol ✨ AI scroll & fokus ke sini
   const aiGenRef = useRef<HTMLDivElement | null>(null);
   const aiPromptRef = useRef<HTMLTextAreaElement | null>(null);
+  // 🎞️ v19.95: LEMARI VIDEO STOK — cari video (Pexels/Pixabay/Coverr) jadi latar video
+  const [vidSheetOpen, setVidSheetOpen] = useState(false);
+  const [vidQ, setVidQ] = useState("");
+  const [vidRes, setVidRes] = useState<VidPick[]>([]);
+  const [vidBusy, setVidBusy] = useState(false);
+  const [vidErr, setVidErr] = useState("");
+  const [vidNote, setVidNote] = useState("");
   const [bgAiBusy, setBgAiBusy] = useState(false);
   const [bgAiMsg, setBgAiMsg] = useState("");
   // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
@@ -705,6 +713,27 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   useEffect(() => () => stopPlayback(), []); // eslint-disable-line
 
   /* ---------- painter ---------- */
+  /* 🎞️ v19.95 LEMARI VIDEO STOK — cari video Pexels/Pixabay/Coverr → jadi latar (di-loop) */
+  async function cariVidStok(q?: string) {
+    const k = (q ?? vidQ).trim();
+    if (k.length < 2) { setVidErr("Ketik kata kunci dulu (mis. \"ibu menangis\", \"sawah senja\")."); return; }
+    setVidBusy(true); setVidErr(""); setVidNote("");
+    const r = await cariStokVideoSmart(k, true).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang video", lebar: false }));
+    setVidBusy(false);
+    if (!r.ok) { setVidErr(r.err); setVidRes([]); return; }
+    setVidRes(r.hasil);
+    if (r.lebar) setVidNote("🇮🇩 Stok rasa Indonesia habis — dilebarkan ke gudang dunia. Coba kata lain kalau mau tetap Nusantara.");
+    if (!r.hasil.length) setVidErr("Gudang kosong buat kata itu — coba kata lain (bisa bahasa Indonesia, otomatis diterjemahkan).");
+  }
+  function pilihVidStok(v: VidPick) {
+    // 🎞️ video stok jadi LATAR video — di-loop mengikuti durasi lagu (loop mulus ON)
+    setVideoBg(v.sd || v.src); videoBgSesiRef.current = true; setVideoDur(v.dur);
+    setVidSheetOpen(false);
+    // kalau belum ada lagu → audio video jadi musik & spektrum (seperti upload video)
+    if (!bufRef.current && !audioUrl) void loadAudio(v.sd || v.src, `Stok: ${v.by || "video"}`);
+    setErr("");
+  }
+
   // 🎨 v19.11: GENERATE BACKGROUND AI dari suasana/lirik (16:9 & 9:16) — otak gambar, bar jalan di atas
   // 🖼️ v19.90: bisa generate 1-4 gambar sekaligus → 1 = latar, 2+ = visual bergantian (ikut lagu)
   async function buatBgAI() {
@@ -2214,6 +2243,40 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <span className="arr">›</span>
               <input type="file" accept="video/*" hidden onChange={e => { uploadVideoLatar(e.target.files?.[0]); e.currentTarget.value = ""; }} />
             </label>
+            {/* 🎞️ v19.95: CARI VIDEO STOK — pilihan kedua selain upload HP */}
+            <button className="v6-cardrow" style={{ marginTop: 6, width: "100%", textAlign: "left", background: vidSheetOpen ? "rgba(139,92,246,.12)" : undefined }} onClick={() => setVidSheetOpen(!vidSheetOpen)}>
+              <span style={{ fontSize: 20 }}>🎞️</span>
+              <div className="tt"><b>Cari video stok</b><div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>Pexels · Pixabay · Coverr — gratis dipakai, langsung jadi latar video</div></div>
+              <span className="arr">{vidSheetOpen ? "▴" : "▾"}</span>
+            </button>
+            {vidSheetOpen && (
+              <div style={{ marginTop: 6, border: "1px solid rgba(139,92,246,.35)", borderRadius: 12, padding: 10, background: "rgba(139,92,246,.06)" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder='Cari: "ibu menangis", "sawah senja", "hujan jendela"…' value={vidQ}
+                    onChange={(e) => setVidQ(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void cariVidStok(); }} />
+                  <button className="v6-bigcta" style={{ marginTop: 0, width: 64, fontSize: 11 }} disabled={vidBusy} onClick={() => void cariVidStok()}>{vidBusy ? "⏳" : "🔍"}</button>
+                </div>
+                <p style={{ fontSize: 9.5, opacity: .55, margin: "4px 0 0" }}>Kata kunci bebas bahasa Indonesia (otomatis diterjemahkan). Hasil = video bebas pakai (lisensi stok).</p>
+                {vidBusy && <p style={{ fontSize: 11, color: "#6ee7b7", margin: "6px 0 0" }}>⏳ Mengaduk-aduk gudang video…</p>}
+                {!!vidNote && <p style={{ fontSize: 10, color: "#fbbf24", margin: "5px 0 0" }}>{vidNote}</p>}
+                {!!vidErr && <p style={{ fontSize: 10, color: "#fca5a5", margin: "5px 0 0" }}>{vidErr}</p>}
+                {vidRes.length > 0 && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6, marginTop: 8 }}>
+                      {vidRes.slice(0, 8).map((v) => (
+                        <button key={v.id} onClick={() => pilihVidStok(v)} style={{ padding: 0, border: "1px solid rgba(255,255,255,.15)", borderRadius: 10, overflow: "hidden", background: "#0b1220", textAlign: "left", cursor: "pointer", position: "relative" }}>
+                          <img src={v.thumb} alt="" style={{ width: "100%", height: 62, objectFit: "cover", display: "block" }} loading="lazy" />
+                          <span style={{ position: "absolute", bottom: 3, right: 4, background: "rgba(0,0,0,.7)", color: "#fff", fontSize: 9, padding: "1px 5px", borderRadius: 6 }}>{Math.round(v.dur)} dtk</span>
+                          <span style={{ display: "block", fontSize: 8.5, color: "#8b8b98", padding: "2px 4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.by || "stok"}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: 9.5, opacity: .55, margin: "5px 0 0" }}>Ketuk video → langsung jadi latar, di-loop ikut durasi lagu (auto). Bebas ganti kapan saja.</p>
+                  </>
+                )}
+              </div>
+            )}
             {!!durWarn && <div className="v6-risk" style={{ fontSize: 11, lineHeight: 1.45 }}>{durWarn}</div>}
             <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>🔬 Angka "terbaca" = durasi yang benar-benar dibaca browser. Kalau beda jauh dari durasi asli lagu, hasil render pasti ikut pendek — convert ulang file dulu.</p>
             {audioUrl && <button className="v6-bigcta" style={{ background: "#22c55e" }} onClick={() => setStep(1)}>Lanjut: Visual ›</button>}
