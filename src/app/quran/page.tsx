@@ -153,15 +153,22 @@ export default function NicheQuran() {
   /* rekam */
   async function mulaiRekam() {
     try {
-      const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      const mr = new MediaRecorder(st);
+      // 🐛 v20.1: MATIKAN dulu suara alam latar — kalau tidak, ikut kerekam jadi keresek/bising
+      ambStopRef.current?.stop();
+      // kualitas rekaman lebih baik: autoGainControl ON (volume stabil), echo & noise reduction
+      const st = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => { try { return MediaRecorder.isTypeSupported(m); } catch { return false; } });
+      const mr = new MediaRecorder(st, mime ? { mimeType: mime } : undefined);
       const chunks: BlobPart[] = [];
       mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       mr.onstop = () => {
-        const b = new Blob(chunks, { type: "audio/webm" });
+        const b = new Blob(chunks, { type: mime || "audio/webm" });
         const url = URL.createObjectURL(b);
         pasangAudio(url, "Rekaman saya");
         st.getTracks().forEach((t) => t.stop());
+        setMsg(`✅ Rekaman selesai (${chunks.length} bagian). Dengarkan dulu di pemutar di atas — kalau masih keresek, coba tempat lebih tenang.`);
       };
       mr.start();
       setRecm(mr); setRecmBusy(true);
@@ -171,6 +178,16 @@ export default function NicheQuran() {
   function stopRekam() {
     if (recm && recm.state !== "inactive") recm.stop();
     setRecm(null); setRecmBusy(false);
+    // nyalakan lagi suara alam kalau pengguna memakainya (preview)
+    try {
+      const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!actxRef.current) actxRef.current = new AC();
+      const ctx = actxRef.current;
+      if (ctx && ambience !== "off" && audioDur > 0) {
+        const dest = ctx.createGain(); dest.gain.value = 0.9; dest.connect(ctx.destination);
+        ambStopRef.current = sambungAmbience(ctx, dest, ambience, ambVol / 100, 0, audioDur + 5, ambBuf);
+      }
+    } catch { /* abaikan */ }
   }
   /* ambience upload */
   function uploadAmbience(f?: File | null) {
@@ -478,16 +495,27 @@ export default function NicheQuran() {
           </div>
           {!!ayatErr && <p style={{ fontSize: 11.5, color: "#fca5a5" }}>{ayatErr}</p>}
           {!!ayatInfo && <p style={{ fontSize: 11, color: "#6ee7b7" }}>✅ {ayatInfo}</p>}
+          {!!ayatList.length && <p style={{ fontSize: 10.5, color: "#8b8b98" }}>🌍 Terjemahan saat ini: <b style={{ color: "#cbd5e1" }}>{BAHASA.find((b) => b.kode === bahasa)?.bendera} {BAHASA.find((b) => b.kode === bahasa)?.label}</b> — ganti bahasa lalu tekan 📖 Ambil Ayat lagi untuk memperbarui.</p>}
           {ayatList.length > 0 && (
             <div style={{ maxHeight: 140, overflowY: "auto", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: 6 }}>
               {ayatList.slice(0, 40).map((a, i) => (
                 <div key={i} style={{ fontSize: 11, padding: "3px 4px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
                   <span style={{ color: "#d4af37" }}>{a.surat} : {a.nomor}</span> <span style={{ color: "#cbd5e1" }}>{a.teks.slice(0, 50)}…</span>
+                  {a.arti && <div style={{ color: "#8b8b98", fontSize: 10 }}>{a.arti.slice(0, 70)}…</div>}
                 </div>
               ))}
               {ayatList.length > 40 && <p style={{ fontSize: 10, color: "#8b8b98", textAlign: "center" }}>…{ayatList.length - 40} ayat lagi</p>}
             </div>
           )}
+          {/* 🐛 v20.1: ganti bahasa → auto-refetch ayat */}
+          {!!ayatList.length && (
+            <button onClick={ambilAyat} disabled={loadAyat} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid rgba(139,92,246,.5)", background: "rgba(139,92,246,.12)", color: "#c4b5fd", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              {loadAyat ? "⏳ Memperbarui…" : "🔄 Muat ulang dengan bahasa baru"}
+            </button>
+          )}
+          <button onClick={() => setStep(1)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginTop: 2 }}>
+            Lanjut: Suara ›
+          </button>
         </div>
       )}
 
@@ -505,6 +533,11 @@ export default function NicheQuran() {
             </label>
           </div>
           {!!audioNama && <p style={{ fontSize: 11.5, color: "#6ee7b7" }}>🎵 {audioNama} — {fmtD(audioDur)}</p>}
+          {/* 🐛 v20.1: pemutar audio — dengarkan dulu sebelum render (rekaman mentah bersih/tidak) */}
+          {!!audioUrl && (
+            <audio controls src={audioUrl} style={{ width: "100%", marginTop: 2 }} />
+          )}
+          <p style={{ fontSize: 9.5, color: "#8b8b98", margin: 0 }}>Dengarkan dulu: kalau rekaman masih ada <b>keresek/bising</b>, nyalakan 🌧️ suara alam di bawah lalu reverb & fokus vokal — atau rekam ulang di tempat tenang.</p>
 
           <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800, marginTop: 4 }}>🌧️ SUARA ALAM LATAR (tidak ganggu bacaan — volumenya terpisah)</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -536,6 +569,9 @@ export default function NicheQuran() {
             {fokusVokal ? "✅ Fokus vokal AKTIF — buang dengung rendah, suara bacaan jernih" : "🔘 Fokus vokal mati (suara mentahan)"}
           </button>
           <p style={{ fontSize: 10, color: "#8b8b98" }}>Rekomendasi: Reverb 20-40% + Fokus vokal ON → hasil rekaman HP kedengaran jernih & hangat.</p>
+          <button onClick={() => setStep(2)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginTop: 2 }}>
+            Lanjut: Tampilan ›
+          </button>
         </div>
       )}
 
@@ -638,6 +674,9 @@ export default function NicheQuran() {
               </div>
             )}
           </div>
+          <button onClick={() => setStep(4)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginTop: 2 }}>
+            Lanjut: Render ›
+          </button>
         </div>
       )}
 

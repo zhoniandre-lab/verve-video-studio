@@ -32,7 +32,8 @@ T("upload: loop file sendiri", /fileBuf.*loop = true/.test(amb));
 T("reverb IR sintetis ada", /buatReverbIR/.test(amb));
 
 /* ---- frame islami ---- */
-T("4 gaya frame islami", /"emas" \| "hijau" \| "tipis" \| "mewah"/.test(qf));
+T("8 gaya frame islami (bukan cuma garis)", /ornamen/.test(qf) && /bintang/.test(qf) && /bulan/.test(qf) && /klasik/.test(qf));
+T("frame punya ornamen kaya: bintang8 & bulanSabit & deretDiamond", /bintang8/.test(qf) && /bulanSabit/.test(qf) && /deretDiamond/.test(qf));
 T("frame digambar di canvas (tanpa file gambar)", /ornamenSudut/.test(qf) && /diamondTengah/.test(qf));
 
 /* ---- render: ambience + reverb disambung ---- */
@@ -42,11 +43,16 @@ T("reverb dry+wet paralel (tidak merusak vokal)", /input\.connect\(conv\)/.test(
 
 /* ---- halaman & menu ---- */
 T("halaman /quran ada 5 langkah", /LANGKAH = \["1️⃣ Surat"/.test(page));
-T("rekam sendiri (MediaRecorder)", /new MediaRecorder\(st\)/.test(page));
+T("rekam sendiri (MediaRecorder + pilih codec)", /new MediaRecorder\(st, mime/.test(page));
 T("upload MP3 ada", /Upload MP3/.test(page));
 T("preview ambience live (sambungAmbience di halaman)", /sambungAmbience\(ctx, dest/.test(page));
 T("toggle fokus vokal (buang dengung)", /Fokus vokal/.test(page) && /eq: fokusVokal \? "vokal"/.test(page));
 T("drag & cubit elemen (pinchRef)", /pinchRef/.test(page) && /setPointerCapture/.test(page));
+T("tombol Lanjut langkah ada (Lanjut: Suara/Tampilan/Render)", /Lanjut: Suara/.test(page) && /Lanjut: Tampilan/.test(page) && /Lanjut: Render/.test(page));
+T("ganti bahasa → ada tombol muat ulang", /Muat ulang dengan bahasa baru/.test(page));
+T("pemutar audio preview ada (dengar rekaman dulu)", /<audio controls src=\{audioUrl\}/.test(page));
+T("rekaman matikan ambience dulu (anti keresek)", /ambStopRef\.current\?\.stop\(\)/.test(page));
+T("rekaman pakai autoGainControl (suara stabil)", /autoGainControl: true/.test(page));
 T("render ≥15 mnt diberi peringatan", /> 15 \* 60/.test(page));
 T("menu dashboard punya Niche Qur'an", /Niche Qur'an/.test(dash) && /location\.href = "\/quran"/.test(dash));
 
