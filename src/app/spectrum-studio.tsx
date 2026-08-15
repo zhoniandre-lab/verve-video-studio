@@ -21,6 +21,7 @@ import type { SubStyle, SubAnim } from "@/lib/subscribe";
 import { FRAME_STYLES, gambarFrame } from "@/lib/frames"; // 🖼️ v19.44: frame layout mewah
 import { FONT_OPTS, TEXT_DEFAULT, TEKS_WARNA, gambarTeksCustom } from "@/lib/textstyles"; // ✏️ v19.44: teks custom
 import type { TextStyle } from "@/lib/textstyles";
+import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v19.91: loop video
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -121,6 +122,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // audio video otomatis jadi sumber spektrum & lirik
   const [videoBg, setVideoBg] = useState("");
   const videoBgSesiRef = useRef(false); // true = blob sesi (terlalu besar utk disimpan)
+  // 🔁 v19.91: LOOP VIDEO — auto (pas durasi lagu) / 1× / 2× / 3×
+  const [videoLoop, setVideoLoop] = useState<ModeLoopVideo>("auto");
+  const [videoDur, setVideoDur] = useState(0); // durasi video (dtk) setelah metadata termuat
   // 🎨 v19.11: BACKGROUND AI OTOMATIS — ketik suasana → generate background sinematik
   const [bgPrompt, setBgPrompt] = useState("");
   // 🖼️ v19.90: JUMLAH gambar yang digenerate sekaligus (1 = latar, 2-4 = visual bergantian)
@@ -402,6 +406,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         nama, at: Date.now(),
         specStyle, specColor, themeId, bgType, bgGrad, bgColor, bgImg: bgImg.slice(0, 20000),
         videoBg: videoBgSesiRef.current ? "" : videoBg.slice(0, 1500000), // 🎬 v19.56
+        videoLoop, // 🔁 v19.91: mode loop video ikut tersimpan
         overlay, layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
         multiImgs: multiImgs.slice(0, 6), tunnelSpeed, tunnelDepth,
         layerVis, layerOp,
@@ -427,6 +432,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setBgType(p.bgType || "grad"); setBgGrad(p.bgGrad || "g0"); setBgColor(p.bgColor || "#06060c");
       if (p.bgImg) setBgImg(p.bgImg);
       if (p.videoBg) { setVideoBg(p.videoBg); videoBgSesiRef.current = false; } // 🎬 v19.56
+      if (p.videoLoop) setVideoLoop(p.videoLoop); // 🔁 v19.91
       setOverlay(p.overlay || "none");
       setLayoutId(p.layoutId || "logo-tengah"); setLogoPos(p.logoPos || { x: 0.5, y: 0.42 }); setTitlePos(p.titlePos || { x: 0.5, y: 0.05 });
       setBarCount(p.barCount || 64); setLogoScale(p.logoScale || 1); setRotSpeed(p.rotSpeed ?? 0.5); setGlowInt(p.glowInt ?? 1);
@@ -571,18 +577,22 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!f.type.startsWith("video/")) { setErr("Pilih file video dulu bro"); return; }
     if (f.size > 12 * 1024 * 1024) { setErr("Video maks ±12MB — perpendek dulu ya (2-3 menit cukup)"); return; }
     const nama = f.name.replace(/\.[^.]+$/, "").slice(0, 40);
+    // 🐛 v19.91: kalau sudah ADA lagu → video cuma jadi LATAR (lagu tidak ketimpa)
+    const sudahAdaLagu = !!bufRef.current || !!audioUrl;
+    const pasang = (url: string, sesi: boolean) => {
+      setVideoBg(url); videoBgSesiRef.current = sesi; setVideoDur(0);
+      if (sudahAdaLagu) {
+        setErr(""); // bersihkan error — video terpasang sebagai latar, lagu tetap jalan
+      } else {
+        void loadAudio(url, nama); // belum ada lagu → audio video jadi musik & spektrum
+      }
+    };
     if (f.size <= 2 * 1024 * 1024) {
       const r = new FileReader();
-      r.onload = () => {
-        const url = r.result as string;
-        setVideoBg(url); videoBgSesiRef.current = false;
-        void loadAudio(url, nama); // spektrum & lirik ikut audio video
-      };
+      r.onload = () => pasang(r.result as string, false);
       r.readAsDataURL(f);
     } else {
-      const url = URL.createObjectURL(f);
-      setVideoBg(url); videoBgSesiRef.current = true;
-      void loadAudio(url, nama);
+      pasang(URL.createObjectURL(f), true);
       setErr(""); // bersihkan error lama — video besar jalan sebagai sesi
     }
   }
@@ -756,11 +766,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 🎬 v19.56: VIDEO LATAR — digambar TIAP FRAME (lapis dinamis) biar gerakannya mulus
     // di preview & render. Waktu video disinkronkan ke audio (loop) → spektrum & lirik
     // selalu nyambung sama visual.
-    if (videoBgRef.current && videoBgRef.current.readyState >= 2 && videoBgRef.current.videoWidth) {
+    // 🐛 v19.91: (a) pindah ke lapis DINAMIS (bukan bg yang di-cache 4 frame) — dulu
+    // gerakan video patah/tersendat; (b) HAPUS seek paksa currentTime tiap frame (bikin
+    // stutter/kosong di HP); (c) video jalan NATURAL (muted+loop+play), loop 1×/2×/3×/auto
+    // via v.loop: masih dalam jatah → loop terus; sudah lewat → loop mati → video selesai
+    // sendiri & diam di frame terakhir (mulus, tanpa lompat, ringan).
+    if (!bgOnly && videoBgRef.current && videoBgRef.current.readyState >= 2 && videoBgRef.current.videoWidth) {
       const vv = videoBgRef.current;
       const vd = vv.duration > 0 ? vv.duration : 4;
-      const vt = ((t % vd) + vd) % vd;
-      if (Math.abs((vv.currentTime || 0) - vt) > 0.08 && !vv.seeking) { try { vv.currentTime = vt; } catch {} }
+      const totalPlay = durasiLoopTotal(vd, duration || 0, videoLoop);
+      const masihJalan = t < totalPlay - 0.35;
+      if (vv.loop !== masihJalan) { try { vv.loop = masihJalan; } catch {} }
+      if (masihJalan && vv.paused) { vv.play().catch(() => {}); }
       const vir = vv.videoWidth / vv.videoHeight, vcr = W / H;
       let vsw = vv.videoWidth, vsh = vv.videoHeight, vsx = 0, vsy = 0;
       if (vir > vcr) { vsw = vv.videoHeight * vcr; vsx = (vv.videoWidth - vsw) / 2; } else { vsh = vv.videoWidth / vcr; vsy = (vv.videoHeight - vsh) / 2; }
@@ -1512,6 +1529,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     layerVis, layerOp, step, playing,
     subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks, duration, // 🐛 FIX v19.47: subTeks & duration WAJIB di deps (dipakai drawScene)
     capSize, capY, // ✏️ v19.89: ukuran & posisi lirik (dipakai drawScene)
+    videoLoop, // 🔁 v19.91: mode loop video (dipakai drawScene)
     // 🐛 FIX v19.44: state baru (spektrum mini, frame, teks) WAJIB di dep — tanpa ini
     // drawScene pakai closure LAMA → frame/teks/mini tidak pernah muncul.
     floatSpec, floatStyle, floatSize, floatPos,
@@ -2068,7 +2086,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             {/* 🎬 v19.56: upload VIDEO — audio video jadi musik + video jadi latar */}
             <label className="v6-cardrow" style={{ marginTop: 6 }}>
               <span style={{ fontSize: 20 }}>🎬</span>
-              <div className="tt">Upload VIDEO dari HP (audio video jadi musik + latar)<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{videoBg ? `✅ ${videoBgSesiRef.current ? "video aktif (sesi)" : "video aktif sebagai latar"}` : "mp4/webm · maks ±12MB"}</div></div>
+              <div className="tt">Upload VIDEO dari HP (jadi latar, di-loop ikut lagu)<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{videoBg ? `✅ ${videoBgSesiRef.current ? "video aktif (sesi)" : "video aktif sebagai latar"}` : "mp4/webm · maks ±12MB · kalau belum ada lagu, audio video jadi musik"}</div></div>
               <span className="arr">›</span>
               <input type="file" accept="video/*" hidden onChange={e => { uploadVideoLatar(e.target.files?.[0]); e.currentTarget.value = ""; }} />
             </label>
@@ -2481,14 +2499,30 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             )}
             {/* 🎬 v19.56: VIDEO LATAR — upload video sendiri, audio ikut jadi spektrum */}
             <label className="v6-cardrow" style={{ marginTop: 4 }}>
-              <span style={{ fontSize: 20 }}>🎬</span><div className="tt">{videoBg ? "✅ Video dipilih — ganti?" : "Pilih VIDEO latar (audio video jadi spektrum & lirik)"}</div><span className="arr">›</span>
+              <span style={{ fontSize: 20 }}>🎬</span><div className="tt">{videoBg ? "✅ Video dipilih — ganti?" : "Pilih VIDEO latar"}{!videoBg && <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>mp4/webm · maks ±12MB · kalau belum ada lagu, audio video jadi musik</div>}</div><span className="arr">›</span>
               <input type="file" accept="video/*" hidden onChange={e => { uploadVideoLatar(e.target.files?.[0]); e.currentTarget.value = ""; }} />
             </label>
             {videoBg && (
               <div className="v6-note" style={{ marginTop: 4 }}>
-                🎬 Video aktif sebagai latar — audio video dipakai buat spektrum & lirik.
+                🎬 Video aktif sebagai latar.
                 {videoBgSesiRef.current ? " ⚠️ Ukuran besar → hanya bertahan sesi ini (refresh hilang)." : ""}
-                <button className="v6-chip" style={{ marginLeft: 8 }} onClick={() => { setVideoBg(""); videoBgSesiRef.current = false; }}>✕ Hapus video</button>
+                <button className="v6-chip" style={{ marginLeft: 8 }} onClick={() => { setVideoBg(""); videoBgSesiRef.current = false; setVideoDur(0); }}>✕ Hapus video</button>
+              </div>
+            )}
+            {/* 🔁 v19.91: LOOP VIDEO — video pendek diulang sampai mengisi durasi lagu */}
+            {videoBg && (
+              <div style={{ marginTop: 6 }}>
+                <div className="v6-lbl">🔁 LOOP VIDEO</div>
+                <div className="v6-chips" style={{ padding: 0 }}>
+                  {([["auto", "🔄 Auto (pas durasi lagu)"], ["1", "1×"], ["2", "2×"], ["3", "3×"]] as const).map(([v, lb]) => (
+                    <button key={v} className={`v6-chip ${videoLoop === v ? "on" : ""}`} onClick={() => setVideoLoop(v)}>{lb}</button>
+                  ))}
+                </div>
+                <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>
+                  {videoDur > 0 && duration > 0
+                    ? `📐 ${videoDur.toFixed(1)} dtk × ${hitungKaliLoop(videoDur, duration, videoLoop)}× = ${durasiLoopTotal(videoDur, duration, videoLoop).toFixed(0)} dtk total${videoLoop === "auto" ? ` (lagu ${Math.round(duration)} dtk)` : ""} — tanpa potong, kualitas utuh`
+                    : "Auto = hitung otomatis berapa kali diulang sampai pas durasi lagu. Tanpa potong kualitas, mulus."}
+                </p>
               </div>
             )}
             <div className="v6-lbl">OVERLAY SUASANA</div>
