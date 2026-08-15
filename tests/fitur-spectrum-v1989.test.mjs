@@ -16,7 +16,7 @@ T("route image coba bansos DULU sebelum hcnsec", /if \(bKey && bBase\)/.test(rou
 T("route image fallback hcnsec kalau bansos gagal", /fallback hcnsec/.test(route));
 T("generateImageBansos pakai /images/generations", /\/images\/generations/.test(route));
 T("generateImageBansos support b64_json", /b64_json/.test(route));
-T("Spectrum buatBgAI kirim header bansos", /x-bansos-img-key/.test(spec) && /verve_bansos_chat_v1/.test(spec));
+T("Spectrum buatBgAI TIDAK kirim bansos (pakai hcnsec seperti Lahan — v19.93)", !/x-bansos-img-key/.test(spec) && !/verve_bansos_chat_v1/.test(spec));
 
 /* ---- 2. Kendali Lirik (ukuran & posisi) ---- */
 T("Spectrum punya state capSize", /const \[capSize, setCapSize\]/.test(spec));
@@ -43,12 +43,17 @@ T("state bgJumlah ada (jumlah gambar)", /const \[bgJumlah, setBgJumlah\]/.test(s
 T("buatBgAI loop sesuai jumlah (variation)", /variation \$\{i \+ 1\} of \$\{n\}/.test(spec));
 T("2+ gambar masuk multiImgs (visual bergantian)", /setMultiImgs\(\(old\) => \[\.\.\.old, \.\.\.hasil\]/.test(spec));
 T("1 gambar jadi latar (setBgImg + bgType img)", /setBgImg\(hasil\[0\]\); setBgType\("img"\)/.test(spec));
-T("kolom prompt pakai TEXTAREA (bisa panjang)", /textarea className="v6-inp v6-ta" rows=\{3\}/.test(spec));
+T("kolom prompt pakai TEXTAREA 2 baris + ref (kompak)", /textarea ref=\{aiPromptRef\} className="v6-inp v6-ta" rows=\{2\}/.test(spec));
 T("pilihan jumlah gambar 1-4 di UI", /bgJumlah === n \? "on" : ""/.test(spec));
-T("tombol generate sebutkan jumlah gambar", /Generate \$\{bgJumlah > 1/.test(spec));
-T("preview gambar terpasang + tombol hapus", /✅ Terpasang sebagai latar/.test(spec) && /✕ Hapus/.test(spec));
+T("tombol generate kompak (Buat + jumlah)", /Buat\$\{bgJumlah > 1/.test(spec));
+T("preview gambar terpasang + tombol hapus", /✅ Terpasang/.test(spec));
 T("strip thumbnail multi-gambar + hapus per gambar", /arr\.filter\(\(_, j\) => j !== i\)/.test(spec));
-T("pesan jelas kalau belum ada kunci gambar", /belum ada kunci gambar/.test(spec));
+/* ---- v19.93: tombol AI berfungsi + tidak hang ---- */
+T("tombol ✨ AI scroll ke panel generate (aiGenRef)", /aiGenRef\.current\?\.scrollIntoView/.test(spec) && /aiPromptRef\.current\?\.focus/.test(spec));
+T("refs aiGenRef & aiPromptRef ada", /const aiGenRef = useRef/.test(spec) && /const aiPromptRef = useRef/.test(spec));
+T("route bansos DIBATASI (pagar 25 dtk — tidak hang)", /Date\.now\(\) - t0 > 25000/.test(route));
+T("route bansos timeout pendek 8 dtk per percobaan", /AbortSignal\.timeout\(8000\)/.test(route));
+T("route bansos maks 4 model", /\.slice\(0, 4\)/.test(route));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI FITUR SPECTRUM GAGAL`); process.exit(1); }
 console.log("🎉 SEMUA UJI FITUR SPECTRUM HIJAU (v19.90)");

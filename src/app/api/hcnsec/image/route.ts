@@ -8,18 +8,23 @@ export const maxDuration = 60; // v10.1: tegas — jangan pernah lewat anggaran 
  *  /images/generations. Coba beberapa model umum; kalau gateway tidak support
  *  gambar, gagal → route lanjut fallback ke hcnsec env (tidak merusak apa pun). */
 const BANSOS_IMG_MODELS = ["gpt-image-1", "dall-e-3", "dall-e-2", "flux", "flux-schnell", "sdxl", "step-image-edit-2", "step-1.5v-image"];
+// 🐛 v19.93: batasi percobaan & timeout pendek — bansos yang bukan gateway gambar
+// tidak boleh bikin route hang melewati maxDuration 60s (dulu 8 model × 2 format ×
+// 45s = bisa > 60s → Vercel timeout → "generate gambar gagal").
 async function generateImageBansos(prompt: string, suffix: string, base: string, key: string, modelFirst?: string): Promise<string> {
   const full = suffix ? `${prompt}, ${suffix}` : prompt;
-  const models = [...new Set([modelFirst, ...BANSOS_IMG_MODELS].filter((m): m is string => !!m))];
+  const models = [...new Set([modelFirst, ...BANSOS_IMG_MODELS].filter((m): m is string => !!m))].slice(0, 4);
   let lastErr = "";
+  const t0 = Date.now();
   for (const model of models) {
+    if (Date.now() - t0 > 25000) break; // pagar total 25 dtk — sisakan waktu utk fallback hcnsec
     for (const fmt of ["url", "b64_json"] as const) {
       try {
         const r = await fetch(`${base}/images/generations`, {
           method: "POST",
           headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model, prompt: full, size: "1024x1024", n: 1, response_format: fmt }),
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(8000),
         });
         if (!r.ok) { lastErr = `HTTP ${r.status}`; continue; }
         const j = await r.json();

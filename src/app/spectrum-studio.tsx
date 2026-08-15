@@ -136,6 +136,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [bgPrompt, setBgPrompt] = useState("");
   // 🖼️ v19.90: JUMLAH gambar yang digenerate sekaligus (1 = latar, 2-4 = visual bergantian)
   const [bgJumlah, setBgJumlah] = useState(1);
+  // 🎨 v19.93: refs panel generate AI — tombol ✨ AI scroll & fokus ke sini
+  const aiGenRef = useRef<HTMLDivElement | null>(null);
+  const aiPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const [bgAiBusy, setBgAiBusy] = useState(false);
   const [bgAiMsg, setBgAiMsg] = useState("");
   // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
@@ -713,16 +716,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     try {
       const rasio = ratio === "9:16" ? "vertical 9:16" : "widescreen 16:9";
       const prompt = `Cinematic music video background, ${rasio}, no text no letters no watermark. Mood: "${mood}". Dark atmospheric scene with empty space in the middle for a visualizer, deep rich colors, dramatic lighting, film grain, 8K quality, PURE photographic scene only.`;
-      // 🎨 v19.89: pakai Dompet Bansos (OpenAI-compatible) kalau ada — gambar jalan
-      // tanpa key server. Kalau gateway tidak support gambar, route fallback otomatis.
-      try {
-        const bc = JSON.parse(localStorage.getItem("verve_bansos_chat_v1") || "null");
-        if (bc && bc.base && bc.key) {
-          hdr["x-bansos-img-base"] = String(bc.base);
-          hdr["x-bansos-img-key"] = String(bc.key);
-          if (bc.model) hdr["x-bansos-img-model"] = String(bc.model);
-        }
-      } catch { /* abaikan */ }
+      // 🎨 v19.93: pakai jalur YANG SAMA seperti Lahan (hcnsec server) — terbukti
+      // berhasil. Bansos TIDAK dipakai di sini: kalau gateway bansos bukan untuk
+      // gambar, route bisa hang melewati batas 60s → generate gagal.
       const hasil: string[] = [];
       let sumber = "";
       for (let i = 0; i < n; i++) {
@@ -739,16 +735,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const via = sumber === "bansos" ? " via bansos" : "";
       if (n === 1) {
         setBgImg(hasil[0]); setBgType("img");
-        setBgAiMsg(`✅ Gambar jadi${via} — terpasang sebagai latar video!`);
+        setBgAiMsg(`✅ Gambar jadi — terpasang sebagai latar video!`);
       } else {
         // 🖼️ v19.90: 2+ gambar → visual BERGANGGANTIAN otomatis (ikut ketukan lagu)
         setMultiImgs((old) => [...old, ...hasil].slice(-6));
         setBgImg(hasil[0]); setBgType("img");
-        setBgAiMsg(`✅ ${n} gambar jadi${via} — dipasang sebagai visual bergantian (ikut irama lagu)!`);
+        setBgAiMsg(`✅ ${n} gambar jadi — dipasang sebagai visual bergantian (ikut irama lagu)!`);
       }
     } catch (e) {
-      const adaBansos = !!hdr["x-bansos-img-key"];
-      setBgAiMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal generate"}${adaBansos ? " — bansos tidak support gambar? Coba ganti bansos lain di Dompet Bansos." : " — belum ada kunci gambar: daftar bansos gratis di menu 🏹 Dompet Bansos (atau pakai upload foto di bawah)."}`);
+      setBgAiMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal generate"} — coba lagi, atau pakai upload foto di bawah.`);
     } finally {
       setBgAiBusy(false);
     }
@@ -2575,32 +2570,41 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <button className={`v6-chip ${bgType === "grad" ? "on" : ""}`} onClick={() => setBgType("grad")}>🌈 Gradasi</button>
               <button className={`v6-chip ${bgType === "color" ? "on" : ""}`} onClick={() => setBgType("color")}>🎨 Warna</button>
               <button className={`v6-chip ${bgType === "img" ? "on" : ""}`} onClick={() => setBgType("img")}>🖼 Foto</button>
-              <button className={`v6-chip ${bgType === "img" && bgImg ? "on" : ""}`} style={{ borderColor: "rgba(139,92,246,.5)", color: "#c4b5fd" }} onClick={() => { setBgType("img"); }}>✨ AI</button>
+              <button className={`v6-chip ${bgType === "img" && bgImg ? "on" : ""}`} style={{ borderColor: "rgba(139,92,246,.5)", color: "#c4b5fd" }} onClick={() => {
+                setBgType("img");
+                // 🎨 v19.93: tombol ✨ AI sekarang BERFUNGSI — buka & scroll ke panel generate + fokus kolom suasana
+                setTimeout(() => {
+                  aiGenRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  aiPromptRef.current?.focus();
+                }, 80);
+              }}>✨ AI</button>
             </div>
             {bgType === "img" && (
-              <div className="v6-rows" style={{ marginTop: 8 }}>
-                {/* ✏️ v19.90: kolom prompt BESAR — bebas tulis suasana panjang */}
-                <textarea className="v6-inp v6-ta" rows={3} style={{ minHeight: 78 }}
-                  placeholder='Ketik suasana video — bebas panjang: "hujan di jendela, rindu ibu, malam sepi, lampu kota temaram, nuansa melankolis"'
-                  value={bgPrompt} onChange={(e) => setBgPrompt(e.target.value)} />
-                <div className="v6-lbl" style={{ marginTop: 4 }}>🖼 JUMLAH GAMBAR</div>
-                <div className="v6-chips" style={{ padding: 0 }}>
+              <div ref={aiGenRef} style={{ marginTop: 8, border: "1px solid rgba(139,92,246,.35)", borderRadius: 12, padding: 10, background: "rgba(139,92,246,.06)" }}>
+                {/* 🎨 v19.93 UI KOMPAK: prompt 2 baris + jumlah & tombol 1 baris */}
+                <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                  <textarea ref={aiPromptRef} className="v6-inp v6-ta" rows={2} style={{ flex: 1, minHeight: 58, fontSize: 12 }}
+                    placeholder='Suasana: "hujan di jendela, rindu ibu, malam sepi"'
+                    value={bgPrompt} onChange={(e) => setBgPrompt(e.target.value)} />
+                  <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#8b5cf6,#d946ef)", marginTop: 0, width: 84, minWidth: 84, fontSize: 11, padding: "0 6px", whiteSpace: "normal", lineHeight: 1.25 }} disabled={bgAiBusy} onClick={buatBgAI}>
+                    {bgAiBusy ? "⏳…" : `🎨 Buat${bgJumlah > 1 ? ` ${bgJumlah}` : ""}`}
+                  </button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, opacity: .65 }}>Jumlah:</span>
                   {[1, 2, 3, 4].map((n) => (
-                    <button key={n} className={`v6-chip ${bgJumlah === n ? "on" : ""}`} onClick={() => setBgJumlah(n)}>
-                      {n === 1 ? "🖼 1 — latar video" : `${n} — visual bergantian`}
+                    <button key={n} className={`v6-chip ${bgJumlah === n ? "on" : ""}`} style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => setBgJumlah(n)}>
+                      {n === 1 ? "1 latar" : `${n} visual`}
                     </button>
                   ))}
                 </div>
-                <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#8b5cf6,#d946ef)", marginTop: 6 }} disabled={bgAiBusy} onClick={buatBgAI}>
-                  {bgAiBusy ? `⏳ Menggambar ${bgJumlah > 1 ? `${bgJumlah} gambar…` : "suasana…"}` : `🎨 Generate ${bgJumlah > 1 ? `${bgJumlah} Gambar AI` : "Gambar AI"}`}
-                </button>
-                {!!bgAiMsg && <p style={{ fontSize: 11, color: bgAiMsg.startsWith("⚠️") ? "#fbbf24" : "#6ee7b7", margin: "6px 0 0" }}>{bgAiMsg}</p>}
-                <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Kosongkan kolom → otak pakai baris pertama lirik sebagai suasana. 2+ gambar otomatis jadi <b>visual bergantian</b> mengikuti irama lagu. Gambar hasil generate langsung terpasang; kurang pas? upload 📥 di bawah.</p>
+                {!!bgAiMsg && <p style={{ fontSize: 10.5, color: bgAiMsg.startsWith("⚠️") ? "#fbbf24" : "#6ee7b7", margin: "5px 0 0", lineHeight: 1.35 }}>{bgAiMsg}</p>}
+                <p style={{ fontSize: 9.5, opacity: .55, margin: "3px 0 0", lineHeight: 1.3 }}>Kosongkan kolom → pakai baris pertama lirik. 2+ gambar = visual bergantian ikut irama.</p>
                 {bgImg && (
-                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <img src={bgImg} style={{ width: 72, height: 48, objectFit: "cover", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)" }} />
-                    <span style={{ fontSize: 10.5, color: "#86efac" }}>✅ Terpasang sebagai latar</span>
-                    <button className="v6-chip" style={{ fontSize: 10 }} onClick={() => setBgImg("")}>✕ Hapus</button>
+                  <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <img src={bgImg} style={{ width: 52, height: 34, objectFit: "cover", borderRadius: 6, border: "1px solid rgba(255,255,255,.25)" }} />
+                    <span style={{ fontSize: 10, color: "#86efac" }}>✅ Terpasang</span>
+                    <button className="v6-chip" style={{ fontSize: 9.5, padding: "1px 6px" }} onClick={() => setBgImg("")}>✕</button>
                   </div>
                 )}
               </div>
