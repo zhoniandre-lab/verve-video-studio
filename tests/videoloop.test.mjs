@@ -34,7 +34,7 @@ T("Spectrum pakai durasiLoopTotal di drawScene", /durasiLoopTotal\(vd, duration 
 T("BUG LAMA HAPUS: tidak ada seek currentTime tiap frame", !/currentTime = vt/.test(spec));
 T("video dipindah ke lapis DINAMIS (bukan bg cache)", /const vA = videoBgRef\.current, vB = videoBg2Ref\.current/.test(spec) && !/f % BG_EVERY/.test(spec));
 T("freeze di frame terakhir kalau jatah habis", /jatah loop habis → freeze di frame terakhir/.test(spec));
-T("video tetap jalan kalau masih dalam jatah", /masihJalan && vCur\.paused\) vCur\.play\(\)/.test(spec));
+T("video tetap jalan kalau masih dalam jatah", /if \(vCur\.paused\) vCur\.play\(\)\.catch/.test(spec));
 T("video play kalau paused (anti-hilang)", /if \(vCur\.paused\) vCur\.play\(\)\.catch/.test(spec));
 T("upload video TIDAK menimpa lagu yang sudah ada", /sudahAdaLagu/.test(spec) && /if \(sudahAdaLagu\)/.test(spec) && !/void loadAudio\(url, nama\); \/\/ spektrum & lirik ikut audio video/.test(spec));
 T("UI pilihan loop ada (auto/1x/2x/3x)", /LOOP VIDEO/.test(spec) && /\[\["auto"/.test(spec));
