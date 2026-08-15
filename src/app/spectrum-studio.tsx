@@ -123,6 +123,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const videoBgSesiRef = useRef(false); // true = blob sesi (terlalu besar utk disimpan)
   // 🎨 v19.11: BACKGROUND AI OTOMATIS — ketik suasana → generate background sinematik
   const [bgPrompt, setBgPrompt] = useState("");
+  // 🖼️ v19.90: JUMLAH gambar yang digenerate sekaligus (1 = latar, 2-4 = visual bergantian)
+  const [bgJumlah, setBgJumlah] = useState(1);
   const [bgAiBusy, setBgAiBusy] = useState(false);
   const [bgAiMsg, setBgAiMsg] = useState("");
   // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
@@ -673,14 +675,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   /* ---------- painter ---------- */
   // 🎨 v19.11: GENERATE BACKGROUND AI dari suasana/lirik (16:9 & 9:16) — otak gambar, bar jalan di atas
+  // 🖼️ v19.90: bisa generate 1-4 gambar sekaligus → 1 = latar, 2+ = visual bergantian (ikut lagu)
   async function buatBgAI() {
     const mood = bgPrompt.trim() || (mLyrics ? mLyrics.split("\n")[0] : "");
     if (!mood) { setBgAiMsg("⚠️ Ketik suasana dulu (misal: 'hujan di jendela, rindu ibu, malam sepi')"); return; }
-    setBgAiBusy(true); setBgAiMsg("🎨 Otak lagi menggambar suasana…");
+    const n = Math.max(1, Math.min(4, bgJumlah || 1));
+    setBgAiBusy(true); setBgAiMsg(`🎨 Otak lagi menggambar ${n} suasana…`);
+    const hdr: Record<string, string> = { "Content-Type": "application/json" };
     try {
       const rasio = ratio === "9:16" ? "vertical 9:16" : "widescreen 16:9";
       const prompt = `Cinematic music video background, ${rasio}, no text no letters no watermark. Mood: "${mood}". Dark atmospheric scene with empty space in the middle for a visualizer, deep rich colors, dramatic lighting, film grain, 8K quality, PURE photographic scene only.`;
-      const hdr: Record<string, string> = { "Content-Type": "application/json" };
       // 🎨 v19.89: pakai Dompet Bansos (OpenAI-compatible) kalau ada — gambar jalan
       // tanpa key server. Kalau gateway tidak support gambar, route fallback otomatis.
       try {
@@ -691,16 +695,32 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
           if (bc.model) hdr["x-bansos-img-model"] = String(bc.model);
         }
       } catch { /* abaikan */ }
-      const r = await fetch("/api/hcnsec/image", {
-        method: "POST", headers: hdr,
-        body: JSON.stringify({ title: "spektrum-bg", keyword: "musik", niche: "visualizer", _rawPrompt: true, prompt }),
-      });
-      const j = await r.json();
-      if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
-      setBgImg(j.url); setBgType("img");
-      setBgAiMsg("✅ Background AI jadi — bar visualizer jalan di atasnya!");
+      const hasil: string[] = [];
+      let sumber = "";
+      for (let i = 0; i < n; i++) {
+        if (n > 1) setBgAiMsg(`🎨 Menggambar ${i + 1}/${n}…`);
+        const r = await fetch("/api/hcnsec/image", {
+          method: "POST", headers: hdr,
+          body: JSON.stringify({ title: `spektrum-bg-${i + 1}`, keyword: "musik", niche: "visualizer", _rawPrompt: true, prompt: `${prompt} (variation ${i + 1} of ${n})` }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
+        hasil.push(j.url);
+        sumber = j.sumber || sumber;
+      }
+      const via = sumber === "bansos" ? " via bansos" : "";
+      if (n === 1) {
+        setBgImg(hasil[0]); setBgType("img");
+        setBgAiMsg(`✅ Gambar jadi${via} — terpasang sebagai latar video!`);
+      } else {
+        // 🖼️ v19.90: 2+ gambar → visual BERGANGGANTIAN otomatis (ikut ketukan lagu)
+        setMultiImgs((old) => [...old, ...hasil].slice(-6));
+        setBgImg(hasil[0]); setBgType("img");
+        setBgAiMsg(`✅ ${n} gambar jadi${via} — dipasang sebagai visual bergantian (ikut irama lagu)!`);
+      }
     } catch (e) {
-      setBgAiMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal generate"} — pakai Gradasi/Foto dulu, coba lagi nanti.`);
+      const adaBansos = !!hdr["x-bansos-img-key"];
+      setBgAiMsg(`⚠️ ${e instanceof Error ? e.message : "Gagal generate"}${adaBansos ? " — bansos tidak support gambar? Coba ganti bansos lain di Dompet Bansos." : " — belum ada kunci gambar: daftar bansos gratis di menu 🏹 Dompet Bansos (atau pakai upload foto di bawah)."}`);
     } finally {
       setBgAiBusy(false);
     }
@@ -2405,12 +2425,30 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </div>
             {bgType === "img" && (
               <div className="v6-rows" style={{ marginTop: 8 }}>
-                <input className="v6-inp" placeholder='Ketik suasana: "hujan di jendela, rindu ibu, malam sepi"' value={bgPrompt} onChange={(e) => setBgPrompt(e.target.value)} />
-                <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#8b5cf6,#d946ef)" }} disabled={bgAiBusy} onClick={buatBgAI}>
-                  {bgAiBusy ? "⏳ Otak menggambar suasana…" : "🎨 Generate Background AI"}
+                {/* ✏️ v19.90: kolom prompt BESAR — bebas tulis suasana panjang */}
+                <textarea className="v6-inp v6-ta" rows={3} style={{ minHeight: 78 }}
+                  placeholder='Ketik suasana video — bebas panjang: "hujan di jendela, rindu ibu, malam sepi, lampu kota temaram, nuansa melankolis"'
+                  value={bgPrompt} onChange={(e) => setBgPrompt(e.target.value)} />
+                <div className="v6-lbl" style={{ marginTop: 4 }}>🖼 JUMLAH GAMBAR</div>
+                <div className="v6-chips" style={{ padding: 0 }}>
+                  {[1, 2, 3, 4].map((n) => (
+                    <button key={n} className={`v6-chip ${bgJumlah === n ? "on" : ""}`} onClick={() => setBgJumlah(n)}>
+                      {n === 1 ? "🖼 1 — latar video" : `${n} — visual bergantian`}
+                    </button>
+                  ))}
+                </div>
+                <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#8b5cf6,#d946ef)", marginTop: 6 }} disabled={bgAiBusy} onClick={buatBgAI}>
+                  {bgAiBusy ? `⏳ Menggambar ${bgJumlah > 1 ? `${bgJumlah} gambar…` : "suasana…"}` : `🎨 Generate ${bgJumlah > 1 ? `${bgJumlah} Gambar AI` : "Gambar AI"}`}
                 </button>
                 {!!bgAiMsg && <p style={{ fontSize: 11, color: bgAiMsg.startsWith("⚠️") ? "#fbbf24" : "#6ee7b7", margin: "6px 0 0" }}>{bgAiMsg}</p>}
-                <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Kosongkan input → otak pakai baris pertama lirik sebagai suasana. Gambar dipakai otomatis; kalau kurang pas, tekan upload 📥 di bawah.</p>
+                <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Kosongkan kolom → otak pakai baris pertama lirik sebagai suasana. 2+ gambar otomatis jadi <b>visual bergantian</b> mengikuti irama lagu. Gambar hasil generate langsung terpasang; kurang pas? upload 📥 di bawah.</p>
+                {bgImg && (
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <img src={bgImg} style={{ width: 72, height: 48, objectFit: "cover", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)" }} />
+                    <span style={{ fontSize: 10.5, color: "#86efac" }}>✅ Terpasang sebagai latar</span>
+                    <button className="v6-chip" style={{ fontSize: 10 }} onClick={() => setBgImg("")}>✕ Hapus</button>
+                  </div>
+                )}
               </div>
             )}
             {bgType === "grad" && (
@@ -2473,6 +2511,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               }} />
             </label>
             <p style={{ fontSize: 10, opacity: .6, margin: "4px 0 0" }}>Gunanya: video nggak gitu-gitu aja — latar berganti-ganti + sedikit zoom mengikuti lagu. Spectrum tetap tampil di atasnya. Kalau nggak butuh, biarkan kosong.</p>
+            {/* 🖼️ v19.90: strip preview gambar yang terpasang — lihat & hapus per gambar */}
+            {multiImgs.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                {multiImgs.map((u, i) => (
+                  <div key={u.slice(0, 40) + i} style={{ position: "relative" }}>
+                    <img src={u} alt="" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)" }} />
+                    <button onClick={() => setMultiImgs((arr) => arr.filter((_, j) => j !== i))}
+                      style={{ position: "absolute", top: -6, right: -6, background: "#ef4444", color: "#fff", border: "none", borderRadius: 999, width: 18, height: 18, fontSize: 10, lineHeight: "18px", padding: 0, cursor: "pointer" }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
             {multiImgs.length > 1 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

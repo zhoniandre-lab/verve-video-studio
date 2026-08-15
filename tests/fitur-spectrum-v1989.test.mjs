@@ -37,3 +37,18 @@ T("preview mini pakai posisi asli subPos (bukan selalu tengah)", /mx \* cv\.widt
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI FITUR SPECTRUM GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI FITUR SPECTRUM HIJAU");
+
+/* ---- v19.90: generate BEBERAPA gambar + UI prompt besar ---- */
+T("state bgJumlah ada (jumlah gambar)", /const \[bgJumlah, setBgJumlah\]/.test(spec));
+T("buatBgAI loop sesuai jumlah (variation)", /variation \$\{i \+ 1\} of \$\{n\}/.test(spec));
+T("2+ gambar masuk multiImgs (visual bergantian)", /setMultiImgs\(\(old\) => \[\.\.\.old, \.\.\.hasil\]/.test(spec));
+T("1 gambar jadi latar (setBgImg + bgType img)", /setBgImg\(hasil\[0\]\); setBgType\("img"\)/.test(spec));
+T("kolom prompt pakai TEXTAREA (bisa panjang)", /textarea className="v6-inp v6-ta" rows=\{3\}/.test(spec));
+T("pilihan jumlah gambar 1-4 di UI", /bgJumlah === n \? "on" : ""/.test(spec));
+T("tombol generate sebutkan jumlah gambar", /Generate \$\{bgJumlah > 1/.test(spec));
+T("preview gambar terpasang + tombol hapus", /✅ Terpasang sebagai latar/.test(spec) && /✕ Hapus/.test(spec));
+T("strip thumbnail multi-gambar + hapus per gambar", /arr\.filter\(\(_, j\) => j !== i\)/.test(spec));
+T("pesan jelas kalau belum ada kunci gambar", /belum ada kunci gambar/.test(spec));
+
+if (gagal) { console.error(`\n💥 ${gagal} UJI FITUR SPECTRUM GAGAL`); process.exit(1); }
+console.log("🎉 SEMUA UJI FITUR SPECTRUM HIJAU (v19.90)");
