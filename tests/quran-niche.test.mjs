@@ -58,3 +58,11 @@ T("menu dashboard punya Niche Qur'an", /Niche Qur'an/.test(dash) && /location\.h
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI QUR'AN GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI NICHE QUR'AN HIJAU");
+
+/* ---- v20.2: teks ikut suara (tombol putar, diam tanpa audio) ---- */
+T("tombol ▶ Putar & tonton ada", /Putar & tonton/.test(page));
+T("teks diam kalau belum ada audio (tPreview)", /function tPreview/.test(page) && /return pvTRef\.current/.test(page));
+T("preview sinkron dengan audioEl.currentTime", /audioElRef\.current\.currentTime/.test(page));
+T("indikator Ayat X/Y tampil", /Ayat /.test(page) && /totalAyat/.test(page) && /ayatAktif/.test(page));
+T("hidden audio element untuk sinkron", /audioElRef/.test(page) && /audioUrl/.test(page) && /style=\{\{ display: "none" \}\}/.test(page));
+T("kalau belum ada audio → pesan jelas", /Belum ada suara — di langkah 2/.test(page));

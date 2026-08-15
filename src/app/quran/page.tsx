@@ -92,6 +92,11 @@ export default function NicheQuran() {
   const dim = useMemo(() => (rasio === "9:16" ? { w: 720, h: 1280 } : { w: 1280, h: 720 }), [rasio]);
   const totalAyat = ayatList.length;
 
+  /* ---- preview: play/pause audio sinkron teks ---- */
+  const [playPrev, setPlayPrev] = useState(false);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const pvTRef = useRef(0); // waktu preview (detik) — sinkron dengan audio saat diputar
+
   /* ---- timing proporsional per ayat (panjang arab → durasi) ---- */
   const timing = useMemo(() => {
     if (!totalAyat || !(audioDur > 0.5)) return [] as { start: number; end: number }[];
@@ -111,6 +116,11 @@ export default function NicheQuran() {
     if (!timing.length) return -1;
     for (let i = 0; i < timing.length; i++) if (t >= timing[i].start && t < timing[i].end) return i;
     return timing.length - 1;
+  }
+  /* 🐛 v20.2: tanpa audio → teks DIAM di ayat pertama (tidak gonta-ganti) */
+  function tPreview(): number {
+    if (playPrev && audioElRef.current) return audioElRef.current.currentTime;
+    return pvTRef.current;
   }
 
   /* ---- 1️⃣ ambil ayat ---- */
@@ -336,19 +346,32 @@ export default function NicheQuran() {
     }
   }
 
-  /* ---- preview loop ---- */
+  /* ---- preview loop (v20.2: sinkron dengan audio yang diputar) ---- */
   useEffect(() => {
     const cv = cvRef.current; if (!cv) return;
     const ctx = cv.getContext("2d"); if (!ctx) return;
-    let t0 = performance.now() / 1000;
     const loop = () => {
-      const t = (performance.now() / 1000 - t0) % Math.max(1, audioDur);
+      const t = tPreview();
       gambarScene(ctx, cv.width, cv.height, t);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, timing]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, timing, playPrev]);
+
+  /* tombol ▶/⏸ preview — putar audio & teks ikut sinkron */
+  function togglePlay() {
+    if (!audioUrl || !bufRef.current) { setMsg("⚠️ Pasang suara dulu di langkah 2 (upload/rekam) — teks akan mengikuti suara otomatis."); setStep(1); return; }
+    const el = audioElRef.current;
+    if (!el) return;
+    if (playPrev) {
+      el.pause(); setPlayPrev(false);
+    } else {
+      el.currentTime = pvTRef.current >= audioDur - 0.5 ? 0 : pvTRef.current;
+      el.play().then(() => setPlayPrev(true)).catch(() => setMsg("⚠️ Audio tidak bisa diputar — cek file."));
+    }
+  }
 
   /* ---- drag & pinch di preview ---- */
   function hitTest(x: number, y: number): "teks" | "sub" | "logo" | null {
@@ -462,10 +485,26 @@ export default function NicheQuran() {
       </div>
 
       {/* pratinjau selalu tampil */}
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10, flexDirection: "column", alignItems: "center" }}>
         <canvas ref={cvRef} width={dim.w} height={dim.h}
           style={{ width: "100%", maxWidth: rasio === "9:16" ? 230 : 460, borderRadius: 12, border: "1px solid rgba(255,255,255,.15)", aspectRatio: `${dim.w}/${dim.h}`, touchAction: "none", background: "#000" }}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
+        {/* 🐛 v20.2: tombol putar + indikator ayat — teks mengikuti suara */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+          <button onClick={togglePlay} style={{ padding: "8px 16px", borderRadius: 999, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+            {playPrev ? "⏸ Jeda" : "▶ Putar & tonton"}
+          </button>
+          {!!ayatList.length && (
+            <span style={{ fontSize: 11, color: "#8b8b98" }}>
+              {playPrev || pvTRef.current > 0
+                ? `Ayat ${Math.min(totalAyat, Math.max(1, ayatAktif(tPreview()) + 1))}/${totalAyat}`
+                : `Belum diputar — teks diam di ayat 1 (pasang suara lalu ▶)`}
+            </span>
+          )}
+        </div>
+        {!audioUrl && <p style={{ fontSize: 10, color: "#fbbf24", margin: "4px 0 0" }}>⚠️ Belum ada suara — di langkah 2 upload/rekam dulu, lalu ▶ untuk melihat teks mengikuti suara.</p>}
+        <audio ref={audioElRef} src={audioUrl} onTimeUpdate={() => { if (audioElRef.current) pvTRef.current = audioElRef.current.currentTime; }}
+          onEnded={() => { setPlayPrev(false); if (audioElRef.current) pvTRef.current = 0; }} style={{ display: "none" }} />
       </div>
 
       {!!msg && <p style={{ fontSize: 11.5, color: msg.startsWith("✅") ? "#6ee7b7" : msg.startsWith("❌") ? "#fca5a5" : msg.startsWith("⚠️") ? "#fbbf24" : "#8b8b98", margin: "0 0 8px", lineHeight: 1.4 }}>{msg}</p>}
