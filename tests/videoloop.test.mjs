@@ -35,7 +35,7 @@ T("BUG LAMA HAPUS: tidak ada seek currentTime tiap frame", !/currentTime = vt/.t
 T("video dipindah ke lapis DINAMIS (bukan bg cache)", /!bgOnly && videoBgRef\.current/.test(spec));
 T("video tetap loop kalau masih dalam jatah", /vv\.loop !== masihJalan/.test(spec));
 T("video play kalau paused (anti-hilang)", /masihJalan && vv\.paused\) \{ vv\.play\(\)/.test(spec));
-T("upload video TIDAK menimpa lagu yang sudah ada", /sudahAdaLagu/.test(spec) && /flash\("🎬 Video terpasang sebagai latar/.test(spec));
+T("upload video TIDAK menimpa lagu yang sudah ada", /sudahAdaLagu/.test(spec) && /if \(sudahAdaLagu\)/.test(spec) && !/void loadAudio\(url, nama\); \/\/ spektrum & lirik ikut audio video/.test(spec));
 T("UI pilihan loop ada (auto/1x/2x/3x)", /LOOP VIDEO/.test(spec) && /\[\["auto"/.test(spec));
 T("UI tampilkan hitungan durasi loop", /hitungKaliLoop\(videoDur, duration, videoLoop\)/.test(spec));
 T("videoLoop tersimpan di preset", /videoLoop, \/\/ 🔁 v19.91/.test(spec) && /setVideoLoop\(p\.videoLoop\)/.test(spec));
