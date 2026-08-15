@@ -169,10 +169,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [presetName, setPresetName] = useState("");
   const [presetMsg, setPresetMsg] = useState("");
   const [dragMode, setDragMode] = useState<"logo" | "judul" | null>(null);
-  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" | "subscribe" | "float" | "teks" } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; target: "logo" | "judul" | "subscribe" | "float" | "teks" | "capt" } | null>(null);
   // 🤏 v19.40: pinch 2 jari buat ukuran tombol subscribe
   const ptrsCanvas = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchSub = useRef<{ d0: number; s0: number } | null>(null);
+  const pinchCap = useRef<{ d0: number; s0: number } | null>(null); // ✏️ v19.89: cubit ukuran lirik
   // 🔔 v19.40 TOMBOL SUBSCRIBE ANIMASI — banyak gaya, geser jari, cubit buat ukuran
   const [subOn, setSubOn] = useState(false);
   const [subStyle, setSubStyle] = useState("yt");
@@ -198,14 +199,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
           const stl = SUB_STYLES.find((x) => x.id === subStyle) || SUB_STYLES[0];
           const t = performance.now() / 1000;
           const st = hitungSubState(0.7, 1, 0.6, subAnim, t);
-          gambarSubscribe(ctx, cv.width / 2, cv.height / 2, cv.height * 0.55, stl, st, t, subTeks);
+          // 🔔 v19.89: mini preview ikut POSISI ASLI (subPos) — bukan selalu tengah,
+          // biar apa yang dilihat = apa yang dirender (WYSIWYG).
+          const mx = Math.max(0.05, Math.min(0.95, subPos.x));
+          const my = Math.max(0.08, Math.min(0.92, subPos.y));
+          gambarSubscribe(ctx, mx * cv.width, my * cv.height, cv.height * 0.5, stl, st, t, subTeks);
         }
       }
       raf = requestAnimationFrame(gambar);
     };
     raf = requestAnimationFrame(gambar);
     return () => cancelAnimationFrame(raf);
-  }, [subStyle, subAnim, subTeks]);
+  }, [subStyle, subAnim, subTeks, subPos]);
 
   const subStyleRef = useRef<SubStyle>(SUB_STYLES[0]);
   const subPrevRef = useRef<HTMLCanvasElement | null>(null);
@@ -282,6 +287,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [lirikOn, setLirikOn] = useState(true);
   const [lyricsText, setLyricsText] = useState("");
   const [ccTpl, setCcTpl] = useState("karaoke");
+  // ✏️ v19.89: KENDALI LIRIK — ukuran (cubit/slider) & posisi vertikal (geser/slider).
+  // null = ikut template; angka = override user.
+  const [capSize, setCapSize] = useState<number | null>(null);
+  const [capY, setCapY] = useState<number | null>(null);
   // 🎤 v19.17 AUTO-PAS LIRIK (Whisper) — timing persis audio
   const [lyrAuto, setLyrAuto] = useState(false);
   const autoWordsRef = useRef<{ w: string; start: number; end: number; line: number }[]>([]);
@@ -358,6 +367,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const im = new Image(); im.onload = () => { logoImgRef.current = im; }; im.src = logoImg;
   }, [logoImg]);
 
+  // 🔔 v19.89: posisi subscribe tersimpan dari drag terakhir — dipulihkan saat buka
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("verve_spektrum_subpos_v1");
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) setSubPos({ x: Math.max(0.04, Math.min(0.96, p.x)), y: Math.max(0.04, Math.min(0.95, p.y)) });
+      }
+    } catch { /* abaikan */ }
+  }, []);
+
   // 🖼️ v19.15 MULTI-GAMBAR: muat semua ke ref, dipakai bergantian per beat
   useEffect(() => {
     const imgs = multiImgs.filter(Boolean);
@@ -385,6 +405,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         layerVis, layerOp,
         // 🔔 v19.40: tombol subscribe ikut tersimpan
         subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks,
+        capSize, capY, // ✏️ v19.89: ukuran & posisi lirik ikut tersimpan
         floatSpec, floatStyle, floatSize, floatPos, frameOn, frameStyle,
         textOn, textCustom, textStyle, textSize, textPos,
         fx,
@@ -421,6 +442,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       if (p.subStart !== undefined) setSubStart(p.subStart);
       if (p.subEnd !== undefined) setSubEnd(p.subEnd);
       if (p.subTeks) setSubTeks(p.subTeks);
+      // ✏️ v19.89: muat ukuran & posisi lirik
+      if (p.capSize !== undefined && p.capSize !== null) setCapSize(p.capSize); else setCapSize(null);
+      if (p.capY !== undefined && p.capY !== null) setCapY(p.capY); else setCapY(null);
       if (p.floatSpec !== undefined) setFloatSpec(!!p.floatSpec);
       if (p.floatStyle) setFloatStyle(p.floatStyle);
       if (p.floatSize) setFloatSize(p.floatSize);
@@ -656,8 +680,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     try {
       const rasio = ratio === "9:16" ? "vertical 9:16" : "widescreen 16:9";
       const prompt = `Cinematic music video background, ${rasio}, no text no letters no watermark. Mood: "${mood}". Dark atmospheric scene with empty space in the middle for a visualizer, deep rich colors, dramatic lighting, film grain, 8K quality, PURE photographic scene only.`;
+      const hdr: Record<string, string> = { "Content-Type": "application/json" };
+      // 🎨 v19.89: pakai Dompet Bansos (OpenAI-compatible) kalau ada — gambar jalan
+      // tanpa key server. Kalau gateway tidak support gambar, route fallback otomatis.
+      try {
+        const bc = JSON.parse(localStorage.getItem("verve_bansos_chat_v1") || "null");
+        if (bc && bc.base && bc.key) {
+          hdr["x-bansos-img-base"] = String(bc.base);
+          hdr["x-bansos-img-key"] = String(bc.key);
+          if (bc.model) hdr["x-bansos-img-model"] = String(bc.model);
+        }
+      } catch { /* abaikan */ }
       const r = await fetch("/api/hcnsec/image", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: hdr,
         body: JSON.stringify({ title: "spektrum-bg", keyword: "musik", niche: "visualizer", _rawPrompt: true, prompt }),
       });
       const j = await r.json();
@@ -1372,9 +1407,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     // lirik karaoke
     if (lirikOn && capWords.length) {
+      // ✏️ v19.89: ukuran & posisi bisa di-override user (slider / geser / cubit)
       paintPreviewCaptions(ctx, W, H, capWords, t, tpl.capStyle, {
-        yRatio: tpl.yRatio ?? 0.76,
-        sizeRatio: tpl.sizeRatio ?? 0.042,
+        yRatio: capY ?? tpl.yRatio ?? 0.76,
+        sizeRatio: capSize ?? tpl.sizeRatio ?? 0.042,
         padRatio: 0.08,
       });
     }
@@ -1455,6 +1491,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // preview pakai closure LAMA → tombol subscribe/lapisan/posisi tidak pernah muncul.
     layerVis, layerOp, step, playing,
     subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks, duration, // 🐛 FIX v19.47: subTeks & duration WAJIB di deps (dipakai drawScene)
+    capSize, capY, // ✏️ v19.89: ukuran & posisi lirik (dipakai drawScene)
     // 🐛 FIX v19.44: state baru (spektrum mini, frame, teks) WAJIB di dep — tanpa ini
     // drawScene pakai closure LAMA → frame/teks/mini tidak pernah muncul.
     floatSpec, floatStyle, floatSize, floatPos,
@@ -1895,10 +1932,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                     ((a.y + b.y) / 2 - (e.target as HTMLElement).getBoundingClientRect().top) / (e.target as HTMLElement).getBoundingClientRect().height - floatPos.y);
                   if (floatSpec && dFloat <= 0.3) {
                     pinchFloat.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: floatSize };
-                    pinchSub.current = null;
+                    pinchSub.current = null; pinchCap.current = null;
+                  } else if (lirikOn && capWords.length) {
+                    // ✏️ v19.89: cubit dekat lirik → ubah UKURAN LIRIK
+                    pinchCap.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: capSize ?? tpl.sizeRatio ?? 0.042 };
+                    pinchSub.current = null; pinchFloat.current = null;
                   } else {
                     pinchSub.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: subSize };
-                    pinchFloat.current = null;
+                    pinchFloat.current = null; pinchCap.current = null;
                   }
                   return;
                 }
@@ -1914,11 +1955,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 // 🎯 v19.44: hit-test spektrum mini & teks custom dulu (lebih prioritas)
                 const dFloat = floatSpec ? Math.hypot(x - floatPos.x, y - floatPos.y) : 9;
                 const dTeks = textOn && textCustom.trim() ? Math.hypot(x - textPos.x, y - textPos.y) : 9;
+                // ✏️ v19.89: hit-test LIRIK — dekat baris lirik & x di tengah → bisa digeser
+                const capYNow = capY ?? tpl.yRatio ?? 0.76;
+                const dCapt = lirikOn && capWords.length ? Math.hypot(x - 0.5, y - capYNow) : 9;
                 if (floatSpec && dFloat <= 0.22) {
                   dragRef.current = { x, y, target: "float" as const };
                 } else if (textOn && dTeks <= 0.16) {
                   dragRefText.current = { dx: textPos.x - x, dy: textPos.y - y };
                   dragRef.current = { x, y, target: "teks" as const };
+                } else if (lirikOn && capWords.length && dCapt <= 0.18) {
+                  dragRef.current = { x, y, target: "capt" as const };
                 } else if (subOn && dSub <= 0.32) {
                   dragRef.current = { x, y, target: "subscribe" as const };
                 } else if (dLogo <= tol && (dLogo <= dTitle || !title.trim())) {
@@ -1932,12 +1978,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               }}
               onPointerMove={(e) => {
                 // 🤏 v19.40: PINCH 2 JARI → ubah ukuran tombol subscribe
-                if (ptrsCanvas.current.size === 2 && (pinchSub.current || pinchFloat.current)) {
+                // ✏️ v19.89: + cubit 2 jari dekat lirik → ubah UKURAN LIRIK
+                if (ptrsCanvas.current.size === 2 && (pinchSub.current || pinchFloat.current || pinchCap.current)) {
                   const [a, b] = [...ptrsCanvas.current.values()];
                   const d = Math.hypot(a.x - b.x, a.y - b.y);
                   if (pinchFloat.current && floatSpec) {
                     const s = clampN(pinchFloat.current.s0 * (d / Math.max(1, pinchFloat.current.d0)), 0.08, 0.6);
                     setFloatSize(s);
+                    return;
+                  }
+                  if (pinchCap.current && lirikOn && capWords.length) {
+                    const s = clampN(pinchCap.current.s0 * (d / Math.max(1, pinchCap.current.d0)), 0.018, 0.14);
+                    setCapSize(s);
                     return;
                   }
                   if (pinchSub.current && subOn) {
@@ -1953,13 +2005,18 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 if (dragRef.current.target === "float") setFloatPos({ x, y });
                 else if (dragRef.current.target === "teks") setTextPos({ x: clampN(x + (dragRefText.current?.dx ?? 0), 0.05, 0.95), y: clampN(y + (dragRefText.current?.dy ?? 0), 0.05, 0.9) });
                 else if (dragRef.current.target === "logo") setLogoPos({ x, y });
-                else if (dragRef.current.target === "subscribe") setSubPos({ x, y });
+                else if (dragRef.current.target === "subscribe") {
+                  setSubPos({ x, y });
+                  // 🔔 v19.89: posisi subscribe disimpan SEKARANG — tidak hilang saat pindah step/reload
+                  try { localStorage.setItem("verve_spektrum_subpos_v1", JSON.stringify({ x, y })); } catch { /* abaikan */ }
+                }
+                else if (dragRef.current.target === "capt") setCapY(clampN(y, 0.08, 0.92)); // ✏️ v19.89: geser lirik naik-turun
                 else setTitlePos({ x, y });
                 try { localStorage.setItem("verve_spektrum_drag", "1"); } catch { /* abaikan */ } // 🐛 FIX: tanda user pernah geser manual
               }}
               onPointerUp={(e) => {
                 ptrsCanvas.current.delete(e.pointerId);
-                if (ptrsCanvas.current.size < 2) { pinchSub.current = null; pinchFloat.current = null; }
+                if (ptrsCanvas.current.size < 2) { pinchSub.current = null; pinchFloat.current = null; pinchCap.current = null; }
                 dragRef.current = null;
                 dragRefText.current = null;
               }}
@@ -2199,6 +2256,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, x: Math.min(0.95, p.x + 0.03) }))}>➡</button>
                   <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, y: Math.max(0.05, p.y - 0.03) }))}>⬆</button>
                   <button className="v6-chip" onClick={() => setSubPos(p => ({ ...p, y: Math.min(0.95, p.y + 0.03) }))}>⬇</button>
+                  <button className="v6-chip" style={{ borderColor: "rgba(34,197,94,.5)", color: "#86efac" }} onClick={() => { setSubPos({ x: 0.5, y: 0.55 }); try { localStorage.setItem("verve_spektrum_subpos_v1", JSON.stringify({ x: 0.5, y: 0.55 })); } catch {} }}>🎯 Tengah</button>
                   <span style={{ fontSize: 10, color: "#8b8b98", marginLeft: 4 }}>geser halus</span>
                 </div>
                 <div className="v6-slider-row" style={{ marginTop: 6 }}>
@@ -2527,7 +2585,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                     </button>
                   ))}
                 </div>
-                <div className="v6-note">📍 Template cuma ganti <b>tampilan & posisi</b> (tengah, tidak keluar frame). Waktu kata/baris <b>tidak diubah</b> — auto-pas tetap pas sama audio. Kalau lirik manual, timing dibagi rata per baris seperti semula.</div>
+                {/* ✏️ v19.89: UKURAN & POSISI LIRIK — slider + geser/cubit di pratinjau */}
+                <div className="v6-slider-row">
+                  <div className="lr"><span>🔍 Ukuran lirik</span><b>{Math.round((capSize ?? tpl.sizeRatio ?? 0.042) * 1000) / 10}%</b></div>
+                  <input type="range" min={1.8} max={14} step={0.2} value={(capSize ?? tpl.sizeRatio ?? 0.042) * 100} onChange={e => setCapSize(Number(e.target.value) / 100)} />
+                </div>
+                <div className="v6-slider-row">
+                  <div className="lr"><span>⬆️⬇️ Posisi vertikal</span><b>{Math.round((capY ?? tpl.yRatio ?? 0.76) * 100)}%</b></div>
+                  <input type="range" min={8} max={92} step={1} value={(capY ?? tpl.yRatio ?? 0.76) * 100} onChange={e => setCapY(Number(e.target.value) / 100)} />
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                  <button className="v6-chip" style={{ flex: 1 }} onClick={() => { setCapSize(null); setCapY(null); }}>↺ Kembali ke template</button>
+                </div>
+                <div className="v6-note">📍 Template cuma ganti <b>tampilan & posisi</b> (tengah, tidak keluar frame). Waktu kata/baris <b>tidak diubah</b> — auto-pas tetap pas sama audio. Kalau lirik manual, timing dibagi rata per baris seperti semula. ✋ Di pratinjau: <b>geser lirik</b> untuk posisi, <b>cubit 2 jari</b> di sekitar lirik untuk ukuran.</div>
               </>
             )}
             <button className="v6-bigcta" onClick={() => setStep(3)}>Lanjut: Master ›</button>

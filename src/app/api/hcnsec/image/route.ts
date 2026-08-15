@@ -4,6 +4,39 @@ import { generateImage, IMAGE_STYLES } from "@/lib/hcnsec";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // v10.1: tegas — jangan pernah lewat anggaran serverless
 
+/** 🎨 v19.89 GENERATE VIA BANSOS (Dompet Bansos dari HP) — OpenAI-compatible
+ *  /images/generations. Coba beberapa model umum; kalau gateway tidak support
+ *  gambar, gagal → route lanjut fallback ke hcnsec env (tidak merusak apa pun). */
+const BANSOS_IMG_MODELS = ["gpt-image-1", "dall-e-3", "dall-e-2", "flux", "flux-schnell", "sdxl", "step-image-edit-2", "step-1.5v-image"];
+async function generateImageBansos(prompt: string, suffix: string, base: string, key: string, modelFirst?: string): Promise<string> {
+  const full = suffix ? `${prompt}, ${suffix}` : prompt;
+  const models = [...new Set([modelFirst, ...BANSOS_IMG_MODELS].filter((m): m is string => !!m))];
+  let lastErr = "";
+  for (const model of models) {
+    for (const fmt of ["url", "b64_json"] as const) {
+      try {
+        const r = await fetch(`${base}/images/generations`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model, prompt: full, size: "1024x1024", n: 1, response_format: fmt }),
+          signal: AbortSignal.timeout(45000),
+        });
+        if (!r.ok) { lastErr = `HTTP ${r.status}`; continue; }
+        const j = await r.json();
+        const item = j?.data?.[0] ?? j;
+        const u = item?.url || (item?.b64_json ? `data:image/png;base64,${item.b64_json}` : "");
+        if (u && u.length > 100) return u;
+        lastErr = "respons kosong";
+      } catch (e: any) {
+        lastErr = e?.message || "gagal";
+        if (/model.*not.*found|unknown.*model|invalid.*model/i.test(lastErr)) break;
+        continue;
+      }
+    }
+  }
+  throw new Error(`Bansos gambar tidak support /images/generations (${lastErr.slice(0, 60)})`);
+}
+
 async function proxyImageToBase64(url: string): Promise<string> {
   const r = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; VerveProxy/1.0)" },
@@ -66,6 +99,19 @@ export async function POST(req: Request) {
     if (String(_charLock || "").trim().length > 10) negSuffix += ", no face swap, no different person, no inconsistent face, no changing hairstyle, no changing hair color, no changing outfit, no caucasian features, no western facial features"; // 🔒 v10.0: penjaga identitas
 
     try {
+      // 🎨 v19.89: kalau HP punya bansos gambar (Dompet Bansos), coba DULU —
+      // gambar jalan tanpa bergantung env server. Gagal → fallback hcnsec.
+      const bKey = (req.headers.get("x-bansos-img-key") || "").trim();
+      const bBase = (req.headers.get("x-bansos-img-base") || "").trim().replace(/\/+$/, "");
+      const bModel = (req.headers.get("x-bansos-img-model") || "").trim();
+      if (bKey && bBase) {
+        try {
+          const u = await generateImageBansos(userPrompt, (styleObj ? styleObj.suffix : "") + negSuffix, bBase, bKey, bModel || undefined);
+          return NextResponse.json({ url: u, originalUrl: null, model: bModel || "bansos", size: "1024x1024", prompt: userPrompt, styleLabel: styleObj?.label, cached: u.startsWith("data:"), sumber: "bansos" });
+        } catch (eB: any) {
+          console.warn("[image] bansos gagal, fallback hcnsec:", eB?.message?.slice(0, 80));
+        }
+      }
       const { url, model, size: usedSize, prompt: usedPrompt } = await generateImage(
         userPrompt,
         (styleObj ? styleObj.suffix : "") + negSuffix,
