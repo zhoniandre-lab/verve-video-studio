@@ -13,7 +13,7 @@ import {
 } from "@/lib/quran-data";
 import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } from "@/lib/ambience";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v20.7: loop video
-import { gambarFrameIslami, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
+import { gambarFrameIslami, gambarDesainIslami, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe, type SubStyle, type SubAnim } from "@/lib/subscribe";
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline";
 
@@ -136,6 +136,7 @@ export default function NicheQuran() {
       g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       gambarFrameIslami(ctx, W, H, frame);
+      gambarDesainIslami(ctx, W, H, frame); // 🕌 v20.8: desain Islami DI DALAM video
       frameCacheRef.current = cv;
       frameCacheKeyRef.current = k;
       return cv;
@@ -575,6 +576,10 @@ export default function NicheQuran() {
         buf, w: dim.w, h: dim.h, offset: 0, dur: audioDur,
         eq: studioOn ? "studio" : (fokusVokal ? "vokal" : "flat"), comp: 45, gain: 95, fades: false,
         audioCodec: mampu.audioCodec, fps: 24, videoBitrate: dim.w <= 720 ? 2_600_000 : 3_600_000,
+        // ⚡ v20.8 TURBO CEPAT: render di resolusi lebih kecil lalu upscale —
+        // 1 menit render jauh lebih cepat (HP); kualitas tetap bagus untuk
+        // YouTube (yang re-encode sendiri). 0.78 = ~40% lebih cepat.
+        resScale: 0.78,
         ambience: ambience !== "off" ? { jenis: ambience, gain: ambVol / 100, buf: ambBuf } : null,
         vocalReverb: studioOn ? Math.max(reverb, 0.15) : reverb,
         noiseGate: studioOn ? 0.003 : 0,

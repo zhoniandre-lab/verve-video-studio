@@ -122,3 +122,9 @@ T("LOOP VIDEO: mode auto/1x/2x/3x state", /const \[videoLoopMode, setVideoLoopMo
 T("LOOP VIDEO: gambarScene pakai durasiLoopTotal + freeze", /durasiLoopTotal\(vd, audioDur \|\| vd, videoLoopMode\)/.test(page) && /!masihJalan && !vv\.paused\) vv\.pause\(\)/.test(page));
 T("LOOP VIDEO: UI chip auto/1x/2x/3x", /LOOP VIDEO/.test(page) && /\[\["auto", "🔄 Auto \(pas audio\)"\]/.test(page));
 T("LOOP VIDEO: info durasi tampil", /hitungKaliLoop\(videoDurQ, audioDur, videoLoopMode\)/.test(page));
+
+/* ---- v20.8: TURBO render cepat + desain Islami DI DALAM video ---- */
+T("TURBO: render pakai resScale 0.78 (jauh lebih cepat)", /resScale: 0\\.78/.test(page));
+T("DESAIN: gambarDesainIslami ada di quran-frame", /export function gambarDesainIslami/.test(qf) && /bintang8/.test(qf));
+T("DESAIN: pola arabesque + garis pemisah ada", /arabesque/.test(qf) && /garis pemisah atas & bawah/.test(qf));
+T("DESAIN: dipanggil di cache frame (dalam video)", /gambarDesainIslami/.test(page));

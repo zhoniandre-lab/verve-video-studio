@@ -144,7 +144,54 @@ function deretDiamond(ctx: CanvasRenderingContext2D, W: number, H: number, m: nu
   ctx.restore();
 }
 
-/** Gambar bingkai penuh — panggil SETELAH latar digambar, SEBELUM konten ayat. */
+/** 🕌 v20.8: DESAIN ISLAMI DI DALAM VIDEO — selain bingkai tepi, isi area dengan
+ *  ornamen Islami halus: bintang 8 besar di tengah (di belakang ayat), pola
+ *  arabesque di kanan-kiri, garis pemisah atas-bawah dengan diamond. */
+export function gambarDesainIslami(ctx: CanvasRenderingContext2D, W: number, H: number, gaya: GayaFrame) {
+  const p = PALET[gaya] || PALET.emas;
+  const m = Math.min(W, H) * 0.05;
+  ctx.save();
+  ctx.lineJoin = "round";
+
+  // 1) bintang 8 BESAR di tengah (di belakang ayat — halus, tidak mengganggu teks)
+  const r8 = Math.min(W, H) * 0.16;
+  ctx.globalAlpha = 0.14;
+  bintang8(ctx, W / 2, H * 0.42, r8, p.utama);
+  bintang8(ctx, W / 2, H * 0.42, r8 * 0.55, p.sekunder);
+  ctx.globalAlpha = 1;
+
+  // 2) pola arabesque kecil di kanan & kiri (garis lengkung berulang)
+  ctx.globalAlpha = 0.2;
+  ctx.strokeStyle = p.utama;
+  ctx.lineWidth = Math.max(1, m * 0.05);
+  const nx = 5, ny = 7;
+  const xs = W / (nx + 1), ys = H / (ny + 1);
+  for (let i = 1; i <= nx; i++) {
+    for (let j = 1; j <= ny; j++) {
+      const x = i * xs, y = j * ys;
+      // jangan timpa area ayat (tengah)
+      if (Math.abs(x - W / 2) < W * 0.12 && y > H * 0.18 && y < H * 0.7) continue;
+      ctx.beginPath();
+      ctx.arc(x, y, m * 0.16, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, m * 0.05, 0, Math.PI * 2); ctx.fillStyle = p.utama; ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // 3) garis pemisah atas & bawah dengan diamond (di area video, bukan tepi)
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = p.utama;
+  ctx.lineWidth = Math.max(1, m * 0.04);
+  const yA = m * 2.6, yB = H - m * 2.6;
+  ctx.beginPath(); ctx.moveTo(m * 2, yA); ctx.lineTo(W - m * 2, yA); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(m * 2, yB); ctx.lineTo(W - m * 2, yB); ctx.stroke();
+  diamondTengah(ctx, W / 2, yA, m * 0.7, p.utama);
+  diamondTengah(ctx, W / 2, yB, m * 0.7, p.utama);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
 export function gambarFrameIslami(ctx: CanvasRenderingContext2D, W: number, H: number, gaya: GayaFrame) {
   const p = PALET[gaya] || PALET.emas;
   const m = Math.min(W, H) * 0.05; // margin frame (v20.4: diperbesar dari 0.028)
