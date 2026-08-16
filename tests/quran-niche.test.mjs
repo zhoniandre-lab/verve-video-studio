@@ -82,3 +82,16 @@ T("anti-fallback-Arab: deteksi teks Arab", /function teksArab/.test(qd) && /[\\u
 T("ambilAyatSurat verifikasi arti bukan Arab", /artiAman/.test(qd) && /!teksArab\(artiEd\.ayahs\[0\]/.test(qd));
 T("fallback endpoint terpisah kalau edisi salah", /api\.alquran\.cloud\/v1\/surah\/\$\{suratId\}\/\$\{edisiTerjemahan\}/.test(qd));
 T("TIDAK ada edisi ber-awalan quran. (biang Arab fallback)", !/quran\.(id|en|tr|ms|fr|es|ur|bn|de|ru|zh)\./.test(qd));
+
+/* ---- v20.5: 26 bahasa (Uzbek dll) + OPTIMASI performa ---- */
+T("Uzbek tersedia (uz.sodik)", /uz\.sodik/.test(qd) && /Uzbek/.test(qd));
+T("Azerbaijan & Persia tersedia", /az\.mammadaliyev/.test(qd) && /fa\.ayati/.test(qd));
+T("Hindi/Tamil/Malayalam tersedia", /hi\.hindi/.test(qd) && /ta\.tamil/.test(qd) && /ml\.abdulhameed/.test(qd));
+T("Jepang/Korea/Thailand tersedia", /ja\.japanese/.test(qd) && /ko\.korean/.test(qd) && /th\.thai/.test(qd));
+T("jumlah bahasa >= 24", (qd.match(/kode: "/g) || []).length >= 24, `${(qd.match(/kode: "/g)||[]).length}`);
+T("OPTIMASI: cache latar+frame offscreen (dapatCacheFrame)", /dapatCacheFrame/.test(page) && /frameCacheRef/.test(page));
+T("gambarScene pakai drawImage cache (bukan gambar ulang)", /ctx\.drawImage\(fc, 0, 0, W, H\)/.test(page));
+T("TIDAK ada shadowBlur AKTIF di preview (mahal di HP)", !/ctx\.shadowBlur|shadowBlur =/.test(page));
+T("preview throttle ~30fps (33ms)", /now - last >= 33/.test(page));
+T("preview dimatikan saat render (hemat CPU)", /busy === "render"\) return/.test(page));
+T("render drawBg pakai cache juga", /drawBg: \(ctx, W, H\) => \{[\s\S]*?dapatCacheFrame/.test(page));

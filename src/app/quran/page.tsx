@@ -109,6 +109,27 @@ export default function NicheQuran() {
   const dragRef = useRef<{ t: "teks" | "sub" | "logo"; dx: number; dy: number } | null>(null);
   const pinchRef = useRef<{ d0: number; s0: number; t: "teks" | "sub" | "logo" } | null>(null);
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
+  // ⚡ v20.5 OPTIMASI: latar + bingkai islami di-CACHE ke canvas offscreen
+  // (digambar SEKALI saat frame/latar/ukuran berubah, lalu drawImage tiap frame
+  // — jauh lebih ringan di HP daripada menggambar gradien + ornamen tiap frame).
+  const frameCacheRef = useRef<HTMLCanvasElement | null>(null);
+  function dapatCacheFrame(W: number, H: number): HTMLCanvasElement | null {
+    try {
+      const c = frameCacheRef.current;
+      if (c && c.width === W && c.height === H) return c;
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return null;
+      const lg = LATAR_Q.find((x) => x.id === latar) || LATAR_Q[0];
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      gambarFrameIslami(ctx, W, H, frame);
+      frameCacheRef.current = cv;
+      return cv;
+    } catch { return null; }
+  }
 
   const dim = useMemo(() => (rasio === "9:16" ? { w: 720, h: 1280 } : { w: 1280, h: 720 }), [rasio]);
   const totalAyat = ayatList.length;
@@ -265,12 +286,10 @@ export default function NicheQuran() {
 
   /* ---- draw preview ---- */
   function gambarScene(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
-    // latar
-    const lg = LATAR_Q.find((x) => x.id === latar) || LATAR_Q[0];
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    // video latar
+    // ⚡ v20.5: latar + bingkai dari CACHE (drawImage murah) — bukan digambar ulang
+    const fc = dapatCacheFrame(W, H);
+    if (fc) ctx.drawImage(fc, 0, 0, W, H);
+    // video latar (bergerak → digambar tiap frame)
     const vv = videoRef.current;
     if (vv && vv.readyState >= 2 && vv.videoWidth) {
       const ir = vv.videoWidth / vv.videoHeight, cr = W / H;
@@ -279,19 +298,17 @@ export default function NicheQuran() {
       ctx.drawImage(vv, sx, sy, sw, sh, 0, 0, W, H);
       ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, W, H);
     }
-    // bingkai islami
-    gambarFrameIslami(ctx, W, H, frame);
     // ayat aktif
     const idx = ayatAktif(t);
     if (idx >= 0 && ayatList[idx]) {
       const a = ayatList[idx];
       const cy = ayatY * H;
       ctx.textAlign = "center";
-      // arab besar
+      // arab besar — outline (strokeText) + fill; TANPA shadowBlur (mahal di HP)
       const fs = Math.round(Math.min(W, H) * arabSize);
       ctx.font = `700 ${fs}px 'Scheherazade New','Amiri','Traditional Arabic',serif`;
-      ctx.fillStyle = "#d4af37";
-      ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 12;
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = Math.max(3, fs * 0.14);
       // wrap arab (maks 88%)
       const maxW = W * 0.82;
       let baris = [a.teks];
@@ -309,22 +326,21 @@ export default function NicheQuran() {
       const lh = fs * 1.35;
       const y0 = cy - ((baris.length - 1) * lh) / 2 - lh * 0.4;
       baris.forEach((b, i) => {
+        ctx.strokeText(b, W / 2, y0 + i * lh);
+        ctx.fillStyle = "#d4af37";
         ctx.fillText(b, W / 2, y0 + i * lh);
         // tanda ayat kecil
         if (i === baris.length - 1) {
           ctx.font = `600 ${Math.round(fs * 0.22)}px system-ui`;
           ctx.fillStyle = "#e8d9a0";
-          ctx.shadowBlur = 4;
+          ctx.strokeText(`﴾${a.nomor}﴿`, W / 2, y0 + i * lh + fs * 0.9);
           ctx.fillText(`﴾${a.nomor}﴿`, W / 2, y0 + i * lh + fs * 0.9);
         }
       });
-      ctx.shadowBlur = 0;
-      // arti di bawah
+      // arti di bawah — outline + fill (tanpa shadowBlur)
       if (a.arti) {
         const fs2 = Math.round(Math.min(W, H) * artiSize);
         ctx.font = `500 ${fs2}px system-ui`;
-        ctx.fillStyle = "rgba(255,255,255,0.92)";
-        ctx.shadowColor = "rgba(0,0,0,0.8)"; ctx.shadowBlur = 6;
         const maxW2 = W * 0.8;
         const kata = a.arti.split(/\s+/);
         const baris2: string[] = []; let cur = "";
@@ -335,7 +351,11 @@ export default function NicheQuran() {
         }
         if (cur) baris2.push(cur);
         const lh2 = fs2 * 1.3;
+        ctx.lineWidth = Math.max(2, fs2 * 0.16);
         baris2.slice(0, 3).forEach((b, i) => {
+          ctx.strokeStyle = "rgba(0,0,0,0.85)";
+          ctx.strokeText(b, W / 2, y0 + baris.length * lh + 8 + i * lh2);
+          ctx.fillStyle = "rgba(255,255,255,0.94)";
           ctx.fillText(b, W / 2, y0 + baris.length * lh + 8 + i * lh2);
         });
       }
@@ -367,19 +387,25 @@ export default function NicheQuran() {
     }
   }
 
-  /* ---- preview loop (v20.2: sinkron dengan audio yang diputar) ---- */
+  /* ---- preview loop (v20.2: sinkron dengan audio; v20.5: ~30fps + cache) ---- */
   useEffect(() => {
+    if (busy === "render") return; // ⚡ v20.5: preview dimatikan saat render — hemat CPU
     const cv = cvRef.current; if (!cv) return;
     const ctx = cv.getContext("2d"); if (!ctx) return;
-    const loop = () => {
-      const t = tPreview();
-      gambarScene(ctx, cv.width, cv.height, t);
+    let last = 0;
+    const loop = (now: number) => {
+      // ⚡ v20.5: throttle ~30fps — mata tidak bisa bedain, HP jauh lebih ringan
+      if (now - last >= 33) {
+        last = now;
+        const t = tPreview();
+        gambarScene(ctx, cv.width, cv.height, t);
+      }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, timing, playPrev]);
+  }, [busy, audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, timing, playPrev]);
 
   /* tombol ▶/⏸ preview — putar audio & teks ikut sinkron */
   function togglePlay() {
@@ -468,11 +494,9 @@ export default function NicheQuran() {
         ambience: ambience !== "off" ? { jenis: ambience, gain: ambVol / 100, buf: ambBuf } : null,
         vocalReverb: reverb,
         drawBg: (ctx, W, H) => {
-          const lg = LATAR_Q.find((x) => x.id === latar) || LATAR_Q[0];
-          const g = ctx.createLinearGradient(0, 0, 0, H);
-          g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
-          ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-          gambarFrameIslami(ctx, W, H, frame);
+          // ⚡ v20.5: pakai cache (latar+frame digambar sekali per ukuran render)
+          const fc = dapatCacheFrame(W, H);
+          if (fc) ctx.drawImage(fc, 0, 0, W, H);
         },
         drawDin: (ctx, W, H, t) => gambarScene(ctx, W, H, t),
         draw: (ctx, W, H, t) => gambarScene(ctx, W, H, t),

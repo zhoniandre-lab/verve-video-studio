@@ -55,19 +55,37 @@ export const DAFTAR_SURAT: SuratQ[] = [
 export const SURAT_DEFAULT = [114, 113, 112, 1];
 
 /** Peta bahasa → edisi terjemahan di alquran.cloud (format: {lang}.{identifier} —
- *  JANGAN pakai awalan "quran." — API tidak mengenali & fallback ke Arab!) */
+ *  JANGAN pakai awalan "quran." — API tidak mengenali & fallback ke Arab!)
+ *  🆕 v20.5: 26 bahasa — termasuk Uzbek, Azerbaijan, Persia, Hindi, Tamil,
+ *  Jepang, Korea, Thailand, Italia, Portugis, Belanda, Polandia, Swedia dll.
+ *  Semua sudah diverifikasi ADA di API (edition/language). */
 export const BAHASA: { kode: string; label: string; bendera: string; edisi: string }[] = [
   { kode: "id", label: "Indonesia", bendera: "🇮🇩", edisi: "id.indonesian" },
-  { kode: "en", label: "Inggris (Amerika/UK)", bendera: "🇺🇸", edisi: "en.sahih" },
+  { kode: "en", label: "Inggris", bendera: "🇺🇸", edisi: "en.sahih" },
+  { kode: "ar", label: "Arab", bendera: "🇸🇦", edisi: "ar.muyassar" },
   { kode: "tr", label: "Turki", bendera: "🇹🇷", edisi: "tr.diyanet" },
   { kode: "ms", label: "Melayu", bendera: "🇲🇾", edisi: "ms.basmeih" },
+  { kode: "uz", label: "Uzbek", bendera: "🇺🇿", edisi: "uz.sodik" },
+  { kode: "az", label: "Azerbaijan", bendera: "🇦🇿", edisi: "az.mammadaliyev" },
+  { kode: "fa", label: "Persia (Iran)", bendera: "🇮🇷", edisi: "fa.ayati" },
+  { kode: "ur", label: "Urdu (Pakistan)", bendera: "🇵🇰", edisi: "ur.jalandhry" },
+  { kode: "bn", label: "Bengali", bendera: "🇧🇩", edisi: "bn.bengali" },
+  { kode: "hi", label: "Hindi (India)", bendera: "🇮🇳", edisi: "hi.hindi" },
+  { kode: "ta", label: "Tamil", bendera: "🇮🇳", edisi: "ta.tamil" },
+  { kode: "ml", label: "Malayalam", bendera: "🇮🇳", edisi: "ml.abdulhameed" },
   { kode: "fr", label: "Prancis", bendera: "🇫🇷", edisi: "fr.hamidullah" },
   { kode: "es", label: "Spanyol", bendera: "🇪🇸", edisi: "es.cortes" },
-  { kode: "ur", label: "Urdu", bendera: "🇵🇰", edisi: "ur.jalandhry" },
-  { kode: "bn", label: "Bengali", bendera: "🇧🇩", edisi: "bn.bengali" },
   { kode: "de", label: "Jerman", bendera: "🇩🇪", edisi: "de.aburida" },
+  { kode: "it", label: "Italia", bendera: "🇮🇹", edisi: "it.piccardo" },
+  { kode: "pt", label: "Portugis", bendera: "🇵🇹", edisi: "pt.elhayek" },
+  { kode: "nl", label: "Belanda", bendera: "🇳🇱", edisi: "nl.keyzer" },
+  { kode: "pl", label: "Polandia", bendera: "🇵🇱", edisi: "pl.bielawskiego" },
+  { kode: "sv", label: "Swedia", bendera: "🇸🇪", edisi: "sv.bernstrom" },
   { kode: "ru", label: "Rusia", bendera: "🇷🇺", edisi: "ru.kuliev" },
+  { kode: "ja", label: "Jepang", bendera: "🇯🇵", edisi: "ja.japanese" },
+  { kode: "ko", label: "Korea", bendera: "🇰🇷", edisi: "ko.korean" },
   { kode: "zh", label: "Tionghoa", bendera: "🇨🇳", edisi: "zh.jian" },
+  { kode: "th", label: "Thailand", bendera: "🇹🇭", edisi: "th.thai" },
 ];
 
 export type AyatQ = { nomor: number; arab: string; arti: string };
