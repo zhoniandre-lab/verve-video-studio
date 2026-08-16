@@ -16,8 +16,8 @@ console.log("📖 Menguji Niche Qur'an (v20.0)");
 /* ---- data surat ---- */
 T("DAFTAR_SURAT ada 39 surat (juz amma + fatihah + baqarah)", (qd.match(/id: \d+/g) || []).length >= 39);
 T("default pilihan = An-Nas, Al-Falaq, Al-Ikhlas, Al-Fatihah", /SURAT_DEFAULT = \[114, 113, 112, 1\]/.test(qd));
-T("bahasa Turki ada (quran.tr.diyanet)", /quran\.tr\.diyanet/.test(qd));
-T("bahasa Indonesia ada", /quran\.id\.indonesian/.test(qd));
+T("bahasa Turki ada (tr.diyanet — format benar)", /tr\.diyanet/.test(qd) && !/quran\.tr/.test(qd));
+T("bahasa Indonesia ada (id.indonesian — format benar)", /id\.indonesian/.test(qd) && !/quran\.id/.test(qd));
 T("ambilAyatSurat pakai quran-uthmani (Arab akurat)", /quran-uthmani/.test(qd));
 T("hasil ayat di-cache 30 hari (offline)", /1000 \* 60 \* 60 \* 24 \* 30/.test(qd));
 T("gabungAyat menyertakan arti", /arti: a\.arti/.test(qd));
@@ -76,3 +76,9 @@ T("tombol hapus item ada", /hapusItem\(i\)/.test(page));
 T("tombol tambah Ayat Kursi ada", /TAMBAH BACAAN/.test(page) && /tambahItem\(ITEM_AYAT_KURSI\)/.test(page));
 T("info urutan tampil (→)", /urutan: \$\{daftar\.map\(\(d\) => d\.nama\)\.join\(" → "\)\}/.test(page));
 T("pilihSurat lama sudah diganti daftarBacaan", !/pilihSurat/.test(page));
+
+/* ---- v20.4: terjemahan tidak boleh Arab (fix API edition) ---- */
+T("anti-fallback-Arab: deteksi teks Arab", /function teksArab/.test(qd) && /[\\u0600-\\u06FF]/.test(qd));
+T("ambilAyatSurat verifikasi arti bukan Arab", /artiAman/.test(qd) && /!teksArab\(artiEd\.ayahs\[0\]/.test(qd));
+T("fallback endpoint terpisah kalau edisi salah", /api\.alquran\.cloud\/v1\/surah\/\$\{suratId\}\/\$\{edisiTerjemahan\}/.test(qd));
+T("TIDAK ada edisi ber-awalan quran. (biang Arab fallback)", !/quran\.(id|en|tr|ms|fr|es|ur|bn|de|ru|zh)\./.test(qd));

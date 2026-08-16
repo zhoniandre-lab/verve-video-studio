@@ -54,19 +54,20 @@ export const DAFTAR_SURAT: SuratQ[] = [
 /** Surat yang umum dipilih (default): An-Nas, Al-Falaq, Al-Ikhlas, Al-Fatihah */
 export const SURAT_DEFAULT = [114, 113, 112, 1];
 
-/** Peta bahasa → edisi terjemahan di alquran.cloud */
+/** Peta bahasa → edisi terjemahan di alquran.cloud (format: {lang}.{identifier} —
+ *  JANGAN pakai awalan "quran." — API tidak mengenali & fallback ke Arab!) */
 export const BAHASA: { kode: string; label: string; bendera: string; edisi: string }[] = [
-  { kode: "id", label: "Indonesia", bendera: "🇮🇩", edisi: "quran.id.indonesian" },
-  { kode: "en", label: "Inggris (Amerika/UK)", bendera: "🇺🇸", edisi: "quran.en.sahih" },
-  { kode: "tr", label: "Turki", bendera: "🇹🇷", edisi: "quran.tr.diyanet" },
-  { kode: "ms", label: "Melayu", bendera: "🇲🇾", edisi: "quran.ms.basmeih" },
-  { kode: "fr", label: "Prancis", bendera: "🇫🇷", edisi: "quran.fr.hamidullah" },
-  { kode: "es", label: "Spanyol", bendera: "🇪🇸", edisi: "quran.es.cortes" },
-  { kode: "ur", label: "Urdu", bendera: "🇵🇰", edisi: "quran.ur.jalandhry" },
-  { kode: "bn", label: "Bengali", bendera: "🇧🇩", edisi: "quran.bn.bengali" },
-  { kode: "de", label: "Jerman", bendera: "🇩🇪", edisi: "quran.de.aburida" },
-  { kode: "ru", label: "Rusia", bendera: "🇷🇺", edisi: "quran.ru.kuliev" },
-  { kode: "zh", label: "Tionghoa", bendera: "🇨🇳", edisi: "quran.zh.jian" },
+  { kode: "id", label: "Indonesia", bendera: "🇮🇩", edisi: "id.indonesian" },
+  { kode: "en", label: "Inggris (Amerika/UK)", bendera: "🇺🇸", edisi: "en.sahih" },
+  { kode: "tr", label: "Turki", bendera: "🇹🇷", edisi: "tr.diyanet" },
+  { kode: "ms", label: "Melayu", bendera: "🇲🇾", edisi: "ms.basmeih" },
+  { kode: "fr", label: "Prancis", bendera: "🇫🇷", edisi: "fr.hamidullah" },
+  { kode: "es", label: "Spanyol", bendera: "🇪🇸", edisi: "es.cortes" },
+  { kode: "ur", label: "Urdu", bendera: "🇵🇰", edisi: "ur.jalandhry" },
+  { kode: "bn", label: "Bengali", bendera: "🇧🇩", edisi: "bn.bengali" },
+  { kode: "de", label: "Jerman", bendera: "🇩🇪", edisi: "de.aburida" },
+  { kode: "ru", label: "Rusia", bendera: "🇷🇺", edisi: "ru.kuliev" },
+  { kode: "zh", label: "Tionghoa", bendera: "🇨🇳", edisi: "zh.jian" },
 ];
 
 export type AyatQ = { nomor: number; arab: string; arti: string };
@@ -92,7 +93,14 @@ function tulisCache(k: string, v: AyatQ[]) {
   } catch { /* penuh — abaikan */ }
 }
 
-/** Ambil ayat satu surat (Arab + terjemahan) dari alquran.cloud. Cache 30 hari. */
+/** 🐛 v20.4: deteksi teks Arab (fallback API yang salah) — kalau "terjemahan"
+ *  ternyata masih Arab, berarti edisi tidak dikenali → jangan dipakai. */
+function teksArab(s: string): boolean {
+  return /[\u0600-\u06FF]/.test(s || "");
+}
+
+/** Ambil ayat satu surat (Arab + terjemahan) dari alquran.cloud. Cache 30 hari.
+ *  🐛 v20.4: verifikasi terjemahan BUKAN Arab (edisi salah → API fallback Arab). */
 export async function ambilAyatSurat(suratId: number, edisiTerjemahan: string): Promise<AyatQ[]> {
   const key = `${suratId}|${edisiTerjemahan}`;
   const c = bacaCache(key);
@@ -103,10 +111,29 @@ export async function ambilAyatSurat(suratId: number, edisiTerjemahan: string): 
   const j = await r.json();
   const arabEd = j?.data?.[0], artiEd = j?.data?.[1];
   if (!arabEd?.ayahs?.length) throw new Error("Data ayat kosong");
+  const artiAman = artiEd?.ayahs?.length === arabEd.ayahs.length && !teksArab(artiEd.ayahs[0]?.text || "")
+    ? artiEd.ayahs
+    : null;
+  if (!artiAman) {
+    // edisi tidak dikenali → API fallback Arab. Coba sekali lagi pakai endpoint terpisah.
+    const r2 = await fetch(`https://api.alquran.cloud/v1/surah/${suratId}/${edisiTerjemahan}`, { signal: AbortSignal.timeout(20000) }).catch(() => null);
+    const j2 = r2 && r2.ok ? await r2.json().catch(() => null) : null;
+    const fallback = j2?.data?.ayahs;
+    if (fallback && fallback.length === arabEd.ayahs.length && !teksArab(fallback[0]?.text || "")) {
+      const out: AyatQ[] = arabEd.ayahs.map((a: any, i: number) => ({
+        nomor: a.numberInSurah,
+        arab: a.text,
+        arti: fallback[i]?.text ?? "",
+      }));
+      tulisCache(key, out);
+      return out;
+    }
+    throw new Error(`Terjemahan "${edisiTerjemahan}" tidak tersedia — coba pilih bahasa lain.`);
+  }
   const out: AyatQ[] = arabEd.ayahs.map((a: any, i: number) => ({
     nomor: a.numberInSurah,
     arab: a.text,
-    arti: artiEd?.ayahs?.[i]?.text ?? "",
+    arti: artiAman[i]?.text ?? "",
   }));
   tulisCache(key, out);
   return out;
