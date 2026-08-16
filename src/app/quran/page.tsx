@@ -12,6 +12,7 @@ import {
   DAFTAR_SURAT, ITEM_AYAT_KURSI, BAHASA, ambilAyatBanyak, gabungAyat, type AyatGabung, type ItemBacaan,
 } from "@/lib/quran-data";
 import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } from "@/lib/ambience";
+import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v20.7: loop video
 import { gambarFrameIslami, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe, type SubStyle, type SubAnim } from "@/lib/subscribe";
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline";
@@ -94,6 +95,9 @@ export default function NicheQuran() {
   const [logoPos, setLogoPos] = useState<ElemenPos>({ x: 0.5, y: 0.15 });
   const [logoScale, setLogoScale] = useState(1);
   const [videoBg, setVideoBg] = useState("");
+  // 🔁 v20.7 LOOP VIDEO — auto (pas durasi audio) / 1× / 2× / 3× (sama seperti Spectrum)
+  const [videoLoopMode, setVideoLoopMode] = useState<ModeLoopVideo>("auto");
+  const [videoDurQ, setVideoDurQ] = useState(0);
   /* render */
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
@@ -146,26 +150,61 @@ export default function NicheQuran() {
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const pvTRef = useRef(0); // waktu preview (detik) — sinkron dengan audio saat diputar
 
-  /* ---- timing proporsional per ayat (panjang arab → durasi) ---- */
-  const timing = useMemo(() => {
-    if (!totalAyat || !(audioDur > 0.5)) return [] as { start: number; end: number }[];
+  /* ---- timing: AUTO proporsional (panjang arab → durasi) + BISA DIEDIT ---- */
+  const autoBatas = useMemo(() => {
+    // batas waktu tiap ayat: [0, t1, t2, ..., durasi]
+    if (!totalAyat || !(audioDur > 0.5)) return [] as number[];
     const bobot = ayatList.map((a) => Math.max(4, a.teks.length));
     const sum = bobot.reduce((x, y) => x + y, 0);
-    const out: { start: number; end: number }[] = [];
+    const out: number[] = [0];
     let t = 0;
-    bobot.forEach((b, i) => {
-      const d = (audioDur * b) / sum;
-      out.push({ start: t, end: t + d });
-      t += d;
-    });
+    bobot.forEach((b) => { t += (audioDur * b) / sum; out.push(t); });
+    out[out.length - 1] = audioDur;
     return out;
   }, [ayatList, audioDur, totalAyat]);
+  // ⏱ v20.7 EDIT TIMING: override manual (null = ikut auto) + geser global
+  const [manualBatas, setManualBatas] = useState<number[] | null>(null);
+  const [offsetG, setOffsetG] = useState(0); // detik, geser semua (mis. basmalah di awal)
+  const seg = useMemo(() => {
+    if (!autoBatas.length) return [] as { start: number; end: number }[];
+    let b = manualBatas && manualBatas.length === autoBatas.length ? [...manualBatas] : [...autoBatas];
+    if (offsetG) b = b.map((x) => clampN(x + offsetG, 0, audioDur));
+    b = b.map((x, i) => clampN(x, 0, audioDur));
+    b.sort((x, y) => x - y);
+    b[0] = 0; b[b.length - 1] = audioDur;
+    const out: { start: number; end: number }[] = [];
+    for (let i = 0; i < b.length - 1; i++) out.push({ start: b[i], end: b[i + 1] });
+    return out;
+  }, [autoBatas, manualBatas, offsetG, audioDur]);
 
   function ayatAktif(t: number): number {
-    if (!timing.length) return -1;
-    for (let i = 0; i < timing.length; i++) if (t >= timing[i].start && t < timing[i].end) return i;
-    return timing.length - 1;
+    if (!seg.length) return -1;
+    for (let i = 0; i < seg.length; i++) if (t >= seg[i].start && t < seg[i].end) return i;
+    return seg.length - 1;
   }
+  /* ⏱ v20.7: geser batas antar ayat (nudge ±0,5 dtk) */
+  function aturBatas(i: number, delta: number) {
+    setManualBatas((prev) => {
+      const base = prev && prev.length === autoBatas.length ? [...prev] : [...autoBatas];
+      const bawah = i > 0 ? base[i - 1] + 0.2 : 0;
+      const atas = i < base.length - 2 ? base[i + 2] - 0.2 : audioDur;
+      base[i + 1] = clampN((base[i + 1] || 0) + delta, bawah, atas);
+      return base;
+    });
+  }
+  /* ⏱ v20.7: TANDAI posisi sekarang (saat ▶ jalan) sebagai awal ayat berikutnya */
+  function tandaiBatas() {
+    const t = tPreview();
+    const idx = ayatAktif(t);
+    if (idx < 0 || idx >= seg.length - 1) { setMsg("⚠️ Mainkan audio ▶ dulu, lalu tandai di tengah-tengah bacaan."); return; }
+    setManualBatas((prev) => {
+      const base = prev && prev.length === autoBatas.length ? [...prev] : [...autoBatas];
+      base[idx + 1] = clampN(t, (base[idx] || 0) + 0.2, idx + 1 < base.length - 1 ? (base[idx + 2] ?? audioDur) - 0.2 : audioDur);
+      return base;
+    });
+    setMsg(`✅ Batas ayat ${idx + 1} → ${idx + 2} ditandai di ${fmtD(t)}`);
+  }
+  function resetTiming() { setManualBatas(null); setOffsetG(0); setMsg("↺ Timing kembali otomatis (proporsional panjang ayat)."); }
   /* 🐛 v20.2: tanpa audio → teks DIAM di ayat pertama (tidak gonta-ganti) */
   function tPreview(): number {
     if (playPrev && audioElRef.current) return audioElRef.current.currentTime;
@@ -281,11 +320,12 @@ export default function NicheQuran() {
     return () => ambStopRef.current?.stop();
   }, [ambience, ambVol, ambUrl, audioDur, ambBuf]); // eslint-disable-line
 
-  /* ---- video latar (sederhana: loop natural) ---- */
+  /* ---- video latar (v20.7: durasi terbaca + loop auto/1x/2x/3x) ---- */
   useEffect(() => {
-    if (!videoBg) { videoRef.current = null; return; }
+    if (!videoBg) { videoRef.current = null; setVideoDurQ(0); return; }
     const v = document.createElement("video");
     v.muted = true; v.loop = true; v.playsInline = true; v.crossOrigin = "anonymous"; v.src = videoBg;
+    v.onloadedmetadata = () => { if (v.duration > 0 && isFinite(v.duration)) setVideoDurQ(v.duration); };
     v.play().catch(() => {});
     videoRef.current = v;
     return () => { try { v.pause(); } catch {} videoRef.current = null; };
@@ -297,8 +337,14 @@ export default function NicheQuran() {
     const fc = dapatCacheFrame(W, H);
     if (fc) ctx.drawImage(fc, 0, 0, W, H);
     // video latar (bergerak → digambar tiap frame)
+    // 🔁 v20.7: LOOP ikut mode — masih dalam jatah → main; sudah lewat → diam (freeze)
     const vv = videoRef.current;
     if (vv && vv.readyState >= 2 && vv.videoWidth) {
+      const vd = vv.duration > 0 ? vv.duration : 4;
+      const totalPlay = durasiLoopTotal(vd, audioDur || vd, videoLoopMode);
+      const masihJalan = t < totalPlay - 0.35;
+      if (masihJalan && vv.paused) vv.play().catch(() => {});
+      if (!masihJalan && !vv.paused) vv.pause();
       const ir = vv.videoWidth / vv.videoHeight, cr = W / H;
       let sw = vv.videoWidth, sh = vv.videoHeight, sx = 0, sy = 0;
       if (ir > cr) { sw = vv.videoHeight * cr; sx = (vv.videoWidth - sw) / 2; } else { sh = vv.videoWidth / cr; sy = (vv.videoHeight - sh) / 2; }
@@ -412,7 +458,7 @@ export default function NicheQuran() {
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, timing, playPrev]);
+  }, [busy, audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas]);
 
   /* 🎙️ v20.6: preview via rantai STUDIO (MediaElementSource → EQ studio → kompresor) —
      suara yang didengar pas ▶ = mendekati hasil render (tidak mentahan) */
@@ -678,6 +724,41 @@ export default function NicheQuran() {
           )}
           <p style={{ fontSize: 9.5, color: "#8b8b98", margin: 0 }}>Dengarkan dulu: kalau rekaman masih ada <b>keresek/bising</b>, nyalakan 🌧️ suara alam di bawah lalu reverb & fokus vokal — atau rekam ulang di tempat tenang.</p>
 
+          {/* ⏱ v20.7: SINKRON AYAT & SUARA — edit timing biar pas */}
+          <div style={{ border: "1px solid rgba(139,92,246,.35)", borderRadius: 12, padding: 10, marginTop: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>⏱ SINKRON AYAT & SUARA</div>
+            {!audioUrl ? (
+              <p style={{ fontSize: 10.5, color: "#8b8b98", margin: 0 }}>Pasang suara dulu (rekam/upload) — nanti ayat otomatis dibagi rata sesuai panjang teks, dan bisa kamu geser di sini biar pas.</p>
+            ) : (
+              <>
+                <label style={{ fontSize: 11.5, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ minWidth: 86 }}>Geser semua</span>
+                  <input type="range" min={-15} max={15} step={0.5} value={offsetG} onChange={(e) => setOffsetG(Number(e.target.value))} style={{ flex: 1 }} />
+                  <b style={{ minWidth: 44 }}>{offsetG > 0 ? `+${offsetG}` : offsetG} dtk</b>
+                </label>
+                <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "2px 0 6px" }}>Kalau audio mulai dengan basmalah dulu sebelum ayat 1 → geser + supaya ayat 1 muncul setelah basmalah.</p>
+                <button onClick={tandaiBatas} style={{ width: "100%", padding: "9px", borderRadius: 10, border: "1px solid rgba(34,197,94,.5)", background: "rgba(34,197,94,.1)", color: "#86efac", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  🎯 Tandai posisi ▶ sekarang = awal ayat berikutnya
+                </button>
+                <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 6px" }}>Cara: putar ▶, saat qari mulai ayat berikutnya → tap tombol ini. Ulangi untuk tiap perpindahan.</p>
+                <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid rgba(255,255,255,.1)", borderRadius: 10, padding: 4 }}>
+                  {seg.slice(0, 20).map((s, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 2px", borderBottom: "1px solid rgba(255,255,255,.05)", fontSize: 11 }}>
+                      <span style={{ color: "#d4af37", minWidth: 18 }}>{i + 1}.</span>
+                      <span style={{ flex: 1, color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ayatList[i]?.teks.slice(0, 30) || ""}…</span>
+                      <span style={{ color: "#8b8b98", fontSize: 10 }}>{fmtD(s.start)}</span>
+                      <button onClick={() => aturBatas(i, -0.5)} style={{ background: "rgba(255,255,255,.08)", border: "none", borderRadius: 6, color: "#fff", width: 26, height: 24, cursor: "pointer", fontSize: 11 }}>−</button>
+                      <button onClick={() => aturBatas(i, 0.5)} style={{ background: "rgba(255,255,255,.08)", border: "none", borderRadius: 6, color: "#fff", width: 26, height: 24, cursor: "pointer", fontSize: 11 }}>+</button>
+                    </div>
+                  ))}
+                  {seg.length > 20 && <p style={{ fontSize: 9, color: "#8b8b98", textAlign: "center" }}>…{seg.length - 20} ayat lagi (semua tetap ikut proporsi)</p>}
+                </div>
+                <button onClick={resetTiming} style={{ marginTop: 6, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(255,255,255,.05)", color: "#cbd5e1", fontSize: 11, cursor: "pointer" }}>↺ Kembali otomatis</button>
+                <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>Geser global & tanda manual ikut dipakai saat render (teks tampil pas dengan suara).</p>
+              </>
+            )}
+          </div>
+
           <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800, marginTop: 4 }}>🌧️ SUARA ALAM LATAR (tidak ganggu bacaan — volumenya terpisah)</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {(Object.keys(AMBIENCE_LABEL) as JenisAmbience[]).map((j) => (
@@ -739,6 +820,22 @@ export default function NicheQuran() {
             </label>
             {videoBg && <button onClick={() => setVideoBg("")} style={{ padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(239,68,68,.4)", color: "#fca5a5", fontSize: 11.5, cursor: "pointer" }}>✕ Hapus video</button>}
           </div>
+          {/* 🔁 v20.7: LOOP VIDEO — auto (pas durasi audio) / 1× / 2× / 3× */}
+          {videoBg && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#cbd5e1", marginBottom: 4 }}>🔁 LOOP VIDEO</div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {([["auto", "🔄 Auto (pas audio)"], ["1", "1×"], ["2", "2×"], ["3", "3×"]] as const).map(([v, lb]) => (
+                  <button key={v} onClick={() => setVideoLoopMode(v)} style={{ padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(255,255,255,.2)", background: videoLoopMode === v ? "rgba(139,92,246,.4)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 11, cursor: "pointer" }}>{lb}</button>
+                ))}
+              </div>
+              <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>
+                {videoDurQ > 0 && audioDur > 0
+                  ? `📐 Video ${videoDurQ.toFixed(1)} dtk × ${hitungKaliLoop(videoDurQ, audioDur, videoLoopMode)}× = ${durasiLoopTotal(videoDurQ, audioDur, videoLoopMode).toFixed(0)} dtk total — tanpa potong kualitas, mulus`
+                  : "Auto = hitung otomatis berapa kali diulang sampai pas durasi audio. Tanpa potong kualitas."}
+              </p>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => setRasio("16:9")} style={{ flex: 1, padding: "8px", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: rasio === "16:9" ? "rgba(139,92,246,.3)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 12, cursor: "pointer" }}>🖥️ 16:9</button>
             <button onClick={() => setRasio("9:16")} style={{ flex: 1, padding: "8px", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: rasio === "9:16" ? "rgba(139,92,246,.3)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 12, cursor: "pointer" }}>📱 9:16 Shorts</button>

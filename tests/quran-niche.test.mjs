@@ -101,8 +101,24 @@ T("render drawBg pakai cache juga", /drawBg: \(ctx, W, H\) => \{[\s\S]*?dapatCac
 T("FIX BUG: cache frame ikut gaya frame & latar (bukan cuma ukuran)", /\$\{frame\}\|\$\{latar\}/.test(page));
 T("EQ studio ada di audio-chain", /eq === "studio"/.test(ac) && /frequency.value = 350/.test(ac) && /frequency.value = 3000/.test(ac));
 T("render offline dukung noiseGate", /noiseGate/.test(ro) && /gate = gate \* 0\.8/.test(ro));
-T("Quran render pakai EQ studio saat Mode Studio ON", /eq: studioOn \\? "studio"/.test(page));
-T("Quran render kirim noiseGate 0.003 saat studio", /noiseGate: studioOn \\? 0\\.003/.test(page));
+T("Quran render pakai EQ studio saat Mode Studio ON", /eq: studioOn/.test(page) && /"studio"/.test(page));
+T("Quran render kirim noiseGate 0.003 saat studio", /noiseGate: studioOn/.test(page) && /0\.003/.test(page));
 T("toggle MODE STUDIO di UI", /MODE STUDIO AKTIF/.test(page));
 T("preview diputar lewat rantai studio (MediaElementSource)", /createMediaElementSource/.test(page) && /previewNodesRef/.test(page));
 T("tips rekam di UI", /Tips rekam: di tempat sepi/.test(page));
+
+/* ---- v20.7: EDIT TIMING ayat & LOOP VIDEO (auto/1x/2x/3x) ---- */
+T("autoBatas (batas waktu tiap ayat) ada", /const autoBatas = useMemo/.test(page) && /out\[out\.length - 1\] = audioDur/.test(page));
+T("manualBatas + offsetG (geser semua) ada", /const \[manualBatas, setManualBatas\]/.test(page) && /const \[offsetG, setOffsetG\]/.test(page));
+T("aturBatas nudge ±0,5 dtk ada", /function aturBatas\(i: number, delta: number\)/.test(page) && /base\[i \+ 1\] = clampN/.test(page));
+T("tandaiBatas (posisi ▶ = awal ayat berikutnya) ada", /function tandaiBatas/.test(page) && /base\[idx \+ 1\] = clampN\(t/.test(page));
+T("resetTiming ada", /function resetTiming/.test(page) && /setManualBatas\(null\)/.test(page));
+T("UI SINKRON AYAT & SUARA ada", /SINKRON AYAT & SUARA/.test(page));
+T("UI tombol tandai posisi ada", /Tandai posisi ▶ sekarang = awal ayat berikutnya/.test(page));
+T("UI daftar ayat + tombol −/+ ada", /aturBatas\(i, -0\.5\)/.test(page) && /aturBatas\(i, 0\.5\)/.test(page));
+T("UI geser global (offset) ada", /Geser semua/.test(page) && /setOffsetG\(Number/.test(page));
+T("LOOP VIDEO: import videoloop", /from "@\/lib\/videoloop"/.test(page));
+T("LOOP VIDEO: mode auto/1x/2x/3x state", /const \[videoLoopMode, setVideoLoopMode\]/.test(page) && /ModeLoopVideo>\(\"auto\"\)/.test(page));
+T("LOOP VIDEO: gambarScene pakai durasiLoopTotal + freeze", /durasiLoopTotal\(vd, audioDur \|\| vd, videoLoopMode\)/.test(page) && /!masihJalan && !vv\.paused\) vv\.pause\(\)/.test(page));
+T("LOOP VIDEO: UI chip auto/1x/2x/3x", /LOOP VIDEO/.test(page) && /\[\["auto", "🔄 Auto \(pas audio\)"\]/.test(page));
+T("LOOP VIDEO: info durasi tampil", /hitungKaliLoop\(videoDurQ, audioDur, videoLoopMode\)/.test(page));
