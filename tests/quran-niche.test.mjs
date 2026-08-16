@@ -9,6 +9,8 @@ const ro = readFileSync(new URL("../src/lib/render-offline.ts", import.meta.url)
 const page = readFileSync(new URL("../src/app/quran/page.tsx", import.meta.url), "utf8");
 const ac = readFileSync(new URL("../src/lib/audio-chain.ts", import.meta.url), "utf8");
 const qt = readFileSync(new URL("../src/lib/quran-teks.ts", import.meta.url), "utf8");
+const route = readFileSync(new URL("../src/app/api/hcnsec/image/route.ts", import.meta.url), "utf8");
+const hcnsec = readFileSync(new URL("../src/lib/hcnsec.ts", import.meta.url), "utf8");
 const dash = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 
 let gagal = 0;
@@ -205,3 +207,12 @@ T("VISUAL: tombol Cari video stok di UI", /Cari video stok/.test(page) && /setSt
 T("VISUAL: gambar AI latar (buatBgGambarQ)", /async function buatBgGambarQ/.test(page) && /\/api\/hcnsec\/image/.test(page));
 T("VISUAL: upload foto latar (latarGambar)", /const \[latarGambar, setLatarGambar\]/.test(page) && /setLatarGambar\(r\.result as string\)/.test(page));
 T("VISUAL: cache frame pakai latarGambar", /latarGambar \? "gbr" : "no"/.test(page) && /latarGambar\)/.test(page));
+
+/* ---- v20.17: FIX gambar AI gagal (timeout Vercel) + video stok cepat ---- */
+T("FIX GBR: route TIDAK proxy→base64 (kirim URL asli)", !/proxyImageToBase64\(url\)/.test(route) || /dataUrl = url/.test(route));
+T("FIX GBR: generateImage maks 3 model", /order\.indexOf\(model\) >= 3\) break/.test(hcnsec));
+T("FIX GBR: timeout 20 dtk per attempt (dulu 45)", /postJson\("\/images\/generations", \{ model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt \}, 20\)/.test(hcnsec));
+T("FIX GBR: pagar total 30 dtk", /t0gambar > 30000/.test(hcnsec));
+T("FIX GBR: client watchdog 55 dtk + proxy-img utk CORS", /const wd = setTimeout/.test(page) && /proxy-img\?url=/.test(page));
+T("FIX STOK: langsung cari global (1 query, cepat)", /cariStokVideoSmart\(k, false\)/.test(page));
+T("FIX STOK: tidak pakai rasa Indonesia (2 query)", !/cariStokVideoSmart\(k, true\)/.test(page));

@@ -209,7 +209,9 @@ export default function NicheQuran() {
     const k = stokQ.trim();
     if (k.length < 2) { setStokErr("Ketik kata kunci dulu (mis. \"masjid\", \"hujan\", \"laut\")."); return; }
     setStokBusy(true); setStokErr("");
-    const r = await cariStokVideoSmart(k, true).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang", lebar: false }));
+    // ⚡ v20.17: langsung cari global (1 query, lebih cepat) — bukan "rasa Indonesia"
+    // yang mencoba 2 query (Indonesia dulu → gagal → global) = 2× lebih lambat.
+    const r = await cariStokVideoSmart(k, false).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang", lebar: false }));
     setStokBusy(false);
     if (!r.ok) { setStokErr(r.err); setStokRes([]); return; }
     setStokRes(r.hasil);
@@ -222,21 +224,23 @@ export default function NicheQuran() {
     const mood = bgImgQ.trim() || (ayatList[0]?.arti || "").slice(0, 60);
     if (!mood) { setBgImgMsg("⚠️ Ketik deskripsi dulu (mis. \"masjid di senja, cahaya hangat\")."); return; }
     setBgImgBusy(true); setBgImgMsg("🎨 Otak menggambar…");
+    const ac = new AbortController(); const wd = setTimeout(() => ac.abort(), 55000); // 🛡 v20.17: watchdog
     try {
       const r = await fetch("/api/hcnsec/image", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
         body: JSON.stringify({ title: "quran-visual", keyword: "islamic", niche: "visualizer", _rawPrompt: true, prompt: `Islamic peaceful scene, ${mood}, no text no watermark, dark elegant, cinematic, high quality` }),
       });
       const j = await r.json();
       if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
       setVideoBg(""); setVideoDurQ(0); // bersihkan video (gambar latar)
       setLatar("navy");
-      // pakai gambar sebagai latar via data URL: simpan di state latarGambar
-      setLatarGambar(j.url);
+      // 🐛 v20.17: kalau URL http → lewat proxy-img biar aman CORS; data: → langsung
+      const u = String(j.url).startsWith("http") ? `/api/proxy-img?url=${encodeURIComponent(String(j.url))}` : String(j.url);
+      setLatarGambar(u);
       setMsg("✅ Gambar AI jadi — dipasang sebagai latar.");
       setBgImgMsg("✅ Gambar AI jadi!");
-    } catch (e: any) { setBgImgMsg(`⚠️ ${e?.message || "Gagal generate"}`); }
-    finally { setBgImgBusy(false); }
+    } catch (e: any) { setBgImgMsg(`⚠️ ${e?.message || "Gagal generate"} — coba lagi, atau pakai upload foto.`); }
+    finally { clearTimeout(wd); setBgImgBusy(false); }
   }
   const [latarGambar, setLatarGambar] = useState("");
   // 🔁 v20.7 LOOP VIDEO — auto (pas durasi audio) / 1× / 2× / 3× (sama seperti Spectrum)

@@ -222,14 +222,16 @@ export async function generateImage(prompt: string, styleSuffix?: string, opts?:
   }
   for (const model of order) {
     for (const fmt of ["url", "b64_json"] as const) {
-      // 🐛 v19.94 PAGAR WAKTU TOTAL: 6 model × 2 format × 45 dtk bisa > 60 dtk
+      // 🐛 v19.94/v20.17 PAGAR WAKTU TOTAL: 6 model × 2 format × 45 dtk bisa > 60 dtk
       // (batas Vercel) → route timeout → "gagal generate" padahal server sehat.
-      // Begitu total sudah 40 dtk, berhenti & balas error dengan sisa waktu utk pesan.
-      if (Date.now() - t0gambar > 40000) {
-        throw new ApiError(`Server gambar sibuk (coba > 40 dtk) — coba lagi sebentar, atau pakai upload foto.`, 504);
+      // v20.17: dipersingkat — maks 3 model, timeout 20 dtk, total 30 dtk → selalu
+      // muat dalam batas 60 dtk Vercel (sisa waktu utk pesan & HEAD cek).
+      if (Date.now() - t0gambar > 30000) {
+        throw new ApiError(`Server gambar sibuk (coba > 30 dtk) — coba lagi sebentar, atau pakai upload foto.`, 504);
       }
+      if (order.indexOf(model) >= 3) break; // ⚡ v20.17: maks 3 model dicoba
       try {
-        const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt }, 45); // v10.1: 45d/attempt — tak boleh lewat anggaran serverless
+        const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt }, 20); // v20.17: 20 dtk/attempt (dulu 45)
         const item = data.data?.[0] ?? data;
         const url = extractUrl(item);
         if (url && url.length > 100) return { url, model, size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };

@@ -123,10 +123,19 @@ export async function POST(req: Request) {
         { modelFirst: _modelFirst ? String(_modelFirst) : undefined } // 🔒 v10.1: pin model saja
       );
 
+      // 🐛 v20.17: JANGAN proxy → base64 (biang timeout 60s Vercel!).
+      // URL asli dikirim; client memuat langsung (bisa via proxy-img kalau CORS).
       let dataUrl = url;
       if (url.startsWith("http")) {
-        try { dataUrl = await proxyImageToBase64(url); }
-        catch (e) { /* fallback URL asli */ }
+        try {
+          // coba singkat: pastikan URL bisa diakses (2 dtk) — tanpa download penuh
+          const cek = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(3000) }).catch(() => null);
+          if (!cek || !cek.ok) {
+            // fallback: URL asli tetap dikirim (client akan coba lewat proxy-img)
+            console.warn("[image] HEAD gagal, kirim URL asli:", url.slice(0, 80));
+          }
+        } catch { /* kirim URL asli */ }
+        dataUrl = url;
       }
       return NextResponse.json({
         url: dataUrl, originalUrl: url.startsWith("http")?url:null,
