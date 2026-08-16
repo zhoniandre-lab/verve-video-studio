@@ -7,17 +7,29 @@ export const dynamic = "force-dynamic";
 // Kita panggil Chat AI (Llama/GPT) di backend secara serverless untuk menerjemahkan query lo
 // dari bahasa Indonesia (atau bahasa lain) menjadi kata kunci pencarian visual Inggris (Pexels/Pixabay) yang super presisi!
 async function translateQueryWithAI(q: string): Promise<string> {
+  // 🐛 v20.18: dulu pakai chat() dengan timeout 120 dtk → kalau AI chat lambat/offline,
+  // pencarian stok ngantuk lama / gagal. Sekarang fetch LANGSUNG, timeout 6 dtk,
+  // gagal → langsung pakai kata asli (tidak ngeblok pencarian).
   try {
-    const prompt = `Translate this video search keyword into a highly descriptive English stock video query (1 to 4 words max, lowercase, no numbers, no punctuation, focus on visual description): "${q}"`;
-    const res = await chat([{ role: "user", content: prompt }]);
-    const clean = res.replace(/[^a-zA-Z0-9\s]/g, "").trim().toLowerCase();
-    if (clean && clean.length > 1) {
-      console.log(`[AI Translate] "${q}" -> "${clean}"`);
-      return clean;
-    }
-  } catch (e) {
-    console.error("[AI Translate Error]", e);
-  }
+    const base = (process.env.HCNSEC_BASE_URL || "https://api.hcnsec.cn/v1").replace(/\/+$/, "");
+    const key = process.env.HCNSEC_API_KEY || "";
+    if (!key) return q;
+    const r = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "auto",
+        messages: [{ role: "user", content: `Translate this video search keyword into a highly descriptive English stock video query (1 to 4 words max, lowercase, no numbers, no punctuation): "${q}"` }],
+        max_tokens: 30,
+      }),
+      signal: AbortSignal.timeout(6000),
+    }).catch(() => null);
+    if (!r || !r.ok) return q;
+    const j: any = await r.json().catch(() => null);
+    const txt: string = j?.choices?.[0]?.message?.content || "";
+    const clean = txt.replace(/[^a-zA-Z0-9\s]/g, "").trim().toLowerCase();
+    if (clean && clean.length > 1) return clean;
+  } catch { /* fallback */ }
   return q; // Fallback jika AI gagal
 }
 
@@ -45,12 +57,12 @@ const COVERR = "https://api.coverr.co/videos";
 const ID_GESER_PIXABAY = 900_000_000;
 const ID_GESER_COVERR = 1_800_000_000;
 
-// 🛡️ Penjaga kuota sederhana (per instance serverless): maks 60 cari / 10 menit / IP.
+// 🛡️ Penjaga kuota sederhana (per instance serverless): maks 300 cari / 10 menit / IP. 🐛 v20.18: dinaikkan (60 terlalu kencang saat coba-coba).
 const jejak = new Map<string, number[]>();
 function bolehLewat(ip: string) {
   const skrg = Date.now();
   const arr = (jejak.get(ip) || []).filter((t) => skrg - t < 10 * 60 * 1000);
-  if (arr.length >= 60) return false;
+  if (arr.length >= 300) return false;
   arr.push(skrg);
   jejak.set(ip, arr);
   return true;
@@ -75,9 +87,11 @@ export async function GET(req: Request) {
     const page = Math.max(1, Math.min(40, parseInt(searchParams.get("page") || "1", 10) || 1));
     const per = Math.max(3, Math.min(15, parseInt(searchParams.get("per") || "8", 10) || 8));
 
-    const kunciP = process.env.PEXELS_API_KEY || "";
-    const kunciX = process.env.PIXABAY_API_KEY || "";
-    const kunciC = process.env.COVERR_API_KEY || "";
+    // 🐛 v20.18: kunci dari header client (disimpan di HP user) ATAU env Vercel —
+    // dulu cuma env → kalau user "sudah masukin" di aplikasi tetap gagal.
+    const kunciP = process.env.PEXELS_API_KEY || req.headers.get("x-stok-pexels") || "";
+    const kunciX = process.env.PIXABAY_API_KEY || req.headers.get("x-stok-pixabay") || "";
+    const kunciC = process.env.COVERR_API_KEY || req.headers.get("x-stok-coverr") || "";
     if (searchParams.get("status") === "1" || searchParams.get("status") === "true") {
       const providers = { pexels: !!kunciP, pixabay: !!kunciX, coverr: !!kunciC };
       const active = Object.values(providers).filter(Boolean).length;
@@ -93,17 +107,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "q (kata kunci) wajib diisi" }, { status: 400 });
 
     const q = await translateQueryWithAI(rawQ);
-
-    if (!kunciP && !kunciX && !kunciC)
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "TANPA_KUNCI",
-          error:
-            "Kunci gudang video belum dipasang di server (PEXELS_API_KEY / PIXABAY_API_KEY / COVERR_API_KEY). Gratis kok bro — ikuti panduan 5 menitnya 🔑",
-        },
-        { status: 503 },
-      );
 
     const ip = (req.headers.get("x-forwarded-for") || "anon").split(",")[0].trim();
     if (!bolehLewat(ip))

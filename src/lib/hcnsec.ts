@@ -220,18 +220,21 @@ export async function generateImage(prompt: string, styleSuffix?: string, opts?:
     order = [...new Set([...tersedia, ...ekstra, ...sisa])]; // dagangan nyata didahulukan; daftar lama jadi cadangan ekor
     katInfo = kat.slice(0, 5).join(", ");
   }
+  let dicoba = 0;
   for (const model of order) {
     for (const fmt of ["url", "b64_json"] as const) {
-      // 🐛 v19.94/v20.17 PAGAR WAKTU TOTAL: 6 model × 2 format × 45 dtk bisa > 60 dtk
-      // (batas Vercel) → route timeout → "gagal generate" padahal server sehat.
-      // v20.17: dipersingkat — maks 3 model, timeout 20 dtk, total 30 dtk → selalu
-      // muat dalam batas 60 dtk Vercel (sisa waktu utk pesan & HEAD cek).
-      if (Date.now() - t0gambar > 30000) {
-        throw new ApiError(`Server gambar sibuk (coba > 30 dtk) — coba lagi sebentar, atau pakai upload foto.`, 504);
+      // 🐛 v20.18 PAGAR CERDAS: AI gambar butuh 30-60+ dtk. Dulu dipersingkat
+      // (20 dtk/attempt, pagar 30 dtk) → AI kamu kepotong sebelum jadi.
+      // Sekarang: maks 2 model, attempt pertama timeout 50 dtk, total ≤55 dtk —
+      // selalu muat di batas 60 dtk Vercel TAPI tetap memberi AI waktu cukup.
+      if (Date.now() - t0gambar > 55000) {
+        throw new ApiError(`Server gambar sibuk (coba > 55 dtk) — coba lagi sebentar, atau pakai upload foto.`, 504);
       }
-      if (order.indexOf(model) >= 3) break; // ⚡ v20.17: maks 3 model dicoba
+      if (dicoba >= 2) break; // ⚡ v20.18: maks 2 percobaan (model berbeda)
+      dicoba++;
+      const sisa = Math.max(10, 55000 - (Date.now() - t0gambar));
       try {
-        const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt }, 20); // v20.17: 20 dtk/attempt (dulu 45)
+        const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt }, sisa / 1000); // v20.18: timeout = sisa waktu (≤55 dtk)
         const item = data.data?.[0] ?? data;
         const url = extractUrl(item);
         if (url && url.length > 100) return { url, model, size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };

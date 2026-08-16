@@ -202,6 +202,14 @@ export default function NicheQuran() {
   const [stokRes, setStokRes] = useState<VidPick[]>([]);
   const [stokBusy, setStokBusy] = useState(false);
   const [stokErr, setStokErr] = useState("");
+  // 🔑 v20.18: kunci stok dari HP (Pexels/Pixabay/Coverr) — dikirim sbg header
+  const [stokKeys, setStokKeys] = useState<{ px: string; xy: string; cv: string }>(() => {
+    try { return JSON.parse(localStorage.getItem("verve_quran_stok_keys_v1") || "{\"px\":\"\",\"xy\":\"\",\"cv\":\"\"}"); } catch { return { px: "", xy: "", cv: "" }; }
+  });
+  function simpanStokKeys() {
+    try { localStorage.setItem("verve_quran_stok_keys_v1", JSON.stringify(stokKeys)); } catch {}
+    setMsg("🔑 Kunci stok disimpan di HP — dipakai untuk cari video stok.");
+  }
   const [bgImgQ, setBgImgQ] = useState("");
   const [bgImgBusy, setBgImgBusy] = useState(false);
   const [bgImgMsg, setBgImgMsg] = useState("");
@@ -209,13 +217,25 @@ export default function NicheQuran() {
     const k = stokQ.trim();
     if (k.length < 2) { setStokErr("Ketik kata kunci dulu (mis. \"masjid\", \"hujan\", \"laut\")."); return; }
     setStokBusy(true); setStokErr("");
-    // ⚡ v20.17: langsung cari global (1 query, lebih cepat) — bukan "rasa Indonesia"
-    // yang mencoba 2 query (Indonesia dulu → gagal → global) = 2× lebih lambat.
-    const r = await cariStokVideoSmart(k, false).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang", lebar: false }));
-    setStokBusy(false);
-    if (!r.ok) { setStokErr(r.err); setStokRes([]); return; }
-    setStokRes(r.hasil);
-    if (!r.hasil.length) setStokErr("Gudang kosong — coba kata lain (bisa bahasa Indonesia).");
+    // 🐛 v20.18: panggil route LANGSUNG + bawa kunci stok dari HP (kalau user isi)
+    // — dulu lewat cariStokVideoSmart yang tidak bisa bawa header kunci.
+    try {
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      const keys = stokKeys;
+      if (keys.px) hdrs["x-stok-pexels"] = keys.px;
+      if (keys.xy) hdrs["x-stok-pixabay"] = keys.xy;
+      if (keys.cv) hdrs["x-stok-coverr"] = keys.cv;
+      const r = await fetch(`/api/hcnsec/stock-video?q=${encodeURIComponent(k)}&page=1&per=8`, { headers: hdrs, cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j?.ok) {
+        setStokErr(j?.error || `HTTP ${r.status} — cek kunci stok & coba lagi.`);
+        setStokRes([]);
+        return;
+      }
+      setStokRes((j.hasil || []) as VidPick[]);
+      if (!j.hasil?.length) setStokErr("Gudang kosong — coba kata lain (bisa bahasa Indonesia).");
+    } catch { setStokErr("Gagal hubungi gudang video — cek internet & coba lagi."); }
+    finally { setStokBusy(false); }
   }
   function pakaiStok(v: VidPick) {
     setVideoBg(v.sd || v.src); setVideoDurQ(v.dur); setStokOpen(false); setMsg(`🎬 Video stok "${v.by || "stok"}" dipasang sebagai latar (di-loop ikut audio).`);
@@ -223,15 +243,22 @@ export default function NicheQuran() {
   async function buatBgGambarQ() {
     const mood = bgImgQ.trim() || (ayatList[0]?.arti || "").slice(0, 60);
     if (!mood) { setBgImgMsg("⚠️ Ketik deskripsi dulu (mis. \"masjid di senja, cahaya hangat\")."); return; }
-    setBgImgBusy(true); setBgImgMsg("🎨 Otak menggambar…");
+    setBgImgBusy(true); setBgImgMsg("🎨 Otak menggambar… (bisa 30-60 detik, sabar ya)");
     const ac = new AbortController(); const wd = setTimeout(() => ac.abort(), 55000); // 🛡 v20.17: watchdog
     try {
       const r = await fetch("/api/hcnsec/image", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
-        body: JSON.stringify({ title: "quran-visual", keyword: "islamic", niche: "visualizer", _rawPrompt: true, prompt: `Islamic peaceful scene, ${mood}, no text no watermark, dark elegant, cinematic, high quality` }),
+        body: JSON.stringify({
+          title: "quran-visual", keyword: "islamic", niche: "visualizer", _rawPrompt: true,
+          prompt: `Islamic peaceful scene, ${mood}, no text no watermark, dark elegant, cinematic, high quality`,
+          // 🐛 v20.18: pin model yang pernah sukses (seperti Lahan) → percobaan
+          // berikutnya langsung ke model itu (lebih cepat & pasti).
+          _modelFirst: modelGambarQ || undefined,
+        }),
       });
       const j = await r.json();
       if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
+      if (j.model) setModelGambarQ(String(j.model)); // 🔒 pin model yang berhasil
       setVideoBg(""); setVideoDurQ(0); // bersihkan video (gambar latar)
       setLatar("navy");
       // 🐛 v20.17: kalau URL http → lewat proxy-img biar aman CORS; data: → langsung
@@ -243,6 +270,7 @@ export default function NicheQuran() {
     finally { clearTimeout(wd); setBgImgBusy(false); }
   }
   const [latarGambar, setLatarGambar] = useState("");
+  const [modelGambarQ, setModelGambarQ] = useState(""); // 🔒 v20.18: pin model gambar yang sukses
   // 🔁 v20.7 LOOP VIDEO — auto (pas durasi audio) / 1× / 2× / 3× (sama seperti Spectrum)
   const [videoLoopMode, setVideoLoopMode] = useState<ModeLoopVideo>("auto");
   const [videoDurQ, setVideoDurQ] = useState(0);
@@ -1122,6 +1150,14 @@ export default function NicheQuran() {
                 <div style={{ display: "flex", gap: 6 }}>
                   <input style={{ flex: 1, minWidth: 0, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "6px 8px", fontSize: 12 }} placeholder='Cari: "masjid", "hujan", "senja"…' value={stokQ} onChange={(e) => setStokQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void cariStokQ(); }} />
                   <button onClick={() => void cariStokQ()} disabled={stokBusy} style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{stokBusy ? "⏳" : "🔍"}</button>
+                </div>
+                {/* 🔑 v20.18: kunci stok opsional — kalau error "kunci belum dipasang", isi di sini */}
+                <div style={{ marginTop: 6, border: "1px dashed rgba(255,255,255,.2)", borderRadius: 8, padding: 6 }}>
+                  <div style={{ fontSize: 10, color: "#8b8b98", marginBottom: 4 }}>🔑 Kunci stok (opsional — kalau belum ada di server):</div>
+                  <input style={{ width: "100%", marginBottom: 4, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 6, padding: "4px 6px", fontSize: 10.5 }} placeholder="Pexels API key" value={stokKeys.px} onChange={(e) => setStokKeys((s) => ({ ...s, px: e.target.value }))} />
+                  <input style={{ width: "100%", marginBottom: 4, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 6, padding: "4px 6px", fontSize: 10.5 }} placeholder="Pixabay API key" value={stokKeys.xy} onChange={(e) => setStokKeys((s) => ({ ...s, xy: e.target.value }))} />
+                  <input style={{ width: "100%", marginBottom: 4, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 6, padding: "4px 6px", fontSize: 10.5 }} placeholder="Coverr API key" value={stokKeys.cv} onChange={(e) => setStokKeys((s) => ({ ...s, cv: e.target.value }))} />
+                  <button onClick={simpanStokKeys} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid rgba(139,92,246,.5)", background: "rgba(139,92,246,.15)", color: "#c4b5fd", fontSize: 10.5, cursor: "pointer" }}>💾 Simpan kunci</button>
                 </div>
                 {!!stokErr && <p style={{ fontSize: 10, color: "#fca5a5", margin: "4px 0 0" }}>{stokErr}</p>}
                 {stokRes.length > 0 && (
