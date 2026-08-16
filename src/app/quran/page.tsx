@@ -117,6 +117,15 @@ export default function NicheQuran() {
   const dragRef = useRef<{ t: "teks" | "sub" | "logo"; dx: number; dy: number } | null>(null);
   const pinchRef = useRef<{ d0: number; s0: number; t: "teks" | "sub" | "logo" } | null>(null);
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
+  // 🐛 v20.10: logo dimuat SEKALI ke ref (dulu new Image() tiap frame → tidak pernah muncul)
+  const logoImgRef = useRef<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!logoImg) { logoImgRef.current = null; return; }
+    const im = new Image();
+    im.onload = () => { logoImgRef.current = im; };
+    im.src = logoImg;
+    return () => { logoImgRef.current = null; };
+  }, [logoImg]);
   // ⚡ v20.5 OPTIMASI: latar + bingkai islami di-CACHE ke canvas offscreen
   // (digambar SEKALI saat frame/latar/ukuran berubah, lalu drawImage tiap frame
   // — jauh lebih ringan di HP daripada menggambar gradien + ornamen tiap frame).
@@ -338,7 +347,12 @@ export default function NicheQuran() {
   function gambarScene(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
     // ⚡ v20.5: latar + bingkai dari CACHE (drawImage murah) — bukan digambar ulang
     const fc = dapatCacheFrame(W, H);
-    if (fc) ctx.drawImage(fc, 0, 0, W, H);
+    if (fc) {
+      ctx.drawImage(fc, 0, 0, W, H);
+    } else {
+      // 🐛 v20.10: kalau cache gagal, bersihkan dulu (anti-ghosting frame lama)
+      ctx.fillStyle = "#070b14"; ctx.fillRect(0, 0, W, H);
+    }
     // video latar (bergerak → digambar tiap frame)
     // 🔁 v20.7: LOOP ikut mode — masih dalam jatah → main; sudah lewat → diam (freeze)
     const vv = videoRef.current;
@@ -438,8 +452,8 @@ export default function NicheQuran() {
       const rg = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 2.4);
       rg.addColorStop(0, "rgba(255,215,0,0.45)"); rg.addColorStop(1, "rgba(255,215,0,0)");
       ctx.fillStyle = rg; ctx.fillRect(cx - r * 2.4, cy - r * 2.4, r * 4.8, r * 4.8);
-      const im = new Image(); im.src = logoImg;
-      if (im.complete && im.naturalWidth) ctx.drawImage(im, cx - r, cy - r, r * 2, r * 2);
+      const im = logoImgRef.current;
+      if (im && im.complete && im.naturalWidth) ctx.drawImage(im, cx - r, cy - r, r * 2, r * 2);
     }
   }
 
@@ -453,15 +467,22 @@ export default function NicheQuran() {
       // ⚡ v20.5: throttle ~30fps — mata tidak bisa bedain, HP jauh lebih ringan
       if (now - last >= 33) {
         last = now;
-        const t = tPreview();
-        gambarScene(ctx, cv.width, cv.height, t);
+        try {
+          const t = tPreview();
+          gambarScene(ctx, cv.width, cv.height, t);
+        } catch (e) {
+          // 🐛 v20.10 ANTI-BEKU: error apa pun TIDAK boleh mematikan preview —
+          // dulu sekali error → requestAnimationFrame berhenti → semua fitur
+          // Tampilan kelihatan "mati". Sekarang error dilewati, preview tetap jalan.
+          console.warn("[quran-preview]", e);
+        }
       }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas]);
+  }, [busy, audioDur, ayatList, frame, latar, rasio, dim.w, dim.h, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas]);
 
   /* 🎙️ v20.6: preview via rantai STUDIO (MediaElementSource → EQ studio → kompresor) —
      suara yang didengar pas ▶ = mendekati hasil render (tidak mentahan) */

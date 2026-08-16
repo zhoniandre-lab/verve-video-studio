@@ -124,12 +124,20 @@ T("LOOP VIDEO: UI chip auto/1x/2x/3x", /LOOP VIDEO/.test(page) && /\[\["auto", "
 T("LOOP VIDEO: info durasi tampil", /hitungKaliLoop\(videoDurQ, audioDur, videoLoopMode\)/.test(page));
 
 /* ---- v20.8: TURBO render cepat + desain Islami DI DALAM video ---- */
-T("TURBO: render pakai resScale 0.78 (jauh lebih cepat)", /resScale: 0\\.78/.test(page));
+T("TURBO: render pakai resScale (normal=0.78)", /resScale: turboMode/.test(page) && /0\.78/.test(page));
 T("DESAIN: gambarDesainIslami ada di quran-frame", /export function gambarDesainIslami/.test(qf) && /bintang8/.test(qf));
 T("DESAIN: pola arabesque + garis pemisah ada", /arabesque/.test(qf) && /garis pemisah atas & bawah/.test(qf));
 T("DESAIN: dipanggil di cache frame (dalam video)", /gambarDesainIslami/.test(page));
 
 /* ---- v20.9: PILIHAN TURBO (Normal / Ekstra 60%) ---- */
 T("state turboMode normal/ekstra ada", /const \[turboMode, setTurboMode\]/.test(page) && /"normal" \| "ekstra"/.test(page));
-T("resScale ikut turboMode (ekstra=0.6, normal=0.78)", /turboMode === "ekstra" \\? 0\\.6 : 0\\.78/.test(page));
+T("resScale ikut turboMode (ekstra=0.6, normal=0.78)", /turboMode === "ekstra" \? 0\.6 : 0\.78/.test(page));
 T("UI pilihan Normal & Ekstra 60% ada", /KECEPATAN RENDER/.test(page) && /Ekstra 60%/.test(page) && /setTurboMode\("normal"\)/.test(page) && /setTurboMode\("ekstra"\)/.test(page));
+
+/* ---- v20.10: ANTI-BEKU preview (fitur Tampilan harus selalu berfungsi) ---- */
+T("ANTI-BEKU: gambarScene dibungkus try/catch di loop preview", /try \{[\s\S]*?gambarScene\(ctx, cv\.width, cv\.height, t\)[\s\S]*?\} catch \(e\)/.test(page));
+T("ANTI-BEKU: requestAnimationFrame tetap dipanggil walau error", /rafRef\.current = requestAnimationFrame\(loop\);\s*\n\s*\};/.test(page) || /requestAnimationFrame\(loop\)/.test(page));
+T("FIX: rasio & dim masuk deps preview (ganti rasio pasti merespons)", /rasio, dim\.w, dim\.h/.test(page));
+T("FIX: logo dimuat sekali ke ref (logoImgRef)", /const logoImgRef = useRef/.test(page) && /im\.onload = \(\) => \{ logoImgRef\.current = im; \}/.test(page));
+T("FIX: gambarScene pakai logoImgRef (bukan new Image tiap frame)", /const im = logoImgRef\.current/.test(page) && !/new Image\(\); im\.src = logoImg/.test(page));
+T("FIX: cache gagal → canvas dibersihkan (anti-ghosting)", /fillStyle = "#070b14"; ctx\.fillRect\(0, 0, W, H\)/.test(page));
