@@ -148,7 +148,7 @@ T("FIX: bingkai+desain selalu digambar ulang di atas video", /gambarFrameIslami\
 T("state framePng ada", /const \[framePng, setFramePng\]/.test(page));
 T("gambarFramePng ada di quran-frame", /export function gambarFramePng/.test(qf) && /dataUrl/.test(qf));
 T("cache frame pakai framePng (png/no)", /framePng/.test(page) && /png/.test(page));
-T("cache: kalau framePng → gambar framePng, bukan gaya", /png = framePng \|\|/.test(page) && /gambarFramePng/.test(page));
+T("cache: kalau framePng → gambar framePng, bukan gaya", /pngFrameRef\.current && pngFrameSrcRef\.current/.test(page) && /gambarPngFrame/.test(page));
 T("UI upload frame PNG ada + hapus", /Upload frame PNG sendiri/.test(page) && /Hapus frame PNG/.test(page));
 
 /* ---- v20.12: FRAME PNG BAWAAN (tanpa upload) ---- */
@@ -156,6 +156,15 @@ T("FRAME PNG: 6 gaya PNG di FRAME_ISLAMI", /png-emas/.test(qf) && /png-ornamen/.
 T("FRAME PNG: FRAME_PNG_BAWAAN path /frames/", /\/frames\/frame-emas-mewah\.png/.test(qf) && /\/frames\/frame-bintang8\.png/.test(qf));
 T("FRAME PNG: framePngBawaan() helper ada", /export function framePngBawaan/.test(qf));
 T("FRAME PNG: preload ke pngFrameRef saat gaya png dipilih", /framePngBawaan\(frame\)/.test(page) && /pngFrameRef\.current = im/.test(page));
-T("FRAME PNG: cache frame pakai file bawaan (bukan gaya garis)", /framePng \|\| \(pngFrameRef\.current && pngFrameSrcRef\.current/.test(page));
-T("FRAME PNG: di atas video juga pakai file bawaan", /png2 = framePng \|\|/.test(page));
+T("FRAME PNG: cache frame pakai file bawaan (bukan gaya garis)", /pngFrameRef\.current && pngFrameSrcRef\.current/.test(page) && /gambarPngFrame\(ctx, W, H\)/.test(page));
+T("FRAME PNG: di atas video juga pakai file bawaan", /if \(pngFrameRef\.current && pngFrameSrcRef\.current\) gambarPngFrame/.test(page));
 T("file frame PNG ada di public/frames/", /frame-emas-mewah\.png/.test(readFileSync(new URL("../public/frames/frame-emas-mewah.png", import.meta.url), "utf8")) || true);
+
+/* ---- v20.13: UKURAN FRAME PNG bisa diatur (tipis/tebal) ---- */
+T("UKURAN: state pngScale ada (default 1)", /const \[pngScale, setPngScale\] = useState\(1\)/.test(page));
+T("UKURAN: gambarPngFrame pakai skala (dw = W * s)", /const dw = W \* s, dh = H \* s/.test(page) && /drawImage\(im, \(W - dw\) \/ 2/.test(page));
+T("UKURAN: cache key ikut pngScale", /pngScale/.test(page) && /\$\{W\}x\$\{H\}/.test(page));
+T("UKURAN: atas video pakai gambarPngFrame (skala jalan)", /gambarPngFrame\(ctx, W, H\)/.test(page));
+T("UKURAN: preload gabungan bawaan+custom (frame, framePng)", /framePng \|\| framePngBawaan\(frame\) \|\| ""/.test(page));
+T("UKURAN: UI slider + tombol Tebal/Normal/Tipis", /Ukuran frame/.test(page) && /setPngScale\(0\.85\)/.test(page) && /setPngScale\(1\.2\)/.test(page));
+T("UKURAN: pngScale masuk deps preview", /pngScale, framePng\]\)/.test(page));

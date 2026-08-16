@@ -78,19 +78,36 @@ export default function NicheQuran() {
   // 🖼️ v20.11: FRAME PNG CUSTOM — upload bingkai sendiri, langsung dipakai
   // (di-convert jadi data URL; menimpa gaya frame saat dipasang)
   const [framePng, setFramePng] = useState("");
-  // 🖼️ v20.12: FRAME PNG BAWAAN — preload dari /frames/ supaya siap dipakai
+  // 🖼️ v20.12/20.13: FRAME PNG (bawaan/custom) — preload + UKURAN BISA DIATUR
   const pngFrameRef = useRef<HTMLImageElement | null>(null);
   const pngFrameSrcRef = useRef("");
+  // 🔍 v20.13: skala frame PNG — >1 = bingkai lebih tipis & ruang ayat lebih
+  // lega (tepi terpotong), <1 = bingkai lebih tebal/terapung
+  const [pngScale, setPngScale] = useState(1);
   useEffect(() => {
-    const src = framePngBawaan(frame);
-    if (src && src !== pngFrameSrcRef.current) {
-      const im = new Image();
-      im.onload = () => { pngFrameRef.current = im; pngFrameSrcRef.current = src; };
-      im.src = src;
-    } else if (!src) {
-      pngFrameRef.current = null;
-    }
-  }, [frame]);
+    const src = framePng || framePngBawaan(frame) || "";
+    if (!src) { pngFrameRef.current = null; pngFrameSrcRef.current = ""; return; }
+    if (src === pngFrameSrcRef.current && pngFrameRef.current) return; // sudah dimuat
+    const im = new Image();
+    im.onload = () => { pngFrameRef.current = im; pngFrameSrcRef.current = src; };
+    im.src = src;
+  }, [frame, framePng]);
+  /** 🔍 v20.13: gambar frame PNG dengan skala (bawaan & custom pakai ref yang sudah dimuat). */
+  function gambarPngFrame(ctx: CanvasRenderingContext2D, W: number, H: number) {
+    const im = pngFrameRef.current;
+    if (!im || !im.complete || !im.naturalWidth) return;
+    const s = pngScale;
+    const dw = W * s, dh = H * s;
+    ctx.save();
+    ctx.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    // scrim tipis di tengah biar teks terbaca (frame biasanya tebal di tepi)
+    const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,0.35)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
   const [latar, setLatar] = useState("navy");
   const [rasio, setRasio] = useState<"16:9" | "9:16">("16:9");
   const [arabSize, setArabSize] = useState(0.075);
@@ -151,7 +168,7 @@ export default function NicheQuran() {
     try {
       // 🐛 v20.6: cache HARUS ikut gaya frame & latar — dulu cuma cek ukuran,
       // jadi ganti frame/latar TIDAK pernah muncul (stale cache) = fitur "mati".
-      const k = `${frame}|${latar}|${framePng ? "png" : (framePngBawaan(frame) ? "png" : "no")}|${W}x${H}`;
+      const k = `${frame}|${latar}|${framePng ? "png" : (framePngBawaan(frame) ? "png" : "no")}|${pngScale}|${W}x${H}`;
       const c = frameCacheRef.current;
       if (c && c.width === W && c.height === H && frameCacheKeyRef.current === k) return c;
       const cv = document.createElement("canvas");
@@ -162,9 +179,8 @@ export default function NicheQuran() {
       const g = ctx.createLinearGradient(0, 0, 0, H);
       g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      // 🖼️ v20.11/20.12: frame PNG (custom upload / bawaan) → dipakai; kalau tidak → gaya bawaan
-      const png = framePng || (pngFrameRef.current && pngFrameSrcRef.current ? pngFrameSrcRef.current : "");
-      if (png) gambarFramePng(ctx, W, H, png);
+      // 🖼️ v20.11-20.13: frame PNG (custom/bawaan) dengan skala → dipakai; kalau tidak → gaya bawaan
+      if (pngFrameRef.current && pngFrameSrcRef.current) gambarPngFrame(ctx, W, H);
       else { gambarFrameIslami(ctx, W, H, frame); gambarDesainIslami(ctx, W, H, frame); }
       frameCacheRef.current = cv;
       frameCacheKeyRef.current = k;
@@ -388,8 +404,7 @@ export default function NicheQuran() {
     // 2) bingkai + desain Islami SELALU DI ATAS (tidak peduli ada video atau tidak)
     //    — untuk kasus video: gambar ulang bingkai+desain di atas video.
     if (vv && vv.readyState >= 2 && vv.videoWidth) {
-      const png2 = framePng || (pngFrameRef.current && pngFrameSrcRef.current ? pngFrameSrcRef.current : "");
-      if (png2) gambarFramePng(ctx, W, H, png2);
+      if (pngFrameRef.current && pngFrameSrcRef.current) gambarPngFrame(ctx, W, H);
       else { gambarFrameIslami(ctx, W, H, frame); gambarDesainIslami(ctx, W, H, frame); }
     }
     // ayat aktif
@@ -506,7 +521,7 @@ export default function NicheQuran() {
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, audioDur, ayatList, frame, latar, rasio, dim.w, dim.h, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas]);
+  }, [busy, audioDur, ayatList, frame, latar, rasio, dim.w, dim.h, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas, pngScale, framePng]);
 
   /* 🎙️ v20.6: preview via rantai STUDIO (MediaElementSource → EQ studio → kompresor) —
      suara yang didengar pas ▶ = mendekati hasil render (tidak mentahan) */
@@ -857,6 +872,22 @@ export default function NicheQuran() {
       {step === 2 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800 }}>🕌 BINGKAI FRAME ISLAMI</div>
+          {/* 🔍 v20.13: UKURAN FRAME PNG — perbesar biar tipis & ayat lega; perkecil biar tebal */}
+          {(!!framePng || !!framePngBawaan(frame)) && (
+            <div style={{ border: "1px solid rgba(139,92,246,.35)", borderRadius: 10, padding: 8 }}>
+              <label style={{ fontSize: 11.5, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ minWidth: 78 }}>🔍 Ukuran frame</span>
+                <input type="range" min={0.7} max={1.35} step={0.01} value={pngScale} onChange={(e) => setPngScale(Number(e.target.value))} style={{ flex: 1 }} />
+                <b style={{ minWidth: 42 }}>{Math.round(pngScale * 100)}%</b>
+              </label>
+              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                <button onClick={() => setPngScale(0.85)} style={{ flex: 1, padding: "6px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>Tebal</button>
+                <button onClick={() => setPngScale(1)} style={{ flex: 1, padding: "6px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>Normal</button>
+                <button onClick={() => setPngScale(1.2)} style={{ flex: 1, padding: "6px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>Tipis</button>
+              </div>
+              <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>Perbesar (mis. 120%) → bingkai lebih tipis & ruang ayat lebih lega; perkecil → bingkai lebih tebal.</p>
+            </div>
+          )}
           {/* 🖼️ v20.11: UPLOAD FRAME PNG SENDIRI — langsung dipakai sebagai bingkai */}
           <label style={{ padding: "9px", borderRadius: 10, border: "1px dashed rgba(212,175,55,.5)", background: framePng ? "rgba(212,175,55,.12)" : "rgba(255,255,255,.04)", textAlign: "center", fontSize: 12, color: framePng ? "#e8d9a0" : "#cbd5e1", cursor: "pointer", fontWeight: 700 }}>
             {framePng ? "🖼️ Frame PNG terpasang (tap untuk ganti)" : "🖼️ Upload frame PNG sendiri (bingkai custom)"}
