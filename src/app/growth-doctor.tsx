@@ -7,10 +7,28 @@ import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from 
 import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
 import { lastSyncTime, loadBrain, markSyncDone, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
 
+/** 🐛 v20.26 FIX ANGKA INDONESIA: "1.600" = seribu enam ratus (bukan 1,6!).
+ *  Sebelumnya Number("1.600") = 1.6 → dikalikan → jadi 16 juta (salah besar).
+ *  Aturan: titik = pemisah RIBUAN (3 digit), koma = desimal. "1.6" (1 digit
+ *  setelah titik) = desimal internasional → 1.6. "1.600" (3 digit) = 1600. */
 function num(v: string): number | undefined {
   const raw = String(v ?? "").trim();
   if (!raw) return undefined;
-  const n = Number(raw.replace(",", "."));
+  const bersih = raw.replace(/\s+/g, "");
+  // Deteksi titik DESIMAL: pola "digit.titik.satuDigit" & bukan kelipatan ribuan
+  // ("1.6", "12.5", "0.75") — kalau setelah titik cuma 1-2 digit & total digit
+  // kiri ≤ 2 → desimal. Kalau 3 digit setelah titik → ribuan ("1.600").
+  const mDes = bersih.match(/^(\d+)\.(\d{1,2})$/);
+  const mRib = bersih.match(/^(\d+)\.(\d{3})$/);
+  if (mRib && !mDes) {
+    // "1.600" → 1600 (ribuan)
+    const n = Number(bersih.replace(/\./g, ""));
+    return Number.isFinite(n) ? n : undefined;
+  }
+  let s = bersih.replace(/\./g, "").replace(",", ".");
+  // "4,8" → "4.8" ✅; "1.6" (desimal intl) → kena mDes → pakai asli
+  if (mDes && !bersih.includes(",")) s = bersih;
+  const n = Number(s);
   return Number.isFinite(n) ? n : undefined;
 }
 function clockInput(v: string): number | undefined {
@@ -647,11 +665,11 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           <div style={{ marginTop: 12, border: "1px solid rgba(94,234,212,.45)", borderRadius: 16, padding: 11, background: "rgba(25,194,184,.07)" }}>
             <b style={{ fontSize: 12, color: "#5eead4" }}>🧾 Yang aku baca:</b>
             <div style={{ fontSize: 12, color: "#e2e8f0", margin: "6px 0", lineHeight: 1.6 }}>
-              {views ? <>👁 Views: <b>{Number(views).toLocaleString("id-ID")}</b><br /></> : null}
-              {watchH ? <>🕐 Waktu tonton: <b>{Number(watchH).toLocaleString("id-ID")} jam</b><br /></> : null}
+              {views ? <>👁 Views: <b>{(num(views) ?? 0).toLocaleString("id-ID")}</b><br /></> : null}
+              {watchH ? <>🕐 Waktu tonton: <b>{(num(watchH) ?? 0).toLocaleString("id-ID")} jam</b><br /></> : null}
               {ctr ? <>🎯 CTR: <b>{ctr}%</b><br /></> : null}
               {ret30 ? <>⏱ Retensi: <b>{ret30}%</b><br /></> : null}
-              {subs ? <>➕ Subscriber +: <b>{Number(subs).toLocaleString("id-ID")}</b><br /></> : null}
+              {subs ? <>➕ Subscriber +: <b>{(num(subs) ?? 0).toLocaleString("id-ID")}</b><br /></> : null}
               {retPct ? <>🔁 Penonton kembali: <b>{retPct}%</b></> : null}
             </div>
             <div className="gd-textactions">
@@ -679,6 +697,23 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             <span>{ringEmoji}</span>
             <div><b>{kompas.ringkasan.title}</b><p>{kompas.ringkasan.text}</p></div>
           </div>
+
+          {/* 🎯 v20.26: 3 AKSI TERPENTING — tampil LANGSUNG tanpa klik (yang paling berdampak) */}
+          {dx.actions.length > 0 && (
+            <div style={{ marginTop: 10, border: "1px solid rgba(139,92,246,.45)", borderRadius: 14, padding: 12, background: "linear-gradient(135deg,rgba(139,92,246,.14),rgba(217,70,239,.08))" }}>
+              <div style={{ fontSize: 11.5, fontWeight: 950, color: "#e9d5ff", marginBottom: 8 }}>🎯 3 AKSI TERPENTING (urut dari paling berdampak)</div>
+              {dx.actions.slice(0, 3).map((a, i) => (
+                <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "7px 0", borderTop: i === 0 ? "none" : "1px solid rgba(255,255,255,.07)" }}>
+                  <span style={{ width: 26, height: 26, borderRadius: "50%", background: i === 0 ? "linear-gradient(135deg,#f59e0b,#ef4444)" : i === 1 ? "linear-gradient(135deg,#8b5cf6,#d946ef)" : "linear-gradient(135deg,#06b6d4,#3b82f6)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 13, color: "#fff", flex: "0 0 auto" }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b style={{ display: "block", fontSize: 12.5, color: "#fff" }}>{a.cta}</b>
+                    <span style={{ fontSize: 10.5, color: "#c7d2e5", lineHeight: 1.45, display: "block", marginTop: 1 }}>{a.detail}</span>
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => copy(dx.planText)} style={{ width: "100%", marginTop: 8, padding: "8px", borderRadius: 10, border: "1px solid rgba(139,92,246,.5)", background: "rgba(139,92,246,.15)", color: "#c4b5fd", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>📋 Salin Rencana Aksi Lengkap</button>
+            </div>
+          )}
 
           {kompas.items.length > 0 && (
             <>
