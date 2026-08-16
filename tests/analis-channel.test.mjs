@@ -38,5 +38,17 @@ T("SIMPLE: solusi part 2 & ganti thumbnail/hook", /part 2/.test(gd) && /ganti th
 T("SIMPLE: batas bagus 30% max views", /maxViews \* 0\.3/.test(gd));
 T("SIMPLE: tombol Ide part 2", /Ide part 2/.test(gd));
 
+
+
+/* ---- v20.28: KEJAR VIRAL (judul terbaik dari pola yang berkembang) ---- */
+T("VIRAL: import suggestTitlesFromBrain", /suggestTitlesFromBrain/.test(gd));
+T("VIRAL: fungsi kejarViral ada", /function kejarViral/.test(gd));
+T("VIRAL: ambil video TERBAIK sorted[0]", /terbaik = sorted/.test(gd));
+T("VIRAL: buang kata umum utk keyword", /stop = new Set/.test(gd) && /part/.test(gd));
+T("VIRAL: pakai suggestTitlesFromBrain + fallback Part 2", /suggestTitlesFromBrain/.test(gd) && /Part 2/.test(gd));
+T("VIRAL: UI tombol Buat Judul Kejar Viral", /Buat Judul Kejar Viral/.test(gd));
+T("VIRAL: UI daftar judul + alasan + salin", /j.alasan/.test(gd) && /copy\(j\.title\)/.test(gd));
+T("VIRAL: pesan dari video terbaik", /Dari pola video/.test(gd));
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI ANALIS CHANNEL GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI ANALIS CHANNEL HIJAU");

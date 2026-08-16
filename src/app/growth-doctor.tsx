@@ -6,6 +6,7 @@ import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/li
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
 import { lastSyncTime, loadBrain, markSyncDone, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
+import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru"; // 🚀 v20.28: judul kejar viral
 
 /** 🐛 v20.26 FIX ANGKA INDONESIA: "1.600" = seribu enam ratus (bukan 1,6!).
  *  Sebelumnya Number("1.600") = 1.6 → dikalikan → jadi 16 juta (salah besar).
@@ -165,6 +166,25 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [audienceFacts, setAudienceFacts] = useState<YtStudioTextResult["audience"]>([]);
   const [ytStatus, setYtStatus] = useState<YtStatus | null>(null);
   const [ytVideos, setYtVideos] = useState<YtVideo[]>([]);
+  // 🚀 v20.28: KEJAR VIRAL — judul terbaik dari pola video yang berkembang
+  const [viralJudul, setViralJudul] = useState<GuruSuggestion[]>([]);
+  const [viralDari, setViralDari] = useState("");
+  const [viralMsg, setViralMsg] = useState("");
+  function kejarViral() {
+    if (!ytVideos.length) { setViralMsg("Muat video dulu (📺 Muat Video) — biar aku tahu pola yang berkembang."); return; }
+    const sorted = [...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+    const terbaik = sorted[0];
+    if (!terbaik) { setViralMsg("Belum ada data video."); return; }
+    // ambil kata kunci dari judul video terbaik (buang kata umum)
+    const stop = new Set(["the","a","an","dan","yang","di","ke","dari","untuk","dengan","ini","itu","vs","part","episode","full","terbaru","baru","cara","buat","membuat","video"]);
+    const kw = (terbaik.title || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !stop.has(w)).slice(0, 3).join(" ");
+    const brain = loadBrain() || { results: [] as any[] } as any;
+    const judul = suggestTitlesFromBrain(kw || (terbaik.title || "konten"), brain, 5, "story_song");
+    setViralDari(terbaik.title || "");
+    if (judul.length) setViralJudul(judul);
+    else setViralJudul([{ title: `Part 2: ${terbaik.title}`, score: 90, alasan: "Lanjutan video terbaikmu — penonton sudah terbukti suka topik ini." }]);
+    setViralMsg(`Dari video terbaikmu: "${(terbaik.title||"").slice(0,50)}" (${(terbaik.viewCount||0).toLocaleString("id-ID")} views) — pola yang berkembang dipakai buat judul lanjutan.`);
+  }
   const [ytUrl, setYtUrl] = useState("");
   const [ytRange, setYtRange] = useState<"lifetime" | "7" | "28" | "90">("lifetime");
   const [ytBusy, setYtBusy] = useState(false);
@@ -586,6 +606,28 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
                     </>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* 🚀 v20.28: KEJAR VIRAL — judul terbaik dari pola yang berkembang */}
+            {!!ytVideos.length && (
+              <div style={{ marginTop: 8, border: "1px solid rgba(251,191,36,.45)", borderRadius: 14, padding: 12, background: "linear-gradient(135deg,rgba(251,191,36,.10),rgba(239,68,68,.06))" }}>
+                <div style={{ fontSize: 12, fontWeight: 950, color: "#fde68a", marginBottom: 4 }}>🚀 KEJAR VIRAL — judul untuk lanjutan</div>
+                <p style={{ fontSize: 10, color: "#a8a29e", margin: "0 0 8px" }}>Aku baca pola video yang paling berkembang di channel-mu → kubuatkan judul terbaik buat konten berikutnya.</p>
+                <button onClick={kejarViral} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#f59e0b,#ef4444)", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>🚀 Buat Judul Kejar Viral</button>
+                {!!viralMsg && <p style={{ fontSize: 10.5, color: "#fbbf24", margin: "8px 0 0", lineHeight: 1.4 }}>{viralMsg}</p>}
+                {viralJudul.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 10, color: "#d6d3d1", marginBottom: 4 }}>Dari pola video: <b style={{ color: "#fde68a" }}>{viralDari.slice(0, 60)}</b></div>
+                    {viralJudul.slice(0, 5).map((j, i) => (
+                      <button key={i} onClick={() => copy(j.title)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderRadius: 10, background: "#14100a", border: "1px solid rgba(251,191,36,.3)", marginBottom: 5, cursor: "pointer" }}>
+                        <b style={{ fontSize: 11.5, color: "#fff", display: "block" }}>{i + 1}. {j.title}</b>
+                        <span style={{ fontSize: 9.5, color: "#a8a29e" }}>💡 {j.alasan}</span>
+                      </button>
+                    ))}
+                    <p style={{ fontSize: 9, color: "#78716c", margin: "6px 0 0" }}>Ketuk judul → tersalin. Buat video dengan judul itu & thumbnail sesuai pola terbaikmu.</p>
+                  </div>
+                )}
               </div>
             )}
             <div className="gd-textactions" style={{ gridTemplateColumns: "1fr" }}>
