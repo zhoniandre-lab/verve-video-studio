@@ -266,7 +266,11 @@ export default function NicheQuran() {
       setLatarGambar(u);
       setMsg("✅ Gambar AI jadi — dipasang sebagai latar.");
       setBgImgMsg("✅ Gambar AI jadi!");
-    } catch (e: any) { setBgImgMsg(`⚠️ ${e?.message || "Gagal generate"} — coba lagi, atau pakai upload foto.`); }
+    } catch (e: any) {
+      // 🐛 v20.20: kalau model kena KUOTA → hapus pin biar coba model lain
+      if (/quota|exceeded|weekly|rate limit|insufficient/i.test(String(e?.message || ""))) setModelGambarQ("");
+      setBgImgMsg(`⚠️ ${e?.message || "Gagal generate"} — ${/quota|exceeded|weekly/i.test(String(e?.message || "")) ? "kuota mingguan model ini habis — coba lagi (otomatis pindah model) / besok." : "coba lagi, atau pakai upload foto."}`);
+    }
     finally { clearTimeout(wd); setBgImgBusy(false); }
   }
   const [latarGambar, setLatarGambar] = useState("");

@@ -220,3 +220,10 @@ T("GBR: Quran pin model sukses (_modelFirst)", /_modelFirst: modelGambarQ/.test(
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI QUR'AN GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI NICHE QUR'AN HIJAU");
+
+/* ---- v20.20: DETEKSI KUOTA MODEL → auto-ganti model lain ---- */
+T("KUOTA: generateImage deteksi pesan kuota (weekly/limit)", /exceeded.*(weekly|limit|plan)/.test(hcnsec) && /kenaKuota/.test(hcnsec));
+T("KUOTA: model yang kena kuota dilewati (modelDitolak)", /modelDitolak/.test(hcnsec) && /modelDitolak.has\(m2\)/.test(hcnsec));
+T("KUOTA: coba model cadangan otomatis (maks 3)", /dicobaCadangan >= 3/.test(hcnsec));
+T("KUOTA: pesan error menjelaskan kuota mingguan", /KUOTA MINGGUAN/.test(hcnsec));
+T("KUOTA: Quran hapus pin model saat kena kuota", /quota\|exceeded\|weekly/.test(page) && /setModelGambarQ\(""\)/.test(page));
