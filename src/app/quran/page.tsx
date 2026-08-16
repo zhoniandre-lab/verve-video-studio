@@ -25,6 +25,7 @@ import {
 } from "@/lib/quran-data";
 import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } from "@/lib/ambience";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v20.7: loop video
+import { cariStokVideoSmart, type VidPick } from "@/lib/stockvid"; // 🎞️ v20.16: video stok
 import { gambarFrameIslami, gambarDesainIslami, gambarFramePng, FRAME_ISLAMI, framePngBawaan, type GayaFrame } from "@/lib/quran-frame";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe, type SubStyle, type SubAnim } from "@/lib/subscribe";
 import { FONT_ISLAMI, EFEK_TEKS, gambarTeksIslami, gambarOverlayAllah, type TeksItem, type GayaOverlay, OVERLAY_LABEL } from "@/lib/quran-teks"; // ✒️ v20.14
@@ -153,6 +154,27 @@ export default function NicheQuran() {
   const [teksList, setTeksList] = useState<TeksItem[]>([]);
   const [teksAktif, setTeksAktif] = useState(0); // indeks yang sedang diedit
   const [overlayGaya, setOverlayGaya] = useState<GayaOverlay>("kiri_kanan");
+  // 🖼️ v20.16: OVERLAY GAMBAR — upload gambar sendiri (mis. kaligrafi Allah/Muhammad),
+  // bisa beberapa gambar, posisi kiri/kanan/atas/bawah, ukuran bisa diatur.
+  const [overlayImgs, setOverlayImgs] = useState<{ id: string; src: string; label: string; pos: "kiri" | "kanan" | "atas" | "bawah"; size: number }[]>([]);
+  const overlayRefs = useRef<Map<string, HTMLImageElement>>(new Map());
+  useEffect(() => {
+    const map = overlayRefs.current;
+    overlayImgs.forEach((o) => {
+      if (map.has(o.id)) return;
+      const im = new Image();
+      im.onload = () => map.set(o.id, im);
+      im.src = o.src;
+    });
+  }, [overlayImgs]);
+  function tambahOverlay(src: string, label: string) {
+    const id = `ov${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    setOverlayImgs((arr) => [...arr, { id, src, label, pos: "kiri", size: 0.12 }]);
+  }
+  function hapusOverlay(id: string) {
+    setOverlayImgs((arr) => arr.filter((o) => o.id !== id));
+    overlayRefs.current.delete(id);
+  }
   function teksBaru(): TeksItem {
     const id = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
     return { id, txt: "Teks baru", font: "arab", efek: "cahaya", x: 0.5, y: 0.1, size: 0.045, anim: "diam" };
@@ -174,6 +196,49 @@ export default function NicheQuran() {
   const [logoPos, setLogoPos] = useState<ElemenPos>({ x: 0.5, y: 0.15 });
   const [logoScale, setLogoScale] = useState(1);
   const [videoBg, setVideoBg] = useState("");
+  // 🎞️ v20.16: VISUAL LENGKAP — video stok (Pixabay/Pexels/Coverr), gambar AI, upload
+  const [stokOpen, setStokOpen] = useState(false);
+  const [stokQ, setStokQ] = useState("");
+  const [stokRes, setStokRes] = useState<VidPick[]>([]);
+  const [stokBusy, setStokBusy] = useState(false);
+  const [stokErr, setStokErr] = useState("");
+  const [bgImgQ, setBgImgQ] = useState("");
+  const [bgImgBusy, setBgImgBusy] = useState(false);
+  const [bgImgMsg, setBgImgMsg] = useState("");
+  async function cariStokQ() {
+    const k = stokQ.trim();
+    if (k.length < 2) { setStokErr("Ketik kata kunci dulu (mis. \"masjid\", \"hujan\", \"laut\")."); return; }
+    setStokBusy(true); setStokErr("");
+    const r = await cariStokVideoSmart(k, true).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang", lebar: false }));
+    setStokBusy(false);
+    if (!r.ok) { setStokErr(r.err); setStokRes([]); return; }
+    setStokRes(r.hasil);
+    if (!r.hasil.length) setStokErr("Gudang kosong — coba kata lain (bisa bahasa Indonesia).");
+  }
+  function pakaiStok(v: VidPick) {
+    setVideoBg(v.sd || v.src); setVideoDurQ(v.dur); setStokOpen(false); setMsg(`🎬 Video stok "${v.by || "stok"}" dipasang sebagai latar (di-loop ikut audio).`);
+  }
+  async function buatBgGambarQ() {
+    const mood = bgImgQ.trim() || (ayatList[0]?.arti || "").slice(0, 60);
+    if (!mood) { setBgImgMsg("⚠️ Ketik deskripsi dulu (mis. \"masjid di senja, cahaya hangat\")."); return; }
+    setBgImgBusy(true); setBgImgMsg("🎨 Otak menggambar…");
+    try {
+      const r = await fetch("/api/hcnsec/image", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "quran-visual", keyword: "islamic", niche: "visualizer", _rawPrompt: true, prompt: `Islamic peaceful scene, ${mood}, no text no watermark, dark elegant, cinematic, high quality` }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`);
+      setVideoBg(""); setVideoDurQ(0); // bersihkan video (gambar latar)
+      setLatar("navy");
+      // pakai gambar sebagai latar via data URL: simpan di state latarGambar
+      setLatarGambar(j.url);
+      setMsg("✅ Gambar AI jadi — dipasang sebagai latar.");
+      setBgImgMsg("✅ Gambar AI jadi!");
+    } catch (e: any) { setBgImgMsg(`⚠️ ${e?.message || "Gagal generate"}`); }
+    finally { setBgImgBusy(false); }
+  }
+  const [latarGambar, setLatarGambar] = useState("");
   // 🔁 v20.7 LOOP VIDEO — auto (pas durasi audio) / 1× / 2× / 3× (sama seperti Spectrum)
   const [videoLoopMode, setVideoLoopMode] = useState<ModeLoopVideo>("auto");
   const [videoDurQ, setVideoDurQ] = useState(0);
@@ -214,17 +279,29 @@ export default function NicheQuran() {
     try {
       // 🐛 v20.6: cache HARUS ikut gaya frame & latar — dulu cuma cek ukuran,
       // jadi ganti frame/latar TIDAK pernah muncul (stale cache) = fitur "mati".
-      const k = `${frame}|${latar}|${framePng ? "png" : (framePngBawaan(frame) ? "png" : "no")}|${pngScale}|${W}x${H}`;
+      const k = `${frame}|${latar}|${latarGambar ? "gbr" : "no"}|${framePng ? "png" : (framePngBawaan(frame) ? "png" : "no")}|${pngScale}|${W}x${H}`;
       const c = frameCacheRef.current;
       if (c && c.width === W && c.height === H && frameCacheKeyRef.current === k) return c;
       const cv = document.createElement("canvas");
       cv.width = W; cv.height = H;
       const ctx = cv.getContext("2d");
       if (!ctx) return null;
-      const lg = LATAR_Q.find((x) => x.id === latar) || LATAR_Q[0];
-      const g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      // 🖼️ v20.16: kalau ada GAMBAR latar (AI/upload) → dipakai; kalau tidak → gradien
+      if (latarGambar) {
+        const im = new Image();
+        im.src = latarGambar;
+        if (im.complete && im.naturalWidth) {
+          const ir = im.naturalWidth / im.naturalHeight, cr = W / H;
+          let sw = im.naturalWidth, sh = im.naturalHeight, sx = 0, sy = 0;
+          if (ir > cr) { sw = im.naturalHeight * cr; sx = (im.naturalWidth - sw) / 2; } else { sh = im.naturalWidth / cr; sy = (im.naturalHeight - sh) / 2; }
+          ctx.drawImage(im, sx, sy, sw, sh, 0, 0, W, H);
+        }
+      } else {
+        const lg = LATAR_Q.find((x) => x.id === latar) || LATAR_Q[0];
+        const g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
       // 🖼️ v20.11-20.13: frame PNG (custom/bawaan) dengan skala → dipakai; kalau tidak → gaya bawaan
       if (pngFrameRef.current && pngFrameSrcRef.current) gambarPngFrame(ctx, W, H);
       else { gambarFrameIslami(ctx, W, H, frame); gambarDesainIslami(ctx, W, H, frame); }
@@ -522,8 +599,27 @@ export default function NicheQuran() {
         gambarTeksIslami(ctx, ti, W, H, t, 0);
       }
     }
-    // ☪️ v20.14: OVERLAY ALLAH & MUHAMMAD (dengan animasi cahaya)
-    gambarOverlayAllah(ctx, W, H, overlayGaya, t, 0);
+    // ☪️ v20.14/20.16: OVERLAY — gambar upload (prioritas) ATAU teks otomatis (fallback)
+    if (overlayImgs.length) {
+      const m = Math.min(W, H) * 0.05;
+      for (const o of overlayImgs) {
+        const im = overlayRefs.current.get(o.id);
+        if (!im || !im.complete || !im.naturalWidth) continue;
+        const s = o.size;
+        const dw = Math.min(W, H) * s, dh = dw * (im.naturalHeight / im.naturalWidth);
+        let x = 0, y = 0;
+        if (o.pos === "kiri") { x = m * 1.5; y = H / 2 - dh / 2; }
+        else if (o.pos === "kanan") { x = W - m * 1.5 - dw; y = H / 2 - dh / 2; }
+        else if (o.pos === "atas") { x = W / 2 - dw / 2; y = m * 1.5; }
+        else { x = W / 2 - dw / 2; y = H - m * 1.5 - dh; }
+        ctx.save();
+        ctx.shadowColor = "rgba(212,175,55,0.7)"; ctx.shadowBlur = Math.max(8, dw * 0.15);
+        ctx.drawImage(im, x, y, dw, dh);
+        ctx.restore();
+      }
+    } else {
+      gambarOverlayAllah(ctx, W, H, overlayGaya, t, 0);
+    }
     // subscribe
     if (subOn) {
       const stl = SUB_STYLES.find((s) => s.id === subGaya) || SUB_STYLES[0];
@@ -534,11 +630,35 @@ export default function NicheQuran() {
     if (logoOn && logoImg) {
       const r = Math.min(W, H) * 0.09 * logoScale;
       const cx = logoPos.x * W, cy = logoPos.y * H;
-      const rg = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 2.4);
-      rg.addColorStop(0, "rgba(255,215,0,0.45)"); rg.addColorStop(1, "rgba(255,215,0,0)");
-      ctx.fillStyle = rg; ctx.fillRect(cx - r * 2.4, cy - r * 2.4, r * 4.8, r * 4.8);
       const im = logoImgRef.current;
-      if (im && im.complete && im.naturalWidth) ctx.drawImage(im, cx - r, cy - r, r * 2, r * 2);
+      if (im && im.complete && im.naturalWidth) {
+        // ✨ v20.16: LOGO WAH ala Spectrum — denyut + sinar berputar + glow
+        const denyut = 1 + 0.05 * Math.sin(t * 2.2);
+        const rr = r * denyut;
+        // glow radial
+        const rg = ctx.createRadialGradient(cx, cy, rr * 0.2, cx, cy, rr * 2.4);
+        rg.addColorStop(0, "rgba(255,215,0,0.5)"); rg.addColorStop(1, "rgba(255,215,0,0)");
+        ctx.fillStyle = rg; ctx.fillRect(cx - rr * 2.4, cy - rr * 2.4, rr * 4.8, rr * 4.8);
+        // sinar berputar (2 garis lengkung)
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(t * 0.6);
+        ctx.strokeStyle = "rgba(255,215,0,0.5)"; ctx.lineWidth = Math.max(1.5, rr * 0.05);
+        for (let i = 0; i < 2; i++) {
+          ctx.rotate(Math.PI);
+          ctx.beginPath();
+          ctx.arc(0, 0, rr * 1.6, -0.5, 0.5);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // logo (bulat halus) + garis tepi emas
+        ctx.save();
+        ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.clip();
+        ctx.drawImage(im, cx - rr, cy - rr, rr * 2, rr * 2);
+        ctx.restore();
+        ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(212,175,55,0.9)"; ctx.lineWidth = Math.max(2, rr * 0.06); ctx.stroke();
+      }
     }
   }
 
@@ -985,10 +1105,46 @@ export default function NicheQuran() {
               <button key={l.id} onClick={() => setLatar(l.id)} style={{ padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,.2)", background: latar === l.id ? "rgba(139,92,246,.35)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 11.5, cursor: "pointer" }}>{l.label}</button>
             ))}
             <label style={{ padding: "7px 10px", borderRadius: 999, border: "1px dashed rgba(255,255,255,.3)", color: "#cbd5e1", fontSize: 11.5, cursor: "pointer" }}>
-              🎬 Video latar
-              <input type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setVideoBg(r.result as string); r.readAsDataURL(f); e.currentTarget.value = ""; }} />
+              📥 Upload video
+              <input type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { setVideoBg(r.result as string); setLatarGambar(""); }; r.readAsDataURL(f); e.currentTarget.value = ""; }} />
             </label>
             {videoBg && <button onClick={() => setVideoBg("")} style={{ padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(239,68,68,.4)", color: "#fca5a5", fontSize: 11.5, cursor: "pointer" }}>✕ Hapus video</button>}
+            {/* 🎞️ v20.16: VIDEO STOK (Pixabay/Pexels/Coverr) — seperti Lahan/Spectrum */}
+            <button onClick={() => setStokOpen(!stokOpen)} style={{ padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(139,92,246,.5)", background: stokOpen ? "rgba(139,92,246,.2)" : "rgba(255,255,255,.05)", color: "#c4b5fd", fontSize: 11.5, cursor: "pointer" }}>
+              🎞️ Cari video stok {stokOpen ? "▴" : "▾"}
+            </button>
+            {stokOpen && (
+              <div style={{ width: "100%", border: "1px solid rgba(139,92,246,.35)", borderRadius: 10, padding: 8, marginTop: 4 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input style={{ flex: 1, minWidth: 0, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "6px 8px", fontSize: 12 }} placeholder='Cari: "masjid", "hujan", "senja"…' value={stokQ} onChange={(e) => setStokQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void cariStokQ(); }} />
+                  <button onClick={() => void cariStokQ()} disabled={stokBusy} style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{stokBusy ? "⏳" : "🔍"}</button>
+                </div>
+                {!!stokErr && <p style={{ fontSize: 10, color: "#fca5a5", margin: "4px 0 0" }}>{stokErr}</p>}
+                {stokRes.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 5, marginTop: 6 }}>
+                    {stokRes.slice(0, 6).map((v) => (
+                      <button key={v.id} onClick={() => pakaiStok(v)} style={{ padding: 0, border: "1px solid rgba(255,255,255,.15)", borderRadius: 8, overflow: "hidden", background: "#0b1220", cursor: "pointer" }}>
+                        <img src={v.thumb} alt="" style={{ width: "100%", height: 48, objectFit: "cover", display: "block" }} loading="lazy" />
+                        <span style={{ display: "block", fontSize: 8.5, color: "#8b8b98", padding: "2px 4px" }}>{Math.round(v.dur)} dtk · {v.by || "stok"}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* 🎨 v20.16: GAMBAR AI + upload gambar latar */}
+            <div style={{ width: "100%", marginTop: 4 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input style={{ flex: 1, minWidth: 0, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "6px 8px", fontSize: 12 }} placeholder='🎨 Gambar AI: "masjid senja"…' value={bgImgQ} onChange={(e) => setBgImgQ(e.target.value)} />
+                <button onClick={buatBgGambarQ} disabled={bgImgBusy} style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{bgImgBusy ? "⏳" : "🎨 Buat"}</button>
+                <label style={{ padding: "6px 10px", borderRadius: 8, border: "1px dashed rgba(255,255,255,.3)", color: "#cbd5e1", fontSize: 11, cursor: "pointer" }}>
+                  📥 Foto
+                  <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { setLatarGambar(r.result as string); setVideoBg(""); }; r.readAsDataURL(f); e.currentTarget.value = ""; }} />
+                </label>
+              </div>
+              {!!bgImgMsg && <p style={{ fontSize: 10, color: bgImgMsg.startsWith("⚠️") ? "#fbbf24" : "#6ee7b7", margin: "4px 0 0" }}>{bgImgMsg}</p>}
+              {!!latarGambar && <button onClick={() => { setLatarGambar(""); }} style={{ marginTop: 4, padding: "5px 9px", borderRadius: 8, border: "1px solid rgba(239,68,68,.4)", color: "#fca5a5", fontSize: 10.5, cursor: "pointer" }}>✕ Hapus gambar latar</button>}
+            </div>
           </div>
           {/* 🔁 v20.7: LOOP VIDEO — auto (pas durasi audio) / 1× / 2× / 3× */}
           {videoBg && (
@@ -1087,7 +1243,27 @@ export default function NicheQuran() {
                   style={{ padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(255,255,255,.2)", background: overlayGaya === g ? "rgba(212,175,55,.3)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>{OVERLAY_LABEL[g]}</button>
               ))}
             </div>
-            <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>Tulisan Arab الله & محمد dengan cahaya emas berdenyut halus mengikuti waktu — di sisi kiri/kanan (atau atas/bawah) video.</p>
+            <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>Pilihan di atas = teks otomatis الله & محمد. Kalau mau PUNYA GAMBAR SENDIRI (mis. kaligrafi), upload di bawah — gambar jadi prioritas.</p>
+            {/* 🖼️ v20.16: OVERLAY GAMBAR — upload gambar sendiri */}
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+              <label style={{ padding: "6px 9px", borderRadius: 999, border: "1px dashed rgba(212,175,55,.5)", color: "#e8d9a0", fontSize: 10.5, cursor: "pointer", fontWeight: 700 }}>
+                🖼️ Upload gambar overlay
+                <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => tambahOverlay(r.result as string, f.name); r.readAsDataURL(f); e.currentTarget.value = ""; }} />
+              </label>
+            </div>
+            {overlayImgs.map((o) => (
+              <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, border: "1px solid rgba(255,255,255,.1)", borderRadius: 8, padding: 4 }}>
+                <img src={o.src} alt="" style={{ width: 28, height: 28, objectFit: "contain", borderRadius: 6 }} />
+                <span style={{ fontSize: 10, color: "#cbd5e1", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
+                <select value={o.pos} onChange={(e) => setOverlayImgs((arr) => arr.map((x) => x.id === o.id ? { ...x, pos: e.target.value as any } : x))}
+                  style={{ background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 6, padding: "3px 4px", fontSize: 10 }}>
+                  {[["kiri", "⬅ Kiri"], ["kanan", "➡ Kanan"], ["atas", "⬆ Atas"], ["bawah", "⬇ Bawah"]].map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}
+                </select>
+                <input type="range" min={0.05} max={0.3} step={0.01} value={o.size} onChange={(e) => setOverlayImgs((arr) => arr.map((x) => x.id === o.id ? { ...x, size: Number(e.target.value) } : x))} style={{ width: 50 }} />
+                <button onClick={() => hapusOverlay(o.id)} style={{ background: "rgba(239,68,68,.2)", border: "none", borderRadius: 6, color: "#fca5a5", width: 22, height: 22, cursor: "pointer", fontSize: 10 }}>✕</button>
+              </div>
+            ))}
+            {overlayImgs.length > 0 && <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>Gambar punya cahaya emas halus otomatis. Posisi & ukuran bisa diatur per gambar.</p>}
           </div>
           <div style={{ border: "1px solid rgba(255,255,255,.14)", borderRadius: 12, padding: 10 }}>
             <button onClick={() => setSubOn(!subOn)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>

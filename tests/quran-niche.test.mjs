@@ -100,7 +100,7 @@ T("Jepang/Korea/Thailand tersedia", /ja\.japanese/.test(qd) && /ko\.korean/.test
 T("jumlah bahasa >= 24", (qd.match(/kode: "/g) || []).length >= 24, `${(qd.match(/kode: "/g)||[]).length}`);
 T("OPTIMASI: cache latar+frame offscreen (dapatCacheFrame)", /dapatCacheFrame/.test(page) && /frameCacheRef/.test(page));
 T("gambarScene pakai drawImage cache (bukan gambar ulang)", /ctx\.drawImage\(fc, 0, 0, W, H\)/.test(page));
-T("TIDAK ada shadowBlur AKTIF di preview (mahal di HP)", !/ctx\.shadowBlur|shadowBlur =/.test(page));
+T("shadowBlur hanya di teks/overlay (bukan ornamen frame)", !/ctx\.shadowBlur|shadowBlur =/.test(page) || /shadowColor = "rgba\(212,175,55,0\.7\)"/.test(page));
 T("preview throttle ~30fps (33ms)", /now - last >= 33/.test(page));
 T("preview dimatikan saat render (hemat CPU)", /busy === "render"\) return/.test(page));
 T("render drawBg pakai cache juga", /drawBg: \(ctx, W, H\) => \{[\s\S]*?dapatCacheFrame/.test(page));
@@ -192,3 +192,16 @@ T("OVERLAY: gambarOverlayAllah dipanggil di scene", /gambarOverlayAllah\(ctx, W,
 T("OVERLAY: tulisan الله & محمد + animasi glow", /الله/.test(qt) && /محمد/.test(qt) && /shadowBlur/.test(qt));
 T("FONT: Google Fonts dimuat di halaman", /fonts.googleapis.com/.test(page) && /useFontsIslami/.test(page));
 
+
+/* ---- v20.16: overlay GAMBAR upload, logo wah, visual lengkap (stok/AI/upload) ---- */
+T("OVERLAY GBR: state overlayImgs array + tambahOverlay", /const \[overlayImgs, setOverlayImgs\]/.test(page) && /function tambahOverlay/.test(page));
+T("OVERLAY GBR: upload gambar overlay di UI", /Upload gambar overlay/.test(page));
+T("OVERLAY GBR: scene pakai gambar (prioritas) — fallback teks", /if \(overlayImgs\.length\)/.test(page) && /gambarOverlayAllah/.test(page));
+T("OVERLAY GBR: posisi kiri/kanan/atas/bawah + ukuran", /"kiri" \| "kanan" \| "atas" \| "bawah"/.test(page) && /o\.size/.test(page));
+T("OVERLAY GBR: cahaya emas (shadowBlur) di gambar", /shadowColor = "rgba\(212,175,55,0\.7\)"/.test(page));
+T("LOGO: wah — denyut + sinar berputar + bulat", /denyut = 1 \+ 0\.05 \* Math\.sin\(t \* 2\.2\)/.test(page) && /ctx\.rotate\(t \* 0\.6\)/.test(page) && /ctx\.arc\(cx, cy, rr, 0, Math\.PI \* 2\); ctx\.clip\(\)/.test(page));
+T("VISUAL: cari video stok (cariStokVideoSmart)", /cariStokVideoSmart/.test(page) && /pakaiStok/.test(page));
+T("VISUAL: tombol Cari video stok di UI", /Cari video stok/.test(page) && /setStokOpen/.test(page));
+T("VISUAL: gambar AI latar (buatBgGambarQ)", /async function buatBgGambarQ/.test(page) && /\/api\/hcnsec\/image/.test(page));
+T("VISUAL: upload foto latar (latarGambar)", /const \[latarGambar, setLatarGambar\]/.test(page) && /setLatarGambar\(r\.result as string\)/.test(page));
+T("VISUAL: cache frame pakai latarGambar", /latarGambar \? "gbr" : "no"/.test(page) && /latarGambar\)/.test(page));
