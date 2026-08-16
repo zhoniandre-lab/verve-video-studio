@@ -6,30 +6,11 @@ import { extractStudioRows, summarizeStudioRow, type YtStudioCsvRow } from "@/li
 import { extractStudioText, summarizeStudioText, type YtStudioTextResult } from "@/lib/brain/yt-studio-text";
 import { extractYoutubeVideoId } from "@/lib/brain/youtube-url";
 import { lastSyncTime, loadBrain, markSyncDone, persistBrain, syncYtBrain } from "@/lib/brain/auto-sync";
-import { suggestTitlesFromBrain, type GuruSuggestion } from "@/lib/brain/title-guru"; // 🚀 v20.28: judul kejar viral
 
-/** 🐛 v20.26 FIX ANGKA INDONESIA: "1.600" = seribu enam ratus (bukan 1,6!).
- *  Sebelumnya Number("1.600") = 1.6 → dikalikan → jadi 16 juta (salah besar).
- *  Aturan: titik = pemisah RIBUAN (3 digit), koma = desimal. "1.6" (1 digit
- *  setelah titik) = desimal internasional → 1.6. "1.600" (3 digit) = 1600. */
 function num(v: string): number | undefined {
   const raw = String(v ?? "").trim();
   if (!raw) return undefined;
-  const bersih = raw.replace(/\s+/g, "");
-  // Deteksi titik DESIMAL: pola "digit.titik.satuDigit" & bukan kelipatan ribuan
-  // ("1.6", "12.5", "0.75") — kalau setelah titik cuma 1-2 digit & total digit
-  // kiri ≤ 2 → desimal. Kalau 3 digit setelah titik → ribuan ("1.600").
-  const mDes = bersih.match(/^(\d+)\.(\d{1,2})$/);
-  const mRib = bersih.match(/^(\d+)\.(\d{3})$/);
-  if (mRib && !mDes) {
-    // "1.600" → 1600 (ribuan)
-    const n = Number(bersih.replace(/\./g, ""));
-    return Number.isFinite(n) ? n : undefined;
-  }
-  let s = bersih.replace(/\./g, "").replace(",", ".");
-  // "4,8" → "4.8" ✅; "1.6" (desimal intl) → kena mDes → pakai asli
-  if (mDes && !bersih.includes(",")) s = bersih;
-  const n = Number(s);
+  const n = Number(raw.replace(",", "."));
   return Number.isFinite(n) ? n : undefined;
 }
 function clockInput(v: string): number | undefined {
@@ -166,25 +147,6 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
   const [audienceFacts, setAudienceFacts] = useState<YtStudioTextResult["audience"]>([]);
   const [ytStatus, setYtStatus] = useState<YtStatus | null>(null);
   const [ytVideos, setYtVideos] = useState<YtVideo[]>([]);
-  // 🚀 v20.28: KEJAR VIRAL — judul terbaik dari pola video yang berkembang
-  const [viralJudul, setViralJudul] = useState<GuruSuggestion[]>([]);
-  const [viralDari, setViralDari] = useState("");
-  const [viralMsg, setViralMsg] = useState("");
-  function kejarViral() {
-    if (!ytVideos.length) { setViralMsg("Muat video dulu (📺 Muat Video) — biar aku tahu pola yang berkembang."); return; }
-    const sorted = [...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-    const terbaik = sorted[0];
-    if (!terbaik) { setViralMsg("Belum ada data video."); return; }
-    // ambil kata kunci dari judul video terbaik (buang kata umum)
-    const stop = new Set(["the","a","an","dan","yang","di","ke","dari","untuk","dengan","ini","itu","vs","part","episode","full","terbaru","baru","cara","buat","membuat","video"]);
-    const kw = (terbaik.title || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !stop.has(w)).slice(0, 3).join(" ");
-    const brain = loadBrain() || { results: [] as any[] } as any;
-    const judul = suggestTitlesFromBrain(kw || (terbaik.title || "konten"), brain, 5, "story_song");
-    setViralDari(terbaik.title || "");
-    if (judul.length) setViralJudul(judul);
-    else setViralJudul([{ title: `Part 2: ${terbaik.title}`, score: 90, alasan: "Lanjutan video terbaikmu — penonton sudah terbukti suka topik ini." }]);
-    setViralMsg(`Dari video terbaikmu: "${(terbaik.title||"").slice(0,50)}" (${(terbaik.viewCount||0).toLocaleString("id-ID")} views) — pola yang berkembang dipakai buat judul lanjutan.`);
-  }
   const [ytUrl, setYtUrl] = useState("");
   const [ytRange, setYtRange] = useState<"lifetime" | "7" | "28" | "90">("lifetime");
   const [ytBusy, setYtBusy] = useState(false);
@@ -563,71 +525,26 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             </div>
             {!!ytVideos.length && (
               <div className="gd-ytvideos">
-                {/* 🎯 v20.27 SIMPLE: video mana yang BAGUS vs PERLU DIPERBAIKI + solusi */}
-                <div style={{ fontSize: 11, color: "#a5f3fc", fontWeight: 900, marginBottom: 4 }}>🎯 VIDEO KAMU: MANA YANG BAGUS & SOLUSINYA</div>
-                <div style={{ fontSize: 9.5, color: "#64748b", marginBottom: 8 }}>Urut dari paling banyak ditonton. Ketuk video → datanya keisi di atas.</div>
-                {(() => {
-                  const sorted = [...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).slice(0, 10);
-                  const maxViews = Math.max(1, ...sorted.map((x) => x.viewCount || 0));
-                  const bagus = sorted.filter((v) => (v.viewCount || 0) >= maxViews * 0.3);
-                  const jelek = sorted.filter((v) => (v.viewCount || 0) < maxViews * 0.3);
-                  const kartu = (v: YtVideo, idx: number, baik: boolean) => {
-                    const th: any = (v as any).thumbnails;
-                    const thUrl = th?.medium?.url || th?.high?.url || th?.default?.url || "";
-                    const views = v.viewCount || 0;
-                    return (
-                      <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", borderRadius: 12, padding: 6, background: "#0a0e16", border: baik ? "1px solid rgba(34,197,94,.35)" : "1px solid rgba(239,68,68,.3)", marginBottom: 5, cursor: "pointer" }}>
-                        {thUrl ? <img src={thUrl} alt="" style={{ width: 52, height: 34, objectFit: "cover", borderRadius: 6, flex: "0 0 auto" }} /> : <span style={{ width: 52, height: 34, borderRadius: 6, background: "#141824", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>🎬</span>}
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <b style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.title}</b>
-                          <span style={{ fontSize: 9.5, color: "#8b8b98" }}>{views.toLocaleString("id-ID")} views · {baik ? "👍 bagus" : "👎 sepi"}</span>
-                          <span style={{ display: "block", fontSize: 9, color: baik ? "#86efac" : "#fca5a5", marginTop: 1 }}>{baik ? "✅ Buat versi lanjutan (part 2) — pola ini disukai" : "🛠 Solusi: ganti thumbnail/judul lebih menarik, atau perbaiki hook 3 detik"}</span>
-                        </span>
-                        {baik && (
-                          <button onClick={(e) => { e.stopPropagation(); kirimChat(`Kasih ide konten lanjutan (part 2) dari video "${v.title}" yang dapat ${views.toLocaleString("id-ID")} views — sesuai pola yang bikin dia meledak.`); }} style={{ background: "rgba(139,92,246,.15)", border: "1px solid #8b5cf655", color: "#c4b5fd", borderRadius: 999, fontSize: 9.5, padding: "4px 8px", whiteSpace: "nowrap", cursor: "pointer" }} title="Minta ide lanjutan dari video ini">💡 Ide part 2</button>
-                        )}
-                      </button>
-                    );
-                  };
+                {/* 🖼️ v19.65 TAHAP 4: BANDINGKAN THUMBNAIL — lihat visual mana yang meledak vs sepi */}
+                <div style={{ fontSize: 10.5, color: "#a5f3fc", fontWeight: 800, marginBottom: 6 }}>🖼️ BANDINGKAN THUMBNAIL (urutan: paling meledak → paling sepi)</div>
+                {[...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).slice(0, 8).map((v, idx) => {
+                  const th: any = (v as any).thumbnails;
+                  const thUrl = th?.medium?.url || th?.high?.url || th?.default?.url || "";
+                  const views = v.viewCount || 0;
+                  const maxViews = Math.max(1, ...ytVideos.map((x) => x.viewCount || 0));
+                  const status = views >= maxViews * 0.5 ? "🔥 meledak" : views >= maxViews * 0.1 ? "🟡 sedang" : "💤 sepi";
                   return (
-                    <>
-                      {bagus.length > 0 && (
-                        <div style={{ marginBottom: 6 }}>
-                          <div style={{ fontSize: 10.5, fontWeight: 900, color: "#86efac", marginBottom: 4 }}>👍 BAGUS ({bagus.length}) — teruskan polanya</div>
-                          {bagus.map((v, i) => kartu(v, i, true))}
-                        </div>
-                      )}
-                      {jelek.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: 10.5, fontWeight: 900, color: "#fca5a5", marginBottom: 4 }}>👎 PERLU DIPERBAIKI ({jelek.length})</div>
-                          {jelek.map((v, i) => kartu(v, i, false))}
-                        </div>
-                      )}
-                    </>
+                    <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", borderRadius: 12, padding: 6, background: "#0a0e16", border: "1px solid #ffffff12", marginBottom: 5, cursor: "pointer" }}>
+                      {thUrl ? <img src={thUrl} alt="" style={{ width: 52, height: 34, objectFit: "cover", borderRadius: 6, flex: "0 0 auto" }} /> : <span style={{ width: 52, height: 34, borderRadius: 6, background: "#141824", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>🎬</span>}
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.title}</b>
+                        <span style={{ fontSize: 9.5, color: "#8b8b98" }}>#{idx + 1} · {views.toLocaleString("id-ID")} views · {status}</span>
+                      </span>
+                      <button onClick={(e) => { e.stopPropagation(); kirimChat(`Kasih ide konten lanjutan (part 2) dari video "${v.title}" yang dapat ${(v.viewCount||0).toLocaleString("id-ID")} views — sesuai pola yang bikin dia meledak.`); }} style={{ background: "rgba(139,92,246,.15)", border: "1px solid #8b5cf655", color: "#c4b5fd", borderRadius: 999, fontSize: 9.5, padding: "4px 8px", whiteSpace: "nowrap", cursor: "pointer" }} title="Minta ide lanjutan dari video ini">💡 Ide</button>
+                    </button>
                   );
-                })()}
-              </div>
-            )}
-
-            {/* 🚀 v20.28: KEJAR VIRAL — judul terbaik dari pola yang berkembang */}
-            {!!ytVideos.length && (
-              <div style={{ marginTop: 8, border: "1px solid rgba(251,191,36,.45)", borderRadius: 14, padding: 12, background: "linear-gradient(135deg,rgba(251,191,36,.10),rgba(239,68,68,.06))" }}>
-                <div style={{ fontSize: 12, fontWeight: 950, color: "#fde68a", marginBottom: 4 }}>🚀 KEJAR VIRAL — judul untuk lanjutan</div>
-                <p style={{ fontSize: 10, color: "#a8a29e", margin: "0 0 8px" }}>Aku baca pola video yang paling berkembang di channel-mu → kubuatkan judul terbaik buat konten berikutnya.</p>
-                <button onClick={kejarViral} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#f59e0b,#ef4444)", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>🚀 Buat Judul Kejar Viral</button>
-                {!!viralMsg && <p style={{ fontSize: 10.5, color: "#fbbf24", margin: "8px 0 0", lineHeight: 1.4 }}>{viralMsg}</p>}
-                {viralJudul.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 10, color: "#d6d3d1", marginBottom: 4 }}>Dari pola video: <b style={{ color: "#fde68a" }}>{viralDari.slice(0, 60)}</b></div>
-                    {viralJudul.slice(0, 5).map((j, i) => (
-                      <button key={i} onClick={() => copy(j.title)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderRadius: 10, background: "#14100a", border: "1px solid rgba(251,191,36,.3)", marginBottom: 5, cursor: "pointer" }}>
-                        <b style={{ fontSize: 11.5, color: "#fff", display: "block" }}>{i + 1}. {j.title}</b>
-                        <span style={{ fontSize: 9.5, color: "#a8a29e" }}>💡 {j.alasan}</span>
-                      </button>
-                    ))}
-                    <p style={{ fontSize: 9, color: "#78716c", margin: "6px 0 0" }}>Ketuk judul → tersalin. Buat video dengan judul itu & thumbnail sesuai pola terbaikmu.</p>
-                  </div>
-                )}
+                })}
+                <div style={{ fontSize: 9.5, color: "#64748b", marginTop: 4 }}>Ketuk video → data analytics-nya keisi di atas. Pola yang kelihatan: yang meledak biasanya thumbnail wajah + teks besar + kontras. 👀</div>
               </div>
             )}
             <div className="gd-textactions" style={{ gridTemplateColumns: "1fr" }}>
@@ -730,11 +647,11 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
           <div style={{ marginTop: 12, border: "1px solid rgba(94,234,212,.45)", borderRadius: 16, padding: 11, background: "rgba(25,194,184,.07)" }}>
             <b style={{ fontSize: 12, color: "#5eead4" }}>🧾 Yang aku baca:</b>
             <div style={{ fontSize: 12, color: "#e2e8f0", margin: "6px 0", lineHeight: 1.6 }}>
-              {views ? <>👁 Views: <b>{(num(views) ?? 0).toLocaleString("id-ID")}</b><br /></> : null}
-              {watchH ? <>🕐 Waktu tonton: <b>{(num(watchH) ?? 0).toLocaleString("id-ID")} jam</b><br /></> : null}
+              {views ? <>👁 Views: <b>{Number(views).toLocaleString("id-ID")}</b><br /></> : null}
+              {watchH ? <>🕐 Waktu tonton: <b>{Number(watchH).toLocaleString("id-ID")} jam</b><br /></> : null}
               {ctr ? <>🎯 CTR: <b>{ctr}%</b><br /></> : null}
               {ret30 ? <>⏱ Retensi: <b>{ret30}%</b><br /></> : null}
-              {subs ? <>➕ Subscriber +: <b>{(num(subs) ?? 0).toLocaleString("id-ID")}</b><br /></> : null}
+              {subs ? <>➕ Subscriber +: <b>{Number(subs).toLocaleString("id-ID")}</b><br /></> : null}
               {retPct ? <>🔁 Penonton kembali: <b>{retPct}%</b></> : null}
             </div>
             <div className="gd-textactions">
@@ -762,23 +679,6 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             <span>{ringEmoji}</span>
             <div><b>{kompas.ringkasan.title}</b><p>{kompas.ringkasan.text}</p></div>
           </div>
-
-          {/* 🎯 v20.26: 3 AKSI TERPENTING — tampil LANGSUNG tanpa klik (yang paling berdampak) */}
-          {dx.actions.length > 0 && (
-            <div style={{ marginTop: 10, border: "1px solid rgba(139,92,246,.45)", borderRadius: 14, padding: 12, background: "linear-gradient(135deg,rgba(139,92,246,.14),rgba(217,70,239,.08))" }}>
-              <div style={{ fontSize: 11.5, fontWeight: 950, color: "#e9d5ff", marginBottom: 8 }}>🎯 3 AKSI TERPENTING (urut dari paling berdampak)</div>
-              {dx.actions.slice(0, 3).map((a, i) => (
-                <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "7px 0", borderTop: i === 0 ? "none" : "1px solid rgba(255,255,255,.07)" }}>
-                  <span style={{ width: 26, height: 26, borderRadius: "50%", background: i === 0 ? "linear-gradient(135deg,#f59e0b,#ef4444)" : i === 1 ? "linear-gradient(135deg,#8b5cf6,#d946ef)" : "linear-gradient(135deg,#06b6d4,#3b82f6)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 13, color: "#fff", flex: "0 0 auto" }}>{i + 1}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <b style={{ display: "block", fontSize: 12.5, color: "#fff" }}>{a.cta}</b>
-                    <span style={{ fontSize: 10.5, color: "#c7d2e5", lineHeight: 1.45, display: "block", marginTop: 1 }}>{a.detail}</span>
-                  </div>
-                </div>
-              ))}
-              <button onClick={() => copy(dx.planText)} style={{ width: "100%", marginTop: 8, padding: "8px", borderRadius: 10, border: "1px solid rgba(139,92,246,.5)", background: "rgba(139,92,246,.15)", color: "#c4b5fd", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>📋 Salin Rencana Aksi Lengkap</button>
-            </div>
-          )}
 
           {kompas.items.length > 0 && (
             <>
