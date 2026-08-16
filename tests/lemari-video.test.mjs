@@ -2,6 +2,8 @@
 // Jalankan: node tests/lemari-video.test.mjs
 import { readFileSync } from "fs";
 const spec = readFileSync(new URL("../src/app/spectrum-studio.tsx", import.meta.url), "utf8");
+const stokroute = readFileSync(new URL("../src/app/api/hcnsec/stock-video/route.ts", import.meta.url), "utf8");
+const sv = readFileSync(new URL("../src/lib/stockvid.ts", import.meta.url), "utf8");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -32,3 +34,9 @@ T("v20.23: muatLagiVid (halaman berikutnya, anti duplikat)", /async function mua
 T("v20.23: tampilkan SEMUA hasil (bukan slice 8)", /vidRes\.map\(\(v\) =>/.test(spec) && !/vidRes\.slice\(0, 8\)/.test(spec));
 T("v20.23: tampilkan sumber provider (Pexels/Pixabay)", /v\.provider/.test(spec) && /Pixabay · Coverr/.test(spec));
 T("v20.23: tombol Muat lebih banyak", /Muat lebih banyak/.test(spec) && /vidRes\.length < vidTotal/.test(spec));
+
+/* ---- v20.24: keyword SESUAI (query presisi, tanpa terjemahan AI dobel) ---- */
+T("v20.24: route TIDAK terjemahkan ulang dgn AI", !/translateQueryWithAI\(rawQ\)/.test(stokroute) && /const q = rawQ/.test(stokroute));
+T("v20.24: frasa majemuk didahulukan (malam hari→night)", /malam hari/.test(sv) && /"hujan malam": "night rain"/.test(sv));
+T("v20.24: kata isian dibuang (hari/yang/dan)", /buang = new Set/.test(sv) && /"hari"/.test(sv));
+T("v20.24: terjemahan kata per kata tetap ada", /ID_EN\[w\] \|\| w/.test(sv));

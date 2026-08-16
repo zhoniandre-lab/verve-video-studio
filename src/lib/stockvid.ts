@@ -95,13 +95,31 @@ const ID_EN: Record<string, string> = {
 };
 
 export function terjemahkanKueri(q: string): string {
-  const tok = (q || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const asli = (q || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  // 🐛 v20.24: frasa majemuk yang lebih akurat DIPERIKSA DULU (sebelum kata per kata)
+  const frasa: Record<string, string> = {
+    "malam hari": "night", "siang hari": "day", "pagi hari": "morning", "sore hari": "sunset",
+    "hujan malam": "night rain", "hujan lebat": "heavy rain", "hujan gerimis": "drizzle",
+    "jalan raya": "highway", "laut lepas": "open sea", "pantai pasir": "sandy beach",
+    "orang tua": "elderly", "anak kecil": "child", "rumah tua": "old house",
+  };
+  // coba pecah jadi frasa 2 kata dulu
+  const pakaiFrasa: string[] = [];
+  const sisa: string[] = [];
+  let i = 0;
+  while (i < asli.length) {
+    const dua = i + 1 < asli.length ? `${asli[i]} ${asli[i + 1]}` : "";
+    if (dua && frasa[dua]) { pakaiFrasa.push(frasa[dua]); i += 2; continue; }
+    sisa.push(asli[i]); i++;
+  }
   const hasil: string[] = [];
-  tok.forEach(w => {
+  [...pakaiFrasa, ...sisa].forEach(w => {
     const en = ID_EN[w] || w;
     if (!hasil.includes(en)) hasil.push(en);
   });
-  return hasil.join(" ");
+  // buang kata isian yang tidak relevan utk pencarian video (biar query bersih)
+  const buang = new Set(["hari", "yang", "dan", "di", "ke", "dengan", "itu", "ini", "saja", "juga", "untuk", "pada", "saat"]);
+  return hasil.filter(w => !buang.has(w) && !buang.has(w.split(" ")[0])).join(" ");
 }
 
 /* 🎬 v13.11.2 PETA EMOJI KARAKTER & EMO — buat kueri sinematik "ibu & anak kenangan, sedih terasa". */

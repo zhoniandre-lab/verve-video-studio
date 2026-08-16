@@ -106,7 +106,10 @@ export async function GET(req: Request) {
     if (!rawQ)
       return NextResponse.json({ ok: false, error: "q (kata kunci) wajib diisi" }, { status: 400 });
 
-    const q = await translateQueryWithAI(rawQ);
+    // 🐛 v20.24: TIDAK terjemahkan ulang dengan AI — client sudah kirim query
+    // Inggris (terjemahkanKueri di lib). Terjemahan AI dobel bikin query ngawur
+    // ("hujan malam hari" → "rain night day" lalu AI ubah jadi aneh).
+    const q = rawQ.trim().replace(/\s+/g, " ").slice(0, 60);
 
     const ip = (req.headers.get("x-forwarded-for") || "anon").split(",")[0].trim();
     if (!bolehLewat(ip))
