@@ -128,3 +128,8 @@ T("TURBO: render pakai resScale 0.78 (jauh lebih cepat)", /resScale: 0\\.78/.tes
 T("DESAIN: gambarDesainIslami ada di quran-frame", /export function gambarDesainIslami/.test(qf) && /bintang8/.test(qf));
 T("DESAIN: pola arabesque + garis pemisah ada", /arabesque/.test(qf) && /garis pemisah atas & bawah/.test(qf));
 T("DESAIN: dipanggil di cache frame (dalam video)", /gambarDesainIslami/.test(page));
+
+/* ---- v20.9: PILIHAN TURBO (Normal / Ekstra 60%) ---- */
+T("state turboMode normal/ekstra ada", /const \[turboMode, setTurboMode\]/.test(page) && /"normal" \| "ekstra"/.test(page));
+T("resScale ikut turboMode (ekstra=0.6, normal=0.78)", /turboMode === "ekstra" \\? 0\\.6 : 0\\.78/.test(page));
+T("UI pilihan Normal & Ekstra 60% ada", /KECEPATAN RENDER/.test(page) && /Ekstra 60%/.test(page) && /setTurboMode\("normal"\)/.test(page) && /setTurboMode\("ekstra"\)/.test(page));

@@ -105,6 +105,8 @@ export default function NicheQuran() {
   const [hasil, setHasil] = useState<Blob | null>(null);
   const [hasilUrl, setHasilUrl] = useState("");
   const [renderFase, setRenderFase] = useState("");
+  // ⚡ v20.9 TURBO RENDER: "normal" = 78% (seimbang) / "ekstra" = 60% (paling cepat)
+  const [turboMode, setTurboMode] = useState<"normal" | "ekstra">("normal");
 
   const cvRef = useRef<HTMLCanvasElement | null>(null);
   const bufRef = useRef<AudioBuffer | null>(null);
@@ -576,10 +578,11 @@ export default function NicheQuran() {
         buf, w: dim.w, h: dim.h, offset: 0, dur: audioDur,
         eq: studioOn ? "studio" : (fokusVokal ? "vokal" : "flat"), comp: 45, gain: 95, fades: false,
         audioCodec: mampu.audioCodec, fps: 24, videoBitrate: dim.w <= 720 ? 2_600_000 : 3_600_000,
-        // ⚡ v20.8 TURBO CEPAT: render di resolusi lebih kecil lalu upscale —
+        // ⚡ v20.8/20.9 TURBO CEPAT: render di resolusi lebih kecil lalu upscale —
         // 1 menit render jauh lebih cepat (HP); kualitas tetap bagus untuk
-        // YouTube (yang re-encode sendiri). 0.78 = ~40% lebih cepat.
-        resScale: 0.78,
+        // YouTube (yang re-encode sendiri). normal=0.78 (~40% cepat),
+        // ekstra=0.60 (~2.7× lebih cepat dari full, kualitas tetap oke).
+        resScale: turboMode === "ekstra" ? 0.6 : 0.78,
         ambience: ambience !== "off" ? { jenis: ambience, gain: ambVol / 100, buf: ambBuf } : null,
         vocalReverb: studioOn ? Math.max(reverb, 0.15) : reverb,
         noiseGate: studioOn ? 0.003 : 0,
@@ -937,6 +940,14 @@ export default function NicheQuran() {
               🌧️ {AMBIENCE_LABEL[ambience]} {ambience !== "off" ? `· ${ambVol}%` : ""} · 🎙️ Reverb {Math.round(reverb * 100)}%
             </p>
             {audioDur > 15 * 60 && <p style={{ fontSize: 11, color: "#fbbf24", margin: "4px 0 0" }}>⚠️ Lebih dari 15 menit — di HP bisa lama/berat. Disarankan ≤15 menit atau garap di laptop.</p>}
+            {/* ⚡ v20.9: PILIHAN TURBO — normal (seimbang) / ekstra 60% (paling cepat) */}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#cbd5e1", marginBottom: 4 }}>⚡ KECEPATAN RENDER</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setTurboMode("normal")} style={{ flex: 1, padding: "9px 6px", borderRadius: 10, border: "1px solid rgba(255,255,255,.2)", background: turboMode === "normal" ? "rgba(139,92,246,.35)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>🔄 Normal<br /><span style={{ fontSize: 9.5, fontWeight: 400, color: "#8b8b98" }}>seimbang · ~40% lebih cepat</span></button>
+                <button onClick={() => setTurboMode("ekstra")} style={{ flex: 1, padding: "9px 6px", borderRadius: 10, border: "1px solid rgba(212,175,55,.4)", background: turboMode === "ekstra" ? "rgba(212,175,55,.2)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>⚡ Ekstra 60%<br /><span style={{ fontSize: 9.5, fontWeight: 400, color: "#8b8b98" }}>paling cepat · ±2.7× lipat</span></button>
+              </div>
+            </div>
             <button onClick={renderQuran} disabled={busy === "render"}
               style={{ width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer", marginTop: 8 }}>
               {busy === "render" ? `⏳ Render… ${renderFase} ${Math.round(prog * 100)}%` : "🎬 Render Video"}
