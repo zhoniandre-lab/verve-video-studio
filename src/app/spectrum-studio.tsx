@@ -151,6 +151,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [vidPage, setVidPage] = useState(1);
   const [vidLastQ, setVidLastQ] = useState("");
   const [vidTotal, setVidTotal] = useState(0);
+  // 🎌 v20.25: filter TIPE video stok — "film" (nyata) / "anime" (animasi)
+  const [vidTipe, setVidTipe] = useState<"film" | "anime">("film");
   const [bgAiBusy, setBgAiBusy] = useState(false);
   const [bgAiMsg, setBgAiMsg] = useState("");
   // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
@@ -724,7 +726,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setVidBusy(true); setVidErr(""); setVidNote(""); setVidPage(1); setVidLastQ(k);
     // 🐛 v20.23: langsung cari GLOBAL dari semua gudang (Pexels+Pixabay+Coverr di route)
     // dengan per=15 — dulu rasaIndo=true (2 query) & per=8 → hasil sedikit.
-    const r = await cariStokVideo(k, 1, 15).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang video" }));
+    // 🎌 v20.25: kirim tipe (film/anime)
+    const r = await cariStokVideo(k, 1, 15, vidTipe).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang video" }));
     setVidBusy(false);
     if (!r.ok) { setVidErr(r.err); setVidRes([]); return; }
     setVidRes(r.hasil);
@@ -735,7 +738,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   async function muatLagiVid() {
     if (!vidLastQ || vidBusy) return;
     setVidBusy(true);
-    const r = await cariStokVideo(vidLastQ, vidPage + 1, 15).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal" }));
+    const r = await cariStokVideo(vidLastQ, vidPage + 1, 15, vidTipe).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal" }));
     setVidBusy(false);
     if (!r.ok || !r.hasil.length) { setVidNote("Sudah semua hasilnya."); return; }
     setVidRes((old) => {
@@ -2271,8 +2274,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             </button>
             {vidSheetOpen && (
               <div style={{ marginTop: 6, border: "1px solid rgba(139,92,246,.35)", borderRadius: 12, padding: 10, background: "rgba(139,92,246,.06)" }}>
+                {/* 🎌 v20.25: pilih TIPE video stok — film nyata / anime animasi */}
+                <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
+                  {([["film", "🎬 Film (nyata)"], ["anime", "🎌 Anime / Animasi"]] as const).map(([v, lb]) => (
+                    <button key={v} onClick={() => { setVidTipe(v); setVidRes([]); }} style={{ padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,.2)", background: vidTipe === v ? "rgba(139,92,246,.45)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>{lb}</button>
+                  ))}
+                </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder='Cari: "ibu menangis", "sawah senja", "hujan jendela"…' value={vidQ}
+                  <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder={vidTipe === "anime" ? 'Cari video ANIME: "pemandangan", "hujan", "kota malam"…' : 'Cari: "ibu menangis", "sawah senja", "hujan jendela"…'} value={vidQ}
                     onChange={(e) => setVidQ(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") void cariVidStok(); }} />
                   <button className="v6-bigcta" style={{ marginTop: 0, width: 64, fontSize: 11 }} disabled={vidBusy} onClick={() => void cariVidStok()}>{vidBusy ? "⏳" : "🔍"}</button>

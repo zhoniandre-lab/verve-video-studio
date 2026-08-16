@@ -9,16 +9,17 @@ export type VidPick = { id: number; src: string; sd: string; thumb: string; dur:
 
 export type CariHasil = { ok: boolean; hasil: VidPick[]; total: number; err: string };
 
-export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariHasil> {
+export async function cariStokVideo(q: string, page = 1, per = 8, tipe: "film" | "anime" = "film"): Promise<CariHasil> {
   // 🩹 v16.3 AUTO-TRANSLATOR FOR MANUAL SEARCH:
   // Terjemahkan kata kunci pencarian manual dari bahasa Indonesia ke Inggris menggunakan kamus ID_EN kita,
   // agar pencarian kata manual (seperti "Ibu menangis" atau "sawah") menghasilkan ratusan video stock yang presisi!
   const translated = terjemahkanKueri(q);
   const query = translated.trim().replace(/\s+/g, " ").slice(0, 60);
   if (query.length < 2) return { ok: false, hasil: [], total: 0, err: "Kata kunci terlalu pendek bro." };
-  const cached = readMaterialCache<CariHasil>(query, page, per);
+  const cached = readMaterialCache<CariHasil>(`${query}|${tipe}`, page, per);
   if (cached?.ok && Array.isArray(cached.hasil)) return { ...cached, err: "" };
-  const res = await fetchJsonResult<any>(`/api/hcnsec/stock-video?q=${encodeURIComponent(query)}&page=${page}&per=${per}`, {
+  // 🎌 v20.25: kirim tipe (anime = video animasi) ke route
+  const res = await fetchJsonResult<any>(`/api/hcnsec/stock-video?q=${encodeURIComponent(query)}&page=${page}&per=${per}&tipe=${tipe}`, {
     timeoutMs: 15_000,
     retries: 1,
     retryDelayMs: 700,
@@ -35,7 +36,7 @@ export async function cariStokVideo(q: string, page = 1, per = 8): Promise<CariH
     return { ok: false, hasil: [], total: 0, err: j.error || `Gudang gagal dihubungi (HTTP ${res.status})` };
   }
   const out = { ok: true, hasil: j.hasil || [], total: j.total || 0, err: "" };
-  writeMaterialCache(query, page, per, out);
+  writeMaterialCache(`${query}|${tipe}`, page, per, out);
   return out;
 }
 

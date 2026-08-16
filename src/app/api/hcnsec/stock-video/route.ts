@@ -86,6 +86,9 @@ export async function GET(req: Request) {
     const rawQ = (searchParams.get("q") || "").trim().slice(0, 80);
     const page = Math.max(1, Math.min(40, parseInt(searchParams.get("page") || "1", 10) || 1));
     const per = Math.max(3, Math.min(15, parseInt(searchParams.get("per") || "8", 10) || 8));
+    // 🎌 v20.25: filter TIPE — "anime" = video animasi/anime (Pixabay video_type=all
+    // + tambah kata anime/animation/cartoon), selain itu = film biasa.
+    const tipe = searchParams.get("tipe") || "";
 
     // 🐛 v20.18: kunci dari header client (disimpan di HP user) ATAU env Vercel —
     // dulu cuma env → kalau user "sudah masukin" di aplikasi tetap gagal.
@@ -107,9 +110,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "q (kata kunci) wajib diisi" }, { status: 400 });
 
     // 🐛 v20.24: TIDAK terjemahkan ulang dengan AI — client sudah kirim query
-    // Inggris (terjemahkanKueri di lib). Terjemahan AI dobel bikin query ngawur
-    // ("hujan malam hari" → "rain night day" lalu AI ubah jadi aneh).
-    const q = rawQ.trim().replace(/\s+/g, " ").slice(0, 60);
+    // Inggris (terjemahkanKueri di lib). Terjemahan AI dobel bikin query ngawur.
+    let q = rawQ.trim().replace(/\s+/g, " ").slice(0, 60);
+    // 🎌 v20.25: mode anime — tambah kata anime/animation/cartoon ke query
+    // (banyak video animasi di Pixabay butuh kata itu untuk muncul).
+    if (tipe === "anime" && !/anime|animation|cartoon/i.test(q)) {
+      q = `${q} anime animation`.trim().slice(0, 60);
+    }
 
     const ip = (req.headers.get("x-forwarded-for") || "anon").split(",")[0].trim();
     if (!bolehLewat(ip))
@@ -145,7 +152,10 @@ export async function GET(req: Request) {
     const janjiPixabay: Promise<{ hasil: any[]; total: number } | null> = !kunciX
       ? Promise.resolve(null)
       : (async () => {
-          const url = `${PIXABAY}?key=${encodeURIComponent(kunciX)}&q=${encodeURIComponent(q)}&per_page=${per}&page=${page}&safesearch=true&video_type=film`;
+          // 🎌 v20.25: mode anime → video_type=all (biar video animasi ikut muncul);
+          // default = film (video nyata).
+          const vtype = tipe === "anime" ? "all" : "film";
+          const url = `${PIXABAY}?key=${encodeURIComponent(kunciX)}&q=${encodeURIComponent(q)}&per_page=${per}&page=${page}&safesearch=true&video_type=${vtype}`;
           const ac = new AbortController();
           const t = setTimeout(() => ac.abort(), 12_000);
           const r = await fetch(url, { signal: ac.signal, cache: "no-store" });
