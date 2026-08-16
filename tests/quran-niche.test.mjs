@@ -212,9 +212,9 @@ T("STOK: translate AI cepat 6 dtk (dulu 120s)", /AbortSignal.timeout\(6000\)/.te
 T("STOK: rate limit dinaikkan 300", /arr.length >= 300/.test(stokroute));
 T("STOK: Quran kirim kunci sbg header x-stok-*", /x-stok-pexels/.test(page) && /stokKeys/.test(page));
 T("STOK: UI input kunci stok + simpan", /Kunci stok/.test(page) && /simpanStokKeys/.test(page));
-T("GBR: route TIDAK panggil proxyImageToBase64 & HEAD", !/proxyImageToBase64\(url\)/.test(route) && !/method: "HEAD"/.test(route));
-T("GBR: pagar 55 dtk - AI butuh waktu (bukan 30)", /t0gambar > 55000/.test(hcnsec) && !/t0gambar > 30000/.test(hcnsec));
-T("GBR: maks 2 percobaan & timeout = sisa waktu", /dicoba >= 2/.test(hcnsec) && /sisa/.test(hcnsec));
+T("GBR: route proxy base64 CEPAT 6 dtk + fallback URL", /proxyImageToBase64\(url\)/.test(route) && /AbortSignal.timeout\(6000\)/.test(route));
+T("GBR: SATU percobaan utama waktu penuh 52 dtk", /52000 - \(Date\.now\(\) - t0gambar\)/.test(hcnsec));
+T("GBR: katalog cepat (3 dtk) & tidak pinjam waktu", /setTimeout\(\(\) => res\(null\), 3000\)/.test(hcnsec));
 T("GBR: client watchdog 55 dtk + proxy-img utk CORS", /const wd = setTimeout/.test(page) && /proxy-img/.test(page));
 T("GBR: Quran pin model sukses (_modelFirst)", /_modelFirst: modelGambarQ/.test(page) && /setModelGambarQ/.test(page));
 

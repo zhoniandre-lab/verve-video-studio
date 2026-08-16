@@ -45,7 +45,7 @@ async function generateImageBansos(prompt: string, suffix: string, base: string,
 async function proxyImageToBase64(url: string): Promise<string> {
   const r = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; VerveProxy/1.0)" },
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(6000), // 🐛 v20.19: 6 dtk (dulu 45 dtk → bikin route melewati batas 60 dtk Vercel)
   });
   if (!r.ok) throw new Error(`Gagal download gambar: HTTP ${r.status}`);
   const contentType = r.headers.get("content-type") || "image/png";
@@ -123,12 +123,21 @@ export async function POST(req: Request) {
         { modelFirst: _modelFirst ? String(_modelFirst) : undefined } // 🔒 v10.1: pin model saja
       );
 
-      // 🐛 v20.17/20.18: JANGAN proxy → base64 & JANGAN HEAD cek (biang timeout Vercel).
-      // URL asli dikirim; client memuat via /api/proxy-img kalau CORS.
+      // 🐛 v20.19: proxy → base64 DIPULIHKAN tapi CEPAT (6 dtk, dulu 45 dtk) —
+      // thumbnail Lahan butuh data: URL (crossOrigin anonymous bisa gagal di CDN
+      // tanpa CORS → adegan tersimpan URL mentah/rusak). Kalau CDN lambat/gagal →
+      // kirim URL asli (client punya proxy-img). Generate ≤52 dtk + proxy ≤6 dtk
+      // = selalu muat di batas 60 dtk Vercel.
+      let dataUrl = url;
+      if (url.startsWith("http")) {
+        try {
+          dataUrl = await proxyImageToBase64(url);
+        } catch { /* fallback URL asli */ }
+      }
       return NextResponse.json({
-        url, originalUrl: url.startsWith("http")?url:null,
+        url: dataUrl, originalUrl: url.startsWith("http")?url:null,
         model, size: usedSize, prompt: usedPrompt, styleLabel: styleObj?.label,
-        cached: url.startsWith("data:"),
+        cached: dataUrl.startsWith("data:"),
       });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: e.status || 500 });

@@ -202,53 +202,73 @@ const RE_MODEL_GAMBAR = /image|flux|seedream|doubao|dall|sdxl|sd3|imagen|kolors|
 
 export async function generateImage(prompt: string, styleSuffix?: string, opts?: { modelFirst?: string }): Promise<GenImageResult> { // v10.1: seed/referensi DICABUT — bikin gateway nggantung → "Failed to fetch"
   // Generate selalu 1024x1024 (native), resize/crop di client
-  const t0gambar = Date.now(); // 🐛 v19.94: pagar total waktu (lihat loop model)
+  // 🐛 v20.19 ROMBAK TOTAL — kembalikan ke perilaku "dulu normal":
+  // 1) katalog TIDAK lagi memakan jatah waktu di jalur utama (dulu 20 dtk
+  //    sebelum generate → sisa waktu tinggal sedikit → selalu timeout)
+  // 2) model pertama (pin/utama) diberi SATU percobaan dengan WAKTU PENUH
+  //    (≤52 dtk) — kalau sukses, selesai. Timeout = berhenti (bukan lanjut
+  //    coba model lain yang cuma dapat 1-10 dtk → pasti gagal).
+  const t0gambar = Date.now();
   const fullPrompt = styleSuffix
     ? `${prompt}, ${styleSuffix}, no text, no watermark, no logo, sharp focus, centered composition`
     : `${prompt}, no text, no watermark, sharp focus, centered composition`;
   const errors: string[] = [];
+
   // 🔒 v10.0 SATU WAJAH: model yang BERHASIL di-pin paling depan → semua adegan semodel, wajah sedarah
   let order = opts?.modelFirst && IMAGE_MODELS.includes(opts.modelFirst)
     ? [opts.modelFirst, ...IMAGE_MODELS.filter((m) => m !== opts.modelFirst)]
     : IMAGE_MODELS;
-  const kat = await katalogGambar().catch(() => null);
-  let katInfo = "";
-  if (kat && kat.length) {
-    const tersedia = order.filter((m) => kat.includes(m));
-    const ekstra = kat.filter((id) => RE_MODEL_GAMBAR.test(id) && !order.includes(id)).slice(0, 4); // model gambar lain dagangan gateway
-    const sisa = order.filter((m) => !kat.includes(m));
-    order = [...new Set([...tersedia, ...ekstra, ...sisa])]; // dagangan nyata didahulukan; daftar lama jadi cadangan ekor
-    katInfo = kat.slice(0, 5).join(", ");
-  }
-  let dicoba = 0;
-  for (const model of order) {
-    for (const fmt of ["url", "b64_json"] as const) {
-      // 🐛 v20.18 PAGAR CERDAS: AI gambar butuh 30-60+ dtk. Dulu dipersingkat
-      // (20 dtk/attempt, pagar 30 dtk) → AI kamu kepotong sebelum jadi.
-      // Sekarang: maks 2 model, attempt pertama timeout 50 dtk, total ≤55 dtk —
-      // selalu muat di batas 60 dtk Vercel TAPI tetap memberi AI waktu cukup.
-      if (Date.now() - t0gambar > 55000) {
-        throw new ApiError(`Server gambar sibuk (coba > 55 dtk) — coba lagi sebentar, atau pakai upload foto.`, 504);
-      }
-      if (dicoba >= 2) break; // ⚡ v20.18: maks 2 percobaan (model berbeda)
-      dicoba++;
-      const sisa = Math.max(10, 55000 - (Date.now() - t0gambar));
-      try {
-        const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: fmt }, sisa / 1000); // v20.18: timeout = sisa waktu (≤55 dtk)
-        const item = data.data?.[0] ?? data;
-        const url = extractUrl(item);
-        if (url && url.length > 100) return { url, model, size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };
-      } catch (e: any) {
-        if (e.status === 401) throw new ApiError("API Key salah.", 401);
-        if (e.status === 402) throw new ApiError("Saldo API habis.", 402);
-        if (/content.?policy|safety|inappropriate|blocked/i.test(e.message)) throw new ApiError("Prompt ditolak filter. Ganti kata-kata.", 400);
-        errors.push(`${model}: ${e.message?.slice(0, 60)}`);
-        if (/model.*not.*found|unknown.*model|invalid.*model/i.test(e.message)) break;
-        if (/response_format|b64/i.test(e.message)) continue;
-      }
+
+  // ⚡ v20.19: katalog HANYA dipakai kalau tidak ada pin & cepat (3 dtk) — kalau
+  // lambat/gagal, langsung pakai daftar bawaan (tidak menghambat generate).
+  if (!opts?.modelFirst) {
+    const kat = await Promise.race([
+      katalogGambar(),
+      new Promise<null>((res) => setTimeout(() => res(null), 3000)),
+    ]).catch(() => null) as string[] | null;
+    if (kat && kat.length) {
+      const tersedia = order.filter((m) => kat.includes(m));
+      const ekstra = kat.filter((id) => RE_MODEL_GAMBAR.test(id) && !order.includes(id)).slice(0, 2);
+      const sisa = order.filter((m) => !kat.includes(m));
+      order = [...new Set([...tersedia, ...ekstra, ...sisa])];
     }
   }
-  throw new ApiError(`Gagal generate gambar.\n${errors.slice(0,3).join("\n")}\n\n💡 Coba style lain atau upload gambar sendiri.${katInfo ? `\n\n📒 Katalog gateway-mu (kirim daftar ini ke admin kalau masih gagal): ${katInfo}` : ""}`, 500);
+
+  // ⚡ v20.19: SATU percobaan utama (model pertama, format url) dengan waktu penuh
+  const model = order[0];
+  const sisaWaktu = Math.max(10, 52000 - (Date.now() - t0gambar));
+  try {
+    const data = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: "url" }, sisaWaktu / 1000);
+    const item = data.data?.[0] ?? data;
+    const url = extractUrl(item);
+    if (url && url.length > 100) return { url, model, size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };
+    // respons tanpa url → coba sekali format b64
+    const data2 = await postJson("/images/generations", { model, prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: "b64_json" }, Math.max(8, Math.min(20, sisaWaktu / 1000)));
+    const item2 = data2.data?.[0] ?? data2;
+    const url2 = extractUrl(item2);
+    if (url2 && url2.length > 100) return { url: url2, model, size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };
+    throw new ApiError("Respons kosong dari gateway gambar.", 500);
+  } catch (e: any) {
+    if (e.status === 401) throw new ApiError("API Key salah.", 401);
+    if (e.status === 402) throw new ApiError("Saldo API habis.", 402);
+    if (/content.?policy|safety|inappropriate|blocked/i.test(e.message)) throw new ApiError("Prompt ditolak filter. Ganti kata-kata.", 400);
+    if (e.name === "AbortError" || /timeout|timed out/i.test(String(e.message || ""))) {
+      throw new ApiError(`Gateway gambar lambat (${Math.round((Date.now() - t0gambar) / 1000)} dtk) — coba lagi, atau pakai upload foto.`, 504);
+    }
+    // model pertama gagal karena model tidak dikenal → coba SATU model cadangan
+    if (/model.*not.*found|unknown.*model|invalid.*model/i.test(e.message) && order.length > 1) {
+      try {
+        const data = await postJson("/images/generations", { model: order[1], prompt: fullPrompt, size: NATIVE_IMAGE_SIZE, n: 1, response_format: "url" }, Math.max(10, Math.min(30, (52000 - (Date.now() - t0gambar)) / 1000)));
+        const item = data.data?.[0] ?? data;
+        const url = extractUrl(item);
+        if (url && url.length > 100) return { url, model: order[1], size: NATIVE_IMAGE_SIZE, prompt: fullPrompt };
+      } catch (e2: any) {
+        errors.push(`${order[1]}: ${e2?.message?.slice(0, 60)}`);
+      }
+    }
+    errors.push(`${model}: ${e.message?.slice(0, 60)}`);
+  }
+  throw new ApiError(`Gagal generate gambar.\n${errors.slice(0, 3).join("\n")}\n\n💡 Coba style lain atau upload gambar sendiri.`, 500);
 }
 
 // ===== TTS =====
