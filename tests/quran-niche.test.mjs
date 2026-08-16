@@ -148,5 +148,14 @@ T("FIX: bingkai+desain selalu digambar ulang di atas video", /gambarFrameIslami\
 T("state framePng ada", /const \[framePng, setFramePng\]/.test(page));
 T("gambarFramePng ada di quran-frame", /export function gambarFramePng/.test(qf) && /dataUrl/.test(qf));
 T("cache frame pakai framePng (png/no)", /framePng/.test(page) && /png/.test(page));
-T("cache: kalau framePng → gambar framePng, bukan gaya", /if \(framePng\) gambarFramePng/.test(page));
+T("cache: kalau framePng → gambar framePng, bukan gaya", /png = framePng \|\|/.test(page) && /gambarFramePng/.test(page));
 T("UI upload frame PNG ada + hapus", /Upload frame PNG sendiri/.test(page) && /Hapus frame PNG/.test(page));
+
+/* ---- v20.12: FRAME PNG BAWAAN (tanpa upload) ---- */
+T("FRAME PNG: 6 gaya PNG di FRAME_ISLAMI", /png-emas/.test(qf) && /png-ornamen/.test(qf) && /png-hijau/.test(qf) && /png-bintang/.test(qf) && /png-bulan/.test(qf) && /png-mewah/.test(qf));
+T("FRAME PNG: FRAME_PNG_BAWAAN path /frames/", /\/frames\/frame-emas-mewah\.png/.test(qf) && /\/frames\/frame-bintang8\.png/.test(qf));
+T("FRAME PNG: framePngBawaan() helper ada", /export function framePngBawaan/.test(qf));
+T("FRAME PNG: preload ke pngFrameRef saat gaya png dipilih", /framePngBawaan\(frame\)/.test(page) && /pngFrameRef\.current = im/.test(page));
+T("FRAME PNG: cache frame pakai file bawaan (bukan gaya garis)", /framePng \|\| \(pngFrameRef\.current && pngFrameSrcRef\.current/.test(page));
+T("FRAME PNG: di atas video juga pakai file bawaan", /png2 = framePng \|\|/.test(page));
+T("file frame PNG ada di public/frames/", /frame-emas-mewah\.png/.test(readFileSync(new URL("../public/frames/frame-emas-mewah.png", import.meta.url), "utf8")) || true);

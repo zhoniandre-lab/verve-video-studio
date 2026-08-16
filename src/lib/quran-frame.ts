@@ -5,7 +5,7 @@
    dulu terlalu kecil (di layar HP terlihat cuma garis pinggiran).
    ===================================================================== */
 
-export type GayaFrame = "emas" | "hijau" | "tipis" | "mewah" | "ornamen" | "bintang" | "bulan" | "klasik";
+export type GayaFrame = "emas" | "hijau" | "tipis" | "mewah" | "ornamen" | "bintang" | "bulan" | "klasik" | "png-emas" | "png-ornamen" | "png-hijau" | "png-bintang" | "png-bulan" | "png-mewah";
 
 export const FRAME_ISLAMI: { id: GayaFrame; label: string; emoji: string }[] = [
   { id: "emas", label: "Emas Mewah", emoji: "🕌" },
@@ -16,7 +16,29 @@ export const FRAME_ISLAMI: { id: GayaFrame; label: string; emoji: string }[] = [
   { id: "bulan", label: "Bulan Sabit", emoji: "🌙" },
   { id: "klasik", label: "Klasik Polos", emoji: "📜" },
   { id: "tipis", label: "Tipis Elegan", emoji: "🤍" },
+  // 🖼️ v20.12: FRAME PNG BAWAAN (desain khusus, tanpa upload) — dari /frames/
+  { id: "png-emas", label: "PNG Emas", emoji: "🖼️" },
+  { id: "png-ornamen", label: "PNG Ornamen", emoji: "🖼️" },
+  { id: "png-hijau", label: "PNG Hijau", emoji: "🖼️" },
+  { id: "png-bintang", label: "PNG Bintang", emoji: "🖼️" },
+  { id: "png-bulan", label: "PNG Bulan", emoji: "🖼️" },
+  { id: "png-mewah", label: "PNG Mewah", emoji: "🖼️" },
 ];
+
+/** Path frame PNG bawaan (public/frames/). */
+export const FRAME_PNG_BAWAAN: Record<string, string> = {
+  "png-emas": "/frames/frame-emas-mewah.png",
+  "png-ornamen": "/frames/frame-ornamen-padat.png",
+  "png-hijau": "/frames/frame-hijau-zamrud.png",
+  "png-bintang": "/frames/frame-bintang8.png",
+  "png-bulan": "/frames/frame-bulan-sabit.png",
+  "png-mewah": "/frames/frame-mewah-ganda.png",
+};
+
+/** Apakah gaya frame = PNG bawaan? */
+export function framePngBawaan(id: GayaFrame): string | null {
+  return FRAME_PNG_BAWAAN[id] || null;
+}
 
 const PALET: Record<GayaFrame, { utama: string; sekunder: string }> = {
   emas: { utama: "#d4af37", sekunder: "#8a6d1f" },
@@ -27,6 +49,13 @@ const PALET: Record<GayaFrame, { utama: string; sekunder: string }> = {
   bulan: { utama: "#c9b458", sekunder: "#8a7a2a" },
   klasik: { utama: "rgba(255,255,255,0.7)", sekunder: "rgba(255,255,255,0.3)" },
   tipis: { utama: "rgba(255,255,255,0.8)", sekunder: "rgba(255,255,255,0.35)" },
+  // gaya PNG bawaan — palet tidak dipakai (frame digambar dari file), cukup pengisi tipe
+  "png-emas": { utama: "#d4af37", sekunder: "#8a6d1f" },
+  "png-ornamen": { utama: "#e8c96a", sekunder: "#9a7b2d" },
+  "png-hijau": { utama: "#2e8b57", sekunder: "#14532d" },
+  "png-bintang": { utama: "#d4af37", sekunder: "#7a5c10" },
+  "png-bulan": { utama: "#c9b458", sekunder: "#8a7a2a" },
+  "png-mewah": { utama: "#d4af37", sekunder: "#b8860b" },
 };
 
 /** Ornamen sudut BESAR: garis diagonal + busur ganda + spiral + titik. */

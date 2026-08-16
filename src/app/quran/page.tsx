@@ -13,7 +13,7 @@ import {
 } from "@/lib/quran-data";
 import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } from "@/lib/ambience";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v20.7: loop video
-import { gambarFrameIslami, gambarDesainIslami, gambarFramePng, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
+import { gambarFrameIslami, gambarDesainIslami, gambarFramePng, FRAME_ISLAMI, framePngBawaan, type GayaFrame } from "@/lib/quran-frame";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe, type SubStyle, type SubAnim } from "@/lib/subscribe";
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline";
 
@@ -78,6 +78,19 @@ export default function NicheQuran() {
   // 🖼️ v20.11: FRAME PNG CUSTOM — upload bingkai sendiri, langsung dipakai
   // (di-convert jadi data URL; menimpa gaya frame saat dipasang)
   const [framePng, setFramePng] = useState("");
+  // 🖼️ v20.12: FRAME PNG BAWAAN — preload dari /frames/ supaya siap dipakai
+  const pngFrameRef = useRef<HTMLImageElement | null>(null);
+  const pngFrameSrcRef = useRef("");
+  useEffect(() => {
+    const src = framePngBawaan(frame);
+    if (src && src !== pngFrameSrcRef.current) {
+      const im = new Image();
+      im.onload = () => { pngFrameRef.current = im; pngFrameSrcRef.current = src; };
+      im.src = src;
+    } else if (!src) {
+      pngFrameRef.current = null;
+    }
+  }, [frame]);
   const [latar, setLatar] = useState("navy");
   const [rasio, setRasio] = useState<"16:9" | "9:16">("16:9");
   const [arabSize, setArabSize] = useState(0.075);
@@ -138,7 +151,7 @@ export default function NicheQuran() {
     try {
       // 🐛 v20.6: cache HARUS ikut gaya frame & latar — dulu cuma cek ukuran,
       // jadi ganti frame/latar TIDAK pernah muncul (stale cache) = fitur "mati".
-      const k = `${frame}|${latar}|${framePng ? "png" : "no"}|${W}x${H}`;
+      const k = `${frame}|${latar}|${framePng ? "png" : (framePngBawaan(frame) ? "png" : "no")}|${W}x${H}`;
       const c = frameCacheRef.current;
       if (c && c.width === W && c.height === H && frameCacheKeyRef.current === k) return c;
       const cv = document.createElement("canvas");
@@ -149,8 +162,9 @@ export default function NicheQuran() {
       const g = ctx.createLinearGradient(0, 0, 0, H);
       g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      // 🖼️ v20.11: kalau ada frame PNG custom → dipakai; kalau tidak → gaya bawaan
-      if (framePng) gambarFramePng(ctx, W, H, framePng);
+      // 🖼️ v20.11/20.12: frame PNG (custom upload / bawaan) → dipakai; kalau tidak → gaya bawaan
+      const png = framePng || (pngFrameRef.current && pngFrameSrcRef.current ? pngFrameSrcRef.current : "");
+      if (png) gambarFramePng(ctx, W, H, png);
       else { gambarFrameIslami(ctx, W, H, frame); gambarDesainIslami(ctx, W, H, frame); }
       frameCacheRef.current = cv;
       frameCacheKeyRef.current = k;
@@ -374,9 +388,9 @@ export default function NicheQuran() {
     // 2) bingkai + desain Islami SELALU DI ATAS (tidak peduli ada video atau tidak)
     //    — untuk kasus video: gambar ulang bingkai+desain di atas video.
     if (vv && vv.readyState >= 2 && vv.videoWidth) {
-      gambarFrameIslami(ctx, W, H, frame);
-      if (framePng) gambarFramePng(ctx, W, H, framePng);
-      else gambarDesainIslami(ctx, W, H, frame);
+      const png2 = framePng || (pngFrameRef.current && pngFrameSrcRef.current ? pngFrameSrcRef.current : "");
+      if (png2) gambarFramePng(ctx, W, H, png2);
+      else { gambarFrameIslami(ctx, W, H, frame); gambarDesainIslami(ctx, W, H, frame); }
     }
     // ayat aktif
     const idx = ayatAktif(t);
