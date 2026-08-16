@@ -68,8 +68,10 @@ export default function NicheQuran() {
   const [ambVol, setAmbVol] = useState(25);
   const [ambUrl, setAmbUrl] = useState("");
   const [ambBuf, setAmbBuf] = useState<AudioBuffer | null>(null);
-  const [reverb, setReverb] = useState(0.18);
+  const [reverb, setReverb] = useState(0.25);
   const [fokusVokal, setFokusVokal] = useState(true);
+  // 🎙️ v20.6 MODE STUDIO — rekaman HP jadi seperti studio (EQ studio + noise gate + reverb)
+  const [studioOn, setStudioOn] = useState(true);
   /* 3️⃣ tampilan */
   const [frame, setFrame] = useState<GayaFrame>("emas");
   const [latar, setLatar] = useState("navy");
@@ -113,10 +115,14 @@ export default function NicheQuran() {
   // (digambar SEKALI saat frame/latar/ukuran berubah, lalu drawImage tiap frame
   // — jauh lebih ringan di HP daripada menggambar gradien + ornamen tiap frame).
   const frameCacheRef = useRef<HTMLCanvasElement | null>(null);
+  const frameCacheKeyRef = useRef("");
   function dapatCacheFrame(W: number, H: number): HTMLCanvasElement | null {
     try {
+      // 🐛 v20.6: cache HARUS ikut gaya frame & latar — dulu cuma cek ukuran,
+      // jadi ganti frame/latar TIDAK pernah muncul (stale cache) = fitur "mati".
+      const k = `${frame}|${latar}|${W}x${H}`;
       const c = frameCacheRef.current;
-      if (c && c.width === W && c.height === H) return c;
+      if (c && c.width === W && c.height === H && frameCacheKeyRef.current === k) return c;
       const cv = document.createElement("canvas");
       cv.width = W; cv.height = H;
       const ctx = cv.getContext("2d");
@@ -127,6 +133,7 @@ export default function NicheQuran() {
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       gambarFrameIslami(ctx, W, H, frame);
       frameCacheRef.current = cv;
+      frameCacheKeyRef.current = k;
       return cv;
     } catch { return null; }
   }
@@ -407,6 +414,36 @@ export default function NicheQuran() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy, audioDur, ayatList, frame, latar, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, timing, playPrev]);
 
+  /* 🎙️ v20.6: preview via rantai STUDIO (MediaElementSource → EQ studio → kompresor) —
+     suara yang didengar pas ▶ = mendekati hasil render (tidak mentahan) */
+  const previewSrcRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const previewNodesRef = useRef<AudioNode[]>([]);
+  async function sambungPreviewStudio(el: HTMLAudioElement) {
+    try {
+      const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!actxRef.current) actxRef.current = new AC();
+      const ctx = actxRef.current;
+      if (!ctx) return;
+      if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+      if (!previewSrcRef.current) previewSrcRef.current = ctx.createMediaElementSource(el);
+      previewNodesRef.current.forEach((n) => { try { n.disconnect(); } catch {} });
+      previewNodesRef.current = [];
+      const src = previewSrcRef.current;
+      src.disconnect();
+      if (studioOn) {
+        const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 85;
+        const dip = ctx.createBiquadFilter(); dip.type = "peaking"; dip.frequency.value = 350; dip.Q.value = 1; dip.gain.value = -2.5;
+        const pk = ctx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = 3000; pk.Q.value = 1.2; pk.gain.value = 3.5;
+        const air = ctx.createBiquadFilter(); air.type = "highshelf"; air.frequency.value = 9000; air.gain.value = 1.5;
+        const cp = ctx.createDynamicsCompressor(); cp.threshold.value = -20; cp.ratio.value = 4; cp.attack.value = 0.004; cp.release.value = 0.18;
+        const g = ctx.createGain(); g.gain.value = 0.95;
+        src.connect(hp); hp.connect(dip); dip.connect(pk); pk.connect(air); air.connect(cp); cp.connect(g); g.connect(ctx.destination);
+        previewNodesRef.current = [hp, dip, pk, air, cp, g];
+      } else {
+        src.connect(ctx.destination);
+      }
+    } catch { /* preview tanpa rantai — tetap jalan */ }
+  }
   /* tombol ▶/⏸ preview — putar audio & teks ikut sinkron */
   function togglePlay() {
     if (!audioUrl || !bufRef.current) { setMsg("⚠️ Pasang suara dulu di langkah 2 (upload/rekam) — teks akan mengikuti suara otomatis."); setStep(1); return; }
@@ -416,6 +453,7 @@ export default function NicheQuran() {
       el.pause(); setPlayPrev(false);
     } else {
       el.currentTime = pvTRef.current >= audioDur - 0.5 ? 0 : pvTRef.current;
+      void sambungPreviewStudio(el);
       el.play().then(() => setPlayPrev(true)).catch(() => setMsg("⚠️ Audio tidak bisa diputar — cek file."));
     }
   }
@@ -489,10 +527,11 @@ export default function NicheQuran() {
       const buf = bufRef.current;
       const bl = await renderOfflineVideo({
         buf, w: dim.w, h: dim.h, offset: 0, dur: audioDur,
-        eq: fokusVokal ? "vokal" : "flat", comp: 45, gain: 95, fades: false,
+        eq: studioOn ? "studio" : (fokusVokal ? "vokal" : "flat"), comp: 45, gain: 95, fades: false,
         audioCodec: mampu.audioCodec, fps: 24, videoBitrate: dim.w <= 720 ? 2_600_000 : 3_600_000,
         ambience: ambience !== "off" ? { jenis: ambience, gain: ambVol / 100, buf: ambBuf } : null,
-        vocalReverb: reverb,
+        vocalReverb: studioOn ? Math.max(reverb, 0.15) : reverb,
+        noiseGate: studioOn ? 0.003 : 0,
         drawBg: (ctx, W, H) => {
           // ⚡ v20.5: pakai cache (latar+frame digambar sekali per ukuran render)
           const fc = dapatCacheFrame(W, H);
@@ -660,6 +699,11 @@ export default function NicheQuran() {
           )}
 
           <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800, marginTop: 4 }}>🎙️ EFEK SUARA BACAAN (biar tidak mentahan)</div>
+          {/* 🎙️ v20.6 MODE STUDIO — satu tombol: EQ studio + noise gate + reverb */}
+          <button onClick={() => setStudioOn(!studioOn)} style={{ padding: "10px", borderRadius: 10, border: "1px solid rgba(139,92,246,.5)", background: studioOn ? "rgba(139,92,246,.2)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
+            {studioOn ? "🎙️ MODE STUDIO AKTIF — bersih & hangat (buang desis/keresek, suara seperti studio)" : "🔘 Mode Studio mati (suara mentahan)"}
+          </button>
+          {studioOn && <p style={{ fontSize: 10, color: "#8b8b98", margin: 0 }}>Otomatis: buang dengung rendah, tegas di 3kHz, padamkan desis saat sunyi, + ruang halus.</p>}
           <label style={{ fontSize: 11.5, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ minWidth: 70 }}>Ruang (reverb)</span>
             <input type="range" min={0} max={0.5} step={0.02} value={reverb} onChange={(e) => setReverb(Number(e.target.value))} style={{ flex: 1 }} />
@@ -668,7 +712,7 @@ export default function NicheQuran() {
           <button onClick={() => setFokusVokal(!fokusVokal)} style={{ padding: "8px", borderRadius: 10, border: "1px solid rgba(139,92,246,.4)", background: fokusVokal ? "rgba(139,92,246,.2)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 12, cursor: "pointer", textAlign: "left" }}>
             {fokusVokal ? "✅ Fokus vokal AKTIF — buang dengung rendah, suara bacaan jernih" : "🔘 Fokus vokal mati (suara mentahan)"}
           </button>
-          <p style={{ fontSize: 10, color: "#8b8b98" }}>Rekomendasi: Reverb 20-40% + Fokus vokal ON → hasil rekaman HP kedengaran jernih & hangat.</p>
+          <p style={{ fontSize: 10, color: "#8b8b98" }}>Rekomendasi: Mode Studio ON + Reverb 20-40% → hasil rekaman HP kedengaran jernih & hangat. Tips rekam: di tempat sepi, HP ±20cm dari mulut.</p>
           <button onClick={() => setStep(2)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 800, fontSize: 13.5, cursor: "pointer", marginTop: 2 }}>
             Lanjut: Tampilan ›
           </button>

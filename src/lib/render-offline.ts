@@ -64,6 +64,9 @@ export interface OptsRenderOffline {
   ambience?: { jenis: JenisAmbience; gain: number; buf?: AudioBuffer | null } | null;
   /** 🎙️ v20.0 REVERB VOKAL — 0..0.6, biar rekaman tidak mentahan (ruang halus). */
   vocalReverb?: number;
+  /** 🎙️ v20.6 NOISE GATE — ambang RMS (mis. 0.003). Bagian yang sunyi (desis/keresek
+   *  mikrofon) dipadamkan halus; suara asli tetap utuh. 0 = mati. */
+  noiseGate?: number;
 }
 
 /** Macroblock H.264 = 16px. Ukuran bukan kelipatan 16 → banyak HP jatuh ke encoder SOFTWARE (3–10× lebih lambat). */
@@ -205,9 +208,19 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
     const ch1 = rendered.getChannelData(1);
     // envelope fade global (diterapkan di PCM supaya konsisten antar segmen)
     const BLK = 8192;
+    // 🎙️ v20.6 NOISE GATE — smoothing antar blok (naik/turun halus, tidak "klik")
+    let gate = 1;
+    const gateThr = o.noiseGate && o.noiseGate > 0 ? o.noiseGate : 0;
     for (let i = 0; i < len; i += BLK) {
       const n = Math.min(BLK, len - i);
       const data = new Float32Array(n * 2);
+      if (gateThr > 0) {
+        let sum = 0;
+        for (let j = 0; j < n; j++) sum += ch0[i + j] * ch0[i + j] + ch1[i + j] * ch1[i + j];
+        const rms = Math.sqrt(sum / (n * 2));
+        const target = rms < gateThr ? 0 : 1;
+        gate = gate * 0.8 + target * 0.2; // attack/release halus
+      }
       for (let j = 0; j < n; j++) {
         const t = segStart + (i + j) / SR;
         let env = 1;
@@ -216,8 +229,9 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
           const tail = dur - t;
           if (tail < 1.8) env = Math.min(env, Math.max(0, tail) / 1.8);
         }
-        data[j * 2] = ch0[i + j] * env;
-        data[j * 2 + 1] = ch1[i + j] * env;
+        const g = gateThr > 0 ? gate : 1;
+        data[j * 2] = ch0[i + j] * env * g;
+        data[j * 2 + 1] = ch1[i + j] * env * g;
       }
       // 🐛 FIX v19.33.1: timestamp audio WAJIB mulai 0 — mp4-muxer menolak
       // track yang chunk pertamanya DTS != 0 (dulu pakai off0 → short selalu gagal).

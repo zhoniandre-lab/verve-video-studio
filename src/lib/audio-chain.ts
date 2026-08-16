@@ -24,6 +24,15 @@ export function buildAudioChain(
     const hp = actx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 85;
     const pk = actx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = 2300; pk.Q.value = 1; pk.gain.value = 3.5;
     mk(hp); mk(pk);
+  } else if (eq === "studio") {
+    // 🎙️ v20.6 MODE STUDIO — rekaman HP jadi seperti studio:
+    // buang dengung rendah (highpass 85) + hilangkan "kotak" (dip 350Hz) +
+    // tegas & hangat (presence 3kHz) + udara halus (highshelf 9kHz)
+    const hp = actx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 85;
+    const dip = actx.createBiquadFilter(); dip.type = "peaking"; dip.frequency.value = 350; dip.Q.value = 1; dip.gain.value = -2.5;
+    const pk = actx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = 3000; pk.Q.value = 1.2; pk.gain.value = 3.5;
+    const air = actx.createBiquadFilter(); air.type = "highshelf"; air.frequency.value = 9000; air.gain.value = 1.5;
+    mk(hp); mk(dip); mk(pk); mk(air);
   } else if (eq === "hangat") {
     const lo = actx.createBiquadFilter(); lo.type = "lowshelf"; lo.frequency.value = 160; lo.gain.value = 3;
     const hi = actx.createBiquadFilter(); hi.type = "highshelf"; hi.frequency.value = 6000; hi.gain.value = -3;

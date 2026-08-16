@@ -7,6 +7,7 @@ const amb = readFileSync(new URL("../src/lib/ambience.ts", import.meta.url), "ut
 const qf = readFileSync(new URL("../src/lib/quran-frame.ts", import.meta.url), "utf8");
 const ro = readFileSync(new URL("../src/lib/render-offline.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../src/app/quran/page.tsx", import.meta.url), "utf8");
+const ac = readFileSync(new URL("../src/lib/audio-chain.ts", import.meta.url), "utf8");
 const dash = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 
 let gagal = 0;
@@ -46,7 +47,7 @@ T("halaman /quran ada 5 langkah", /LANGKAH = \["1️⃣ Surat"/.test(page));
 T("rekam sendiri (MediaRecorder + pilih codec)", /new MediaRecorder\(st, mime/.test(page));
 T("upload MP3 ada", /Upload MP3/.test(page));
 T("preview ambience live (sambungAmbience di halaman)", /sambungAmbience\(ctx, dest/.test(page));
-T("toggle fokus vokal (buang dengung)", /Fokus vokal/.test(page) && /eq: fokusVokal \? "vokal"/.test(page));
+T("toggle fokus vokal (buang dengung)", /Fokus vokal/.test(page) && /fokusVokal \? "vokal"/.test(page));
 T("drag & cubit elemen (pinchRef)", /pinchRef/.test(page) && /setPointerCapture/.test(page));
 T("tombol Lanjut langkah ada (Lanjut: Suara/Tampilan/Render)", /Lanjut: Suara/.test(page) && /Lanjut: Tampilan/.test(page) && /Lanjut: Render/.test(page));
 T("ganti bahasa → ada tombol muat ulang", /Muat ulang dengan bahasa baru/.test(page));
@@ -95,3 +96,13 @@ T("TIDAK ada shadowBlur AKTIF di preview (mahal di HP)", !/ctx\.shadowBlur|shado
 T("preview throttle ~30fps (33ms)", /now - last >= 33/.test(page));
 T("preview dimatikan saat render (hemat CPU)", /busy === "render"\) return/.test(page));
 T("render drawBg pakai cache juga", /drawBg: \(ctx, W, H\) => \{[\s\S]*?dapatCacheFrame/.test(page));
+
+/* ---- v20.6: FIX cache frame (fitur Tampilan mati) + MODE STUDIO ---- */
+T("FIX BUG: cache frame ikut gaya frame & latar (bukan cuma ukuran)", /\$\{frame\}\|\$\{latar\}/.test(page));
+T("EQ studio ada di audio-chain", /eq === "studio"/.test(ac) && /frequency.value = 350/.test(ac) && /frequency.value = 3000/.test(ac));
+T("render offline dukung noiseGate", /noiseGate/.test(ro) && /gate = gate \* 0\.8/.test(ro));
+T("Quran render pakai EQ studio saat Mode Studio ON", /eq: studioOn \\? "studio"/.test(page));
+T("Quran render kirim noiseGate 0.003 saat studio", /noiseGate: studioOn \\? 0\\.003/.test(page));
+T("toggle MODE STUDIO di UI", /MODE STUDIO AKTIF/.test(page));
+T("preview diputar lewat rantai studio (MediaElementSource)", /createMediaElementSource/.test(page) && /previewNodesRef/.test(page));
+T("tips rekam di UI", /Tips rekam: di tempat sepi/.test(page));
