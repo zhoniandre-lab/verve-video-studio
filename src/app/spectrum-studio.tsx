@@ -22,7 +22,7 @@ import { FRAME_STYLES, gambarFrame } from "@/lib/frames"; // 🖼️ v19.44: fra
 import { FONT_OPTS, TEXT_DEFAULT, TEKS_WARNA, gambarTeksCustom } from "@/lib/textstyles"; // ✏️ v19.44: teks custom
 import type { TextStyle } from "@/lib/textstyles";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v19.91: loop video
-import { cariStokVideoSmart, type VidPick } from "@/lib/stockvid"; // 🎞️ v19.95: lemari video stok (Pexels/Pixabay/Coverr)
+import { cariStokVideo, type VidPick } from "@/lib/stockvid"; // 🎞️ v19.95/v20.23: lemari video stok (Pexels/Pixabay/Coverr)
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -147,6 +147,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [vidBusy, setVidBusy] = useState(false);
   const [vidErr, setVidErr] = useState("");
   const [vidNote, setVidNote] = useState("");
+  // 🎞️ v20.23: halaman berikutnya (muat lebih banyak) + kata kunci terakhir
+  const [vidPage, setVidPage] = useState(1);
+  const [vidLastQ, setVidLastQ] = useState("");
+  const [vidTotal, setVidTotal] = useState(0);
   const [bgAiBusy, setBgAiBusy] = useState(false);
   const [bgAiMsg, setBgAiMsg] = useState("");
   // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
@@ -717,13 +721,29 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   async function cariVidStok(q?: string) {
     const k = (q ?? vidQ).trim();
     if (k.length < 2) { setVidErr("Ketik kata kunci dulu (mis. \"ibu menangis\", \"sawah senja\")."); return; }
-    setVidBusy(true); setVidErr(""); setVidNote("");
-    const r = await cariStokVideoSmart(k, true).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang video", lebar: false }));
+    setVidBusy(true); setVidErr(""); setVidNote(""); setVidPage(1); setVidLastQ(k);
+    // 🐛 v20.23: langsung cari GLOBAL dari semua gudang (Pexels+Pixabay+Coverr di route)
+    // dengan per=15 — dulu rasaIndo=true (2 query) & per=8 → hasil sedikit.
+    const r = await cariStokVideo(k, 1, 15).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal hubungi gudang video" }));
     setVidBusy(false);
     if (!r.ok) { setVidErr(r.err); setVidRes([]); return; }
     setVidRes(r.hasil);
-    if (r.lebar) setVidNote("🇮🇩 Stok rasa Indonesia habis — dilebarkan ke gudang dunia. Coba kata lain kalau mau tetap Nusantara.");
+    setVidTotal(r.total || r.hasil.length);
     if (!r.hasil.length) setVidErr("Gudang kosong buat kata itu — coba kata lain (bisa bahasa Indonesia, otomatis diterjemahkan).");
+  }
+  // 🎞️ v20.23: MUAT LEBIH BANYAK — halaman berikutnya, digabung (anti duplikat id)
+  async function muatLagiVid() {
+    if (!vidLastQ || vidBusy) return;
+    setVidBusy(true);
+    const r = await cariStokVideo(vidLastQ, vidPage + 1, 15).catch(() => ({ ok: false, hasil: [] as VidPick[], total: 0, err: "Gagal" }));
+    setVidBusy(false);
+    if (!r.ok || !r.hasil.length) { setVidNote("Sudah semua hasilnya."); return; }
+    setVidRes((old) => {
+      const ada = new Set(old.map((v) => v.id));
+      return [...old, ...r.hasil.filter((v) => !ada.has(v.id))];
+    });
+    setVidTotal(r.total || vidTotal);
+    setVidPage((p) => p + 1);
   }
   function pilihVidStok(v: VidPick) {
     // 🎞️ video stok jadi LATAR video — di-loop mengikuti durasi lagu (loop mulus ON)
@@ -2264,15 +2284,22 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 {vidRes.length > 0 && (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6, marginTop: 8 }}>
-                      {vidRes.slice(0, 8).map((v) => (
+                      {vidRes.map((v) => (
                         <button key={v.id} onClick={() => pilihVidStok(v)} style={{ padding: 0, border: "1px solid rgba(255,255,255,.15)", borderRadius: 10, overflow: "hidden", background: "#0b1220", textAlign: "left", cursor: "pointer", position: "relative" }}>
                           <img src={v.thumb} alt="" style={{ width: "100%", height: 62, objectFit: "cover", display: "block" }} loading="lazy" />
                           <span style={{ position: "absolute", bottom: 3, right: 4, background: "rgba(0,0,0,.7)", color: "#fff", fontSize: 9, padding: "1px 5px", borderRadius: 6 }}>{Math.round(v.dur)} dtk</span>
-                          <span style={{ display: "block", fontSize: 8.5, color: "#8b8b98", padding: "2px 4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.by || "stok"}</span>
+                          <span style={{ display: "block", fontSize: 8.5, color: "#8b8b98", padding: "2px 4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(v.provider ? v.provider.charAt(0).toUpperCase() + v.provider.slice(1) : "Stok")}{v.by ? ` · ${v.by}` : ""}</span>
                         </button>
                       ))}
                     </div>
-                    <p style={{ fontSize: 9.5, opacity: .55, margin: "5px 0 0" }}>Ketuk video → langsung jadi latar, di-loop ikut durasi lagu (auto). Bebas ganti kapan saja.</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+                      <p style={{ fontSize: 9.5, opacity: .55, margin: 0, flex: 1 }}>Dari Pexels · Pixabay · Coverr — ketuk video → langsung jadi latar, di-loop ikut durasi lagu (auto).</p>
+                      {vidRes.length < vidTotal && (
+                        <button onClick={() => void muatLagiVid()} disabled={vidBusy} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(139,92,246,.5)", background: "rgba(139,92,246,.12)", color: "#c4b5fd", fontSize: 10.5, cursor: "pointer", fontWeight: 700 }}>
+                          {vidBusy ? "⏳…" : "⬇ Muat lebih banyak"}
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
