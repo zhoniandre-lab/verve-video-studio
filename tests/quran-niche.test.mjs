@@ -58,6 +58,13 @@ T("rekaman pakai autoGainControl (suara stabil)", /autoGainControl: true/.test(p
 T("render ≥15 mnt diberi peringatan", /> 15 \* 60/.test(page));
 T("menu dashboard punya Niche Qur'an", /Niche Qur'an/.test(dash) && /location\.href = "\/quran"/.test(dash));
 
+/* ---- v20.15: PILIH AYAT SPESIFIK (bukan cuma surat utuh) ---- */
+T("AYAT: tombol pilih ayat spesifik (bukaKonfig)", /bukaKonfig/.test(page));
+T("AYAT: panel dari/sampai ayat", /Pilih ayat/.test(page) && /setSampaiAyat/.test(page));
+T("AYAT: tambahRentang dengan id unik per rentang", /function tambahRentang/.test(page));
+T("AYAT: clamp dari/sampai", /Math.max\(1, Math.min/.test(page));
+
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI QUR'AN GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI NICHE QUR'AN HIJAU");
 
@@ -184,3 +191,4 @@ T("OVERLAY: 5 gaya (kiri_kanan/atas_bawah/dll)", /kiri_kanan/.test(qt) && /atas_
 T("OVERLAY: gambarOverlayAllah dipanggil di scene", /gambarOverlayAllah\(ctx, W, H, overlayGaya, t, 0\)/.test(page));
 T("OVERLAY: tulisan الله & محمد + animasi glow", /الله/.test(qt) && /محمد/.test(qt) && /shadowBlur/.test(qt));
 T("FONT: Google Fonts dimuat di halaman", /fonts.googleapis.com/.test(page) && /useFontsIslami/.test(page));
+

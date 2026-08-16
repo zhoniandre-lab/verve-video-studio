@@ -73,6 +73,26 @@ export default function NicheQuran() {
   function tambahItem(it: ItemBacaan) {
     setDaftarBacaan((arr) => (arr.some((x) => x.id === it.id) ? arr : [...arr, it]));
   }
+  /* ⏳ v20.15: PILIH AYAT SPESIFIK — mis. Al-Baqarah 255 lalu Al-Baqarah 40.
+     Surat yang sedang dikonfigurasi + rentang ayatnya. */
+  const [konfigSurat, setKonfigSurat] = useState<number | null>(null);
+  const [dariAyat, setDariAyat] = useState(1);
+  const [sampaiAyat, setSampaiAyat] = useState(1);
+  function bukaKonfig(s: { id: number; nama: string; arab: string; ayat: number }) {
+    setKonfigSurat(s.id);
+    setDariAyat(1);
+    setSampaiAyat(s.ayat);
+  }
+  function tambahRentang() {
+    if (konfigSurat == null) return;
+    const s = DAFTAR_SURAT.find((x) => x.id === konfigSurat);
+    if (!s) return;
+    let dari = Math.max(1, Math.min(s.ayat, Math.round(dariAyat) || 1));
+    let sampai = Math.max(dari, Math.min(s.ayat, Math.round(sampaiAyat) || dari));
+    const nama = dari === sampai ? `${s.nama} ayat ${dari}` : `${s.nama} ayat ${dari}–${sampai}`;
+    tambahItem({ id: `s${s.id}-${dari}-${sampai}`, suratId: s.id, nama, arab: s.arab, dari, sampai });
+    setKonfigSurat(null);
+  }
   /* 2️⃣ suara */
   const [audioUrl, setAudioUrl] = useState("");
   const [audioDur, setAudioDur] = useState(0);
@@ -756,12 +776,39 @@ export default function NicheQuran() {
           </button>
           <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid rgba(255,255,255,.12)", borderRadius: 12, padding: 6 }}>
             {DAFTAR_SURAT.filter((s) => s.id !== 2).map((s) => (
-              <button key={s.id} onClick={() => tambahItem({ id: `s${s.id}`, suratId: s.id, nama: s.nama, arab: s.arab })}
-                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 8px", borderRadius: 8, border: "none", background: daftarBacaan.some((x) => x.suratId === s.id) ? "rgba(139,92,246,.25)" : "transparent", color: "#fff", fontSize: 12.5, cursor: "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 13 }}>{daftarBacaan.some((x) => x.suratId === s.id) ? "✅" : "➕"}</span>
-                <span style={{ flex: 1 }}>{s.nama} <span style={{ color: "#8b8b98", fontSize: 11 }}>· {s.ayat} ayat</span></span>
-                <span style={{ fontFamily: "'Scheherazade New',serif", color: "#d4af37", fontSize: 15 }}>{s.arab}</span>
-              </button>
+              <div key={s.id}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "6px 8px", borderRadius: 8, background: daftarBacaan.some((x) => x.suratId === s.id) ? "rgba(139,92,246,.18)" : "transparent" }}>
+                  <button onClick={() => tambahItem({ id: `s${s.id}`, suratId: s.id, nama: s.nama, arab: s.arab })}
+                    style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, background: "none", border: "none", color: "#fff", fontSize: 12.5, cursor: "pointer", textAlign: "left", padding: 0 }}>
+                    <span style={{ fontSize: 13 }}>{daftarBacaan.some((x) => x.suratId === s.id) ? "✅" : "➕"}</span>
+                    <span style={{ flex: 1 }}>{s.nama} <span style={{ color: "#8b8b98", fontSize: 11 }}>· {s.ayat} ayat</span></span>
+                    <span style={{ fontFamily: "'Scheherazade New',serif", color: "#d4af37", fontSize: 15 }}>{s.arab}</span>
+                  </button>
+                  <button onClick={() => bukaKonfig(s)} title="Pilih ayat spesifik"
+                    style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(139,92,246,.5)", background: "rgba(139,92,246,.12)", color: "#c4b5fd", fontSize: 11, cursor: "pointer" }}>✏️ ayat</button>
+                </div>
+                {/* ⏳ v20.15: panel pilih rentang ayat untuk surat ini */}
+                {konfigSurat === s.id && (
+                  <div style={{ margin: "2px 8px 8px", border: "1px solid rgba(139,92,246,.4)", borderRadius: 10, padding: 8, background: "rgba(139,92,246,.08)" }}>
+                    <div style={{ fontSize: 11.5, color: "#cbd5e1", marginBottom: 6 }}>🔢 Pilih ayat <b style={{ color: "#e8d9a0" }}>{s.nama}</b> (1–{s.ayat})</div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                      <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 4 }}>dari
+                        <input type="number" min={1} max={s.ayat} value={dariAyat} onChange={(e) => setDariAyat(Number(e.target.value))}
+                          style={{ width: 56, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 6px", fontSize: 12 }} />
+                      </label>
+                      <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 4 }}>sampai
+                        <input type="number" min={1} max={s.ayat} value={sampaiAyat} onChange={(e) => setSampaiAyat(Number(e.target.value))}
+                          style={{ width: 56, background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 6px", fontSize: 12 }} />
+                      </label>
+                      <button onClick={tambahRentang} style={{ marginLeft: "auto", padding: "7px 12px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#8b5cf6,#d946ef)", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>➕ Tambah</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+                      <button onClick={() => { setKonfigSurat(null); }} style={{ padding: "5px 9px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: "rgba(255,255,255,.05)", color: "#cbd5e1", fontSize: 10.5, cursor: "pointer" }}>✕ Batal</button>
+                      <span style={{ fontSize: 9.5, color: "#8b8b98", alignSelf: "center" }}>Contoh: 255–255 = Ayat Kursi, 40–40 = satu ayat saja. Bisa tambah beberapa rentang berbeda.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
