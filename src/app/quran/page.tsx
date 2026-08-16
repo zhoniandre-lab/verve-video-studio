@@ -13,7 +13,7 @@ import {
 } from "@/lib/quran-data";
 import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } from "@/lib/ambience";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v20.7: loop video
-import { gambarFrameIslami, gambarDesainIslami, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
+import { gambarFrameIslami, gambarDesainIslami, gambarFramePng, FRAME_ISLAMI, type GayaFrame } from "@/lib/quran-frame";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe, type SubStyle, type SubAnim } from "@/lib/subscribe";
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline";
 
@@ -75,6 +75,9 @@ export default function NicheQuran() {
   const [studioOn, setStudioOn] = useState(true);
   /* 3️⃣ tampilan */
   const [frame, setFrame] = useState<GayaFrame>("emas");
+  // 🖼️ v20.11: FRAME PNG CUSTOM — upload bingkai sendiri, langsung dipakai
+  // (di-convert jadi data URL; menimpa gaya frame saat dipasang)
+  const [framePng, setFramePng] = useState("");
   const [latar, setLatar] = useState("navy");
   const [rasio, setRasio] = useState<"16:9" | "9:16">("16:9");
   const [arabSize, setArabSize] = useState(0.075);
@@ -135,7 +138,7 @@ export default function NicheQuran() {
     try {
       // 🐛 v20.6: cache HARUS ikut gaya frame & latar — dulu cuma cek ukuran,
       // jadi ganti frame/latar TIDAK pernah muncul (stale cache) = fitur "mati".
-      const k = `${frame}|${latar}|${W}x${H}`;
+      const k = `${frame}|${latar}|${framePng ? "png" : "no"}|${W}x${H}`;
       const c = frameCacheRef.current;
       if (c && c.width === W && c.height === H && frameCacheKeyRef.current === k) return c;
       const cv = document.createElement("canvas");
@@ -146,8 +149,9 @@ export default function NicheQuran() {
       const g = ctx.createLinearGradient(0, 0, 0, H);
       g.addColorStop(0, lg.css[0]); g.addColorStop(1, lg.css[1]);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      gambarFrameIslami(ctx, W, H, frame);
-      gambarDesainIslami(ctx, W, H, frame); // 🕌 v20.8: desain Islami DI DALAM video
+      // 🖼️ v20.11: kalau ada frame PNG custom → dipakai; kalau tidak → gaya bawaan
+      if (framePng) gambarFramePng(ctx, W, H, framePng);
+      else { gambarFrameIslami(ctx, W, H, frame); gambarDesainIslami(ctx, W, H, frame); }
       frameCacheRef.current = cv;
       frameCacheKeyRef.current = k;
       return cv;
@@ -345,16 +349,10 @@ export default function NicheQuran() {
 
   /* ---- draw preview ---- */
   function gambarScene(ctx: CanvasRenderingContext2D, W: number, H: number, t: number) {
-    // ⚡ v20.5: latar + bingkai dari CACHE (drawImage murah) — bukan digambar ulang
-    const fc = dapatCacheFrame(W, H);
-    if (fc) {
-      ctx.drawImage(fc, 0, 0, W, H);
-    } else {
-      // 🐛 v20.10: kalau cache gagal, bersihkan dulu (anti-ghosting frame lama)
-      ctx.fillStyle = "#070b14"; ctx.fillRect(0, 0, W, H);
-    }
-    // video latar (bergerak → digambar tiap frame)
-    // 🔁 v20.7: LOOP ikut mode — masih dalam jatah → main; sudah lewat → diam (freeze)
+    // 🐛 v20.11 URUTAN GAMBAR DIPERBAIKI: VIDEO dulu (paling bawah), lalu
+    // bingkai/desain DI ATASNYA — dulu video digambar SETELAH cache frame
+    // → video menutup bingkai (frame tidak kelihatan saat pakai video latar).
+    // 1) video latar
     const vv = videoRef.current;
     if (vv && vv.readyState >= 2 && vv.videoWidth) {
       const vd = vv.duration > 0 ? vv.duration : 4;
@@ -367,6 +365,18 @@ export default function NicheQuran() {
       if (ir > cr) { sw = vv.videoHeight * cr; sx = (vv.videoWidth - sw) / 2; } else { sh = vv.videoWidth / cr; sy = (vv.videoHeight - sh) / 2; }
       ctx.drawImage(vv, sx, sy, sw, sh, 0, 0, W, H);
       ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, W, H);
+    } else {
+      // tanpa video → latar gradien + bingkai (cache)
+      const fc = dapatCacheFrame(W, H);
+      if (fc) ctx.drawImage(fc, 0, 0, W, H);
+      else { ctx.fillStyle = "#070b14"; ctx.fillRect(0, 0, W, H); }
+    }
+    // 2) bingkai + desain Islami SELALU DI ATAS (tidak peduli ada video atau tidak)
+    //    — untuk kasus video: gambar ulang bingkai+desain di atas video.
+    if (vv && vv.readyState >= 2 && vv.videoWidth) {
+      gambarFrameIslami(ctx, W, H, frame);
+      if (framePng) gambarFramePng(ctx, W, H, framePng);
+      else gambarDesainIslami(ctx, W, H, frame);
     }
     // ayat aktif
     const idx = ayatAktif(t);
@@ -833,6 +843,18 @@ export default function NicheQuran() {
       {step === 2 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div className="v6-lbl" style={{ fontSize: 12, fontWeight: 800 }}>🕌 BINGKAI FRAME ISLAMI</div>
+          {/* 🖼️ v20.11: UPLOAD FRAME PNG SENDIRI — langsung dipakai sebagai bingkai */}
+          <label style={{ padding: "9px", borderRadius: 10, border: "1px dashed rgba(212,175,55,.5)", background: framePng ? "rgba(212,175,55,.12)" : "rgba(255,255,255,.04)", textAlign: "center", fontSize: 12, color: framePng ? "#e8d9a0" : "#cbd5e1", cursor: "pointer", fontWeight: 700 }}>
+            {framePng ? "🖼️ Frame PNG terpasang (tap untuk ganti)" : "🖼️ Upload frame PNG sendiri (bingkai custom)"}
+            <input type="file" accept="image/png,image/*" hidden onChange={(e) => {
+              const f = e.target.files?.[0]; if (!f) return;
+              const r = new FileReader();
+              r.onload = () => { setFramePng(r.result as string); setMsg("✅ Frame PNG terpasang — dipakai sebagai bingkai (menggantikan gaya bawaan)."); };
+              r.readAsDataURL(f);
+              e.currentTarget.value = "";
+            }} />
+          </label>
+          {framePng && <button onClick={() => { setFramePng(""); setMsg("Frame PNG dihapus — kembali ke gaya bawaan."); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(239,68,68,.4)", background: "rgba(239,68,68,.1)", color: "#fca5a5", fontSize: 11, cursor: "pointer" }}>✕ Hapus frame PNG</button>}
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {FRAME_ISLAMI.map((f) => (
               <button key={f.id} onClick={() => setFrame(f.id)} style={{ padding: "7px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,.2)", background: frame === f.id ? "rgba(212,175,55,.25)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 11.5, cursor: "pointer" }}>{f.emoji} {f.label}</button>

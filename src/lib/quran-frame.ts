@@ -295,3 +295,20 @@ export function gambarFrameIslami(ctx: CanvasRenderingContext2D, W: number, H: n
   }
   ctx.restore();
 }
+
+/** 🖼️ v20.11: gambar frame PNG custom (upload user) — stretch penuh ke canvas,
+ *  dengan overlay gelap halus biar ayat tetap terbaca. */
+export function gambarFramePng(ctx: CanvasRenderingContext2D, W: number, H: number, dataUrl: string) {
+  const im = new Image();
+  im.src = dataUrl;
+  if (!im.complete || !im.naturalWidth) return;
+  ctx.save();
+  ctx.drawImage(im, 0, 0, W, H);
+  // scrim tipis di tengah biar teks terbaca (frame biasanya tebal di tepi)
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, "rgba(0,0,0,0.35)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}

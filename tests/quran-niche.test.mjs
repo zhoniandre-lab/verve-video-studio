@@ -141,3 +141,12 @@ T("FIX: rasio & dim masuk deps preview (ganti rasio pasti merespons)", /rasio, d
 T("FIX: logo dimuat sekali ke ref (logoImgRef)", /const logoImgRef = useRef/.test(page) && /im\.onload = \(\) => \{ logoImgRef\.current = im; \}/.test(page));
 T("FIX: gambarScene pakai logoImgRef (bukan new Image tiap frame)", /const im = logoImgRef\.current/.test(page) && !/new Image\(\); im\.src = logoImg/.test(page));
 T("FIX: cache gagal → canvas dibersihkan (anti-ghosting)", /fillStyle = "#070b14"; ctx\.fillRect\(0, 0, W, H\)/.test(page));
+
+/* ---- v20.11: FIX frame tertutup video + UPLOAD frame PNG custom ---- */
+T("FIX URUTAN: video digambar DULU, bingkai di ATAS video", /URUTAN GAMBAR DIPERBAIKI/.test(page) && /if \(vv && vv\.readyState >= 2 && vv\.videoWidth\) \{[\s\S]*?gambarFrameIslami\(ctx, W, H, frame\)/.test(page));
+T("FIX: bingkai+desain selalu digambar ulang di atas video", /gambarFrameIslami\(ctx, W, H, frame\);\s*\n\s*if \(framePng\)/.test(page) || /gambarFrameIslami\(ctx, W, H, frame\)/.test(page));
+T("state framePng ada", /const \[framePng, setFramePng\]/.test(page));
+T("gambarFramePng ada di quran-frame", /export function gambarFramePng/.test(qf) && /dataUrl/.test(qf));
+T("cache frame pakai framePng (png/no)", /framePng/.test(page) && /png/.test(page));
+T("cache: kalau framePng → gambar framePng, bukan gaya", /if \(framePng\) gambarFramePng/.test(page));
+T("UI upload frame PNG ada + hapus", /Upload frame PNG sendiri/.test(page) && /Hapus frame PNG/.test(page));
