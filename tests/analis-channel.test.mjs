@@ -29,5 +29,14 @@ T("3 AKSI: nomor urut 1-2-3 (lingkaran)", /fontWeight: 900, fontSize: 13/.test(g
 T("3 AKSI: tombol salin rencana lengkap", /Salin Rencana Aksi Lengkap/.test(gd));
 T("KONFIRMASI: pakai num() biar tampil benar", /\(num\(views\) \?\? 0\)\.toLocaleString/.test(gd) && /\(num\(watchH\) \?\? 0\)\.toLocaleString/.test(gd) && /\(num\(subs\) \?\? 0\)\.toLocaleString/.test(gd));
 
+
+
+/* ---- v20.27: VIDEO BAGUS vs PERLU DIPERBAIKI (SIMPLE) ---- */
+T("SIMPLE: judul VIDEO KAMU MANA YANG BAGUS", /VIDEO KAMU: MANA YANG BAGUS/.test(gd));
+T("SIMPLE: kelompok BAGUS & PERLU DIPERBAIKI", /BAGUS/.test(gd) && /PERLU DIPERBAIKI/.test(gd));
+T("SIMPLE: solusi part 2 & ganti thumbnail/hook", /part 2/.test(gd) && /ganti thumbnail/.test(gd) && /hook 3 detik/.test(gd));
+T("SIMPLE: batas bagus 30% max views", /maxViews \* 0\.3/.test(gd));
+T("SIMPLE: tombol Ide part 2", /Ide part 2/.test(gd));
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI ANALIS CHANNEL GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI ANALIS CHANNEL HIJAU");

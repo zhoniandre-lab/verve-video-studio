@@ -543,26 +543,49 @@ export default function GrowthDoctor({ onExit }: { onExit: () => void }) {
             </div>
             {!!ytVideos.length && (
               <div className="gd-ytvideos">
-                {/* 🖼️ v19.65 TAHAP 4: BANDINGKAN THUMBNAIL — lihat visual mana yang meledak vs sepi */}
-                <div style={{ fontSize: 10.5, color: "#a5f3fc", fontWeight: 800, marginBottom: 6 }}>🖼️ BANDINGKAN THUMBNAIL (urutan: paling meledak → paling sepi)</div>
-                {[...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).slice(0, 8).map((v, idx) => {
-                  const th: any = (v as any).thumbnails;
-                  const thUrl = th?.medium?.url || th?.high?.url || th?.default?.url || "";
-                  const views = v.viewCount || 0;
-                  const maxViews = Math.max(1, ...ytVideos.map((x) => x.viewCount || 0));
-                  const status = views >= maxViews * 0.5 ? "🔥 meledak" : views >= maxViews * 0.1 ? "🟡 sedang" : "💤 sepi";
+                {/* 🎯 v20.27 SIMPLE: video mana yang BAGUS vs PERLU DIPERBAIKI + solusi */}
+                <div style={{ fontSize: 11, color: "#a5f3fc", fontWeight: 900, marginBottom: 4 }}>🎯 VIDEO KAMU: MANA YANG BAGUS & SOLUSINYA</div>
+                <div style={{ fontSize: 9.5, color: "#64748b", marginBottom: 8 }}>Urut dari paling banyak ditonton. Ketuk video → datanya keisi di atas.</div>
+                {(() => {
+                  const sorted = [...ytVideos].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).slice(0, 10);
+                  const maxViews = Math.max(1, ...sorted.map((x) => x.viewCount || 0));
+                  const bagus = sorted.filter((v) => (v.viewCount || 0) >= maxViews * 0.3);
+                  const jelek = sorted.filter((v) => (v.viewCount || 0) < maxViews * 0.3);
+                  const kartu = (v: YtVideo, idx: number, baik: boolean) => {
+                    const th: any = (v as any).thumbnails;
+                    const thUrl = th?.medium?.url || th?.high?.url || th?.default?.url || "";
+                    const views = v.viewCount || 0;
+                    return (
+                      <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", borderRadius: 12, padding: 6, background: "#0a0e16", border: baik ? "1px solid rgba(34,197,94,.35)" : "1px solid rgba(239,68,68,.3)", marginBottom: 5, cursor: "pointer" }}>
+                        {thUrl ? <img src={thUrl} alt="" style={{ width: 52, height: 34, objectFit: "cover", borderRadius: 6, flex: "0 0 auto" }} /> : <span style={{ width: 52, height: 34, borderRadius: 6, background: "#141824", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>🎬</span>}
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <b style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.title}</b>
+                          <span style={{ fontSize: 9.5, color: "#8b8b98" }}>{views.toLocaleString("id-ID")} views · {baik ? "👍 bagus" : "👎 sepi"}</span>
+                          <span style={{ display: "block", fontSize: 9, color: baik ? "#86efac" : "#fca5a5", marginTop: 1 }}>{baik ? "✅ Buat versi lanjutan (part 2) — pola ini disukai" : "🛠 Solusi: ganti thumbnail/judul lebih menarik, atau perbaiki hook 3 detik"}</span>
+                        </span>
+                        {baik && (
+                          <button onClick={(e) => { e.stopPropagation(); kirimChat(`Kasih ide konten lanjutan (part 2) dari video "${v.title}" yang dapat ${views.toLocaleString("id-ID")} views — sesuai pola yang bikin dia meledak.`); }} style={{ background: "rgba(139,92,246,.15)", border: "1px solid #8b5cf655", color: "#c4b5fd", borderRadius: 999, fontSize: 9.5, padding: "4px 8px", whiteSpace: "nowrap", cursor: "pointer" }} title="Minta ide lanjutan dari video ini">💡 Ide part 2</button>
+                        )}
+                      </button>
+                    );
+                  };
                   return (
-                    <button key={v.id} onClick={() => applyYoutubeVideo(v)} disabled={ytBusy} style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", borderRadius: 12, padding: 6, background: "#0a0e16", border: "1px solid #ffffff12", marginBottom: 5, cursor: "pointer" }}>
-                      {thUrl ? <img src={thUrl} alt="" style={{ width: 52, height: 34, objectFit: "cover", borderRadius: 6, flex: "0 0 auto" }} /> : <span style={{ width: 52, height: 34, borderRadius: 6, background: "#141824", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>🎬</span>}
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <b style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.title}</b>
-                        <span style={{ fontSize: 9.5, color: "#8b8b98" }}>#{idx + 1} · {views.toLocaleString("id-ID")} views · {status}</span>
-                      </span>
-                      <button onClick={(e) => { e.stopPropagation(); kirimChat(`Kasih ide konten lanjutan (part 2) dari video "${v.title}" yang dapat ${(v.viewCount||0).toLocaleString("id-ID")} views — sesuai pola yang bikin dia meledak.`); }} style={{ background: "rgba(139,92,246,.15)", border: "1px solid #8b5cf655", color: "#c4b5fd", borderRadius: 999, fontSize: 9.5, padding: "4px 8px", whiteSpace: "nowrap", cursor: "pointer" }} title="Minta ide lanjutan dari video ini">💡 Ide</button>
-                    </button>
+                    <>
+                      {bagus.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 10.5, fontWeight: 900, color: "#86efac", marginBottom: 4 }}>👍 BAGUS ({bagus.length}) — teruskan polanya</div>
+                          {bagus.map((v, i) => kartu(v, i, true))}
+                        </div>
+                      )}
+                      {jelek.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10.5, fontWeight: 900, color: "#fca5a5", marginBottom: 4 }}>👎 PERLU DIPERBAIKI ({jelek.length})</div>
+                          {jelek.map((v, i) => kartu(v, i, false))}
+                        </div>
+                      )}
+                    </>
                   );
-                })}
-                <div style={{ fontSize: 9.5, color: "#64748b", marginTop: 4 }}>Ketuk video → data analytics-nya keisi di atas. Pola yang kelihatan: yang meledak biasanya thumbnail wajah + teks besar + kontras. 👀</div>
+                })()}
               </div>
             )}
             <div className="gd-textactions" style={{ gridTemplateColumns: "1fr" }}>
