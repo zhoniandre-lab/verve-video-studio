@@ -8,6 +8,18 @@
    - Render mulus pakai mesin offline (durasi sesuai audio, aman di HP 1-15 mnt)
    Spectrum TIDAK disentuh. */
 import { useEffect, useMemo, useRef, useState } from "react";
+// ✒️ v20.14: font Islami (Google Fonts) — dimuat sekali di head
+function useFontsIslami() {
+  useEffect(() => {
+    const id = "quran-fonts";
+    if (document.getElementById(id)) return;
+    const l = document.createElement("link");
+    l.id = id;
+    l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&family=Reem+Kufi:wght@400;700&family=Aref+Ruqaa:wght@400;700&family=Poppins:wght@400;700&display=swap";
+    document.head.appendChild(l);
+  }, []);
+}
 import {
   DAFTAR_SURAT, ITEM_AYAT_KURSI, BAHASA, ambilAyatBanyak, gabungAyat, type AyatGabung, type ItemBacaan,
 } from "@/lib/quran-data";
@@ -15,6 +27,7 @@ import { sambungAmbience, buatReverbIR, AMBIENCE_LABEL, type JenisAmbience } fro
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v20.7: loop video
 import { gambarFrameIslami, gambarDesainIslami, gambarFramePng, FRAME_ISLAMI, framePngBawaan, type GayaFrame } from "@/lib/quran-frame";
 import { SUB_STYLES, SUB_ANIMS, hitungSubState, gambarSubscribe, type SubStyle, type SubAnim } from "@/lib/subscribe";
+import { FONT_ISLAMI, EFEK_TEKS, gambarTeksIslami, gambarOverlayAllah, type TeksItem, type GayaOverlay, OVERLAY_LABEL } from "@/lib/quran-teks"; // ✒️ v20.14
 import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline";
 
 const LANGKAH = ["1️⃣ Surat", "2️⃣ Suara", "3️⃣ Tampilan", "4️⃣ Elemen", "5️⃣ Render"];
@@ -30,6 +43,7 @@ function clampN(v: number, a: number, b: number) { return Math.max(a, Math.min(b
 type ElemenPos = { x: number; y: number };
 
 export default function NicheQuran() {
+  useFontsIslami(); // ✒️ v20.14: muat font Islami sekali
   const [step, setStep] = useState(0);
   /* 1️⃣ surat — daftar bacaan berURUTAN (atas = dibaca duluan) */
   const [daftarBacaan, setDaftarBacaan] = useState<ItemBacaan[]>(() => [
@@ -115,9 +129,21 @@ export default function NicheQuran() {
   const [ayatY, setAyatY] = useState(0.42);
   /* 4️⃣ elemen */
   const [teksOn, setTeksOn] = useState(false);
-  const [teksTxt, setTeksTxt] = useState("");
-  const [teksPos, setTeksPos] = useState<ElemenPos>({ x: 0.5, y: 0.06 });
-  const [teksSize, setTeksSize] = useState(0.045);
+  // ✒️ v20.14: BANYAK TEKS — array item (masing-masing punya font/efek/posisi/animasi)
+  const [teksList, setTeksList] = useState<TeksItem[]>([]);
+  const [teksAktif, setTeksAktif] = useState(0); // indeks yang sedang diedit
+  const [overlayGaya, setOverlayGaya] = useState<GayaOverlay>("kiri_kanan");
+  function teksBaru(): TeksItem {
+    const id = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    return { id, txt: "Teks baru", font: "arab", efek: "cahaya", x: 0.5, y: 0.1, size: 0.045, anim: "diam" };
+  }
+  function ubahTeks(i: number, patch: Partial<TeksItem>) {
+    setTeksList((arr) => arr.map((t, k) => (k === i ? { ...t, ...patch } : t)));
+  }
+  function hapusTeks(i: number) {
+    setTeksList((arr) => arr.filter((_, k) => k !== i));
+    setTeksAktif((a) => (i < a ? a - 1 : Math.max(0, a - 1)));
+  }
   const [subOn, setSubOn] = useState(false);
   const [subGaya, setSubGaya] = useState("yt");
   const [subAnim, setSubAnim] = useState<SubAnim>("denyut");
@@ -469,15 +495,15 @@ export default function NicheQuran() {
         });
       }
     }
-    // teks custom
-    if (teksOn && teksTxt.trim()) {
-      ctx.textAlign = "center";
-      const fs = Math.round(Math.min(W, H) * teksSize);
-      ctx.font = `800 ${fs}px system-ui`;
-      ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = Math.max(2, fs * 0.14); ctx.lineJoin = "round";
-      ctx.strokeText(teksTxt, teksPos.x * W, teksPos.y * H);
-      ctx.fillText(teksTxt, teksPos.x * W, teksPos.y * H);
+    // ✒️ v20.14: BANYAK TEKS (masing-masing font/efek/animasi)
+    if (teksOn) {
+      for (const ti of teksList) {
+        if (!ti.txt.trim()) continue;
+        gambarTeksIslami(ctx, ti, W, H, t, 0);
+      }
     }
+    // ☪️ v20.14: OVERLAY ALLAH & MUHAMMAD (dengan animasi cahaya)
+    gambarOverlayAllah(ctx, W, H, overlayGaya, t, 0);
     // subscribe
     if (subOn) {
       const stl = SUB_STYLES.find((s) => s.id === subGaya) || SUB_STYLES[0];
@@ -521,7 +547,7 @@ export default function NicheQuran() {
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, audioDur, ayatList, frame, latar, rasio, dim.w, dim.h, arabSize, artiSize, ayatY, teksOn, teksTxt, teksPos, teksSize, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas, pngScale, framePng]);
+  }, [busy, audioDur, ayatList, frame, latar, rasio, dim.w, dim.h, arabSize, artiSize, ayatY, teksOn, teksList, teksAktif, overlayGaya, subOn, subGaya, subAnim, subPos, subSize, logoOn, logoImg, logoPos, logoScale, videoBg, seg, playPrev, offsetG, manualBatas, pngScale, framePng]);
 
   /* 🎙️ v20.6: preview via rantai STUDIO (MediaElementSource → EQ studio → kompresor) —
      suara yang didengar pas ▶ = mendekati hasil render (tidak mentahan) */
@@ -569,7 +595,8 @@ export default function NicheQuran() {
 
   /* ---- drag & pinch di preview ---- */
   function hitTest(x: number, y: number): "teks" | "sub" | "logo" | null {
-    if (teksOn && teksTxt.trim() && Math.hypot(x - teksPos.x, y - teksPos.y) < 0.2) return "teks";
+    // ✒️ v20.14: hit-test teks AKTIF (dari daftar) — bukan satu teks global
+    if (teksOn && teksList[teksAktif]?.txt.trim() && Math.hypot(x - teksList[teksAktif].x, y - teksList[teksAktif].y) < 0.2) return "teks";
     if (subOn && Math.hypot(x - subPos.x, y - subPos.y) < 0.2) return "sub";
     if (logoOn && logoImg && Math.hypot(x - logoPos.x, y - logoPos.y) < 0.18) return "logo";
     return null;
@@ -583,7 +610,7 @@ export default function NicheQuran() {
       const t = hitTest((mx - r.left) / r.width, (my - r.top) / r.height);
       if (t) {
         const d0 = Math.hypot(a.x - b.x, a.y - b.y);
-        const s0 = t === "teks" ? teksSize : t === "sub" ? subSize : logoScale;
+        const s0 = t === "teks" ? (teksList[teksAktif]?.size ?? 0.045) : t === "sub" ? subSize : logoScale;
         pinchRef.current = { d0, s0, t };
       }
       return;
@@ -592,7 +619,7 @@ export default function NicheQuran() {
     const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
     const t = hitTest(x, y);
     if (t) {
-      const pos = t === "teks" ? teksPos : t === "sub" ? subPos : logoPos;
+      const pos = t === "teks" ? (teksList[teksAktif] ? { x: teksList[teksAktif].x, y: teksList[teksAktif].y } : { x: 0.5, y: 0.1 }) : t === "sub" ? subPos : logoPos;
       dragRef.current = { t, dx: pos.x - x, dy: pos.y - y };
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     }
@@ -603,7 +630,7 @@ export default function NicheQuran() {
       const [a, b] = [...ptrs.current.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       const k = d / Math.max(1, pinchRef.current.d0);
-      if (pinchRef.current.t === "teks") setTeksSize(clampN(pinchRef.current.s0 * k, 0.02, 0.12));
+      if (pinchRef.current.t === "teks") ubahTeks(teksAktif, { size: clampN(pinchRef.current.s0 * k, 0.02, 0.12) });
       else if (pinchRef.current.t === "sub") setSubSize(clampN(pinchRef.current.s0 * k, 0.04, 0.2));
       else setLogoScale(clampN(pinchRef.current.s0 * k, 0.4, 2.5));
       return;
@@ -614,7 +641,7 @@ export default function NicheQuran() {
     const y = clampN((e.clientY - r.top) / r.height, 0.04, 0.95);
     const nx = clampN(x + dragRef.current.dx, 0.04, 0.96);
     const ny = clampN(y + dragRef.current.dy, 0.04, 0.95);
-    if (dragRef.current.t === "teks") setTeksPos({ x: nx, y: ny });
+    if (dragRef.current.t === "teks") ubahTeks(teksAktif, { x: nx, y: ny });
     else if (dragRef.current.t === "sub") setSubPos({ x: nx, y: ny });
     else setLogoPos({ x: nx, y: ny });
   };
@@ -960,14 +987,60 @@ export default function NicheQuran() {
             </button>
             {teksOn && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                <input className="v6-inp" style={{ background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "6px 8px", fontSize: 12 }} placeholder="Tulis teks (mis. QS. Al-Fatihah)" value={teksTxt} onChange={(e) => setTeksTxt(e.target.value)} />
-                <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ minWidth: 60 }}>Ukuran</span>
-                  <input type="range" min={0.02} max={0.12} step={0.005} value={teksSize} onChange={(e) => setTeksSize(Number(e.target.value))} style={{ flex: 1 }} />
-                </label>
-                <p style={{ fontSize: 9.5, color: "#8b8b98", margin: 0 }}>Geser/cubit langsung di pratinjau untuk posisi & ukuran.</p>
+                {/* ✒️ v20.14: daftar teks (bisa BANYAK) */}
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {teksList.map((t, i) => (
+                    <button key={t.id} onClick={() => setTeksAktif(i)}
+                      style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(139,92,246,.5)", background: teksAktif === i ? "rgba(139,92,246,.35)" : "rgba(255,255,255,.06)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>
+                      {t.txt.slice(0, 12) || "kosong"}
+                    </button>
+                  ))}
+                  <button onClick={() => { setTeksList((a) => [...a, teksBaru()]); setTeksAktif(teksList.length); }}
+                    style={{ padding: "5px 8px", borderRadius: 8, border: "1px dashed rgba(34,197,94,.5)", background: "rgba(34,197,94,.08)", color: "#86efac", fontSize: 10.5, cursor: "pointer", fontWeight: 700 }}>＋ Tambah teks</button>
+                </div>
+                {teksList[teksAktif] && (
+                  <>
+                    <input className="v6-inp" style={{ background: "#12121e", color: "#fff", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "6px 8px", fontSize: 12 }}
+                      placeholder="Tulis teks (mis. QS. Al-Fatihah / بِسْمِ اللَّهِ)" value={teksList[teksAktif].txt} onChange={(e) => ubahTeks(teksAktif, { txt: e.target.value })} />
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {FONT_ISLAMI.map((f) => (
+                        <button key={f.id} onClick={() => ubahTeks(teksAktif, { font: f.id })}
+                          style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: teksList[teksAktif].font === f.id ? "rgba(139,92,246,.4)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>{f.label}</button>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {EFEK_TEKS.map((e) => (
+                        <button key={e.id} onClick={() => ubahTeks(teksAktif, { efek: e.id })}
+                          style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: teksList[teksAktif].efek === e.id ? "rgba(212,175,55,.3)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>{e.label}</button>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {([["diam", "🚫 Diam"], ["naik", "↕️ Naik-turun"], ["berdenyut", "💓 Berdenyut"], ["fade", "🌫️ Fade"]] as const).map(([v, lb]) => (
+                        <button key={v} onClick={() => ubahTeks(teksAktif, { anim: v })}
+                          style={{ padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.2)", background: teksList[teksAktif].anim === v ? "rgba(139,92,246,.4)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>{lb}</button>
+                      ))}
+                    </div>
+                    <label style={{ fontSize: 11, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ minWidth: 60 }}>Ukuran</span>
+                      <input type="range" min={0.02} max={0.12} step={0.005} value={teksList[teksAktif].size} onChange={(e) => ubahTeks(teksAktif, { size: Number(e.target.value) })} style={{ flex: 1 }} />
+                    </label>
+                    <button onClick={() => hapusTeks(teksAktif)} style={{ padding: "6px", borderRadius: 8, border: "1px solid rgba(239,68,68,.4)", background: "rgba(239,68,68,.1)", color: "#fca5a5", fontSize: 11, cursor: "pointer" }}>🗑 Hapus teks ini</button>
+                    <p style={{ fontSize: 9.5, color: "#8b8b98", margin: 0 }}>Geser/cubit langsung di pratinjau untuk posisi & ukuran (teks yang sedang aktif = yang digeser).</p>
+                  </>
+                )}
               </div>
             )}
+          </div>
+          {/* ☪️ v20.14: OVERLAY ALLAH & MUHAMMAD */}
+          <div style={{ border: "1px solid rgba(255,255,255,.14)", borderRadius: 12, padding: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", marginBottom: 6 }}>☪️ Overlay Allah & Muhammad</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {(Object.keys(OVERLAY_LABEL) as GayaOverlay[]).map((g) => (
+                <button key={g} onClick={() => setOverlayGaya(g)}
+                  style={{ padding: "6px 9px", borderRadius: 999, border: "1px solid rgba(255,255,255,.2)", background: overlayGaya === g ? "rgba(212,175,55,.3)" : "rgba(255,255,255,.05)", color: "#fff", fontSize: 10.5, cursor: "pointer" }}>{OVERLAY_LABEL[g]}</button>
+              ))}
+            </div>
+            <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "4px 0 0" }}>Tulisan Arab الله & محمد dengan cahaya emas berdenyut halus mengikuti waktu — di sisi kiri/kanan (atau atas/bawah) video.</p>
           </div>
           <div style={{ border: "1px solid rgba(255,255,255,.14)", borderRadius: 12, padding: 10 }}>
             <button onClick={() => setSubOn(!subOn)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>

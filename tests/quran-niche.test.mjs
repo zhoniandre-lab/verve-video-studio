@@ -8,6 +8,7 @@ const qf = readFileSync(new URL("../src/lib/quran-frame.ts", import.meta.url), "
 const ro = readFileSync(new URL("../src/lib/render-offline.ts", import.meta.url), "utf8");
 const page = readFileSync(new URL("../src/app/quran/page.tsx", import.meta.url), "utf8");
 const ac = readFileSync(new URL("../src/lib/audio-chain.ts", import.meta.url), "utf8");
+const qt = readFileSync(new URL("../src/lib/quran-teks.ts", import.meta.url), "utf8");
 const dash = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 
 let gagal = 0;
@@ -168,3 +169,18 @@ T("UKURAN: atas video pakai gambarPngFrame (skala jalan)", /gambarPngFrame\(ctx,
 T("UKURAN: preload gabungan bawaan+custom (frame, framePng)", /framePng \|\| framePngBawaan\(frame\) \|\| ""/.test(page));
 T("UKURAN: UI slider + tombol Tebal/Normal/Tipis", /Ukuran frame/.test(page) && /setPngScale\(0\.85\)/.test(page) && /setPngScale\(1\.2\)/.test(page));
 T("UKURAN: pngScale masuk deps preview", /pngScale, framePng\]\)/.test(page));
+
+/* ---- v20.14: BANYAK TEKS + font Islami + efek cahaya + overlay Allah/Muhammad ---- */
+T("TEKS: lib quran-teks ada (FONT_ISLAMI & EFEK_TEKS)", /FONT_ISLAMI/.test(qt) && /EFEK_TEKS/.test(qt));
+T("TEKS: 6 font Islami (Amiri, Reem Kufi, Aref Ruqaa dll)", /Amiri/.test(qt) && /Reem Kufi/.test(qt) && /Aref Ruqaa/.test(qt));
+T("TEKS: 5 efek (cahaya/menyala/emas/neon)", /cahaya/.test(qt) && /menyala/.test(qt) && /emas/.test(qt) && /neon/.test(qt));
+T("TEKS: state teksList ARRAY (bisa banyak)", /const \[teksList, setTeksList\]/.test(page) && /teksBaru\(\)/.test(page));
+T("TEKS: tombol ＋ Tambah teks", /＋ Tambah teks/.test(page));
+T("TEKS: daftar teks + pilih aktif", /setTeksAktif\(i\)/.test(page));
+T("TEKS: pilihan font & efek & animasi di UI", /FONT_ISLAMI\.map/.test(page) && /EFEK_TEKS\.map/.test(page) && /Naik-turun/.test(page));
+T("TEKS: drag & cubit pakai teksList[teksAktif]", /teksList\[teksAktif\]/.test(page) && /ubahTeks\(teksAktif, \{ x: nx, y: ny \}\)/.test(page));
+T("OVERLAY: state overlayGaya ada", /const \[overlayGaya, setOverlayGaya\]/.test(page));
+T("OVERLAY: 5 gaya (kiri_kanan/atas_bawah/dll)", /kiri_kanan/.test(qt) && /atas_bawah/.test(qt) && /kanan_saja/.test(qt));
+T("OVERLAY: gambarOverlayAllah dipanggil di scene", /gambarOverlayAllah\(ctx, W, H, overlayGaya, t, 0\)/.test(page));
+T("OVERLAY: tulisan الله & محمد + animasi glow", /الله/.test(qt) && /محمد/.test(qt) && /shadowBlur/.test(qt));
+T("FONT: Google Fonts dimuat di halaman", /fonts.googleapis.com/.test(page) && /useFontsIslami/.test(page));
