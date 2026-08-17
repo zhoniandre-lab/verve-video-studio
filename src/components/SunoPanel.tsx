@@ -56,9 +56,6 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   const [keyPool, setKeyPool] = useState<SunoKey[]>(() => { try { return JSON.parse(localStorage.getItem(SUNO_KEYS_KEY) || "[]"); } catch { return []; } });
   const [keyDraft, setKeyDraft] = useState("");
   const [keyPanel, setKeyPanel] = useState(false);
-  // 🔑 v20.33: KEY AKTIF — satu key bebas, TIDAK diikat ke penyedia. Ganti penyedia
-  // tetap kepakai; ganti key = tempel baru.
-  const [sunoKey, setSunoKey] = useState(() => { try { return localStorage.getItem("verve_suno_key") || ""; } catch { return ""; } });
   const [creditInfo, setCreditInfo] = useState<Record<string, string>>({});
   const [checkingCredit, setCheckingCredit] = useState(false);
   const [genre, setGenre] = useState(GENRES[0]);
@@ -108,14 +105,8 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     try { localStorage.setItem(SUNO_KEYS_KEY, JSON.stringify(next)); } catch { /* abaikan */ }
   }
   function keysForProvider(): SunoKey[] {
-    // 🔑 v20.33: KEY AKTIF didahulukan — bebas provider, ganti kapan saja
-    if (sunoKey.trim()) return [{ key: sunoKey.trim(), provider: sunoProv }];
     const pooled = keyPool.filter((k) => k.provider === sunoProv);
     if (pooled.length) return pooled;
-    try {
-      const k = (localStorage.getItem("verve_suno_key") || "").trim();
-      if (k) return [{ key: k, provider: sunoProv }];
-    } catch { /* abaikan */ }
     return [];
   }
   function sunoHeaders(keyOverride?: string): Record<string, string> {
@@ -140,23 +131,16 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   function addKeysFromDraft() {
     const lines = keyDraft.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     if (!lines.length) return;
-    // 🔑 v20.33: key PERTAMA langsung jadi KEY AKTIF (bebas provider) —
-    // bisa diganti kapan saja, ganti penyedia pun tetap kepakai.
-    const aktif = lines[0];
-    setSunoKey(aktif);
-    try { localStorage.setItem("verve_suno_key", aktif); } catch { /* abaikan */ }
-    // sisanya tetap masuk pool (multi-key cadangan)
     const next = [...keyPool];
     let added = 0;
     lines.forEach((k) => {
       if (next.some((x) => x.key === k)) return;
-      next.push({ key: k, provider: sunoProv });
+      next.push({ key: k, provider: detectProvClient(k, sunoProv) });
       added++;
     });
     savePool(next);
     setKeyDraft("");
-    flash(`🔑 Key aktif: ${maskKey(aktif)} — siap dipakai, bisa ganti kapan saja`);
-    setKeyPanel(true); // biar user LIHAT key-nya masuk
+    flash(added ? `🔑 ${added} kunci ditambah` : "Semua kunci sudah ada");
   }
   function removeKey(key: string) { savePool(keyPool.filter((k) => k.key !== key)); }
   function clearKeys() { savePool(keyPool.filter((k) => k.provider !== sunoProv)); setCreditInfo({}); }
@@ -337,19 +321,13 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       </button>
       {keyPanel && (
         <div className="lh-keypanel">
-          {/* 🔑 v20.33: KEY AKTIF — tampil jelas, bebas ganti */}
-          <div style={{ border: "1px solid rgba(34,197,94,.4)", borderRadius: 10, padding: 8, background: "rgba(34,197,94,.07)", marginBottom: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#86efac" }}>🔑 KEY AKTIF (dipakai generate sekarang)</div>
-            <div style={{ fontSize: 12.5, color: "#fff", marginTop: 3, wordBreak: "break-all" }}>{sunoKey ? maskKey(sunoKey) : "— belum ada —"}</div>
-            <div style={{ fontSize: 9.5, color: "#8b8b98", marginTop: 2 }}>Bebas ganti: tempel key baru di bawah → ＋ Tambah. Ganti penyedia pun key ini tetap kepakai.</div>
-          </div>
           {PROVIDER_KEY_LINK[sunoProv]?.url && (
             <a className="lh-keylink" href={PROVIDER_KEY_LINK[sunoProv].url} target="_blank" rel="noreferrer">
               🔑 Ambil API key di {SUNO_PROVIDERS.find((p) => p.id === sunoProv)?.label.replace(/^🥇 /, "")} ↗
             </a>
           )}
-          <p className="lh-note">{PROVIDER_KEY_LINK[sunoProv]?.hint || ""}<br />2. Tempel <b>satu kunci per baris</b> → + Tambah. Kunci baris pertama langsung jadi KEY AKTIF. Bisa BANYAK kunci cadangan: kalau satu habis, mesin otomatis pindah berikutnya.</p>
-          <textarea className="lh-ta" rows={3} autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "kunci_baris_1\nkunci_baris_2"} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} />
+          <p className="lh-note">{PROVIDER_KEY_LINK[sunoProv]?.hint || ""}<br />2. Tempel <b>satu kunci per baris</b> → + Tambah. Bisa BANYAK kunci: kalau satu habis, mesin otomatis pindah berikutnya.</p>
+          <textarea className="lh-ta" rows={3} placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "kunci_baris_1\nkunci_baris_2"} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button className="lh-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!keyDraft.trim()} onClick={addKeysFromDraft}>＋ Tambah</button>
             <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} disabled={checkingCredit || !keysForProvider().length} onClick={cekKredit}>{checkingCredit ? "⏳…" : "🔄 Cek Kredit"}</button>

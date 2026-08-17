@@ -1206,7 +1206,6 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   function keysForProvider(): SunoKey[] {
     const pooled = keyPool.filter((k) => k.provider === sunoProv);
     if (pooled.length) return pooled;
-    // 🐛 v20.31: kalau pool kosong utk provider ini tapi ada sunoKey (key tunggal) → pakai
     if (sunoKey.trim()) return [{ key: sunoKey.trim(), provider: sunoProv }];
     return [];
   }
@@ -1215,12 +1214,9 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (!lines.length) return;
     const next = [...keyPool];
     let added = 0;
-    let ada = 0;
     lines.forEach((k) => {
-      // 🐛 v20.31: deteksi provider — key yang sama di provider LAIN tetap boleh masuk
-      const prov = detectProvClient(k, sunoProv);
-      if (next.some((x) => x.key === k)) { ada++; return; }
-      next.push({ key: k, provider: prov });
+      if (next.some((x) => x.key === k)) return;
+      next.push({ key: k, provider: detectProvClient(k, sunoProv) });
       added++;
     });
     savePool(next);
@@ -1230,13 +1226,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       setSunoKey(first.key);
       try { localStorage.setItem("verve_suno_key", first.key); } catch { /* abaikan */ }
     }
-    const pesan = added
-      ? `🔑 ${added} kunci ditambah${ada ? `, ${ada} sudah ada` : ""} — tersimpan di HP`
-      : ada
-        ? `ℹ️ ${ada} kunci sudah ada di daftar — langsung dipakai`
-        : "Tidak ada kunci baru";
-    flash(pesan);
-    setKeyPanel(true); // biar user LIHAT key-nya masuk
+    flash(added ? `🔑 ${added} kunci ditambah` : "Semua kunci sudah ada di daftar");
   }
   function removeKey(key: string) { savePool(keyPool.filter((k) => k.key !== key)); }
   function clearKeysCurrentProv() {
@@ -2913,9 +2903,6 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                 <textarea
                   className="lh-ta"
                   rows={3}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
                   placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : sunoProv === "apiframe" ? "afk_xxx\nafk_yyy" : "kunci_baris_1\nkunci_baris_2"}
                   value={keyDraft}
                   onChange={(e) => setKeyDraft(e.target.value)}
