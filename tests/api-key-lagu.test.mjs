@@ -27,5 +27,13 @@ T("Panel: textarea key autocorrect off", /autoCorrect="off"/.test(panel));
 T("Studio: input key ada & saveKey simpan", /value=\{key\}/.test(studio) && /saveKey\(prov, e\.target\.value\)/.test(studio));
 T("Studio: autocapitalize off", /autoCapitalize="off"/.test(studio));
 
+
+/* ---- v20.32: key selalu masuk ke provider yang DIPILIH ---- */
+
+/* ---- v20.32: key selalu masuk ke provider yang DIPILIH ---- */
+T("FIX: SunoPanel key simpan ke provider aktif", /provider: sunoProv/.test(panel) && /next.push/.test(panel));
+T("FIX: SunoPanel keysForProvider fallback", /verve_suno_key/.test(panel));
+T("FIX: SunoPanel pesan jelas + panel tetap terbuka", /tersimpan di HP/.test(panel) && /setKeyPanel/.test(panel));
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI API KEY GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI API KEY LAGU HIJAU");

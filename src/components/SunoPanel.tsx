@@ -107,6 +107,11 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   function keysForProvider(): SunoKey[] {
     const pooled = keyPool.filter((k) => k.provider === sunoProv);
     if (pooled.length) return pooled;
+    // 🐛 v20.32: fallback key tunggal dari storage (biar key lama tetap kepakai)
+    try {
+      const k = (localStorage.getItem("verve_suno_key") || "").trim();
+      if (k) return [{ key: k, provider: sunoProv }];
+    } catch { /* abaikan */ }
     return [];
   }
   function sunoHeaders(keyOverride?: string): Record<string, string> {
@@ -133,14 +138,24 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     if (!lines.length) return;
     const next = [...keyPool];
     let added = 0;
+    let ada = 0;
     lines.forEach((k) => {
-      if (next.some((x) => x.key === k)) return;
-      next.push({ key: k, provider: detectProvClient(k, sunoProv) });
+      // 🐛 v20.32 FIX: key SELALU disimpan ke provider yang SEDANG DIPILIH.
+      // Dulu pakai detectProvClient → key bisa masuk ke provider LAIN (mis. key
+      // berawalan "sk-" selalu jadi kie) → di panel yang pilih sunor/musicapi
+      // key-nya "tidak muncul" padahal tersimpan. Sekarang pasti masuk ke
+      // provider aktif & tampil.
+      if (next.some((x) => x.key === k)) { ada++; return; }
+      next.push({ key: k, provider: sunoProv });
       added++;
     });
     savePool(next);
     setKeyDraft("");
-    flash(added ? `🔑 ${added} kunci ditambah` : "Semua kunci sudah ada");
+    const pesan = added
+      ? `🔑 ${added} kunci ditambah${ada ? `, ${ada} sudah ada` : ""} — tersimpan di HP`
+      : ada ? `ℹ️ ${ada} kunci sudah ada — langsung dipakai` : "Tidak ada kunci baru";
+    flash(pesan);
+    setKeyPanel(true); // biar user LIHAT key-nya masuk
   }
   function removeKey(key: string) { savePool(keyPool.filter((k) => k.key !== key)); }
   function clearKeys() { savePool(keyPool.filter((k) => k.provider !== sunoProv)); setCreditInfo({}); }
