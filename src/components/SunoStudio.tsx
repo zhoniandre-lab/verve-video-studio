@@ -198,7 +198,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         </select>
         <p style={{ fontSize: 10.5, color: "#8b8b98", margin: "6px 0" }}>{PROVIDERS.find((p) => p.id === prov)?.hint}</p>
         <div style={{ display: "flex", gap: 6 }}>
-          <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com" : "Tempel API key"} value={key} onChange={(e) => saveKey(prov, e.target.value)} />
+          <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com" : "Tempel API key"} value={key} onChange={(e) => saveKey(prov, e.target.value)} />
           {prov === "suno-resmi" ? (
             <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href="https://suno.com" target="_blank" rel="noreferrer">🔗 Buka suno.com & login ↗</a>
           ) : (

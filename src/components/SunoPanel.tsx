@@ -327,7 +327,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
             </a>
           )}
           <p className="lh-note">{PROVIDER_KEY_LINK[sunoProv]?.hint || ""}<br />2. Tempel <b>satu kunci per baris</b> → + Tambah. Bisa BANYAK kunci: kalau satu habis, mesin otomatis pindah berikutnya.</p>
-          <textarea className="lh-ta" rows={3} placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "kunci_baris_1\nkunci_baris_2"} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} />
+          <textarea className="lh-ta" rows={3} autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : "kunci_baris_1\nkunci_baris_2"} value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button className="lh-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!keyDraft.trim()} onClick={addKeysFromDraft}>＋ Tambah</button>
             <button className="lh-btn sec" style={{ flex: 1, marginTop: 0 }} disabled={checkingCredit || !keysForProvider().length} onClick={cekKredit}>{checkingCredit ? "⏳…" : "🔄 Cek Kredit"}</button>

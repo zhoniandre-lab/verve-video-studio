@@ -1052,7 +1052,7 @@ function SayaPage({ refresh }: { refresh: () => void }) {
       <BansosChatCard />
       <div style={{ padding: "0 2px", marginTop: 10 }}>
         <div className="v6-lbl">🔑 API KEY SUNO (buat musik AI)</div>
-        <input className="v6-inp" placeholder="Tempel API key di sini (kosongkan = mode gratis)" value={key} onChange={e => setKey(e.target.value)} />
+        <input className="v6-inp" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Tempel API key di sini (kosongkan = mode gratis)" value={key} onChange={e => setKey(e.target.value)} />
         <div className="v6-lbl">PROVIDER</div>
         <select className="v6-inp" value={prov} onChange={e => setProv(e.target.value)}>
           <option value="kie">🥇 Kie.ai (utama — gratis 5.000 kredit)</option>

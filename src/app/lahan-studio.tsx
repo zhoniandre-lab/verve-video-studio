@@ -2903,6 +2903,9 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                 <textarea
                   className="lh-ta"
                   rows={3}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : sunoProv === "apiframe" ? "afk_xxx\nafk_yyy" : "kunci_baris_1\nkunci_baris_2"}
                   value={keyDraft}
                   onChange={(e) => setKeyDraft(e.target.value)}
