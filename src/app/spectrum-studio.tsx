@@ -556,6 +556,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setSunoTitle(title);
     void loadAudio(url, title);
     if (duration) setDuration(duration);
+    // 🐛 v20.46 FIX: setelah Suno selesai → auto ke Video review (step 1) supaya user LANGSUNG lihat
+    // canvas spektrum dengan audio barunya — bukan stuck di step Musik tanpa preview.
+    setStep(1);
   }
 
   async function loadAudio(url: string, name: string) {
