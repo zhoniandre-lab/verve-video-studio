@@ -1333,7 +1333,10 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (url) {
       const u = await laguUtuh(pd);
       if (u.notice) setTtsMsg(u.notice);
-      finishSong({ url: u.url || url, title: pd.title || selTitle || (songNiche ? "Lagu AI" : "Audio AI"), duration: pd.duration, image: pd.image_url });
+      const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
+      const clips = pilihKlipDariHasil(pd);
+      const singleDur = clips[0]?.duration || (pd.duration && clips.length ? Number(pd.duration) / clips.length : Number(pd.duration));
+      finishSong({ url: u.url || url, title: pd.title || selTitle || (songNiche ? "Lagu AI" : "Audio AI"), duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined, image: pd.image_url });
       return "done";
     }
     if (pd.status === "error" || pd.error) throw new Error(pd.error || "Provider gagal generate");
@@ -1655,7 +1658,10 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
     if (j.audio_url || j.audio_urls?.length) { // provider langsung kasih audio tanpa polling
       const u = await laguUtuh(j); // 🎵 v19.77: satu lagu (versi A)
       if (u.notice) setTtsMsg(u.notice);
-      finishSong({ url: u.url || j.audio_url, title: j.title || selTitle, duration: isFinite(dur) && dur > 0 ? dur : undefined, image: j.image_url });
+      const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
+      const clips = pilihKlipDariHasil(j);
+      const singleDur = clips[0]?.duration || (j.duration && clips.length ? Number(j.duration) / clips.length : dur);
+      finishSong({ url: u.url || j.audio_url, title: j.title || selTitle, duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined, image: j.image_url });
       return;
     }
     const id = j.id || j.taskId || j.task_id;

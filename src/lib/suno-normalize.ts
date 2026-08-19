@@ -202,7 +202,7 @@ export function normalizeKie(d: any): HasilNormal {
       clips,
       title: clips[0]?.title || first.title || "",
       image_url: clips[0]?.image_url || first.imageUrl || "",
-      duration: clips[0]?.duration ?? first.duration,
+      duration: clips[0]?.duration ?? (first.duration && clips.length ? first.duration / clips.length : first.duration),
     };
   }
   if (st.includes("FAIL") || st.includes("ERROR")) {
@@ -255,7 +255,7 @@ export function normalizeSunor(d: any): HasilNormal {
       clips,
       title: clips[0]?.title || first.title || d0.title || "",
       image_url: clips[0]?.image_url || first.image_url || first.imageUrl || first.cover_url || "",
-      duration: clips[0]?.duration ?? first.duration,
+      duration: clips[0]?.duration ?? (first.duration && clips.length ? first.duration / clips.length : first.duration),
     };
   }
   if (st === "failure" || st === "error" || st === "failed" || st === "timeout") {
@@ -284,7 +284,7 @@ export function normalizeGeneric(d: any): HasilNormal {
     clips,
     title: clips[0]?.title || first.title || d.title || "",
     image_url: clips[0]?.image_url || first.image_url || first.cover || first.image || d.image_url || "",
-    duration: clips[0]?.duration ?? first.duration,
+    duration: clips[0]?.duration ?? (first.duration && clips.length ? first.duration / clips.length : first.duration),
   };
 }
 
