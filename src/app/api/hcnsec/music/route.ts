@@ -81,6 +81,28 @@ function getCreds(req: Request) {
 }
 
 function buildBody(payload: any, provider: Provider): any {
+  const result = buildBodyRaw(payload, provider);
+  if (result && typeof result === "object") {
+    const audioUrl = payload.audio_url || payload.audioUrl || "";
+    const continueAt = payload.continue_at !== undefined ? Number(payload.continue_at) : undefined;
+    if (audioUrl) {
+      if (provider === "kie" || provider === "sunoapi") {
+        result.audioUrl = audioUrl;
+        if (continueAt !== undefined) result.continueAt = continueAt;
+      } else if (provider === "sunor") {
+        if (!result.input) result.input = {};
+        result.input.audio_url = audioUrl;
+        if (continueAt !== undefined) result.input.continue_at = continueAt;
+      } else {
+        result.audio_url = audioUrl;
+        if (continueAt !== undefined) result.continue_at = continueAt;
+      }
+    }
+  }
+  return result;
+}
+
+function buildBodyRaw(payload: any, provider: Provider): any {
   // Dukung payload "Kampung-style" yang pisah title, lyrics, deskripsi utama
   const rawTitle = (payload._raw_title || payload.title || "").toString().trim();
   const rawLyrics = (payload._raw_lyrics || payload.lyrics || "").toString().trim();
