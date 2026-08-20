@@ -29,11 +29,12 @@ function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().to
 function fmtD(s: number): string { if (!isFinite(s) || s < 0) s = 0; const m = Math.floor(s / 60), sec = Math.floor(s % 60); return `${m}:${String(sec).padStart(2, "0")}`; }
 function clampN(v: number, a: number, b: number): number { return Math.max(a, Math.min(b, v)); }
 function proxify(url: string): string {
-  if (!url || url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("/")) return url;
+  if (!url) return url;
+  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("/")) return url;
   try {
-    const h = new URL(url).hostname.toLowerCase();
-    const need = h.includes("kie.ai") || h.includes("suno") || h.includes("apiframe") || h.includes("sunor") || h.includes("r2.dev") || h.includes("cdn");
-    return need ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}` : url;
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return url;
+    return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
   } catch { return url; }
 }
 function downloadBlobX(b: Blob, name: string) {

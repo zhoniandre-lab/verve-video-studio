@@ -42,6 +42,16 @@ function detectProvClient(k: string, fallback: string): string {
   return fallback;
 }
 
+function proxify(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("/")) return url;
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return url;
+    return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
+  } catch { return url; }
+}
+
 type SunoKey = { key: string; provider: string };
 type Props = {
   defaultTitle?: string;
