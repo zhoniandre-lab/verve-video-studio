@@ -70,8 +70,37 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploadingRef(true);
-    setStatus("⏳ Sedang mengunggah audio referensi ke Cloud Brankas...");
+    setStatus("⏳ Sedang mengunggah audio referensi ke Cloud...");
     try {
+      // 1. Coba UPLOAD LANGSUNG lewat client-side Supabase (bebas limit 4.5MB Vercel)
+      try {
+        const { createClient } = await import("@/lib/supabase");
+        const supabase = createClient();
+        const d = new Date();
+        const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const safeName = file.name.replace(/[^\w\- .]+/g, "").replace(/\s+/g, "_");
+        const path = `media/audio/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}/${stamp}_${safeName}`;
+        
+        const { data, error } = await supabase.storage
+          .from("verve-brankas")
+          .upload(path, file, { cacheControl: "31536000", upsert: false });
+          
+        if (data && !error) {
+          const { data: pubData } = supabase.storage.from("verve-brankas").getPublicUrl(path);
+          setAudioUrlRef(pubData.publicUrl);
+          setStatus("✅ Audio referensi berhasil diunggah langsung ke Cloud!");
+          setIsUploadingRef(false);
+          return;
+        }
+      } catch (errClient) {
+        console.warn("Client upload failed, trying server fallback...", errClient);
+      }
+
+      // 2. FALLBACK: Upload lewat server-side proxy (menggunakan Admin Service Role Key)
+      if (file.size > 4.5 * 1024 * 1024) {
+        throw new Error("File melebihi batas 4.5MB Vercel. Silakan gunakan file berukuran lebih kecil, atau pastikan RLS Supabase Storage-mu diatur untuk memperbolehkan upload publik.");
+      }
+      
       const reader = new FileReader();
       reader.onload = async () => {
         const base64 = reader.result as string;
@@ -88,14 +117,14 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           const j = await r.json().catch(() => ({}));
           if (!r.ok || !j.url) throw new Error(j?.error || "Gagal upload.");
           setAudioUrlRef(j.url);
-          setStatus("✅ Audio referensi berhasil diunggah & dipasang!");
+          setStatus("✅ Audio referensi berhasil diunggah via server!");
         } catch (err: any) {
           setStatus(`❌ Gagal upload audio ke Cloud: ${err?.message || err}`);
         }
       };
       reader.readAsDataURL(file);
     } catch (e: any) {
-      setStatus(`❌ Gagal membaca file: ${e?.message || e}`);
+      setStatus(`❌ Gagal: ${e?.message || e}`);
     } finally {
       setIsUploadingRef(false);
     }
