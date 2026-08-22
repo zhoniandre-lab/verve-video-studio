@@ -121,6 +121,26 @@ export async function POST(req: Request) {
     if (byteLen(rawText) > CLOUD_BACKUP_MAX_BYTES * 1.25) return NextResponse.json({ ok: false, error: "Payload terlalu besar untuk Cloud Brankas tahap ini." }, { status: 413 });
     const body = JSON.parse(rawText || "{}");
 
+    // Upload file lokal via base64
+    if (body.file && body.mime) {
+      const base64Data = body.file.split(",")[1] || body.file;
+      const ab = Buffer.from(base64Data, "base64");
+      if (ab.byteLength > CLOUD_MEDIA_MAX_BYTES) return NextResponse.json({ ok: false, error: `Ukuran file ${(ab.byteLength / 1048576).toFixed(1)}MB melebihi batas ${(CLOUD_MEDIA_MAX_BYTES / 1048576).toFixed(0)}MB.` }, { status: 413 });
+      await ensureBucket(a.supabase);
+      const rawKind = mediaKindFromMime(body.mime);
+      const kind = rawKind === "video" || rawKind === "image" ? rawKind : "audio";
+      const fileName = String(body.fileName || `upload_${Date.now()}.${mediaExtFromMime(body.mime) || "bin"}`);
+      const path = cloudMediaPath(fileName, kind, Date.now(), body.mime);
+      const up = await a.supabase.storage.from(CLOUD_BRANKAS_BUCKET).upload(path, new Blob([ab], { type: body.mime }), {
+        contentType: body.mime,
+        cacheControl: "31536000",
+        upsert: false,
+      });
+      if (up.error) throw up.error;
+      const pub = a.supabase.storage.from(CLOUD_BRANKAS_BUCKET).getPublicUrl(path);
+      return NextResponse.json({ ok: true, url: pub.data.publicUrl, path, bytes: ab.byteLength });
+    }
+
     // Tahap media: salin URL audio/video online ke Supabase Storage agar link provider yang kedaluwarsa punya salinan cloud.
     if (body.mediaUrl) {
       const mediaUrl = String(body.mediaUrl || "");

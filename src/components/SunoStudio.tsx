@@ -64,6 +64,42 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [audioUrlRef, setAudioUrlRef] = useState("");
   const [continueAt, setContinueAt] = useState("0");
   const [isExtendMode, setIsExtendMode] = useState(false);
+  const [isUploadingRef, setIsUploadingRef] = useState(false);
+
+  const handleUploadRefFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingRef(true);
+    setStatus("⏳ Sedang mengunggah audio referensi ke Cloud Brankas...");
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result as string;
+        try {
+          const r = await fetch("/api/hcnsec/brankas", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file: base64,
+              mime: file.type || "audio/mpeg",
+              fileName: file.name
+            })
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || !j.url) throw new Error(j?.error || "Gagal upload.");
+          setAudioUrlRef(j.url);
+          setStatus("✅ Audio referensi berhasil diunggah & dipasang!");
+        } catch (err: any) {
+          setStatus(`❌ Gagal upload audio ke Cloud: ${err?.message || err}`);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (e: any) {
+      setStatus(`❌ Gagal membaca file: ${e?.message || e}`);
+    } finally {
+      setIsUploadingRef(false);
+    }
+  };
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<any>(null);
@@ -515,6 +551,11 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
               <label className="gd-field wide" style={{ margin: 0 }}>
                 <span>URL Lagu Referensi</span>
                 <input value={audioUrlRef} onChange={(e) => setAudioUrlRef(e.target.value)} placeholder="Tempel URL audio/lagu Suno asli di sini..." />
+              </label>
+              <span style={{ fontSize: 10, color: "#8b8b98", textAlign: "center" }}>— ATAU UPLOAD FILE AUDIO REFERENSI (MP3/WAV) DARI HP —</span>
+              <label className="v6-chip" style={{ display: "block", textAlign: "center", padding: "8px", background: "rgba(139,92,246,0.12)", border: "1px dashed rgba(139,92,246,0.5)", cursor: isUploadingRef ? "wait" : "pointer" }}>
+                <span>{isUploadingRef ? "⏳ Sedang Mengupload..." : "📤 Upload Audio HP (.mp3/.wav)"}</span>
+                <input type="file" accept="audio/*" hidden disabled={isUploadingRef} onChange={handleUploadRefFile} />
               </label>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 10.5, color: "#8b8b98", fontWeight: "bold" }}>Mulai Lanjutkan di Detik ke-</span>
