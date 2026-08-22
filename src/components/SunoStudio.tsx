@@ -70,20 +70,54 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploadingRef(true);
-    setStatus("⏳ Sedang mengunggah audio referensi ke Cloud...");
+    setStatus("⏳ Membaca & mereduksi ukuran audio agar cepat diunggah...");
     try {
-      // 1. Coba UPLOAD LANGSUNG lewat client-side Supabase (bebas limit 4.5MB Vercel)
+      let uploadBlob: Blob = file;
+      let uploadMime = file.type || "audio/mpeg";
+      let uploadName = file.name;
+
+      // 1. Dekode & kompres audio ke mono 16000Hz maks 60 detik agar ukuran file sangat kecil (≈1.8MB)
+      // Ini menjamin upload selalu sukses melewati limit 4.5MB Vercel di semua koneksi!
+      try {
+        const AC = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AC();
+        const arrayBuffer = await file.arrayBuffer();
+        const decodedBuffer = await ctx.decodeAudioData(arrayBuffer);
+        
+        const maxSeconds = 60;
+        const trimDuration = Math.min(decodedBuffer.duration, maxSeconds);
+        const targetRate = 16000;
+        const outLen = Math.round(trimDuration * targetRate);
+        const monoBuffer = ctx.createBuffer(1, outLen, targetRate);
+        const srcData = decodedBuffer.getChannelData(0);
+        const dstData = monoBuffer.getChannelData(0);
+        const step = decodedBuffer.sampleRate / targetRate;
+        for (let i = 0; i < outLen; i++) {
+          dstData[i] = srcData[Math.min(srcData.length - 1, Math.floor(i * step))];
+        }
+        
+        const { bufferToWav } = await import("@/lib/gabung-audio");
+        const wavBytes = bufferToWav(monoBuffer);
+        uploadBlob = new Blob([wavBytes], { type: "audio/wav" });
+        uploadMime = "audio/wav";
+        uploadName = file.name.replace(/\.[^.]+$/, "") + "_trimmed.wav";
+        ctx.close();
+      } catch (errDecode) {
+        console.warn("Gagal mereduksi audio (mungkin browser lama), mencoba upload file asli...", errDecode);
+      }
+
+      // 2. Coba UPLOAD LANGSUNG lewat client-side Supabase (bebas limit Vercel)
       try {
         const { createClient } = await import("@/lib/supabase");
         const supabase = createClient();
         const d = new Date();
         const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const safeName = file.name.replace(/[^\w\- .]+/g, "").replace(/\s+/g, "_");
+        const safeName = uploadName.replace(/[^\w\- .]+/g, "").replace(/\s+/g, "_");
         const path = `media/audio/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}/${stamp}_${safeName}`;
         
         const { data, error } = await supabase.storage
           .from("verve-brankas")
-          .upload(path, file, { cacheControl: "31536000", upsert: false });
+          .upload(path, uploadBlob, { cacheControl: "31536000", upsert: false });
           
         if (data && !error) {
           const { data: pubData } = supabase.storage.from("verve-brankas").getPublicUrl(path);
@@ -91,14 +125,16 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           setStatus("✅ Audio referensi berhasil diunggah langsung ke Cloud!");
           setIsUploadingRef(false);
           return;
+        } else if (error) {
+          console.warn("Supabase client upload error, trying server fallback:", error);
         }
       } catch (errClient) {
-        console.warn("Client upload failed, trying server fallback...", errClient);
+        console.warn("Client upload exception, trying server fallback...", errClient);
       }
 
-      // 2. FALLBACK: Upload lewat server-side proxy (menggunakan Admin Service Role Key)
-      if (file.size > 4.5 * 1024 * 1024) {
-        throw new Error("File melebihi batas 4.5MB Vercel. Silakan gunakan file berukuran lebih kecil, atau pastikan RLS Supabase Storage-mu diatur untuk memperbolehkan upload publik.");
+      // 3. FALLBACK: Upload lewat server-side proxy (menggunakan Admin Service Role Key)
+      if (uploadBlob.size > 4.5 * 1024 * 1024) {
+        throw new Error("File melebihi batas 4.5MB Vercel. Silakan gunakan file berukuran lebih kecil.");
       }
       
       const reader = new FileReader();
@@ -110,8 +146,8 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               file: base64,
-              mime: file.type || "audio/mpeg",
-              fileName: file.name
+              mime: uploadMime,
+              fileName: uploadName
             })
           });
           const j = await r.json().catch(() => ({}));
@@ -122,7 +158,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           setStatus(`❌ Gagal upload audio ke Cloud: ${err?.message || err}`);
         }
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(uploadBlob);
     } catch (e: any) {
       setStatus(`❌ Gagal: ${e?.message || e}`);
     } finally {
