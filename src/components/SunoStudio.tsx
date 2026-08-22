@@ -60,111 +60,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [recordingElapsed, setRecordingElapsed] = useState<number>(0);
   const [mixingBusy, setMixingBusy] = useState<boolean>(false);
 
-  // 🔗 Aransemen Lanjutan / Remix (Method 2) States
-  const [audioUrlRef, setAudioUrlRef] = useState("");
-  const [continueAt, setContinueAt] = useState("0");
-  const [isExtendMode, setIsExtendMode] = useState(false);
-  const [isUploadingRef, setIsUploadingRef] = useState(false);
 
-  const handleUploadRefFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploadingRef(true);
-    setStatus("⏳ Membaca & mereduksi ukuran audio agar cepat diunggah...");
-    try {
-      let uploadBlob: Blob = file;
-      let uploadMime = file.type || "audio/mpeg";
-      let uploadName = file.name;
-
-      // 1. Dekode & kompres audio ke mono 16000Hz maks 35 detik agar ukuran file sangat kecil (≈1.1MB)
-      // Ini menjamin upload selalu sukses melewati limit 4.5MB Vercel di semua koneksi!
-      try {
-        const AC = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AC();
-        const arrayBuffer = await file.arrayBuffer();
-        const decodedBuffer = await ctx.decodeAudioData(arrayBuffer);
-        
-        const maxSeconds = 35;
-        const trimDuration = Math.min(decodedBuffer.duration, maxSeconds);
-        const targetRate = 16000;
-        const outLen = Math.round(trimDuration * targetRate);
-        const monoBuffer = ctx.createBuffer(1, outLen, targetRate);
-        const srcData = decodedBuffer.getChannelData(0);
-        const dstData = monoBuffer.getChannelData(0);
-        const step = decodedBuffer.sampleRate / targetRate;
-        for (let i = 0; i < outLen; i++) {
-          dstData[i] = srcData[Math.min(srcData.length - 1, Math.floor(i * step))];
-        }
-        
-        const { bufferToWav } = await import("@/lib/gabung-audio");
-        const wavBytes = bufferToWav(monoBuffer);
-        uploadBlob = new Blob([wavBytes], { type: "audio/wav" });
-        uploadMime = "audio/wav";
-        uploadName = file.name.replace(/\.[^.]+$/, "") + "_trimmed.wav";
-        ctx.close();
-      } catch (errDecode) {
-        console.warn("Gagal mereduksi audio (mungkin browser lama), mencoba upload file asli...", errDecode);
-      }
-
-      // 2. Coba UPLOAD LANGSUNG lewat client-side Supabase (bebas limit Vercel)
-      try {
-        const { createClient } = await import("@/lib/supabase");
-        const supabase = createClient();
-        const d = new Date();
-        const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const safeName = uploadName.replace(/[^\w\- .]+/g, "").replace(/\s+/g, "_");
-        const path = `media/audio/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}/${stamp}_${safeName}`;
-        
-        const { data, error } = await supabase.storage
-          .from("verve-brankas")
-          .upload(path, uploadBlob, { cacheControl: "31536000", upsert: false });
-          
-        if (data && !error) {
-          const { data: pubData } = supabase.storage.from("verve-brankas").getPublicUrl(path);
-          setAudioUrlRef(pubData.publicUrl);
-          setStatus("✅ Audio referensi berhasil diunggah langsung ke Cloud!");
-          setIsUploadingRef(false);
-          return;
-        } else if (error) {
-          console.warn("Supabase client upload error, trying server fallback:", error);
-        }
-      } catch (errClient) {
-        console.warn("Client upload exception, trying server fallback...", errClient);
-      }
-
-      // 3. FALLBACK: Upload lewat server-side proxy (menggunakan Admin Service Role Key)
-      if (uploadBlob.size > 4.5 * 1024 * 1024) {
-        throw new Error("File melebihi batas 4.5MB Vercel. Silakan gunakan file berukuran lebih kecil.");
-      }
-      
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result as string;
-        try {
-          const r = await fetch("/api/hcnsec/brankas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              file: base64,
-              mime: uploadMime,
-              fileName: uploadName
-            })
-          });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok || !j.url) throw new Error(j?.error || "Gagal upload.");
-          setAudioUrlRef(j.url);
-          setStatus("✅ Audio referensi berhasil diunggah via server!");
-        } catch (err: any) {
-          setStatus(`❌ Gagal upload audio ke Cloud: ${err?.message || err}`);
-        }
-      };
-      reader.readAsDataURL(uploadBlob);
-    } catch (e: any) {
-      setStatus(`❌ Gagal: ${e?.message || e}`);
-    } finally {
-      setIsUploadingRef(false);
-    }
-  };
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<any>(null);
@@ -398,8 +294,6 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           model, instrumental,
           vocalGender: vokal === "male" ? "male" : vokal === "female" ? "female" : undefined,
           _raw_title: title.trim(), _raw_style: style.trim(), _raw_lyrics: lyrics.trim(),
-          audio_url: isExtendMode && audioUrlRef.trim() ? audioUrlRef.trim() : undefined,
-          continue_at: isExtendMode && continueAt ? Number(continueAt) : undefined,
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -606,33 +500,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           <textarea className="v6-inp v6-ta" rows={4} style={{ minHeight: 90 }} value={lyrics} onChange={(e) => setLyrics(e.target.value)} placeholder={"Tulis lirik (≥30 huruf biar mode custom aktif)…\n[Verse]\nIbu…"} />
         </label>
 
-        {/* Metode 2: Aransemen Lanjutan (Extend / Remix) */}
-        <div style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: 10, background: "rgba(0,0,0,0.15)", marginBottom: 12 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <input type="checkbox" checked={isExtendMode} onChange={(e) => setIsExtendMode(e.target.checked)} />
-            <b style={{ fontSize: 11, color: isExtendMode ? "#c4b5fd" : "#8b8b98" }}>🔗 Aktifkan Aransemen Lanjutan (Extend / Remix)</b>
-          </label>
-          {isExtendMode && (
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-              <label className="gd-field wide" style={{ margin: 0 }}>
-                <span>URL Lagu Referensi</span>
-                <input value={audioUrlRef} onChange={(e) => setAudioUrlRef(e.target.value)} placeholder="Tempel URL audio/lagu Suno asli di sini..." />
-              </label>
-              <span style={{ fontSize: 10, color: "#8b8b98", textAlign: "center" }}>— ATAU UPLOAD FILE AUDIO REFERENSI (MP3/WAV) DARI HP —</span>
-              <label className="v6-chip" style={{ display: "block", textAlign: "center", padding: "8px", background: "rgba(139,92,246,0.12)", border: "1px dashed rgba(139,92,246,0.5)", cursor: isUploadingRef ? "wait" : "pointer" }}>
-                <span>{isUploadingRef ? "⏳ Sedang Mengupload..." : "📤 Upload Audio HP (.mp3/.wav)"}</span>
-                <input type="file" accept="audio/*" hidden disabled={isUploadingRef} onChange={handleUploadRefFile} />
-              </label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 10.5, color: "#8b8b98", fontWeight: "bold" }}>Mulai Lanjutkan di Detik ke-</span>
-                <input type="number" className="v6-inp" style={{ width: 80, margin: 0, padding: "4px 8px", textAlign: "center" }} value={continueAt} onChange={(e) => setContinueAt(e.target.value)} />
-              </div>
-              <p style={{ fontSize: 9.5, color: "#8b8b98", margin: "2px 0 0", lineHeight: 1.35 }}>
-                Suno akan mengambil melodi & aransemen dari lagu referensi di atas, lalu melanjutkannya dengan lirik baru yang kamu tulis.
-              </p>
-            </div>
-          )}
-        </div>
+
         <div className="v6-lbl" style={{ marginTop: 6 }}>VOKAL</div>
         <div className="v6-chips" style={{ padding: 0 }}>
           {([["auto", "🎤 Auto"], ["male", "👨 Pria"], ["female", "👩 Wanita"], ["instrumental", "🎹 Instrumen"]] as const).map(([id, lb]) => (
@@ -683,7 +551,6 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
           <audio controls preload="metadata" src={hasil.previewUrl || srcAman(hasil.url)} style={{ width: "100%", margin: "4px 0" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button className="v6-bigcta" style={{ flex: 1, padding: "10px", background: "#22c55e", color: "#052e16" }} onClick={simpanHasil}>📥 Download MP3</button>
-            <button className="v6-chip" style={{ flex: 1, padding: "10px", height: "auto", border: "1px solid rgba(139,92,246,.5)", borderRadius: 10, background: "none", color: "#c4b5fd", cursor: "pointer", fontWeight: 700 }} onClick={() => { setAudioUrlRef(hasil.url); setIsExtendMode(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>🔗 Lanjutkan Lagu Ini (Extend)</button>
           </div>
           <p style={{ fontSize: 10.5, color: "#8b8b98", marginTop: 6 }}>Lagu dipakai apa adanya dari provider (satu file, satu gaya). Tidak disambung ke versi lain.</p>
           
