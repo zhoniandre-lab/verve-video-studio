@@ -76,7 +76,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
       let uploadMime = file.type || "audio/mpeg";
       let uploadName = file.name;
 
-      // 1. Dekode & kompres audio ke mono 16000Hz maks 60 detik agar ukuran file sangat kecil (≈1.8MB)
+      // 1. Dekode & kompres audio ke mono 16000Hz maks 35 detik agar ukuran file sangat kecil (≈1.1MB)
       // Ini menjamin upload selalu sukses melewati limit 4.5MB Vercel di semua koneksi!
       try {
         const AC = window.AudioContext || (window as any).webkitAudioContext;
@@ -84,7 +84,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         const arrayBuffer = await file.arrayBuffer();
         const decodedBuffer = await ctx.decodeAudioData(arrayBuffer);
         
-        const maxSeconds = 60;
+        const maxSeconds = 35;
         const trimDuration = Math.min(decodedBuffer.duration, maxSeconds);
         const targetRate = 16000;
         const outLen = Math.round(trimDuration * targetRate);

@@ -118,8 +118,15 @@ export async function POST(req: Request) {
 
   try {
     const rawText = await req.text();
-    if (byteLen(rawText) > CLOUD_BACKUP_MAX_BYTES * 1.25) return NextResponse.json({ ok: false, error: "Payload terlalu besar untuk Cloud Brankas tahap ini." }, { status: 413 });
+    const len = byteLen(rawText);
     const body = JSON.parse(rawText || "{}");
+
+    const isMedia = !!(body.file && body.mime) || !!body.mediaUrl;
+    const maxLimit = isMedia ? CLOUD_MEDIA_MAX_BYTES * 1.35 : CLOUD_BACKUP_MAX_BYTES * 1.25;
+
+    if (len > maxLimit) {
+      return NextResponse.json({ ok: false, error: "Payload terlalu besar untuk Cloud Brankas tahap ini." }, { status: 413 });
+    }
 
     // Upload file lokal via base64
     if (body.file && body.mime) {
