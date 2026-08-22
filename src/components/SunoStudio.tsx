@@ -584,6 +584,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, padding: "0 4px" }}>
           <span style={{ fontSize: 10.5, color: "#8b8b98", alignSelf: "center", fontWeight: "bold" }}>Aransemen Cepat (Preset):</span>
           {[
+            { label: "🎻 Padang Melayu", style: "padang minang melayu pop, traditional saluang bamboo flute, emotional sweet malay violin strings, acoustic guitar, soft frame drums, sad nostalgic vibe, syahdu, high quality" },
             { label: "🕌 Arab", style: "arabic desert pop, oud, darbuka, middle eastern scale, emotional, high quality" },
             { label: "🥁 Koplo", style: "dangdut koplo, kendang, rampak, indonesian upbeat, energetic, high quality" },
             { label: "🎸 Rock", style: "symphonic rock, melodic electric guitar, powerful drums, intense, high quality" },
