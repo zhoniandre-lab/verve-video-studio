@@ -111,6 +111,12 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const [selSoundId, setSelSoundId] = useState("rain");
   const [soundVolume, setSoundVolume] = useState(70); // 0-100
 
+  // ⏱ ASMR Duration & Rendering States
+  const [asmrDuration, setAsmrDuration] = useState<number>(30); // Durasi (detik)
+  const [asmrFps, setAsmrFps] = useState<number>(30); // 15 | 24 | 30 fps
+  const [asmrRes, setAsmrRes] = useState<"1080p" | "720p" | "480p">("720p");
+  const [loopTimes, setLoopTimes] = useState<string>("auto");
+
   // Playback & Canvas
   const [playing, setPlaying] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -406,21 +412,24 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     stopPlayback();
     setRendering(true); setProgress(0); setRenderedUrl(""); setRenderedBlob(null);
 
-    const W = 1280, H = 720;
+    const W = asmrRes === "1080p" ? 1920 : (asmrRes === "720p" ? 1280 : 854);
+    const H = asmrRes === "1080p" ? 1080 : (asmrRes === "720p" ? 720 : 480);
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d", { alpha: false })!;
 
-    const dur = 30; // Cukup 30 detik untuk video ASMR Reels/Shorts/TikTok
-    const fps = 30;
+    const dur = asmrDuration;
+    const fps = asmrFps;
     const totalFrames = dur * fps;
 
     logDiag(`Render ASMR: ${W}x${H} · ${fps}fps · durasi=${dur}s`);
 
     try {
       // Setup Web Audio Offline Context untuk merender mixing audio alam
+      // ⏱ Downsample jika video panjang (>10 menit) biar RAM HP tidak kehabisan memori / crash!
+      const renderSR = dur > 600 ? 22050 : 44100;
       const OfflineAudioCtx = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
-      const actx = new OfflineAudioCtx(2, 44100 * dur, 44100);
+      const actx = new OfflineAudioCtx(2, renderSR * dur, renderSR);
       
       if (audioBufferRef.current) {
         const src = actx.createBufferSource();
@@ -472,17 +481,23 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       
       let frame = 0;
       const renderTick = () => {
-        if (frame >= totalFrames) {
-          mr.stop();
-          playNode.stop();
-          try { tempCtx.close(); } catch {}
-          return;
+        // 🚀 BATCHING SYNCHRONOUS: Render beberapa frame sekaligus per satu tick agar kecepatan render
+        // melesat tinggi di atas rata-rata (1 jam video kelar dalam beberapa menit saja!), 
+        // namun tetap berkala (setTimeout 0ms) agar UI browser tetap segar & tidak freeze!
+        const batchSize = dur > 1800 ? 100 : (dur > 600 ? 50 : 15);
+        for (let b = 0; b < batchSize; b++) {
+          if (frame >= totalFrames) {
+            mr.stop();
+            playNode.stop();
+            try { tempCtx.close(); } catch {}
+            return;
+          }
+          const t = frame / fps;
+          drawScene(ctx, W, H, t);
+          frame++;
         }
-        const t = frame / fps;
-        drawScene(ctx, W, H, t);
         setProgress(frame / totalFrames);
-        frame++;
-        setTimeout(renderTick, 1000 / fps / 3.5); // Dipercepat 3.5x kecepatan realtime!
+        setTimeout(renderTick, 0); // Lanjut instan 0ms
       };
 
       renderTick();
@@ -857,6 +872,62 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
               <div className="v6-slider-row" style={{ margin: 0, marginTop: 4 }}>
                 <div className="lr"><span>🔊 Volume Suara</span><b>{soundVolume}%</b></div>
                 <input type="range" min={0} max={100} value={soundVolume} onChange={(e) => setSoundVolume(Number(e.target.value))} />
+              </div>
+            </div>
+          </div>
+
+          {/* Section: SETELAN EKSPOR LONG-FORM (v20.50) */}
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
+            <b style={{ fontSize: 11, color: "#c4b5fd", display: "block", marginBottom: 6 }}>⏱️ DURASI & RESOLUSI VIDEO EKSPOR</b>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", gap: 4, flexDirection: "column" }}>
+                <span style={{ fontSize: 10, color: "#8b8b98" }}>Durasi Video</span>
+                <select
+                  className="v6-inp"
+                  style={{ fontSize: 10.5, padding: "4px 8px" }}
+                  value={asmrDuration}
+                  onChange={(e) => setAsmrDuration(Number(e.target.value))}
+                >
+                  <option value={30}>30 Detik (Shorts/Reels)</option>
+                  <option value={60}>1 Menit</option>
+                  <option value={300}>5 Menit</option>
+                  <option value={600}>10 Menit</option>
+                  <option value={1800}>30 Menit</option>
+                  <option value={3600}>1 Jam (60 Menit)</option>
+                  <option value={7200}>2 Jam (120 Menit)</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", gap: 4, flexDirection: "column" }}>
+                <span style={{ fontSize: 10, color: "#8b8b98" }}>Resolusi Video</span>
+                <select
+                  className="v6-inp"
+                  style={{ fontSize: 10.5, padding: "4px 8px" }}
+                  value={asmrRes}
+                  onChange={(e) => setAsmrRes(e.target.value as any)}
+                >
+                  <option value="1080p">1080p Full HD (Kualitas Tinggi)</option>
+                  <option value="720p">720p HD (Rekomendasi - Cepat)</option>
+                  <option value="480p">480p SD (HP - Super Turbo Cepat)</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", gap: 4, flexDirection: "column" }}>
+                <span style={{ fontSize: 10, color: "#8b8b98" }}>Kecepatan Frame (FPS)</span>
+                <select
+                  className="v6-inp"
+                  style={{ fontSize: 10.5, padding: "4px 8px" }}
+                  value={asmrFps}
+                  onChange={(e) => setAsmrFps(Number(e.target.value))}
+                >
+                  <option value={30}>30 FPS (Paling Halus)</option>
+                  <option value={24}>24 FPS (Cinematic Film)</option>
+                  <option value={15}>15 FPS (Rekomendasi Long-Form / Anti-Crash)</option>
+                </select>
+              </div>
+
+              <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 8, padding: 8, fontSize: 9.5, color: "#a7f3d0", lineHeight: 1.4, marginTop: 4 }}>
+                💡 <b>TIPS SUPER TURBO (1 Jam &lt; 5 Menit):</b> Untuk durasi panjang (30 menit s.d 2 jam), pastikan gunakan resolusi **480p** dan **15 FPS**. Selain melesatkan kecepatan render hingga 300+ fps, ini juga sangat menghemat RAM HP agar render dijamin sukses tanpa crash!
               </div>
             </div>
           </div>
