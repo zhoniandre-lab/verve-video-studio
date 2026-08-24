@@ -9,6 +9,7 @@ const studio = readFileSync(new URL("../src/components/SunoStudio.tsx", import.m
 const panel = readFileSync(new URL("../src/components/SunoPanel.tsx", import.meta.url), "utf8");
 const lahan = readFileSync(new URL("../src/app/lahan-studio.tsx", import.meta.url), "utf8");
 const health = readFileSync(new URL("../src/app/api/hcnsec/music/health/route.ts", import.meta.url), "utf8");
+const credit = readFileSync(new URL("../src/app/api/hcnsec/music-credit/route.ts", import.meta.url), "utf8");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -32,6 +33,8 @@ T("route: base sunoapi.org", /api\.sunoapi\.org\/api\/v1/.test(route));
 T("route: base evolink", /api\.evolink\.ai/.test(route));
 T("route: base cometapi", /api\.cometapi\.com/.test(route));
 T("route: base ttapi", /api\.ttapi\.io/.test(route));
+T("route: AIMusicAPI create memakai /sonic/create", /provider === "aimusicapi"\) \{[\s\S]*?\/api\/v1\/sonic\/create/.test(route));
+T("route: AIMusicAPI poll memakai /sonic/task", /provider === "aimusicapi"\) return \[`\$\{base\}\/api\/v1\/sonic\/task/.test(route));
 T("route: generate evolink /v1/audios/generations", /\/v1\/audios\/generations/.test(route));
 T("route: poll evolink /v1/tasks/", /\/v1\/tasks\//.test(route));
 T("route: generate comet /suno/submit/music", /\/suno\/submit\/music/.test(route));
@@ -43,6 +46,9 @@ T("route: TT-API-KEY header", /TT-API-KEY/.test(route));
 T("route: sunoapi generate pakai /generate kayak Kie", /provider === "kie" \|\| provider === "sunoapi"/.test(route) && /return \[`\$\{base\}\/generate`\]/.test(route));
 T("route: TTAPI tidak boleh nyasar ke /v1/suno/generate", !/ttapi[\s\S]{0,80}v1\/suno\/generate/.test(route));
 T("route: apiframe TETAP ditolak", /provider === "apiframe"/.test(route));
+T("MusicAPI/AIMusicAPI kirim task_type create_music", /task_type: "create_music"/.test(route));
+T("MusicAPI/AIMusicAPI pakai mapper model provider", /mapModelMusicApi/.test(route) && /mapModelAimusicApi/.test(route));
+T("Bearer yang ditempel case-insensitive tidak dobel", /function stripBearer/.test(route));
 
 /* ---- normalize ---- */
 T("normalize: ProvLagu berisi 4 baru", /"sunoapi"/.test(norm) && /"evolink"/.test(norm) && /"cometapi"/.test(norm) && /"ttapi"/.test(norm));
@@ -56,6 +62,7 @@ T("health cek 4 provider baru", /sunoapi/.test(health) && /evolink/.test(health)
 T("health tetap cek kie+sunor+apiframe", /kie/.test(health) && /sunor/.test(health) && /apiframe/.test(health));
 T("health jalan paralel", /Promise\.all/.test(health));
 T("health timeout 6s", /setTimeout\(\(\) => ctrl\.abort\(\), 6000\)/.test(health));
+T("cek kredit MusicAPI/AIMusicAPI memakai endpoint get-credits", /musicapi:.*get-credits/.test(credit) && /aimusicapi:.*get-credits/.test(credit));
 
 /* ---- normalizer murni (inline, tanpa typescript) ---- */
 function clipsDari(d) {

@@ -270,12 +270,14 @@ export function normalizeGeneric(d: any): HasilNormal {
   const first = items[0] || d || {};
   const clips = clipsDariRespons(d); // 🎵 v19.77: tiap URL = 1 versi, bukan segmen
   const audioUrl = clips[0]?.url || cariAudioRekursif(first) || cariAudioRekursif(d);
-  let status = (first.status || d.status || "pending").toString().toLowerCase();
-  if (audioUrl && (status === "pending" || status === "processing" || status === "submitted" || status === "queued")) {
+  // MusicAPI/AIMusicAPI menyebut status task sebagai `state`, bukan `status`.
+  const rawStatus = first.status || first.state || d.status || d.state || "pending";
+  let status = String(rawStatus).toLowerCase();
+  if (audioUrl && (status === "pending" || status === "processing" || status === "submitted" || status === "queued" || status === "running")) {
     status = "completed";
   }
-  if (/complete|success|done/i.test(status)) status = "completed";
-  if (/error|fail/i.test(status)) status = "error";
+  if (/complete|success|succeed|done/i.test(status)) status = "completed";
+  if (/error|fail|cancel/i.test(status)) status = "error";
   return {
     id: first.id || d.id || d.task_id || "",
     status: status as any,
@@ -285,6 +287,7 @@ export function normalizeGeneric(d: any): HasilNormal {
     title: clips[0]?.title || first.title || d.title || "",
     image_url: clips[0]?.image_url || first.image_url || first.cover || first.image || d.image_url || "",
     duration: clips[0]?.duration ?? (first.duration && clips.length ? first.duration / clips.length : first.duration),
+    error: status === "error" ? String(first.error || first.message || d.error || d.message || status) : undefined,
   };
 }
 
@@ -386,37 +389,63 @@ export function audioProbeCukup(p: ProbeAudio): boolean {
   return p.bytes > 2048;
 }
 
+/** Model key seragam: UI lama memakai underscore (V4_5PLUS), provider memakai titik/hyphen. */
+function normalisasiModel(modelId: string, fallback = "v5.5"): string {
+  return String(modelId || fallback)
+    .toLowerCase()
+    .replace(/_/g, ".")
+    .replace(/v(\d+)-(\d+)/g, "v$1.$2");
+}
+
 /** Peta model ke format Kie. */
 export function mapModelKie(modelId: string): string {
-  const m = String(modelId || "v5.5").toLowerCase();
-  if (m.includes("v5.5") || m.includes("v5_5")) return "V5_5";
+  const m = normalisasiModel(modelId);
+  if (m.includes("v5.5")) return "V5_5";
   if (m.includes("v5")) return "V5";
-  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "V4_5PLUS";
-  if (m.includes("v4.5all") || (m.includes("v4.5") && m.includes("all"))) return "V4_5ALL";
+  if (m.includes("v4.5plus")) return "V4_5PLUS";
+  if (m.includes("v4.5all")) return "V4_5ALL";
   if (m.includes("v4.5")) return "V4_5";
   if (m.includes("v4")) return "V4";
-  if (m.includes("v3.5") || m.includes("v3_5")) return "V3_5";
+  if (m.includes("v3.5")) return "V3_5";
   return "V5_5";
 }
 
 /** Peta model ke format generik suno-compatible. */
 export function mapModelGeneric(modelId: string): string {
-  const m = String(modelId || "v5.5").toLowerCase();
+  const m = normalisasiModel(modelId);
   if (m.includes("v5.5")) return "suno-v5.5";
   if (m.includes("v5")) return "suno-v5";
+  if (m.includes("v4.5plus")) return "suno-v4.5plus";
+  if (m.includes("v4.5all")) return "suno-v4.5all";
   if (m.includes("v4.5")) return "suno-v4.5";
   if (m.includes("v4")) return "suno-v4";
   if (m.includes("v3.5")) return "chirp-v3.5";
   return m;
 }
 
+/** Peta model MusicAPI (sonic-v*). */
+export function mapModelMusicApi(modelId: string): string {
+  const m = normalisasiModel(modelId);
+  if (m.includes("v5.5")) return "sonic-v5-5";
+  if (m.includes("v5")) return "sonic-v5";
+  if (m.includes("v4.5plus")) return "sonic-v4-5-plus";
+  if (m.includes("v4.5")) return "sonic-v4-5";
+  if (m.includes("v4")) return "sonic-v4";
+  return "sonic-v3-5";
+}
+
+/** Peta model AIMusicAPI (kontrak Sonic memakai sonic-v* pada reference API). */
+export function mapModelAimusicApi(modelId: string): string {
+  return mapModelMusicApi(modelId);
+}
+
 /** 🎵 v19.78 EvoLink: suno-v5.5-beta dst. */
 export function mapModelEvolink(modelId: string): string {
-  const m = String(modelId || "v5.5").toLowerCase();
-  if (m.includes("v5.5") || m.includes("v5_5")) return "suno-v5.5-beta";
+  const m = normalisasiModel(modelId);
+  if (m.includes("v5.5")) return "suno-v5.5-beta";
   if (m.includes("v5")) return "suno-v5-beta";
-  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "suno-v4.5plus-beta";
-  if (m.includes("v4.5all") || (m.includes("v4.5") && m.includes("all"))) return "suno-v4.5all-beta";
+  if (m.includes("v4.5plus")) return "suno-v4.5plus-beta";
+  if (m.includes("v4.5all")) return "suno-v4.5all-beta";
   if (m.includes("v4.5")) return "suno-v4.5-beta";
   if (m.includes("v4")) return "suno-v4-beta";
   return "suno-v5.5-beta";
@@ -424,22 +453,24 @@ export function mapModelEvolink(modelId: string): string {
 
 /** 🎵 v19.78 CometAPI mv: chirp-crow = v5, chirp-auk = v4.5. */
 export function mapModelComet(modelId: string): string {
-  const m = String(modelId || "v5").toLowerCase();
-  if (m.includes("v5.5") || m.includes("v5_5") || m.includes("v5")) return "chirp-crow";
+  const m = normalisasiModel(modelId, "v5");
+  if (m.includes("v5.5") || m.includes("v5")) return "chirp-crow";
+  if (m.includes("v4.5plus")) return "chirp-bluejay";
   if (m.includes("v4.5")) return "chirp-auk";
   if (m.includes("v4")) return "chirp-v4";
-  if (m.includes("v3.5") || m.includes("v3_5")) return "chirp-v3-5";
+  if (m.includes("v3.5")) return "chirp-v3-5";
   return "chirp-crow";
 }
 
-/** 🎵 v19.78 TTAPI mv: chirp-v5-5 / chirp-v5. */
+/** 🎵 v19.78 TTAPI mv: names from the current TTAPI enum. */
 export function mapModelTtapi(modelId: string): string {
-  const m = String(modelId || "v5.5").toLowerCase();
-  if (m.includes("v5.5") || m.includes("v5_5")) return "chirp-v5-5";
+  const m = normalisasiModel(modelId);
+  if (m.includes("v5.5")) return "chirp-v5-5";
   if (m.includes("v5")) return "chirp-v5";
-  if (m.includes("v4.5plus") || (m.includes("v4.5") && m.includes("plus"))) return "chirp-v4-5-plus";
+  if (m.includes("v4.5plus")) return "chirp-v4-5+";
+  if (m.includes("v4.5all")) return "chirp-v4-5-all";
   if (m.includes("v4.5")) return "chirp-v4-5";
   if (m.includes("v4")) return "chirp-v4";
-  if (m.includes("v3.5") || m.includes("v3_5")) return "chirp-v3-5";
+  if (m.includes("v3.5")) return "chirp-v3-5";
   return "chirp-v5-5";
 }

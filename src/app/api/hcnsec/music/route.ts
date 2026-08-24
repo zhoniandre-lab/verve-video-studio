@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
 import { gerbangFitur } from "../../../../lib/setelan";
-import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelEvolink, mapModelComet, mapModelTtapi, audioProbeCukup } from "../../../../lib/suno-normalize";
+import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelMusicApi, mapModelAimusicApi, mapModelEvolink, mapModelComet, mapModelTtapi, audioProbeCukup } from "../../../../lib/suno-normalize";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -50,7 +50,8 @@ export const PROVIDER_MATI: Record<string, string> = {
 
 function detectProvider(rawKey: string, hdrProvider?: string): Provider {
   if (hdrProvider && PROVIDERS[hdrProvider as Provider]) return hdrProvider as Provider;
-  const k = rawKey.toLowerCase().trim();
+  // Prefix Bearer/bearer bukan bagian key dan tidak boleh menggagalkan auto-detect.
+  const k = stripBearer(rawKey).toLowerCase();
   if (k.startsWith("kie") || k.startsWith("sk-kie")) return "kie";
   if (k.startsWith("snr_") || k.startsWith("sunor_") || k.startsWith("sk_live")) return "sunor"; // v10.5: kunci asli Sunor = sk_live_…
   if (k.startsWith("afk_") || k.startsWith("af_")) return "apiframe";
@@ -73,8 +74,12 @@ function getCreds(req: Request) {
   const envKey = process.env.SUNO_API_KEY || process.env.MUSIC_API_KEY || "";
   const envBase = process.env.SUNO_BASE_URL || "";
   const key = (hdrKey || envKey || "").trim();
+  const explicitProvider = !!(hdrProvider && PROVIDERS[hdrProvider as Provider]);
   const provider = detectProvider(key, hdrProvider);
-  let base = hdrBase || envBase;
+  // URL env lama hanya berlaku untuk mode server-key. Kalau UI mengirim
+  // provider yang dipilih user, wajib gunakan base provider tersebut; kalau
+  // tidak, semua provider selain default bisa nyasar ke endpoint Kie.
+  let base = hdrBase || (!explicitProvider ? envBase : "");
   if (!base) base = PROVIDERS[provider].base;
   base = base.replace(/\/$/, "");
   return { key, base, provider };
@@ -174,30 +179,31 @@ function buildBodyRaw(payload: any, provider: Provider): any {
   // 🎵 v19.69 MUSICAPI & AIMUSICAPI — Suno-compatible (Bearer key, kredit gratis)
   // 🐛 v19.74 FIX KUALITAS: dulu pakai sonic-v3-5 (LEGACY) → hasil 'band jelek',
   // nggak patuh prompt. Sekarang pilih MODEL TERBARU sesuai pilihan user:
-  //   musicapi: sonic-v5 (terbaik) / sonic-v4-5 (vokal+gender) / v4 / v3-5
-  //   aimusicapi: chirp-v5 / chirp-v4-5 / chirp-v4 / chirp-v3-5
-  // Tags: v4.5+ limit 1000 char → kirim sampai 480 (detail style lebih utuh,
-  // dulu dipotong 190 karena v3-5 cuma 200). gpt_description_prompt max 400.
+  //   musicapi & aimusicapi: sonic-v5/sonic-v4-5/sonic-v4/sonic-v3-5
+  // Model V4_5PLUS/V5_5 dipetakan ke nama Sonic resmi, bukan nama model UI.
+  // Tags: v4.5+ limit 1000 char; description mode tetap dibatasi agar kompatibel.
   if (provider === "musicapi" || provider === "aimusicapi") {
-    const modelKey = String(model || "v5").toLowerCase();
-    const mv = provider === "musicapi"
-      ? (modelKey.includes("v5") ? "sonic-v5" : modelKey.includes("v4.5") ? "sonic-v4-5" : modelKey.includes("v4") ? "sonic-v4" : "sonic-v3-5")
-      : (modelKey.includes("v5") ? "chirp-v5" : modelKey.includes("v4.5") ? "chirp-v4-5" : modelKey.includes("v4") ? "chirp-v4" : "chirp-v3-5");
-    const tagsPenuh = styleStr.slice(0, 480);
+    // MusicAPI dan AIMusicAPI memakai kontrak Sonic yang sama. Sebelumnya
+    // task_type hilang, model V4_5PLUS salah menjadi V4, dan field `model`
+    // ekstra ikut dikirim; sebagian akun membalas validation/auth error.
+    const mv = provider === "musicapi" ? mapModelMusicApi(model) : mapModelAimusicApi(model);
+    const tagsPenuh = styleStr.slice(0, 1000);
     const body: any = {
+      task_type: "create_music",
       custom_mode: isCustom,
-      title: finalTitle,
-      tags: tagsPenuh,
-      make_instrumental: !!instrumental,
       mv,
-      model: mapModelGeneric(model),
+      make_instrumental: !!instrumental,
     };
     if (isCustom) {
       body.prompt = finalLyrics.slice(0, 5000);
-      body.style = tagsPenuh;
+      body.title = finalTitle;
       body.tags = tagsPenuh;
+      if (vocalGender === "male") body.vocal_gender = "m";
+      else if (vocalGender === "female") body.vocal_gender = "f";
     } else {
-      body.gpt_description_prompt = finalPrompt.slice(0, 380);
+      // Description mode memakai gpt_description_prompt; title/tags/style
+      // tidak dikirim agar sesuai schema provider dan tidak dianggap custom.
+      body.gpt_description_prompt = finalPrompt.slice(0, 500);
     }
     return body;
   }
@@ -236,14 +242,20 @@ function buildBodyRaw(payload: any, provider: Provider): any {
 
   // 🎵 v19.78 EVOLINK — POST /v1/audios/generations
   if (provider === "evolink") {
-    return {
+    const body: any = {
       model: mapModelEvolink(model),
       custom_mode: isCustom,
       instrumental: !!instrumental,
-      title: finalTitle,
-      style: styleStr.slice(0, 480),
-      prompt: isCustom ? finalLyrics.slice(0, 5000) : finalPrompt.slice(0, 2000),
+      prompt: isCustom ? finalLyrics.slice(0, 5000) : finalPrompt.slice(0, 500),
     };
+    // EvoLink menolak style/title pada simple mode; keduanya hanya untuk custom.
+    if (isCustom) {
+      body.title = finalTitle;
+      body.style = styleStr.slice(0, 1000);
+      if (vocalGender === "male") body.vocal_gender = "m";
+      else if (vocalGender === "female") body.vocal_gender = "f";
+    }
+    return body;
   }
 
   // 🎵 v19.78 COMETAPI — POST /suno/submit/music
@@ -332,36 +344,52 @@ async function cekUrlAudioValid(url: string, headers: Record<string,string>): Pr
   return { ok: false, msg: `file audio tidak valid/kosong (${tanpa?.bytes ?? 0} byte) — link provider rusak/kadaluarsa atau cuma stub kosong.` };
 }
 
+function stripBearer(value: string): string {
+  let out = String(value || "").replace(/^\uFEFF/, "").trim();
+  // Toleransi paste berupa `Authorization: Bearer ...`, `Bearer ...`,
+  // atau token yang ikut dibungkus tanda kutip dari JSON/dashboard.
+  out = out.replace(/^Authorization\s*:\s*/i, "").trim();
+  if ((out.startsWith("\"") && out.endsWith("\"")) || (out.startsWith("'") && out.endsWith("'"))) {
+    out = out.slice(1, -1).trim();
+  }
+  out = out.replace(/^Bearer\s+/i, "").trim();
+  if ((out.startsWith("\"") && out.endsWith("\"")) || (out.startsWith("'") && out.endsWith("'"))) {
+    out = out.slice(1, -1).trim();
+  }
+  return out;
+}
+
 function buildHeaders(key: string, provider?: Provider): Record<string,string> {
   const h: Record<string,string> = { "Content-Type": "application/json" };
   if (!key) return h;
-  // 🎵 v19.61: Suno Resmi pakai COOKIE (session suno.com), bukan Authorization
+  // 🎵 v19.61: Suno Resmi pakai COOKIE (session suno.com), bukan Authorization.
   if (provider === "suno-resmi") {
-    h["Cookie"] = key;
+    h["Cookie"] = stripBearer(key);
     return h;
   }
-  // 🎵 v19.64 Mureka + v19.69 MusicAPI + v19.78 EvoLink/Comet: Authorization Bearer
-  if (provider === "mureka" || provider === "musicapi" || provider === "aimusicapi" || provider === "evolink" || provider === "cometapi") {
-    h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${key.replace(/^Bearer\s+/i, "")}`;
-    return h;
-  }
-  const rawKey = key.replace(/^Bearer\s+/i, "");
-  // 🎵 v19.78 TTAPI wajib header TT-API-KEY
+  // Semua provider Bearer dinormalisasi case-insensitive. Sebelumnya paste
+  // "bearer sk-..." menghasilkan "Bearer bearer sk-..." dan pasti 401.
+  const rawKey = stripBearer(key);
+  // 🎵 v19.78 TTAPI wajib header TT-API-KEY (Authorization hanya cadangan).
   if (provider === "ttapi") {
     h["TT-API-KEY"] = rawKey;
-    h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
+    h["Authorization"] = `Bearer ${rawKey}`;
     return h;
   }
-  h["Authorization"] = key.startsWith("Bearer ") ? key : `Bearer ${rawKey}`;
-  h["apikey"] = rawKey;
-  h["x-api-key"] = rawKey;
+  // Sunor membaca x-api-key; provider lain memakai Bearer. Header tambahan
+  // untuk provider Sunor dipertahankan agar key lama tetap kompatibel.
+  if (provider === "sunor") {
+    h["x-api-key"] = rawKey;
+    h["apikey"] = rawKey;
+  }
+  h["Authorization"] = `Bearer ${rawKey}`;
   return h;
 }
 
 function getEndpoints(provider: Provider, base: string, forStatus?: string): string[] {
   if (forStatus) {
     if (provider === "musicapi") return [`${base}/api/v1/sonic/task/${forStatus}`]; // 🎵 v19.69 (terverifikasi 401=hidup)
-    if (provider === "aimusicapi") return [`${base}/api/v1/suno/task/${forStatus}`]; // 🎵 v19.69 (terverifikasi 401=hidup)
+    if (provider === "aimusicapi") return [`${base}/api/v1/sonic/task/${forStatus}`]; // 🎵 API reference AIMusicAPI
     if (provider === "mureka") return [`${base}/v1/song/query/${forStatus}`]; // 🎵 v19.64 GET /v1/song/query/{task_id}
     if (provider === "suno-resmi") return [`${base}/api/v1/feed/${forStatus}`, `${base}/api/v1/feed/${forStatus}/clips`]; // 🎵 v19.61
     if (provider === "sunor") return [`${base}/api/v1/task/${forStatus}`]; // v10.5: GET task/{id}
@@ -393,7 +421,7 @@ function getEndpoints(provider: Provider, base: string, forStatus?: string): str
     return [`${base}/api/v1/sonic/create`]; // 🎵 v19.69 (terverifikasi 401=hidup)
   }
   if (provider === "aimusicapi") {
-    return [`${base}/api/v1/suno/create`]; // 🎵 v19.69 (terverifikasi 401=hidup)
+    return [`${base}/api/v1/sonic/create`]; // 🎵 API reference AIMusicAPI
   }
   if (provider === "kie" || provider === "sunoapi") {
     return [`${base}/generate`];
@@ -463,9 +491,14 @@ export async function POST(req: Request) {
 
         if (!r.ok) {
           if (r.status === 401 || r.status === 403) {
-            const msg = provider === "kie"
-              ? `API Key Kie.ai invalid/expired. Cek key di dashboard kie.ai ya bro.`
-              : `API Key invalid. Cek di dashboard ${PROVIDERS[provider].label}.`;
+            // Sebagian provider memakai 403 untuk kredit habis, bukan auth.
+            if (r.status === 403 && /credit|quota|balance|subscription|insufficient/i.test(txt)) {
+              return NextResponse.json({
+                error: `Kredit ${PROVIDERS[provider].label} habis atau akun belum aktif. Cek saldo/dashboard provider, lalu coba lagi.`,
+                status: "quota_error", provider,
+              }, { status: 402 });
+            }
+            const msg = `API key ${PROVIDERS[provider].label} ditolak. Pastikan key dibuat di dashboard ${PROVIDERS[provider].label} (bukan key provider lain), lalu tempel tokennya tanpa kata Bearer atau tanda kutip.`;
             return NextResponse.json({ error: msg, status: "auth_error", provider }, { status: 401 });
           }
           if (r.status === 402) {
@@ -496,16 +529,23 @@ export async function POST(req: Request) {
 
         const n = normalize(data, provider);
         if (n.status === "error") {
-          // 💳 v10.4: kredit/saldo habis kadang datang sebagai HTTP 200 ber-code error (bukan 402).
-          // Kenali → petakan ke 402 quota_error + pesan Indonesia, supaya klien membuka panel kunci,
-          // BUKAN memuntahkan bahasa mentah Inggris seperti 'Credits insufficient'.
-          if (/insufficient|not enough|balance|quota|kredit/i.test(String(n.error))) {
+          const providerError = String(n.error || data?.msg || data?.message || "");
+          const providerCode = Number(data?.code);
+          // Beberapa gateway mengirim HTTP 200 dengan code=401/403/402.
+          if (providerCode === 401 || /unauthori[sz]|authentication.*(?:fail|required)|api.?key.*(?:incorrect|invalid)|invalid.*(?:api.?key|token)|missing.*(?:api.?key|authorization)|no token provided/i.test(providerError)) {
             return NextResponse.json({
-              error: `Kredit ${PROVIDERS[provider].label} habis bro — provider bilang saldo tidak cukup untuk request ini. Top up saldo di dashboard ${PROVIDERS[provider].label}, atau tambah kunci/provider lain lewat 🔑 Setelan API Key di langkah ini.`,
+              error: `API key ${PROVIDERS[provider].label} ditolak. Pastikan key dibuat di dashboard ${PROVIDERS[provider].label} (bukan key provider lain), lalu tempel tokennya tanpa kata Bearer atau tanda kutip.`,
+              status: "auth_error", provider,
+            }, { status: 401 });
+          }
+          // 💳 Kredit/saldo habis kadang datang sebagai HTTP 200 ber-code error.
+          if (providerCode === 402 || /insufficient|not enough|balance|quota|kredit/i.test(providerError)) {
+            return NextResponse.json({
+              error: `Kredit ${PROVIDERS[provider].label} habis atau saldo tidak cukup. Cek dashboard, atau tambah kunci/provider lain lewat 🔑 Setelan API Key.`,
               status: "quota_error", provider,
             }, { status: 402 });
           }
-          lastErr = `${url}: ${n.error}`; continue;
+          lastErr = `${url}: ${providerError}`; continue;
         }
         if (n.id || n.audio_url) {
           n.provider = provider;

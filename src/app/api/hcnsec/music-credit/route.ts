@@ -15,11 +15,16 @@ const BASE: Record<string, string> = {
   // 🐛 FIX v19.35.6: Sunor API ada di sunor.cc (subdomain api.sunor.cc MATI di DNS)
   sunor: "https://sunor.cc/api/v1",
   sunoapi: "https://api.sunoapi.org/api/v1",
+  musicapi: "https://api.musicapi.ai/api/v1",
+  aimusicapi: "https://api.aimusicapi.ai/api/v1",
 };
 const PROBE: Record<string, string[]> = {
   kie: ["/chat/credit", "/credit", "/user/credit"],
-  sunor: ["/user/credits", "/credits", "/credit"],
-  sunoapi: ["/chat/credit", "/credit", "/user/credit"],
+  sunor: ["/account/balance", "/user/credits", "/credits", "/credit"],
+  sunoapi: ["/generate/credit", "/chat/credit", "/credit", "/user/credit"],
+  // Endpoint resmi keduanya sama-sama /get-credits.
+  musicapi: ["/get-credits"],
+  aimusicapi: ["/get-credits"],
 };
 
 function mask(k: string): string {
@@ -38,7 +43,7 @@ function findCredit(d: unknown): number | null {
   if (!d || typeof d !== "object") return null;
   const rec = d as AnyRec;
   const data = (rec.data && typeof rec.data === "object" ? rec.data : {}) as AnyRec;
-  const cands = [data.credit, data.balance, data.credits, data.quota, rec.credit, rec.balance, rec.credits, rec.quota];
+  const cands = [data.credit, data.balance, data.credits, data.quota, rec.data, rec.credit, rec.balance, rec.credits, rec.quota];
   for (const c of cands) {
     const n = pickNumber(c);
     if (n != null) return n;
@@ -58,7 +63,10 @@ export async function POST(req: Request) {
 
     const results: { key: string; status: "ok" | "unknown"; credit?: number; msg?: string }[] = [];
     for (const rawKey of keys.slice(0, 5)) {
-      const key = String(rawKey || "").trim().replace(/^Bearer\s+/i, "");
+      let key = String(rawKey || "").replace(/^\uFEFF/, "").trim();
+      key = key.replace(/^Authorization\s*:\s*/i, "").trim();
+      if ((key.startsWith("\"") && key.endsWith("\"")) || (key.startsWith("'") && key.endsWith("'"))) key = key.slice(1, -1).trim();
+      key = key.replace(/^Bearer\s+/i, "").trim();
       if (!key) continue;
       let done = false;
       for (const p of PROBE[provider]) {

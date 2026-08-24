@@ -7,7 +7,17 @@ import ts from "typescript";
 const enc = (s) => `data:text/javascript;base64,${Buffer.from(s).toString("base64")}`;
 const srcTs = readFileSync(new URL("../src/lib/suno-normalize.ts", import.meta.url), "utf8");
 const js = ts.transpileModule(srcTs, { compilerOptions: { module: ts.ModuleKind.ES2020, target: ts.ScriptTarget.ES2020 } }).outputText;
-const { normalizeLagu, cariAudioRekursif, kumpulAudioRekursif } = await import(enc(js));
+const {
+  normalizeLagu,
+  cariAudioRekursif,
+  kumpulAudioRekursif,
+  mapModelKie,
+  mapModelMusicApi,
+  mapModelAimusicApi,
+  mapModelEvolink,
+  mapModelComet,
+  mapModelTtapi,
+} = await import(enc(js));
 
 let gagal = 0;
 const T = (nama, ok, info = "") => { console.log(`${ok ? "✅" : "❌"} ${nama}${info ? " — " + info : ""}`); if (!ok) gagal++; };
@@ -78,6 +88,20 @@ T("kumpulAudioRekursif tembus nested (2 kemunculan, dedupe di normalize)", kumpu
 /* 13. Kie multi-segmen juga */
 const mk = normalizeLagu({ code: 200, data: { status: "SUCCESS", response: { sunoData: [ { audioUrl: "https://k/1.mp3" }, { audioUrl: "https://k/2.mp3" } ] } } }, "kie");
 T("Kie multi-segmen: audio_urls = 2", Array.isArray(mk.audio_urls) && mk.audio_urls.length === 2, String(mk.audio_urls?.length));
+
+/* 14. Model UI underscore harus dipetakan ke nama model provider yang valid. */
+T("model V4_5PLUS → Kie V4_5PLUS", mapModelKie("V4_5PLUS") === "V4_5PLUS");
+T("model V4_5PLUS → MusicAPI sonic-v4-5-plus", mapModelMusicApi("V4_5PLUS") === "sonic-v4-5-plus");
+T("model V4_5PLUS → AIMusicAPI sonic-v4-5-plus", mapModelAimusicApi("V4_5PLUS") === "sonic-v4-5-plus");
+T("model V5_5 → MusicAPI sonic-v5-5", mapModelMusicApi("V5_5") === "sonic-v5-5");
+T("model V4_5PLUS → EvoLink beta", mapModelEvolink("V4_5PLUS") === "suno-v4.5plus-beta");
+T("model V4_5PLUS → Comet bluejay", mapModelComet("V4_5PLUS") === "chirp-bluejay");
+T("model V4_5PLUS → TTAPI v4-5+", mapModelTtapi("V4_5PLUS") === "chirp-v4-5+");
+
+const sonicPoll = normalizeLagu({ code: 200, data: [{ clip_id: "m1", state: "succeeded", audio_url: "https://cdn/music.mp3", duration: 180 }] }, "musicapi");
+T("MusicAPI state=succeeded → completed", sonicPoll.status === "completed" && sonicPoll.audio_url === "https://cdn/music.mp3");
+const sonicFail = normalizeLagu({ code: 200, data: [{ clip_id: "m1", state: "failed", message: "quota" }] }, "musicapi");
+T("MusicAPI state=failed → error", sonicFail.status === "error");
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI NORMALISASI GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI NORMALISASI HIJAU — polling bisa mengekstrak hasil dari semua format!");
