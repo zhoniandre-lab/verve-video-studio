@@ -36,6 +36,8 @@ type LayerAsmr = {
   flipH: boolean;
   flipV: boolean;
   speed: number;
+  trimIn: number;
+  trimOut: number;
   animation: "none" | "float" | "pulse" | "sway";
   animationAmount: number;
   brightness: number;
@@ -158,6 +160,7 @@ function makeVideoElement(src: string): HTMLVideoElement {
   el.loop = true;
   el.playsInline = true;
   el.preload = "auto";
+  if (/^https?:\/\//.test(src)) el.crossOrigin = "anonymous";
   el.src = src;
   void el.play().catch(() => {});
   return el;
@@ -274,6 +277,8 @@ function inflateLayer(raw: Partial<LayerAsmr>): LayerAsmr {
     flipH: !!raw.flipH,
     flipV: !!raw.flipV,
     speed: Number.isFinite(Number(raw.speed)) ? Math.max(.25, Math.min(3, Number(raw.speed))) : 1,
+    trimIn: Number.isFinite(Number(raw.trimIn)) ? Math.max(0, Number(raw.trimIn)) : 0,
+    trimOut: Number.isFinite(Number(raw.trimOut)) ? Math.max(0, Number(raw.trimOut)) : 0,
     animation: raw.animation === "float" || raw.animation === "pulse" || raw.animation === "sway" ? raw.animation : "none",
     animationAmount: Number.isFinite(Number(raw.animationAmount)) ? Math.max(0, Math.min(100, Number(raw.animationAmount))) : 30,
     brightness: Number.isFinite(Number(raw.brightness)) ? Math.max(50, Math.min(150, Number(raw.brightness))) : 100,
@@ -524,6 +529,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
 
   const [layers, setLayers] = useState<LayerAsmr[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState("");
+  const [layerDurations, setLayerDurations] = useState<Record<string, number>>({});
   const [stockQuery, setStockQuery] = useState("rain window");
   const [stockResults, setStockResults] = useState<StockClip[]>([]);
   const [stockBusy, setStockBusy] = useState(false);
@@ -597,6 +603,30 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     setRenderedMime("");
   }
 
+  function bindVideoMetadata(layerId: string, element?: HTMLVideoElement) {
+    if (!element) return;
+    const mark = () => {
+      if (Number.isFinite(element.duration) && element.duration > 0) {
+        setLayerDurations((old) => ({ ...old, [layerId]: element.duration }));
+      }
+    };
+    element.addEventListener("loadedmetadata", mark);
+    if (element.readyState >= 1) mark();
+  }
+
+  function trimEndFor(layer: LayerAsmr): number {
+    const full = layerDurations[layer.id] || layer.el?.duration || 0;
+    return full > 0 ? Math.min(full, layer.trimOut > 0 ? layer.trimOut : full) : Math.max(.1, layer.trimOut || 1);
+  }
+
+  function trimRangeStyle(layer: LayerAsmr): { left: string; right: string } {
+    const full = layerDurations[layer.id] || layer.el?.duration || 0;
+    if (full <= 0) return { left: "0%", right: "0%" };
+    const start = Math.max(0, Math.min(100, (layer.trimIn / full) * 100));
+    const end = Math.max(start, Math.min(100, (trimEndFor(layer) / full) * 100));
+    return { left: `${start}%`, right: `${100 - end}%` };
+  }
+
   // Load saved ASMR-only project. Uploaded blob URLs are intentionally not
   // restored because their underlying file disappears after a page reload.
   useEffect(() => {
@@ -620,6 +650,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         if (Number.isFinite(saved.motionSpeed)) setMotionSpeed(Math.max(.2, Math.min(2, Number(saved.motionSpeed))));
         if (Array.isArray(saved.layers)) {
           const restored = saved.layers.filter((layer) => layer && !(layer.type === "video" && String(layer.src || "").startsWith("blob:"))).map(inflateLayer);
+          restored.forEach((layer) => bindVideoMetadata(layer.id, layer.el));
           setLayers(restored);
           if (typeof saved.selectedLayerId === "string") setSelectedLayerId(restored.some((layer) => layer.id === saved.selectedLayerId) ? saved.selectedLayerId : restored[0]?.id || "");
         }
@@ -835,6 +866,21 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       const anchorY = Math.max(0, Math.min(1, layer.anchorY ?? .5));
       if (layer.type === "video" && layer.el && layer.el.readyState >= 2) {
         layer.el.playbackRate = Math.max(.25, Math.min(3, layer.speed || 1));
+        const fullDuration = layerDurations[layer.id] || layer.el.duration || 0;
+        if (fullDuration > 0) {
+          const trimIn = Math.max(0, Math.min(fullDuration - .05, layer.trimIn || 0));
+          const trimOut = Math.max(trimIn + .05, Math.min(fullDuration, layer.trimOut > 0 ? layer.trimOut : fullDuration));
+          if (layer.el.currentTime < trimIn) {
+            try { layer.el.currentTime = trimIn; } catch {}
+          } else if (layer.el.currentTime >= trimOut) {
+            if (layer.el.loop !== false) {
+              try { layer.el.currentTime = trimIn; } catch {}
+            } else {
+              try { layer.el.currentTime = Math.max(trimIn, trimOut - .05); layer.el.pause(); } catch {}
+            }
+          }
+          if (playing && layer.el.loop !== false && layer.el.paused) void layer.el.play().catch(() => {});
+        }
         drawVideoWithMatting(ctx, layer, -layerWidth * anchorX, -layerHeight * anchorY, layerWidth, layerHeight);
       } else if (layer.type === "effect") {
         ctx.translate(-layerWidth * anchorX, -layerHeight * anchorY);
@@ -868,7 +914,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         ctx.restore();
       }
     }
-  }, [layers, selectedLayerId, motionMode, motionStrength, motionSpeed, bgBrightness, bgContrast, bgSaturation, bgBlur]);
+  }, [layers, selectedLayerId, motionMode, motionStrength, motionSpeed, bgBrightness, bgContrast, bgSaturation, bgBlur, layerDurations, playing]);
 
   const drawPreviewFrame = useCallback(() => {
     const canvas = cvRef.current;
@@ -997,7 +1043,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     const layer: LayerAsmr = {
       id: uid("layer"), name: windowMask ? "🌧️ Hujan di Kaca Jendela" : meta.label, type: "effect", effect, src: "", visible: true,
       width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
-      speed: 1, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      speed: 1, trimIn: 0, trimOut: 0, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
       keyMode: "none", keyThreshold: 28, keySoftness: 24,
       blendMode: effect === "fire" ? "lighter" : "screen", opacity: effect === "fog" ? 42 : 72,
       maskOn: windowMask, maskX: .27, maskY: .12, maskW: 620, maskH: 350,
@@ -1013,19 +1059,23 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     const layer: LayerAsmr = {
       id: uid("layer"), name: file.name, type: "video", src, visible: true,
       width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
-      speed: 1, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      speed: 1, trimIn: 0, trimOut: 0, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
       keyMode: "none", keyThreshold: 28, keySoftness: 24,
       blendMode: "screen", opacity: 78, maskOn: false, maskX: .25, maskY: .25, maskW: 360, maskH: 260,
       el: makeVideoElement(src),
     };
+    bindVideoMetadata(layer.id, layer.el);
     setLayers((old) => [...old, layer]);
     setSelectedLayerId(layer.id);
-    setNotice("Video overlay ditambahkan. Atur opacity/masker di panel kanan.");
+    setNotice("Video overlay ditambahkan. Atur potongan, opacity, masker, dan posisi di panel kanan.");
   }
 
   function stockMediaSrc(url: string): string {
     if (!url) return "";
     if (url.startsWith("/")) return url;
+    // Pexels menyediakan CORS dan bisa diputar/seek langsung. Pixabay/Coverr
+    // sudah direwrite route menjadi /api/hcnsec/proxy-audio.
+    if (/videos\.pexels\.com/i.test(url)) return url;
     return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
   }
 
@@ -1080,7 +1130,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       type: "video", src, visible: true,
       width: fireRole ? 42 : 100, height: fireRole ? 42 : 100, lockRatio: true,
       posX: 0, posY: fireRole ? 170 : 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
-      speed: 1, animation: "none", animationAmount: 20, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      speed: 1, trimIn: 0, trimOut: 0, animation: "none", animationAmount: 20, brightness: 100, contrast: 100, saturation: 100, blur: 0,
       // Screen adalah mode ringan untuk hitam; pixel key bisa diaktifkan manual
       // dari tab AI Matting bila file punya background yang lebih kompleks.
       keyMode: "none", keyThreshold: 28, keySoftness: 24,
@@ -1088,6 +1138,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       maskOn: rainRole, maskX: .27, maskY: .12, maskW: 620, maskH: 350,
       el: makeVideoElement(src),
     };
+    bindVideoMetadata(layer.id, layer.el);
     setLayers((old) => [...old, layer]);
     setSelectedLayerId(layer.id);
     setToolTab("video");
@@ -1104,6 +1155,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       posY: layer.posY + 18,
       el: layer.type === "video" && layer.src ? makeVideoElement(layer.src) : undefined,
     };
+    bindVideoMetadata(copy.id, copy.el);
     setLayers((old) => [...old, copy]);
     setSelectedLayerId(copy.id);
   }
@@ -1446,7 +1498,37 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
 
           {toolTab === "audio" && <section className="asmr-panel"><div className="asmr-panel-title"><span className="asmr-step">AUDIO</span><div><b>Suara ambience</b><small>Loop otomatis sepanjang durasi video</small></div></div><select className="asmr-select" value={soundId} onChange={(e) => setSoundId(e.target.value)}><option value="custom">📁 {soundName || "Audio HP"}</option>{PRESET_SOUNDS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><p className="asmr-help">{soundId === "custom" ? "Audio milikmu sendiri." : PRESET_SOUNDS.find((item) => item.id === soundId)?.desc}</p><label className="asmr-upload compact"><strong>🎙️ Upload audio dari HP</strong><span>WAV/MP3/OGG/M4A · loop otomatis</span><input type="file" accept="audio/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleSoundFile(file); e.currentTarget.value = ""; }} /></label><label className="asmr-range"><span><b>Volume ambience</b><strong>{soundVolume}%</strong></span><input type="range" min={0} max={100} value={soundVolume} onChange={(e) => setSoundVolume(Number(e.target.value))} /></label><div className={`asmr-audio-status ${soundReady ? "ready" : ""}`}>{soundLoading ? "⏳ Memuat audio…" : soundReady ? `✅ ${soundName} siap diputar & diloop` : soundError || "🔇 Belum ada audio — ekspor tetap bisa tanpa suara"}</div></section>}
 
-          {toolTab === "speed" && <section className="asmr-panel"><div className="asmr-panel-title"><span className="asmr-step">SPEED</span><div><b>Kecepatan & durasi</b><small>Atur durasi video dan speed layer overlay</small></div></div>{activeLayer && <><label className="asmr-range"><span><b>Speed layer {activeLayer.type === "video" ? "video" : "efek"}</b><strong>{(activeLayer.speed || 1).toFixed(2)}×</strong></span><input type="range" min={.25} max={3} step={.05} value={activeLayer.speed || 1} onChange={(e) => updateLayer(activeLayer.id, { speed: Number(e.target.value) })} /></label><p className="asmr-help">Speed ini hanya memengaruhi layer yang dipilih, bukan fitur video lain.</p></>}{activeLayer?.type === "video" && <label className="asmr-range"><span><b>Loop overlay</b><strong>{activeLayer.el?.loop === false ? "OFF" : "ON"}</strong></span><input type="checkbox" checked={activeLayer.el?.loop !== false} onChange={(e) => { if (activeLayer.el) activeLayer.el.loop = e.target.checked; }} /></label>}<div className="asmr-output-grid"><label><span>Durasi</span><select className="asmr-select" value={duration} onChange={(e) => setDuration(Number(e.target.value))}><option value={30}>30 detik</option><option value={60}>1 menit</option><option value={300}>5 menit</option><option value={600}>10 menit</option><option value={1800}>30 menit</option><option value={3600}>1 jam</option><option value={7200}>2 jam</option></select></label><label><span>FPS</span><select className="asmr-select" value={fps} onChange={(e) => setFps(Number(e.target.value))}><option value={30}>30</option><option value={24}>24</option><option value={15}>15</option></select></label></div></section>}
+          {toolTab === "speed" && (
+            <section className="asmr-panel">
+              <div className="asmr-panel-title">
+                <span className="asmr-step">SPEED</span>
+                <div><b>Kecepatan & potong video</b><small>Potong bagian overlay yang dipakai, seperti editor profesional</small></div>
+              </div>
+              {activeLayer && activeLayer.type === "video" ? (
+                <div className="asmr-trim-card">
+                  <div className="asmr-trim-head"><b>✂️ Trim video overlay</b><span>{layerDurations[activeLayer.id] ? `${layerDurations[activeLayer.id].toFixed(1)} dtk asli` : "Membaca durasi…"}</span></div>
+                  <div className="asmr-trim-track"><i style={trimRangeStyle(activeLayer)} /></div>
+                  <label className="asmr-range">
+                    <span><b>Trim masuk</b><strong>{activeLayer.trimIn.toFixed(1)} dtk</strong></span>
+                    <input type="range" min={0} max={Math.max(.1, (layerDurations[activeLayer.id] || 1) - .1)} step={.1} value={Math.min(activeLayer.trimIn, Math.max(0, (layerDurations[activeLayer.id] || 1) - .1))} onChange={(e) => { const value = Number(e.target.value); updateLayer(activeLayer.id, { trimIn: Math.min(value, trimEndFor(activeLayer) - .1) }); }} />
+                  </label>
+                  <label className="asmr-range">
+                    <span><b>Trim keluar</b><strong>{trimEndFor(activeLayer).toFixed(1)} dtk</strong></span>
+                    <input type="range" min={Math.min((layerDurations[activeLayer.id] || 1), activeLayer.trimIn + .1)} max={Math.max(.1, layerDurations[activeLayer.id] || 1)} step={.1} value={trimEndFor(activeLayer)} onChange={(e) => updateLayer(activeLayer.id, { trimOut: Math.max(activeLayer.trimIn + .1, Number(e.target.value)) })} />
+                  </label>
+                  <div className="asmr-trim-actions"><button type="button" onClick={() => updateLayer(activeLayer.id, { trimIn: 0, trimOut: 0 })}>↺ Pakai full video</button><span>Bagian di luar rentang tidak diputar.</span></div>
+                  <label className="asmr-range"><span><b>Speed layer video</b><strong>{(activeLayer.speed || 1).toFixed(2)}×</strong></span><input type="range" min={.25} max={3} step={.05} value={activeLayer.speed || 1} onChange={(e) => updateLayer(activeLayer.id, { speed: Number(e.target.value) })} /></label>
+                  <label className="asmr-check-row"><input type="checkbox" checked={activeLayer.el?.loop !== false} onChange={(e) => { if (activeLayer.el) activeLayer.el.loop = e.target.checked; }} /><span><b>Loop bagian trim</b><small>Ulangi rentang masuk–keluar saat durasi ASMR lebih panjang.</small></span></label>
+                </div>
+              ) : (
+                <div className="asmr-empty">Pilih video overlay di tab Video untuk memotongnya.</div>
+              )}
+              <div className="asmr-output-grid">
+                <label><span>Durasi video</span><select className="asmr-select" value={duration} onChange={(e) => setDuration(Number(e.target.value))}><option value={30}>30 detik</option><option value={60}>1 menit</option><option value={300}>5 menit</option><option value={600}>10 menit</option><option value={1800}>30 menit</option><option value={3600}>1 jam</option><option value={7200}>2 jam</option></select></label>
+                <label><span>FPS</span><select className="asmr-select" value={fps} onChange={(e) => setFps(Number(e.target.value))}><option value={30}>30</option><option value={24}>24</option><option value={15}>15</option></select></label>
+              </div>
+            </section>
+          )}
 
           <section className="asmr-panel asmr-export-panel">
             <div className="asmr-panel-title"><span className="asmr-step">EXPORT</span><div><b>Render & review</b><small>Setelan ini hanya milik ASMR Studio</small></div></div>

@@ -52,6 +52,8 @@ T("route katalog jujur saat semua kunci kosong", /code: "TANPA_KUNCI"/.test(stoc
 T("koleksi punya halaman lanjutan", /stockPage/.test(studio) && /Muat video berikutnya/.test(studio) && /append = false/.test(studio));
 T("video koleksi memakai versi SD agar ringan", /Pakai file sd untuk preview/.test(studio) && /clip\.sd \|\| clip\.src/.test(studio));
 T("hapus background hitam/green benar-benar tersedia", /keyMode/.test(studio) && /Hapus background hitam/.test(studio) && /getImageData/.test(studio));
+T("video overlay bisa dipotong masuk/keluar", /trimIn/.test(studio) && /trimOut/.test(studio) && /Trim video overlay/.test(studio));
+T("video overlay dapat diputar ulang dari rentang trim", /Loop bagian trim/.test(studio) && /currentTime = trimIn/.test(studio));
 
 if (gagal) {
   console.error(`\n💥 ${gagal} uji ASMR gagal`);
