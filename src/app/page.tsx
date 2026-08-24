@@ -1056,16 +1056,32 @@ function SayaPage({ refresh }: { refresh: () => void }) {
       <BansosChatCard />
       <div style={{ padding: "0 2px", marginTop: 10 }}>
         <div className="v6-lbl">🔑 API KEY SUNO (buat musik AI)</div>
-        <input className="v6-inp" placeholder="Tempel API key di sini (kosongkan = mode gratis)" value={key} onChange={e => setKey(e.target.value)} />
+        <input
+          className="v6-inp"
+          type="text"
+          name="suno-api-key-settings"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="text"
+          placeholder="Tempel API key di sini"
+          value={key}
+          onChange={e => setKey(e.target.value)}
+        />
         <div className="v6-lbl">PROVIDER</div>
         <select className="v6-inp" value={prov} onChange={e => setProv(e.target.value)}>
           <option value="kie">🥇 Kie.ai (utama — gratis 5.000 kredit)</option>
           <option value="sunor">☀️ Sunor.cc</option>
           <option value="musicapi">🎧 MusicAPI (75 kredit gratis)</option>
           <option value="aimusicapi">🎧 AIMusicAPI (30 kredit gratis)</option>
+          <option value="sunoapi">🟣 SunoAPI.org</option>
+          <option value="evolink">🧬 EvoLink</option>
+          <option value="cometapi">☄️ CometAPI</option>
+          <option value="ttapi">🧩 TTAPI</option>
           <option value="suno-resmi">🎵 Suno Resmi (cookie akun — 50 kredit/hari)</option>
         </select>
-        <div className="v6-note">💡 Tanpa key, VERVE pakai generator musik gratis (lebih lambat). Key disimpan <b>hanya di HP kamu</b> (localStorage), tidak dikirim ke mana pun kecuali ke provider musik saat generate.</div>
+        <div className="v6-note">💡 Untuk Generate Lagu terbaru, key provider diperlukan. Key disimpan <b>hanya di HP kamu</b> (localStorage), tidak dikirim ke mana pun kecuali ke provider musik saat generate.</div>
         <button className="v6-btn" style={{ marginTop: 10, width: "100%" }} onClick={save}>💾 Simpan</button>
       </div>
       <VideoProvidersCard />
@@ -3013,8 +3029,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
           _raw_title: title, _raw_lyrics: lyr, _raw_style: style,
         };
         const headers: Record<string, string> = { "Content-Type": "application/json" };
-        try { const kk = localStorage.getItem("verve_suno_key") || sunoKey; const pp = localStorage.getItem("verve_suno_provider") || sunoProv; if (kk) { headers["X-Suno-Key"] = kk; headers["X-Suno-Provider"] = pp; } } catch {}
-        if (sunoKey) { headers["X-Suno-Key"] = sunoKey; headers["X-Suno-Provider"] = sunoProv; }
+        // Lahan/Spectrum juga bisa mengganti key saat halaman editor masih
+        // mounted. Prioritaskan nilai storage terbaru; state lama hanya jadi
+        // fallback kalau storage sedang tidak tersedia.
+        try {
+          const kk = localStorage.getItem("verve_suno_key") || sunoKey;
+          const pp = localStorage.getItem("verve_suno_provider") || sunoProv;
+          if (kk) { headers["X-Suno-Key"] = kk; headers["X-Suno-Provider"] = pp; }
+        } catch {
+          if (sunoKey) { headers["X-Suno-Key"] = sunoKey; headers["X-Suno-Provider"] = sunoProv; }
+        }
         const r = await fetch("/api/hcnsec/music", { method: "POST", headers, body: JSON.stringify(payload) });
         const data = await r.json().catch(() => ({}));
         if (!r.ok || data.error) throw new Error(data.error || data.message || `Error ${r.status}`);
@@ -7190,11 +7214,30 @@ function MusikModal(p: any) {
         <button className="v6-chip" onClick={() => setShowKey(!showKey)}>🔑 API Key Suno {p.sunoKey ? "✅" : "(mode gratis)"} {showKey ? "▴" : "▾"}</button>
         {showKey && (
           <div style={{ marginTop: 8 }}>
-            <input className="v6-inp" placeholder="API key (kosongkan = mode gratis)" value={p.sunoKey}
-              onChange={e => { p.setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch {} }} />
+            <input
+              className="v6-inp"
+              type="text"
+              name="suno-api-key-modal"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
+              placeholder="Tempel API key"
+              value={p.sunoKey}
+              onChange={e => { p.setSunoKey(e.target.value); try { localStorage.setItem("verve_suno_key", e.target.value.trim()); } catch {} }}
+            />
             <select className="v6-inp" style={{ marginTop: 6 }} value={p.sunoProv}
               onChange={e => { p.setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch {} }}>
-              <option value="kie">🥇 Kie.ai (rekomendasi)</option><option value="apiframe">Apiframe.ai</option><option value="sunor">Sunor.cc</option>
+              <option value="kie">🥇 Kie.ai (rekomendasi)</option>
+              <option value="sunor">☀️ Sunor.cc</option>
+              <option value="musicapi">🎧 MusicAPI</option>
+              <option value="aimusicapi">🎧 AIMusicAPI</option>
+              <option value="sunoapi">🟣 SunoAPI.org</option>
+              <option value="evolink">🧬 EvoLink</option>
+              <option value="cometapi">☄️ CometAPI</option>
+              <option value="ttapi">🧩 TTAPI</option>
+              <option value="suno-resmi">🎵 Suno Resmi (cookie akun)</option>
             </select>
           </div>
         )}

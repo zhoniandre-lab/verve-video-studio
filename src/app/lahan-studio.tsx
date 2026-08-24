@@ -38,6 +38,20 @@ import { BRAIN_KEY, loadBrain, lastSyncTime, markSyncDone, persistBrain, syncYtB
 import { getAudioPeaks } from "@/lib/waveform";
 import { mirrorDraft } from "@/lib/guard/draft-idb";
 import Ngomong from "@/lib/ngomong"; // 🎤🧠 v14.5 SUARA PAHAM
+import {
+  SUNO_PROVIDER_KEY,
+  addSunoKeys,
+  keysForSunoProvider,
+  readSunoActiveKey,
+  readSunoActiveProvider,
+  readSunoKeyPool,
+  readSunoProvider,
+  removeSunoKey,
+  sunoKeyIdentity,
+  writeSunoActive,
+  writeSunoKeyPool,
+  type SunoKey,
+} from "@/lib/suno-keys";
 
 const LAHAN_KEY = "verve_lahan_v1";
 
@@ -118,9 +132,7 @@ type DirSnap = {
   sEra: string; sTempo: string; sInstr: string[]; vocal: "auto" | "male" | "female" | "instrumental"; sunoModel: string;
 };
 type SongResult = { url: string; title: string; duration?: number; image?: string; audio?: string };
-type SunoKey = { key: string; provider: string };
 
-const SUNO_KEYS_KEY = "verve_suno_keys_v1";
 /** Link resmi buat ambil/generate API key — satu klik, kayak panel Kampung Music */
 const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
   kie: { url: "https://kie.ai/api-key", hint: "Login kie.ai → menu API Key → Generate (kalau tautan 404, dari kie.ai pilih menu API Key)" },
@@ -132,14 +144,6 @@ const PROVIDER_KEY_LINK: Record<string, { url: string; hint: string }> = {
   cometapi: { url: "https://www.cometapi.com/console/token", hint: "Daftar cometapi.com → Console → Token" },
   ttapi: { url: "https://dashboard.ttapi.io/", hint: "Daftar dashboard.ttapi.io → Get API key" },
 };
-function detectProvClient(k: string, fallback: string): string {
-  const s = k.toLowerCase().trim();
-  if (s.startsWith("kie") || s.startsWith("sk-kie")) return "kie";
-  if (s.startsWith("afk_") || s.startsWith("af_")) return "apiframe";
-  if (s.startsWith("snr_") || s.startsWith("sunor_")) return "sunor";
-  if (/^[a-f0-9]{24,}$/i.test(k.trim())) return "kie";
-  return fallback;
-}
 function maskKey(k: string): string {
   return k.length > 10 ? `${k.slice(0, 7)}…${k.slice(-3)}` : "••••";
 }
@@ -292,6 +296,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [sInstr, setSInstr] = useState<string[]>([]);
   const [songModelUsed, setSongModelUsed] = useState(""); // 🎚 v10.3: versi yang dipakai generate terakhir
   const [sunoKey, setSunoKey] = useState("");
+  const [sunoKeyProvider, setSunoKeyProvider] = useState("");
   const [sunoProv, setSunoProv] = useState("kie");
   const [task, setTask] = useState<SongTask | null>(null);
   // 🎬 v11.0 SUTRADARA CHAT
@@ -629,10 +634,13 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       setSInstr(Array.isArray(j.sInstr) ? (j.sInstr as string[]).filter((x) => typeof x === "string" && SUNO_INSTRS.includes(x)) : []);
     } catch { /* draf korup → mulai bersih */ }
     try {
-      setSunoKey(localStorage.getItem("verve_suno_key") || "");
-      setSunoProv(localStorage.getItem("verve_suno_provider") || "kie");
-      const rawKeys = localStorage.getItem(SUNO_KEYS_KEY);
-      if (rawKeys) setKeyPool(JSON.parse(rawKeys));
+      const providerIds = SUNO_PROVIDERS.map((p) => p.id);
+      const provider = readSunoProvider(window.localStorage, providerIds);
+      const activeProvider = readSunoActiveProvider(window.localStorage) || provider;
+      setSunoKey(readSunoActiveKey(window.localStorage));
+      setSunoKeyProvider(activeProvider);
+      setSunoProv(provider);
+      setKeyPool(readSunoKeyPool(window.localStorage));
     } catch { /* abaikan */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1201,36 +1209,47 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   /* ---- pool multi-key (model Kampung Music: satu kunci per baris + rotasi otomatis) ---- */
   function savePool(next: SunoKey[]) {
     setKeyPool(next);
-    try { localStorage.setItem(SUNO_KEYS_KEY, JSON.stringify(next)); } catch { /* abaikan */ }
+    try { writeSunoKeyPool(window.localStorage, next); } catch { /* abaikan */ }
   }
   function keysForProvider(): SunoKey[] {
-    const pooled = keyPool.filter((k) => k.provider === sunoProv);
-    if (pooled.length) return pooled;
-    if (sunoKey.trim()) return [{ key: sunoKey.trim(), provider: sunoProv }];
-    return [];
+    return keysForSunoProvider(keyPool, sunoProv, sunoKey, sunoKeyProvider);
   }
   function addKeysFromDraft() {
-    const lines = keyDraft.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-    if (!lines.length) return;
-    const next = [...keyPool];
-    let added = 0;
-    lines.forEach((k) => {
-      if (next.some((x) => x.key === k)) return;
-      next.push({ key: k, provider: detectProvClient(k, sunoProv) });
-      added++;
-    });
-    savePool(next);
+    // Provider yang dipilih user selalu menang. Jangan mengklasifikasikan key
+    // dari awalan karena key generik sering tampak seperti provider lain.
+    const result = addSunoKeys(keyPool, keyDraft, sunoProv);
+    if (!result.addedKeys.length && !result.duplicateCount) return;
+    savePool(result.next);
     setKeyDraft("");
-    const first = next.filter((x) => x.provider === sunoProv)[0];
-    if (first) {
-      setSunoKey(first.key);
-      try { localStorage.setItem("verve_suno_key", first.key); } catch { /* abaikan */ }
+    const chosen = result.addedKeys[0] || result.next.find((item) => item.provider === sunoProv)?.key || "";
+    if (chosen) {
+      setSunoKey(chosen);
+      setSunoKeyProvider(sunoProv);
+      try { writeSunoActive(window.localStorage, chosen, sunoProv); } catch { /* abaikan */ }
     }
-    flash(added ? `🔑 ${added} kunci ditambah` : "Semua kunci sudah ada di daftar");
+    // Panel tetap terbuka supaya key yang baru ditempel langsung terlihat.
+    setKeyPanel(true);
+    flash(result.addedKeys.length
+      ? `🔑 ${result.addedKeys.length} kunci ditambah — tersimpan di HP`
+      : `ℹ️ ${result.duplicateCount} kunci sudah ada — langsung dipakai`);
   }
-  function removeKey(key: string) { savePool(keyPool.filter((k) => k.key !== key)); }
+  function removeKey(key: string) {
+    const next = removeSunoKey(keyPool, key, sunoProv);
+    savePool(next);
+    if ((!sunoKeyProvider || sunoKeyProvider === sunoProv) && sunoKeyIdentity(sunoKey) === sunoKeyIdentity(key)) {
+      const replacement = next.find((item) => item.provider === sunoProv)?.key || "";
+      setSunoKey(replacement);
+      if (replacement) writeSunoActive(window.localStorage, replacement, sunoProv);
+      else { setSunoKeyProvider(""); writeSunoActive(window.localStorage, "", ""); }
+    }
+  }
   function clearKeysCurrentProv() {
-    savePool(keyPool.filter((k) => k.provider !== sunoProv));
+    savePool(keyPool.filter((item) => item.provider !== sunoProv));
+    if (!sunoKeyProvider || sunoKeyProvider === sunoProv) {
+      setSunoKey("");
+      setSunoKeyProvider("");
+      try { writeSunoActive(window.localStorage, "", ""); } catch { /* abaikan */ }
+    }
     setCreditInfo({});
     flash("🗑 Kunci provider ini dihapus semua");
   }
@@ -2886,7 +2905,12 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
             <div className="lh-kv">
               <span>Provider</span>
               <b>
-                <select className="lh-sel" value={sunoProv} onChange={(e) => { setSunoProv(e.target.value); try { localStorage.setItem("verve_suno_provider", e.target.value); } catch { /* abaikan */ } setCreditInfo({}); }}>
+                <select className="lh-sel" value={sunoProv} onChange={(e) => {
+                  const next = SUNO_PROVIDERS.some((p) => p.id === e.target.value) ? e.target.value : "kie";
+                  setSunoProv(next);
+                  try { window.localStorage.setItem(SUNO_PROVIDER_KEY, next); } catch { /* abaikan */ }
+                  setCreditInfo({});
+                }}>
                   {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                 </select>
               </b>
@@ -2909,9 +2933,16 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                 <textarea
                   className="lh-ta"
                   rows={3}
+                  name="suno-api-key"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  inputMode="text"
                   placeholder={sunoProv === "kie" ? "sk-kie-xxx\nsk-kie-yyy" : sunoProv === "apiframe" ? "afk_xxx\nafk_yyy" : "kunci_baris_1\nkunci_baris_2"}
                   value={keyDraft}
                   onChange={(e) => setKeyDraft(e.target.value)}
+                  aria-label={`API key ${sunoProv}`}
                 />
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button className="lh-btn" style={{ flex: 1.4, marginTop: 0 }} disabled={!keyDraft.trim()} onClick={addKeysFromDraft}>＋ Tambah</button>

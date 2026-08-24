@@ -7,13 +7,29 @@
 import { useEffect, useRef, useState } from "react";
 import { pilihKlipDariHasil, type KlipLagu } from "@/lib/suno-normalize";
 import { META_PROV_SUNO } from "@/lib/suno-providers";
+import {
+  SUNO_PROVIDER_KEY,
+  addSunoKeys,
+  keysForSunoProvider,
+  readSunoActiveKey,
+  readSunoActiveProvider,
+  readSunoKeyPool,
+  readSunoProvider,
+  writeSunoActive,
+  writeSunoKeyPool,
+  type SunoKey,
+} from "@/lib/suno-keys";
 
 const PROVIDERS = META_PROV_SUNO;
 const MODELS = ["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"];
 
 export default function SunoStudio({ onExit }: { onExit?: () => void }) {
-  const [prov, setProv] = useState(() => { try { return localStorage.getItem("verve_suno_provider") || "kie"; } catch { return "kie"; } });
-  const [key, setKey] = useState(() => { try { return localStorage.getItem("verve_suno_key") || ""; } catch { return ""; } });
+  // Baca storage setelah mount agar SSR/hydration tidak menimpa key yang
+  // baru ditempel user dengan state kosong.
+  const [prov, setProv] = useState("kie");
+  const [key, setKey] = useState("");
+  const [keyPool, setKeyPool] = useState<SunoKey[]>([]);
+  const [activeProvider, setActiveProvider] = useState("");
   const [title, setTitle] = useState("");
   const [style, setStyle] = useState("");
   const [lyrics, setLyrics] = useState("");
@@ -32,6 +48,23 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [modeHasil, setModeHasil] = useState<"satu" | "dua">("satu");
   const pollTimer = useRef<any>(null);
   const tickTimer = useRef<any>(null);
+
+  useEffect(() => {
+    try {
+      const storage = window.localStorage;
+      const providerIds = PROVIDERS.map((p) => p.id);
+      const storedProvider = readSunoProvider(storage, providerIds);
+      const pool = readSunoKeyPool(storage);
+      const active = readSunoActiveKey(storage);
+      const storedActiveProvider = readSunoActiveProvider(storage) || storedProvider;
+      setProv(storedProvider);
+      setKey(keysForSunoProvider(pool, storedProvider, active, storedActiveProvider)[0]?.key || "");
+      setKeyPool(pool);
+      setActiveProvider(storedActiveProvider);
+    } catch {
+      // Input tetap dapat dipakai walau browser memblokir localStorage.
+    }
+  }, []);
 
   // 🧹 v19.85: tidak ada lagi hasil tersimpan di localStorage (rute ke Spectrum dihapus)
   useEffect(() => {
@@ -273,8 +306,37 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   };
 
   const saveKey = (p: string, k: string) => {
-    setProv(p); setKey(k);
-    try { localStorage.setItem("verve_suno_provider", p); localStorage.setItem("verve_suno_key", k.trim()); } catch {}
+    const provider = PROVIDERS.some((item) => item.id === p) ? p : "kie";
+    const value = k.replace(/^\uFEFF/, "").trim();
+    setProv(provider);
+    setKey(k);
+    setActiveProvider(provider);
+    // Simpan key aktif saja saat mengetik. Jangan memasukkan setiap huruf ke
+    // pool karena onChange berjalan per karakter ("s", "sk", "sk-", dst.).
+    try { writeSunoActive(window.localStorage, value, provider); } catch {}
+  };
+
+  const pilihProvider = (p: string) => {
+    const provider = PROVIDERS.some((item) => item.id === p) ? p : "kie";
+    const oldProvider = activeProvider || prov;
+    let pool = keyPool;
+    // Key lama tetap tersedia ketika user kembali ke provider sebelumnya.
+    if (key.trim()) {
+      const result = addSunoKeys(pool, key, oldProvider);
+      pool = result.next;
+      if (result.addedKeys.length) {
+        setKeyPool(pool);
+        try { writeSunoKeyPool(window.localStorage, pool); } catch {}
+      }
+    }
+    const nextKey = keysForSunoProvider(pool, provider, "", "")[0]?.key || "";
+    setProv(provider);
+    setKey(nextKey);
+    setActiveProvider(provider);
+    try {
+      window.localStorage.setItem(SUNO_PROVIDER_KEY, provider);
+      writeSunoActive(window.localStorage, nextKey, provider);
+    } catch {}
   };
 
   const generate = async () => {
@@ -427,17 +489,34 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
 
       <div className="gd-card">
         <div className="gd-label">PROVIDER & KEY</div>
-        <select className="v6-inp" value={prov} onChange={(e) => saveKey(e.target.value, key)}>
+        <select className="v6-inp" value={prov} onChange={(e) => pilihProvider(e.target.value)}>
           {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
         <p style={{ fontSize: 10.5, color: "#8b8b98", margin: "6px 0" }}>{PROVIDERS.find((p) => p.id === prov)?.hint}</p>
-        <div style={{ display: "flex", gap: 6 }}>
-          <input className="v6-inp" style={{ flex: 1, minWidth: 0 }} placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com" : "Tempel API key"} value={key} onChange={(e) => saveKey(prov, e.target.value)} />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "stretch" }}>
+          <input
+            className="v6-inp"
+            style={{ flex: "1 1 180px", minWidth: 0 }}
+            type="text"
+            name="suno-api-key"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            inputMode="text"
+            aria-label={prov === "suno-resmi" ? "Cookie session Suno" : `API key ${prov}`}
+            placeholder={prov === "suno-resmi" ? "Tempel COOKIE session suno.com" : "Tempel API key"}
+            value={key}
+            onChange={(e) => saveKey(prov, e.target.value)}
+          />
           {prov === "suno-resmi" ? (
-            <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href="https://suno.com" target="_blank" rel="noreferrer">🔗 Buka suno.com & login ↗</a>
+            <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap", flex: "0 0 auto" }} href="https://suno.com" target="_blank" rel="noreferrer">🔗 Buka suno.com & login ↗</a>
           ) : (
-            <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
+            <a className="v6-btn" style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap", flex: "0 0 auto" }} href={PROVIDERS.find((p) => p.id === prov)?.keyUrl} target="_blank" rel="noreferrer">🔗 Ambil key ↗</a>
           )}
+        </div>
+        <div className="v6-note" style={{ marginTop: 6, color: key.trim() ? "#86efac" : "#fbbf24" }}>
+          {key.trim() ? "✅ Key terisi dan tersimpan di HP ini." : "⚠️ Key belum diisi — tempel key provider di kolom di atas."}
         </div>
         <div className="v6-note" style={{ marginTop: 6 }}>Apiframe & Mureka tetap mati/berbayar API. Provider yang bisa kamu AMBIL KEY-nya: 🥇 Kie · ☀️ Sunor · 🎧 MusicAPI · 🎧 AIMusicAPI · 🟣 SunoAPI.org · 🧬 EvoLink · ☄️ CometAPI · 🧩 TTAPI. Tap 🔗 Ambil key ↗ → daftar di situsnya → salin key → tempel di sini. Jujur: yang gratis cuma kredit uji (Kie/Sunor/MusicAPI/AIMusicAPI). EvoLink/Comet/TTAPI/SunoAPI.org umumnya berbayar setelah uji. Kalau kredit habis: akun email baru di situsnya, atau ganti provider.</div>
         {prov === "suno-resmi" && (
@@ -464,7 +543,21 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
                 </button>
               ))}
             </div>
-            <input className="v6-inp" style={{ marginTop: 8 }} placeholder="Tempel key/cookie BARU di sini…" onChange={(e) => saveKey(prov, e.target.value)} />
+            <input
+              className="v6-inp"
+              style={{ marginTop: 8 }}
+              type="text"
+              name="suno-api-key-new"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
+              aria-label={`Key baru ${prov}`}
+              placeholder="Tempel key/cookie BARU di sini…"
+              value={key}
+              onChange={(e) => saveKey(prov, e.target.value)}
+            />
             <button className="v6-chip" style={{ marginTop: 8, borderColor: "#fde68a55", color: "#fde68a" }} onClick={() => setGantiKey(false)}>✅ Selesai — tutup panel</button>
           </div>
         )}
