@@ -45,18 +45,20 @@ T("proxy gambar mengizinkan Unsplash preset", /host\.includes\("unsplash"\)/.tes
 T("ASMR punya koleksi overlay Pexels/Pixabay/Coverr", /searchStock/.test(studio) && /api\/hcnsec\/stock-video/.test(studio) && /Koleksi overlay realistis/.test(studio));
 T("koleksi masuk sebagai video layer ringan", /addStockLayer/.test(studio) && /stockMediaSrc/.test(studio));
 T("saat masuk otomatis mencari rain window", /searchStock\("rain window"\)/.test(studio));
-T("hujan real punya preset masker jendela", /addEffectLayer\("rain", "window"\)/.test(studio) && /Masker jendela otomatis aktif/.test(studio));
+T("hujan real punya preset masker jendela", /addStockLayer\(first, recipe\.role\)/.test(studio) && /Masker jendela otomatis aktif/.test(studio));
 T("drag layer dan resize mask tersedia", /onPointerDown=\{beginCanvasDrag\}/.test(studio) && /mask-resize/.test(studio));
 T("preview canvas dibatasi 30fps untuk HP", /1000 \/ 30/.test(studio) && /satu path untuk semua garis/i.test(studio));
 T("route katalog jujur saat semua kunci kosong", /code: "TANPA_KUNCI"/.test(stockRoute));
-T("koleksi punya halaman lanjutan", /stockPage/.test(studio) && /Muat video berikutnya/.test(studio) && /append = false/.test(studio));
+T("koleksi punya halaman lanjutan", /stockPage/.test(studio) && /Muat (video|pilihan) berikutnya/.test(studio) && /append = false/.test(studio));
 T("video koleksi memakai versi SD agar ringan", /Pakai file sd untuk preview/.test(studio) && /clip\.sd \|\| clip\.src/.test(studio));
 T("hapus background hitam/green benar-benar tersedia", /keyMode/.test(studio) && /Hapus background hitam/.test(studio) && /getImageData/.test(studio));
 T("video overlay bisa dipotong masuk/keluar", /trimIn/.test(studio) && /trimOut/.test(studio) && /Trim video overlay/.test(studio));
-T("video overlay dapat diputar ulang dari rentang trim", /Loop bagian trim/.test(studio) && /currentTime = trimIn/.test(studio));
-T("mode mudah punya resep satu klik", /Mode Mudah/.test(studio) && /Jadi ASMR dalam 1 klik/.test(studio) && /prepareQuickAsmr/.test(studio));
+T("video overlay dapat diputar ulang dari rentang trim", /Loop rentang trim/.test(studio) && /targetTime/.test(studio));
+T("quick setup punya resep satu klik", /Quick Setup/.test(studio) && /prepareQuickAsmr/.test(studio));
 T("resep hujan dan perapian tersedia", /Hujan di jendela/.test(studio) && /Perapian hangat/.test(studio));
-T("mode pro tetap menyimpan semua inspector", /Studio Pro/.test(studio) && /asmr-tool-tabs/.test(studio) && /AI Matting/.test(studio));
+T("studio pro tetap menyimpan semua inspector", /asmr-tool-tabs/.test(studio) && /AI Matting/.test(studio) && /asmr-timeline/.test(studio));
+T("timeline mendukung pindah klip dan split playhead", /beginTimelineDrag/.test(studio) && /moveTimelineDrag/.test(studio) && /splitSelectedAtPlayhead/.test(studio));
+T("ASMR layer punya start/duration sendiri", /start: number/.test(studio) && /duration: number/.test(studio) && /time < layer\.start/.test(studio));
 
 if (gagal) {
   console.error(`\n💥 ${gagal} uji ASMR gagal`);
