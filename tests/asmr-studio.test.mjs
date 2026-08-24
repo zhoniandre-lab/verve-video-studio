@@ -49,6 +49,9 @@ T("hujan real punya preset masker jendela", /addEffectLayer\("rain", "window"\)/
 T("drag layer dan resize mask tersedia", /onPointerDown=\{beginCanvasDrag\}/.test(studio) && /mask-resize/.test(studio));
 T("preview canvas dibatasi 30fps untuk HP", /1000 \/ 30/.test(studio) && /satu path untuk semua garis/i.test(studio));
 T("route katalog jujur saat semua kunci kosong", /code: "TANPA_KUNCI"/.test(stockRoute));
+T("koleksi punya halaman lanjutan", /stockPage/.test(studio) && /Muat video berikutnya/.test(studio) && /append = false/.test(studio));
+T("video koleksi memakai versi SD agar ringan", /Pakai file sd untuk preview/.test(studio) && /clip\.sd \|\| clip\.src/.test(studio));
+T("hapus background hitam/green benar-benar tersedia", /keyMode/.test(studio) && /Hapus background hitam/.test(studio) && /getImageData/.test(studio));
 
 if (gagal) {
   console.error(`\n💥 ${gagal} uji ASMR gagal`);

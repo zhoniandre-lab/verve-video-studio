@@ -42,6 +42,9 @@ type LayerAsmr = {
   contrast: number;
   saturation: number;
   blur: number;
+  keyMode: "none" | "black" | "green";
+  keyThreshold: number;
+  keySoftness: number;
   blendMode: BlendMode;
   opacity: number;
   maskOn: boolean;
@@ -277,6 +280,9 @@ function inflateLayer(raw: Partial<LayerAsmr>): LayerAsmr {
     contrast: Number.isFinite(Number(raw.contrast)) ? Math.max(50, Math.min(150, Number(raw.contrast))) : 100,
     saturation: Number.isFinite(Number(raw.saturation)) ? Math.max(0, Math.min(200, Number(raw.saturation))) : 100,
     blur: Number.isFinite(Number(raw.blur)) ? Math.max(0, Math.min(20, Number(raw.blur))) : 0,
+    keyMode: raw.keyMode === "black" || raw.keyMode === "green" ? raw.keyMode : "none",
+    keyThreshold: Number.isFinite(Number(raw.keyThreshold)) ? Math.max(0, Math.min(160, Number(raw.keyThreshold))) : 28,
+    keySoftness: Number.isFinite(Number(raw.keySoftness)) ? Math.max(1, Math.min(100, Number(raw.keySoftness))) : 24,
     blendMode: raw.blendMode === "multiply" || raw.blendMode === "normal" || raw.blendMode === "lighter" ? raw.blendMode : "screen",
     opacity: Number.isFinite(Number(raw.opacity)) ? Math.max(0, Math.min(100, Number(raw.opacity))) : 80,
     maskOn: !!raw.maskOn,
@@ -522,6 +528,8 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const [stockResults, setStockResults] = useState<StockClip[]>([]);
   const [stockBusy, setStockBusy] = useState(false);
   const [stockError, setStockError] = useState("");
+  const [stockPage, setStockPage] = useState(1);
+  const [stockTotal, setStockTotal] = useState(0);
   const [stockRole, setStockRole] = useState<"rain" | "fire" | "general">("rain");
 
   const [soundId, setSoundId] = useState("rain");
@@ -549,6 +557,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const [diagList, setDiagList] = useState<string[]>([]);
 
   const cvRef = useRef<HTMLCanvasElement | null>(null);
+  const keyCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const bgImageRef = useRef<HTMLImageElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -714,6 +723,57 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     if (audioGainRef.current) audioGainRef.current.gain.value = soundVolume / 100;
   }, [soundVolume]);
 
+  /**
+   * Hapus background gelap/green screen dari video overlay. Untuk rain/fire,
+   * luma key hitam bekerja seperti Screen tetapi tetap memberi alpha nyata;
+   * pemrosesan dibatasi 640px agar tidak membuat preview HP tersendat.
+   */
+  function drawVideoWithMatting(ctx: CanvasRenderingContext2D, layer: LayerAsmr, x: number, y: number, width: number, height: number) {
+    if (!layer.el || layer.el.readyState < 2) return false;
+    if (layer.keyMode === "none") {
+      ctx.drawImage(layer.el, x, y, width, height);
+      return true;
+    }
+    try {
+      const keyCanvas = keyCanvasRef.current || document.createElement("canvas");
+      keyCanvasRef.current = keyCanvas;
+      const sampleWidth = Math.max(1, Math.min(640, Math.round(Math.abs(width))));
+      const sampleHeight = Math.max(1, Math.round(sampleWidth * Math.abs(height) / Math.max(1, Math.abs(width))));
+      if (keyCanvas.width !== sampleWidth || keyCanvas.height !== sampleHeight) {
+        keyCanvas.width = sampleWidth;
+        keyCanvas.height = sampleHeight;
+      }
+      const keyCtx = keyCanvas.getContext("2d", { willReadFrequently: true });
+      if (!keyCtx) return false;
+      keyCtx.clearRect(0, 0, sampleWidth, sampleHeight);
+      keyCtx.drawImage(layer.el, 0, 0, sampleWidth, sampleHeight);
+      const pixels = keyCtx.getImageData(0, 0, sampleWidth, sampleHeight);
+      const threshold = Math.max(0, Math.min(160, layer.keyThreshold || 28));
+      const softness = Math.max(1, Math.min(100, layer.keySoftness || 24));
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const r = pixels.data[i];
+        const g = pixels.data[i + 1];
+        const b = pixels.data[i + 2];
+        let alpha = 255;
+        if (layer.keyMode === "black") {
+          const luma = .2126 * r + .7152 * g + .0722 * b;
+          alpha = luma <= threshold ? 0 : luma >= threshold + softness ? 255 : Math.round(((luma - threshold) / softness) * 255);
+        } else {
+          const greenExcess = g - Math.max(r, b);
+          alpha = greenExcess >= threshold + softness ? 0 : greenExcess <= threshold ? 255 : Math.round((1 - (greenExcess - threshold) / softness) * 255);
+        }
+        pixels.data[i + 3] = Math.round((pixels.data[i + 3] * alpha) / 255);
+      }
+      keyCtx.putImageData(pixels, 0, 0);
+      ctx.drawImage(keyCanvas, x, y, width, height);
+      return true;
+    } catch {
+      // Jika browser menolak pixel read, tetap tampilkan overlay normal.
+      ctx.drawImage(layer.el, x, y, width, height);
+      return true;
+    }
+  }
+
   const drawScene = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number, time: number, guides = true) => {
     ctx.clearRect(0, 0, width, height);
     const image = bgImageRef.current;
@@ -775,7 +835,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       const anchorY = Math.max(0, Math.min(1, layer.anchorY ?? .5));
       if (layer.type === "video" && layer.el && layer.el.readyState >= 2) {
         layer.el.playbackRate = Math.max(.25, Math.min(3, layer.speed || 1));
-        ctx.drawImage(layer.el, -layerWidth * anchorX, -layerHeight * anchorY, layerWidth, layerHeight);
+        drawVideoWithMatting(ctx, layer, -layerWidth * anchorX, -layerHeight * anchorY, layerWidth, layerHeight);
       } else if (layer.type === "effect") {
         ctx.translate(-layerWidth * anchorX, -layerHeight * anchorY);
         drawEffect(ctx, layer.effect || "rain", layerWidth, layerHeight, time * Math.max(.25, layer.speed || 1));
@@ -938,6 +998,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       id: uid("layer"), name: windowMask ? "🌧️ Hujan di Kaca Jendela" : meta.label, type: "effect", effect, src: "", visible: true,
       width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
       speed: 1, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      keyMode: "none", keyThreshold: 28, keySoftness: 24,
       blendMode: effect === "fire" ? "lighter" : "screen", opacity: effect === "fog" ? 42 : 72,
       maskOn: windowMask, maskX: .27, maskY: .12, maskW: 620, maskH: 350,
     };
@@ -953,6 +1014,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       id: uid("layer"), name: file.name, type: "video", src, visible: true,
       width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
       speed: 1, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      keyMode: "none", keyThreshold: 28, keySoftness: 24,
       blendMode: "screen", opacity: 78, maskOn: false, maskX: .25, maskY: .25, maskW: 360, maskH: 260,
       el: makeVideoElement(src),
     };
@@ -967,9 +1029,10 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
   }
 
-  async function searchStock(query = stockQuery) {
+  async function searchStock(query = stockQuery, append = false) {
     const q = query.trim();
     if (q.length < 2) { setStockError("Tulis minimal 2 huruf, misalnya rain window atau fireplace."); return; }
+    const requestedPage = append && q === stockQuery ? stockPage + 1 : 1;
     setStockQuery(q);
     setStockRole(/fire|flame|fireplace|api|bara/i.test(q) ? "fire" : /rain|hujan|water|drizzle/i.test(q) ? "rain" : "general");
     setStockBusy(true);
@@ -977,17 +1040,27 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(`/api/hcnsec/stock-video?q=${encodeURIComponent(q)}&page=1&per=8`, { cache: "no-store", signal: controller.signal });
+      const response = await fetch(`/api/hcnsec/stock-video?q=${encodeURIComponent(q)}&page=${requestedPage}&per=12`, { cache: "no-store", signal: controller.signal });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data?.ok) {
         if (data?.code === "TANPA_KUNCI") throw new Error("Koleksi Pexels/Pixabay/Coverr belum aktif di server. Preset dan upload video HP tetap bisa dipakai.");
         throw new Error(data?.error || `Gudang video HTTP ${response.status}`);
       }
-      const result = Array.isArray(data.hasil) ? data.hasil : [];
-      setStockResults(result);
-      if (!result.length) setStockError("Koleksi kosong. Coba kata rain, fireplace, fire, fog, smoke, atau water.");
+      const result = Array.isArray(data.hasil) ? data.hasil as StockClip[] : [];
+      setStockTotal(Number(data.total) || result.length);
+      setStockPage(requestedPage);
+      if (append) {
+        setStockResults((old) => {
+          const seen = new Set(old.map((item) => `${item.provider || "stock"}-${item.id}`));
+          return [...old, ...result.filter((item) => !seen.has(`${item.provider || "stock"}-${item.id}`))];
+        });
+        if (!result.length) setStockError("Sudah sampai hasil terakhir untuk kata ini.");
+      } else {
+        setStockResults(result);
+        if (!result.length) setStockError("Koleksi kosong. Coba kata rain, fireplace, fire, fog, smoke, atau water.");
+      }
     } catch (error: any) {
-      setStockResults([]);
+      if (!append) setStockResults([]);
       setStockError(error?.message || "Koleksi video belum bisa dihubungi. Coba lagi.");
     } finally {
       clearTimeout(timeout);
@@ -1008,6 +1081,9 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
       width: fireRole ? 42 : 100, height: fireRole ? 42 : 100, lockRatio: true,
       posX: 0, posY: fireRole ? 170 : 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
       speed: 1, animation: "none", animationAmount: 20, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      // Screen adalah mode ringan untuk hitam; pixel key bisa diaktifkan manual
+      // dari tab AI Matting bila file punya background yang lebih kompleks.
+      keyMode: "none", keyThreshold: 28, keySoftness: 24,
       blendMode: "screen", opacity: rainRole ? 86 : 95,
       maskOn: rainRole, maskX: .27, maskY: .12, maskW: 620, maskH: 350,
       el: makeVideoElement(src),
@@ -1330,7 +1406,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
               <div className="asmr-overlay-grid">{PRESET_OVERLAYS.map((item) => <button type="button" key={item.id} onClick={() => addEffectLayer(item.id)}><strong>{item.label}</strong><small>{item.desc}</small></button>)}</div>
               <div className="asmr-quick-row"><button type="button" onClick={() => addEffectLayer("rain", "window")}>🪟 Hujan di jendela</button><span>Tambah masker kaca otomatis</span></div>
               <label className="asmr-upload compact"><strong>🎞️ Upload video overlay</strong><span>MP4/WebM · hujan, asap, bokeh, daun, api</span><input type="file" accept="video/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) addVideoLayer(file); e.currentTarget.value = ""; }} /></label>
-              <div className="asmr-stock-box"><div className="asmr-stock-head"><div><b>🧺 Koleksi overlay realistis</b><small>Pexels · Pixabay · Coverr · pilih lalu Tambah</small></div><span className="asmr-stock-role">{stockRole === "fire" ? "🔥 API" : stockRole === "rain" ? "🌧️ HUJAN" : "🎞️ UMUM"}</span></div><div className="asmr-stock-search"><input value={stockQuery} onChange={(e) => setStockQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void searchStock(); }} placeholder="rain window / fireplace / fog" /><button type="button" onClick={() => void searchStock()} disabled={stockBusy}>{stockBusy ? "…" : "Cari"}</button></div><div className="asmr-stock-presets"><button type="button" onClick={() => void searchStock("rain window")}>🌧️ Rain</button><button type="button" onClick={() => void searchStock("fireplace flame")}>🔥 Fire</button><button type="button" onClick={() => void searchStock("fog smoke")}>🌫️ Fog</button></div>{stockError && <p className="asmr-help error">{stockError}</p>}{stockBusy && <p className="asmr-help">⏳ Mengambil koleksi video…</p>}{!stockBusy && stockResults.length > 0 && <div className="asmr-stock-grid">{stockResults.map((clip) => <button type="button" key={`${clip.provider}-${clip.id}`} className="asmr-stock-card" onClick={() => addStockLayer(clip)} title="Tambah overlay ke canvas"><span className="asmr-stock-thumb">{clip.thumb ? <img src={clip.thumb} alt="" loading="lazy" /> : <i>🎞️</i>}</span><span><b>{clip.provider || "stock"}</b><small>{clip.dur ? `${Math.round(clip.dur)} dtk` : "video"} · Tambah ＋</small></span></button>)}</div>}</div>
+              <div className="asmr-stock-box"><div className="asmr-stock-head"><div><b>🧺 Koleksi overlay realistis</b><small>Pexels · Pixabay · Coverr · pilih lalu Tambah</small></div><span className="asmr-stock-role">{stockRole === "fire" ? "🔥 API" : stockRole === "rain" ? "🌧️ HUJAN" : "🎞️ UMUM"}</span></div><div className="asmr-stock-search"><input value={stockQuery} onChange={(e) => setStockQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void searchStock(); }} placeholder="rain window / fireplace / fog" /><button type="button" onClick={() => void searchStock()} disabled={stockBusy}>{stockBusy ? "…" : "Cari"}</button></div><div className="asmr-stock-presets"><button type="button" onClick={() => void searchStock("rain window")}>🌧️ Rain</button><button type="button" onClick={() => void searchStock("fireplace flame")}>🔥 Fire</button><button type="button" onClick={() => void searchStock("fog smoke")}>🌫️ Fog</button></div>{stockError && <p className="asmr-help error">{stockError}</p>}{stockBusy && <p className="asmr-help">⏳ Mengambil koleksi video…</p>}{!stockBusy && stockResults.length > 0 && <div className="asmr-stock-grid">{stockResults.map((clip) => <button type="button" key={`${clip.provider}-${clip.id}`} className="asmr-stock-card" onClick={() => addStockLayer(clip)} title="Tambah overlay ke canvas"><span className="asmr-stock-thumb">{clip.thumb ? <img src={clip.thumb} alt="" loading="lazy" /> : <i>🎞️</i>}</span><span><b>{clip.provider || "stock"}</b><small>{clip.dur ? `${Math.round(clip.dur)} dtk` : "video"} · Tambah ＋</small></span></button>)}</div>}{!stockBusy && stockResults.length > 0 && stockResults.length < stockTotal && <button type="button" className="asmr-stock-more" onClick={() => void searchStock(stockQuery, true)}>＋ Muat video berikutnya</button>}</div>
               <div className="asmr-layers-head"><span>{layers.length ? `${layers.length} LAPISAN` : "LAPISAN KOSONG"}</span><small>tap layer atau drag di preview</small></div>
               {!layers.length && <p className="asmr-empty">Belum ada overlay. Foto tetap bergerak lewat alat Animation.</p>}
               <div className="asmr-layers">{layers.map((layer) => <div key={layer.id} className={`asmr-layer-row ${selectedLayerId === layer.id ? "selected" : ""}`} onClick={() => setSelectedLayerId(layer.id)} onDoubleClick={() => { setSelectedLayerId(layer.id); setInspectorTab("mask"); }} tabIndex={0}><span>{layer.type === "video" ? "🎞️" : layer.effect === "rain" ? "🌧️" : layer.effect === "fog" ? "🌫️" : layer.effect === "fire" ? "🔥" : "❄️"}</span><b>{layer.name}</b><em>{layer.maskOn ? "MASK" : "FULL"}</em><button type="button" onClick={(e) => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} aria-label="Tampilkan atau sembunyikan layer">{layer.visible ? "◉" : "○"}</button><button type="button" onClick={(e) => { e.stopPropagation(); duplicateLayer(layer); }} aria-label="Duplikasi layer">＋</button><button type="button" className="delete" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} aria-label="Hapus layer">×</button></div>)}</div>
@@ -1351,7 +1427,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
                 <div className="asmr-inspector-group"><div className="asmr-group-head"><b>● Compositing</b><button type="button" onClick={() => updateLayer(activeLayer.id, { opacity: 80, blendMode: "screen" })}>↺ Reset</button></div><div className="asmr-inline-options"><span>Blend mode</span><select className="asmr-select" value={activeLayer.blendMode} onChange={(e) => updateLayer(activeLayer.id, { blendMode: e.target.value as BlendMode })}><option value="screen">Screen</option><option value="lighter">Lighter</option><option value="normal">Normal</option><option value="multiply">Multiply</option></select></div><label className="asmr-range"><span><b>Opacity</b><strong>{activeLayer.opacity}%</strong></span><input type="range" min={0} max={100} value={activeLayer.opacity} onChange={(e) => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })} /></label></div>
               </div>}
               {inspectorTab === "mask" && <div className="asmr-inspector-body"><div className="asmr-mask-hero"><b>Mask area / kaca jendela</b><span>Aktifkan masker, lalu drag kotak cyan di preview. Titik pojok untuk resize.</span><label><input type="checkbox" checked={activeLayer.maskOn} onChange={(e) => updateLayer(activeLayer.id, { maskOn: e.target.checked })} /> Gunakan masker</label></div>{activeLayer.maskOn && <div className="asmr-mask-controls"><div className="asmr-quick-row"><button type="button" onClick={() => updateLayer(activeLayer.id, { maskOn: true, maskX: .27, maskY: .12, maskW: 620, maskH: 350 })}>🪟 Pasang ke jendela</button><span>Preset area kaca</span></div><label className="asmr-range"><span><b>Mask X</b><strong>{Math.round(activeLayer.maskX * 100)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.maskX} onChange={(e) => updateLayer(activeLayer.id, { maskX: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Mask Y</b><strong>{Math.round(activeLayer.maskY * 100)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.maskY} onChange={(e) => updateLayer(activeLayer.id, { maskY: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Lebar kaca</b><strong>{Math.round(activeLayer.maskW)}px</strong></span><input type="range" min={20} max={1280} value={activeLayer.maskW} onChange={(e) => updateLayer(activeLayer.id, { maskW: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Tinggi kaca</b><strong>{Math.round(activeLayer.maskH)}px</strong></span><input type="range" min={20} max={720} value={activeLayer.maskH} onChange={(e) => updateLayer(activeLayer.id, { maskH: Number(e.target.value) })} /></label></div>}</div>}
-              {inspectorTab === "matting" && <div className="asmr-matting-info"><b>✂️ AI Matting</b><p>ASMR paling stabil memakai video overlay dengan background transparan atau masker manual. Untuk hujan di luar jendela dan api di perapian, pilih <b>Mask</b> agar penempatan presisi.</p><button type="button" className="asmr-ghost" disabled>AI Matting belum diperlukan untuk overlay ASMR</button></div>}
+              {inspectorTab === "matting" && <div className="asmr-matting-info"><b>✂️ Hapus Background Overlay</b><p>Untuk video hujan/api berlatar hitam, pilih <b>Hapus hitam</b>. Sistem membuat area hitam transparan sehingga hanya hujan atau api yang terlihat di gambar.</p><select className="asmr-select" value={activeLayer.keyMode} onChange={(e) => updateLayer(activeLayer.id, { keyMode: e.target.value as LayerAsmr["keyMode"] })}><option value="none">Tidak dihapus</option><option value="black">Hapus background hitam — hujan/api</option><option value="green">Hapus green screen</option></select>{activeLayer.keyMode !== "none" && <><label className="asmr-range"><span><b>Threshold</b><strong>{activeLayer.keyThreshold}</strong></span><input type="range" min={0} max={160} value={activeLayer.keyThreshold} onChange={(e) => updateLayer(activeLayer.id, { keyThreshold: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Softness tepi</b><strong>{activeLayer.keySoftness}</strong></span><input type="range" min={1} max={100} value={activeLayer.keySoftness} onChange={(e) => updateLayer(activeLayer.id, { keySoftness: Number(e.target.value) })} /></label><p className="asmr-help">Pemrosesan pixel aktif hanya pada layer ini. Jika HP terasa berat, pakai Blend Screen sebagai mode ringan.</p></>}</div>}
             </section>}
           </>}
 
