@@ -36,7 +36,8 @@ export async function GET(req: Request) {
         host.includes("storage") ||
         host.includes("qpic") ||
         host.includes("googleapis") ||
-        host.includes("googleusercontent");
+        host.includes("googleusercontent") ||
+        host.includes("unsplash");
     } catch { allowed = false; }
     if (!allowed) {
       return NextResponse.json({ error: "Domain not allowed" }, { status: 403 });
