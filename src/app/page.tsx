@@ -386,6 +386,8 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
   const tools: { ic: string; lb: string; bb?: string; act: () => void }[] = [
     { ic: "🎤", lb: "Suno Studio", bb: "NEW", act: () => { location.href = "/suno"; } },
     { ic: "📖", lb: "Niche Qur'an", bb: "NEW", act: () => { location.href = "/quran"; } },
+    { ic: "🎯", lb: "Niche Umum", bb: "NEW", act: () => { location.href = "/niche-umum"; } },
+    { ic: "🎧", lb: "ASMR Studio", bb: "NEW", act: () => { location.href = "/asmr"; } },
     { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
     { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
     { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
@@ -787,6 +789,8 @@ function LabPage({ gotoEditor, go }: { gotoEditor: (id?: string, cmd?: any) => v
     { ic: "🧠", t: "Pembuat AI", d: "Ide → judul → visual → musik otomatis jadi proyek", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
     { ic: "🎵", t: "Musik AI (Suno)", d: "Buat lagu/instrumen orisinal bebas royalti", act: () => gotoEditor(undefined, { tool: "musik" }) },
     { ic: "🎤", t: "Suno Studio (Khusus)", d: "Menu khusus generate lagu — utuh & langsung pakai di Spectrum", act: () => { location.href = "/suno"; } },
+    { ic: "🎯", t: "Niche Umum", d: "Click-worthy ideation & metadata generator", act: () => { location.href = "/niche-umum"; } },
+    { ic: "🎧", t: "ASMR Studio", d: "Editor video ASMR dengan glass masking & loop mixers", act: () => { location.href = "/asmr"; } },
     { ic: "🗣️", t: "Teks ke Audio", d: "Narasi suara AI dari teks (id-ID)", act: () => gotoEditor(undefined, { tool: "tts" }) },
     { ic: "🎨", t: "Gambar AI", d: "Generate visual sinematik utk klip", act: () => gotoEditor(undefined, { tool: "media" }) },
     { ic: "🎬", t: "Video AI", d: "Teks/gambar → video pendek (beta)", act: () => gotoEditor(undefined, { tool: "videoai" }) },
