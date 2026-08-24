@@ -7,7 +7,7 @@
    Modul ini sengaja tidak memakai state proyek/editor lain. Storage yang dipakai
    hanya verve_asmr_studio_v1 dan semua kontrol berada di dalam halaman ASMR.
    ===================================================================== */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { asmrCoverRect, asmrMaskRect, asmrMotionAt, type AsmrMotionMode } from "@/lib/asmr-motion";
 
 const ASMR_PROJECT_KEY = "verve_asmr_studio_v1";
@@ -31,8 +31,17 @@ type LayerAsmr = {
   posX: number;
   posY: number;
   rotate: number;
+  anchorX: number;
+  anchorY: number;
   flipH: boolean;
   flipV: boolean;
+  speed: number;
+  animation: "none" | "float" | "pulse" | "sway";
+  animationAmount: number;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  blur: number;
   blendMode: BlendMode;
   opacity: number;
   maskOn: boolean;
@@ -52,6 +61,10 @@ type ProjectSnapshot = {
   bgPresetId: string;
   bgSrc: string;
   bgName: string;
+  bgBrightness: number;
+  bgContrast: number;
+  bgSaturation: number;
+  bgBlur: number;
   motionMode: AsmrMotionMode;
   motionStrength: number;
   motionSpeed: number;
@@ -244,16 +257,25 @@ function inflateLayer(raw: Partial<LayerAsmr>): LayerAsmr {
     effect: raw.effect || "rain",
     src,
     visible: raw.visible !== false,
-    width: Number(raw.width) || 100,
-    height: Number(raw.height) || 100,
+    width: Math.max(20, Math.min(180, Number(raw.width) || 100)),
+    height: Math.max(20, Math.min(180, Number(raw.height) || 100)),
     lockRatio: raw.lockRatio !== false,
-    posX: Number(raw.posX) || 0,
-    posY: Number(raw.posY) || 0,
+    posX: Math.max(-500, Math.min(500, Number(raw.posX) || 0)),
+    posY: Math.max(-400, Math.min(400, Number(raw.posY) || 0)),
     rotate: Number(raw.rotate) || 0,
+    anchorX: Number.isFinite(Number(raw.anchorX)) ? Math.max(0, Math.min(1, Number(raw.anchorX))) : .5,
+    anchorY: Number.isFinite(Number(raw.anchorY)) ? Math.max(0, Math.min(1, Number(raw.anchorY))) : .5,
     flipH: !!raw.flipH,
     flipV: !!raw.flipV,
+    speed: Number.isFinite(Number(raw.speed)) ? Math.max(.25, Math.min(3, Number(raw.speed))) : 1,
+    animation: raw.animation === "float" || raw.animation === "pulse" || raw.animation === "sway" ? raw.animation : "none",
+    animationAmount: Number.isFinite(Number(raw.animationAmount)) ? Math.max(0, Math.min(100, Number(raw.animationAmount))) : 30,
+    brightness: Number.isFinite(Number(raw.brightness)) ? Math.max(50, Math.min(150, Number(raw.brightness))) : 100,
+    contrast: Number.isFinite(Number(raw.contrast)) ? Math.max(50, Math.min(150, Number(raw.contrast))) : 100,
+    saturation: Number.isFinite(Number(raw.saturation)) ? Math.max(0, Math.min(200, Number(raw.saturation))) : 100,
+    blur: Number.isFinite(Number(raw.blur)) ? Math.max(0, Math.min(20, Number(raw.blur))) : 0,
     blendMode: raw.blendMode === "multiply" || raw.blendMode === "normal" || raw.blendMode === "lighter" ? raw.blendMode : "screen",
-    opacity: Number.isFinite(Number(raw.opacity)) ? Number(raw.opacity) : 80,
+    opacity: Number.isFinite(Number(raw.opacity)) ? Math.max(0, Math.min(100, Number(raw.opacity))) : 80,
     maskOn: !!raw.maskOn,
     maskX: Number.isFinite(Number(raw.maskX)) ? Number(raw.maskX) : .25,
     maskY: Number.isFinite(Number(raw.maskY)) ? Number(raw.maskY) : .25,
@@ -262,6 +284,19 @@ function inflateLayer(raw: Partial<LayerAsmr>): LayerAsmr {
     el,
   };
 }
+
+type CanvasDrag = {
+  mode: "layer" | "mask" | "mask-resize";
+  layerId: string;
+  startX: number;
+  startY: number;
+  startPosX?: number;
+  startPosY?: number;
+  startMaskX?: number;
+  startMaskY?: number;
+  startMaskW?: number;
+  startMaskH?: number;
+};
 
 type RenderOptions = {
   canvas: HTMLCanvasElement;
@@ -464,6 +499,10 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const [bgName, setBgName] = useState("Jendela Loteng Hujan");
   const [bgReady, setBgReady] = useState(false);
   const [bgError, setBgError] = useState("");
+  const [bgBrightness, setBgBrightness] = useState(100);
+  const [bgContrast, setBgContrast] = useState(100);
+  const [bgSaturation, setBgSaturation] = useState(100);
+  const [bgBlur, setBgBlur] = useState(0);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiStatus, setAiStatus] = useState("");
@@ -471,6 +510,8 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const [motionMode, setMotionMode] = useState<AsmrMotionMode>("kenburns");
   const [motionStrength, setMotionStrength] = useState(35);
   const [motionSpeed, setMotionSpeed] = useState(1);
+  const [toolTab, setToolTab] = useState<"video" | "audio" | "speed" | "animation" | "color">("video");
+  const [inspectorTab, setInspectorTab] = useState<"basic" | "mask" | "matting">("basic");
 
   const [layers, setLayers] = useState<LayerAsmr[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState("");
@@ -514,6 +555,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const renderCancelledRef = useRef(false);
   const outputUrlRef = useRef("");
   const objectUrlsRef = useRef<Set<string>>(new Set());
+  const canvasDragRef = useRef<CanvasDrag | null>(null);
 
   const activeLayer = layers.find((layer) => layer.id === selectedLayerId);
 
@@ -550,6 +592,10 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         if (typeof saved.bgPresetId === "string") setBgPresetId(saved.bgPresetId);
         if (savedBgSrc) setBgSrc(savedBgSrc);
         if (typeof saved.bgName === "string") setBgName(saved.bgName);
+        if (Number.isFinite(saved.bgBrightness)) setBgBrightness(Math.max(50, Math.min(150, Number(saved.bgBrightness))));
+        if (Number.isFinite(saved.bgContrast)) setBgContrast(Math.max(50, Math.min(150, Number(saved.bgContrast))));
+        if (Number.isFinite(saved.bgSaturation)) setBgSaturation(Math.max(0, Math.min(200, Number(saved.bgSaturation))));
+        if (Number.isFinite(saved.bgBlur)) setBgBlur(Math.max(0, Math.min(20, Number(saved.bgBlur))));
         if (saved.motionMode === "kenburns" || saved.motionMode === "drift" || saved.motionMode === "breathe" || saved.motionMode === "still") setMotionMode(saved.motionMode);
         if (Number.isFinite(saved.motionStrength)) setMotionStrength(Math.max(0, Math.min(100, Number(saved.motionStrength))));
         if (Number.isFinite(saved.motionSpeed)) setMotionSpeed(Math.max(.2, Math.min(2, Number(saved.motionSpeed))));
@@ -654,7 +700,10 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     if (image && image.complete && image.naturalWidth > 0) {
       const motion = asmrMotionAt(time, motionMode, motionStrength, motionSpeed);
       const rect = asmrCoverRect(image.naturalWidth, image.naturalHeight, width, height, motion.scale, motion.panX, motion.panY);
+      ctx.save();
+      ctx.filter = `brightness(${bgBrightness}%) contrast(${bgContrast}%) saturate(${bgSaturation}%) blur(${bgBlur}px)`;
       ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+      ctx.restore();
       const shade = ctx.createLinearGradient(0, 0, 0, height);
       shade.addColorStop(0, "rgba(5,8,15,.04)");
       shade.addColorStop(1, "rgba(5,8,15,.22)");
@@ -677,6 +726,16 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     const sy = height / PREVIEW_H;
     for (const layer of layers) {
       if (!layer.visible) continue;
+      const animAmount = Math.max(0, Math.min(100, layer.animationAmount || 0)) / 100;
+      const animPhase = time * Math.max(.25, layer.speed || 1);
+      let animatedX = layer.posX;
+      let animatedY = layer.posY;
+      let animatedScale = 1;
+      let animatedRotate = layer.rotate;
+      if (layer.animation === "float") animatedY += Math.sin(animPhase * 1.4) * animAmount * 28;
+      if (layer.animation === "pulse") animatedScale += Math.sin(animPhase * 1.2) * animAmount * .035;
+      if (layer.animation === "sway") animatedRotate += Math.sin(animPhase * 1.1) * animAmount * 3;
+
       ctx.save();
       if (layer.maskOn) {
         const mask = asmrMaskRect(layer.maskX, layer.maskY, layer.maskW, layer.maskH, width, height);
@@ -684,21 +743,25 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         ctx.rect(mask.x, mask.y, mask.width, mask.height);
         ctx.clip();
       }
-      ctx.translate(width / 2 + layer.posX * sx, height / 2 + layer.posY * sy);
-      ctx.rotate((layer.rotate * Math.PI) / 180);
-      ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
+      ctx.translate(width / 2 + animatedX * sx, height / 2 + animatedY * sy);
+      ctx.rotate((animatedRotate * Math.PI) / 180);
+      ctx.scale((layer.flipH ? -1 : 1) * animatedScale, (layer.flipV ? -1 : 1) * animatedScale);
       ctx.globalAlpha = Math.max(0, Math.min(100, layer.opacity)) / 100;
       ctx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
+      ctx.filter = `brightness(${layer.brightness}%) contrast(${layer.contrast}%) saturate(${layer.saturation}%) blur(${layer.blur}px)`;
       const layerWidth = width * (layer.width / 100);
       const layerHeight = height * (layer.height / 100);
+      const anchorX = Math.max(0, Math.min(1, layer.anchorX ?? .5));
+      const anchorY = Math.max(0, Math.min(1, layer.anchorY ?? .5));
       if (layer.type === "video" && layer.el && layer.el.readyState >= 2) {
-        ctx.drawImage(layer.el, -layerWidth / 2, -layerHeight / 2, layerWidth, layerHeight);
+        layer.el.playbackRate = Math.max(.25, Math.min(3, layer.speed || 1));
+        ctx.drawImage(layer.el, -layerWidth * anchorX, -layerHeight * anchorY, layerWidth, layerHeight);
       } else if (layer.type === "effect") {
-        ctx.translate(-layerWidth / 2, -layerHeight / 2);
-        drawEffect(ctx, layer.effect || "rain", layerWidth, layerHeight, time);
+        ctx.translate(-layerWidth * anchorX, -layerHeight * anchorY);
+        drawEffect(ctx, layer.effect || "rain", layerWidth, layerHeight, time * Math.max(.25, layer.speed || 1));
       } else {
         ctx.fillStyle = "rgba(148,163,184,.25)";
-        ctx.fillRect(-layerWidth / 2, -layerHeight / 2, layerWidth, layerHeight);
+        ctx.fillRect(-layerWidth * anchorX, -layerHeight * anchorY, layerWidth, layerHeight);
       }
       ctx.restore();
 
@@ -708,18 +771,24 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         ctx.lineWidth = Math.max(1, width / 700);
         const layerWidth = width * (layer.width / 100);
         const layerHeight = height * (layer.height / 100);
-        ctx.strokeRect(width / 2 + layer.posX * sx - layerWidth / 2, height / 2 + layer.posY * sy - layerHeight / 2, layerWidth, layerHeight);
+        const anchorX = Math.max(0, Math.min(1, layer.anchorX ?? .5));
+        const anchorY = Math.max(0, Math.min(1, layer.anchorY ?? .5));
+        ctx.strokeRect(width / 2 + layer.posX * sx - layerWidth * anchorX, height / 2 + layer.posY * sy - layerHeight * anchorY, layerWidth, layerHeight);
         if (layer.maskOn) {
           const mask = asmrMaskRect(layer.maskX, layer.maskY, layer.maskW, layer.maskH, width, height);
           ctx.setLineDash([8, 5]);
           ctx.strokeStyle = "#22d3ee";
           ctx.strokeRect(mask.x, mask.y, mask.width, mask.height);
           ctx.setLineDash([]);
+          ctx.fillStyle = "#22d3ee";
+          ctx.beginPath();
+          ctx.arc(mask.x + mask.width, mask.y + mask.height, 8, 0, Math.PI * 2);
+          ctx.fill();
         }
         ctx.restore();
       }
     }
-  }, [layers, selectedLayerId, motionMode, motionStrength, motionSpeed]);
+  }, [layers, selectedLayerId, motionMode, motionStrength, motionSpeed, bgBrightness, bgContrast, bgSaturation, bgBlur]);
 
   const drawPreviewFrame = useCallback(() => {
     const canvas = cvRef.current;
@@ -748,24 +817,115 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     setLayers((old) => old.map((layer) => layer.id === id ? { ...layer, ...patch } : layer));
   }
 
-  function addEffectLayer(effect: EffectType) {
+  function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (event.currentTarget.width / Math.max(1, rect.width)),
+      y: (event.clientY - rect.top) * (event.currentTarget.height / Math.max(1, rect.height)),
+    };
+  }
+
+  function beginCanvasDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
+    if (rendering) return;
+    const point = canvasPoint(event);
+    const width = event.currentTarget.width;
+    const height = event.currentTarget.height;
+    const sx = width / PREVIEW_W;
+    const sy = height / PREVIEW_H;
+    const selected = layers.find((layer) => layer.id === selectedLayerId);
+
+    if (selected && inspectorTab === "mask" && selected.maskOn) {
+      const mask = asmrMaskRect(selected.maskX, selected.maskY, selected.maskW, selected.maskH, width, height);
+      const handleDistance = Math.hypot(point.x - (mask.x + mask.width), point.y - (mask.y + mask.height));
+      if (handleDistance <= 24) {
+        canvasDragRef.current = { mode: "mask-resize", layerId: selected.id, startX: point.x, startY: point.y, startMaskW: selected.maskW, startMaskH: selected.maskH };
+      } else if (point.x >= mask.x && point.x <= mask.x + mask.width && point.y >= mask.y && point.y <= mask.y + mask.height) {
+        canvasDragRef.current = { mode: "mask", layerId: selected.id, startX: point.x, startY: point.y, startMaskX: selected.maskX, startMaskY: selected.maskY };
+      }
+    }
+
+    if (!canvasDragRef.current) {
+      const hit = [...layers].reverse().find((layer) => {
+        if (!layer.visible) return false;
+        const w = width * (layer.width / 100);
+        const h = height * (layer.height / 100);
+        const ax = Math.max(0, Math.min(1, layer.anchorX ?? .5));
+        const ay = Math.max(0, Math.min(1, layer.anchorY ?? .5));
+        const cx = width / 2 + layer.posX * sx;
+        const cy = height / 2 + layer.posY * sy;
+        return point.x >= cx - w * ax && point.x <= cx + w * (1 - ax) && point.y >= cy - h * ay && point.y <= cy + h * (1 - ay);
+      });
+      if (hit) {
+        setSelectedLayerId(hit.id);
+        canvasDragRef.current = { mode: "layer", layerId: hit.id, startX: point.x, startY: point.y, startPosX: hit.posX, startPosY: hit.posY };
+      }
+    }
+
+    if (canvasDragRef.current) {
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+      event.preventDefault();
+    }
+  }
+
+  function moveCanvasDrag(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const drag = canvasDragRef.current;
+    if (!drag) return;
+    const point = canvasPoint(event);
+    const dx = point.x - drag.startX;
+    const dy = point.y - drag.startY;
+    const canvas = event.currentTarget;
+    const pxScale = PREVIEW_W / Math.max(1, canvas.width);
+    const pyScale = PREVIEW_H / Math.max(1, canvas.height);
+    if (drag.mode === "layer") {
+      updateLayer(drag.layerId, {
+        posX: Math.max(-500, Math.min(500, (drag.startPosX || 0) + dx * pxScale)),
+        posY: Math.max(-400, Math.min(400, (drag.startPosY || 0) + dy * pyScale)),
+      });
+    } else if (drag.mode === "mask") {
+      const layer = layers.find((item) => item.id === drag.layerId);
+      if (!layer) return;
+      const maxX = Math.max(0, 1 - layer.maskW / PREVIEW_W);
+      const maxY = Math.max(0, 1 - layer.maskH / PREVIEW_H);
+      updateLayer(drag.layerId, {
+        maskX: Math.max(0, Math.min(maxX, (drag.startMaskX || 0) + dx / Math.max(1, canvas.width))),
+        maskY: Math.max(0, Math.min(maxY, (drag.startMaskY || 0) + dy / Math.max(1, canvas.height))),
+      });
+    } else {
+      updateLayer(drag.layerId, {
+        maskW: Math.max(20, Math.min(PREVIEW_W, (drag.startMaskW || 360) + dx * pxScale)),
+        maskH: Math.max(20, Math.min(PREVIEW_H, (drag.startMaskH || 260) + dy * pyScale)),
+      });
+    }
+    event.preventDefault();
+  }
+
+  function endCanvasDrag(event?: ReactPointerEvent<HTMLCanvasElement>) {
+    if (event) { try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {} }
+    canvasDragRef.current = null;
+  }
+
+  function addEffectLayer(effect: EffectType, placement: "full" | "window" = "full") {
     const meta = PRESET_OVERLAYS.find((item) => item.id === effect) || PRESET_OVERLAYS[0];
+    const windowMask = placement === "window";
     const layer: LayerAsmr = {
-      id: uid("layer"), name: meta.label, type: "effect", effect, src: "", visible: true,
-      width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, flipH: false, flipV: false,
+      id: uid("layer"), name: windowMask ? "🌧️ Hujan di Kaca Jendela" : meta.label, type: "effect", effect, src: "", visible: true,
+      width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
+      speed: 1, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
       blendMode: effect === "fire" ? "lighter" : "screen", opacity: effect === "fog" ? 42 : 72,
-      maskOn: false, maskX: .25, maskY: .25, maskW: 360, maskH: 260,
+      maskOn: windowMask, maskX: .27, maskY: .12, maskW: 620, maskH: 350,
     };
     setLayers((old) => [...old, layer]);
     setSelectedLayerId(layer.id);
-    setNotice(`${meta.label} ditambahkan ke lapisan.`);
+    setInspectorTab(windowMask ? "mask" : "basic");
+    setNotice(`${layer.name} ditambahkan. Drag di preview untuk menyesuaikan posisi.`);
   }
 
   function addVideoLayer(file: File) {
     const src = rememberObjectUrl(URL.createObjectURL(file));
     const layer: LayerAsmr = {
       id: uid("layer"), name: file.name, type: "video", src, visible: true,
-      width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, flipH: false, flipV: false,
+      width: 100, height: 100, lockRatio: true, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
+      speed: 1, animation: "none", animationAmount: 30, brightness: 100, contrast: 100, saturation: 100, blur: 0,
       blendMode: "screen", opacity: 78, maskOn: false, maskX: .25, maskY: .25, maskW: 360, maskH: 260,
       el: makeVideoElement(src),
     };
@@ -906,8 +1066,9 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
 
   function saveProject() {
     try {
-      const snapshot: ProjectSnapshot = {
+        const snapshot: ProjectSnapshot = {
         bgType, bgPresetId, bgSrc: bgSrc.startsWith("blob:") ? "" : bgSrc, bgName,
+        bgBrightness, bgContrast, bgSaturation, bgBlur,
         motionMode, motionStrength, motionSpeed,
         layers: layers.map(toSerializableLayer).map((layer) => ({ ...layer, src: layer.src.startsWith("blob:") ? "" : layer.src })),
         selectedLayerId, soundId, customSoundSrc: customSoundSrc.startsWith("blob:") ? "" : customSoundSrc,
@@ -1027,7 +1188,17 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
             <div className="asmr-stage-badges"><span>16:9</span><span>{resolution}</span><span>{fmtTime(duration)}</span></div>
           </div>
           <div className="asmr-canvas-wrap">
-            <canvas ref={cvRef} width={PREVIEW_W} height={PREVIEW_H} aria-label="Preview video ASMR" />
+            <canvas
+              ref={cvRef}
+              width={PREVIEW_W}
+              height={PREVIEW_H}
+              aria-label="Preview video ASMR — drag lapisan untuk memindahkan"
+              onPointerDown={beginCanvasDrag}
+              onPointerMove={moveCanvasDrag}
+              onPointerUp={endCanvasDrag}
+              onPointerCancel={endCanvasDrag}
+              style={{ touchAction: "none", cursor: canvasDragRef.current ? "grabbing" : "grab" }}
+            />
             <div className="asmr-live-pill"><i /> LIVE PREVIEW</div>
             <button className="asmr-play" type="button" onClick={startPlayback}>{playing ? "⏸ Jeda" : "▶ Putar"}</button>
             {!bgReady && <div className="asmr-canvas-loading">{bgError ? "⚠️ Latar gagal dimuat" : "⏳ Memuat latar…"}</div>}
@@ -1036,6 +1207,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
             <div><b>{bgName || "Latar ASMR"}</b><span>{layerCount} lapisan aktif · {soundReady ? `🔊 ${soundName}` : "🔇 audio belum siap"}</span></div>
             <div className="asmr-timecode"><span>{fmtTime(previewTime)}</span><div className="asmr-progress"><i style={{ width: `${duration > 0 ? Math.min(100, (previewTime / duration) * 100) : 0}%` }} /></div><span>{fmtTime(duration)}</span></div>
           </div>
+          <div className="asmr-direct-help">🖐 Tap layer di preview lalu drag untuk memindahkan. Aktifkan tab <b>Mask</b> untuk menggeser kotak kaca; drag titik cyan untuk resize.</div>
           {!!notice && <div className={`asmr-notice ${notice.startsWith("❌") ? "danger" : notice.startsWith("✅") ? "success" : ""}`}>{notice}</div>}
           {!!projectStatus && <div className="asmr-save-status">{projectStatus}</div>}
 
@@ -1051,57 +1223,73 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         <aside className="asmr-controls" aria-label="Kontrol khusus ASMR">
           <div className="asmr-controls-title"><div><span className="asmr-kicker">ASMR CONTROL ROOM</span><b>Rakit suasana</b></div><span className="asmr-private">PRIVATE · ASMR ONLY</span></div>
 
-          <section className="asmr-panel">
-            <div className="asmr-panel-title"><span className="asmr-step">01</span><div><b>Foto & latar</b><small>Mulai dari preset, foto HP, atau gambar AI</small></div></div>
-            <div className="asmr-tabs">
-              {(["preset", "upload", "ai"] as const).map((kind) => <button key={kind} type="button" className={bgType === kind ? "active" : ""} onClick={() => setBgType(kind)}>{kind === "preset" ? "🏡 Preset" : kind === "upload" ? "📷 Foto HP" : "✨ Gambar AI"}</button>)}
-            </div>
-            {bgType === "preset" && <><select className="asmr-select" value={bgPresetId} onChange={(e) => setBgPresetId(e.target.value)}>{PRESET_BG.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><p className="asmr-help">{PRESET_BG.find((item) => item.id === bgPresetId)?.desc}</p></>}
-            {bgType === "upload" && <label className="asmr-upload"><strong>📷 Pilih foto dari HP</strong><span>JPG/PNG · foto kamar, alam, jendela, meja</span><input type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleBackgroundFile(file); e.currentTarget.value = ""; }} /></label>}
-            {bgType === "ai" && <div className="asmr-stack"><textarea className="asmr-textarea" rows={3} value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Contoh: kamar kayu dekat jendela, hujan malam, lampu hangat, sangat realistis…" /><button type="button" className="asmr-primary" onClick={() => void generateAiBackground()} disabled={aiBusy}>{aiBusy ? "⏳ Sedang membuat…" : "✨ Buat Latar Realistis"}</button>{!!aiStatus && <span className={`asmr-help ${aiStatus.startsWith("❌") ? "error" : "success"}`}>{aiStatus}</span>}</div>}
-          </section>
+          <nav className="asmr-tool-tabs" aria-label="Alat ASMR">
+            {([
+              ["video", "🎞️ Video"], ["audio", "🔊 Audio"], ["speed", "⏱ Speed"], ["animation", "✨ Animation"], ["color", "🎨 Color"],
+            ] as const).map(([id, label]) => <button key={id} type="button" className={toolTab === id ? "active" : ""} onClick={() => setToolTab(id)}>{label}</button>)}
+          </nav>
 
-          <section className="asmr-panel asmr-motion-panel">
-            <div className="asmr-panel-title"><span className="asmr-step">02</span><div><b>Hidupkan foto</b><small>Gerak kamera halus agar gambar terasa seperti video nyata</small></div></div>
-            <div className="asmr-motion-grid">{MOTION_OPTIONS.map((option) => <button key={option.id} type="button" className={motionMode === option.id ? "active" : ""} onClick={() => setMotionMode(option.id)}><strong>{option.label}</strong><small>{option.desc}</small></button>)}</div>
-            <label className="asmr-range"><span><b>Intensitas gerak</b><strong>{motionStrength}%</strong></span><input type="range" min={0} max={100} value={motionStrength} onChange={(e) => setMotionStrength(Number(e.target.value))} /></label>
-            <label className="asmr-range"><span><b>Kecepatan gerak</b><strong>{motionSpeed.toFixed(1)}×</strong></span><input type="range" min={0.2} max={2} step={0.1} value={motionSpeed} onChange={(e) => setMotionSpeed(Number(e.target.value))} /></label>
-            <p className="asmr-tip">💡 Rekomendasi ambience: <b>Ken Burns · 25–40% · 0.8–1.0×</b>. Geraknya sengaja pelan agar nyaman ditonton lama.</p>
-          </section>
+          {toolTab === "video" && <>
+            <section className="asmr-panel">
+              <div className="asmr-panel-title"><span className="asmr-step">01</span><div><b>Foto & latar</b><small>Mulai dari preset, foto HP, atau gambar AI</small></div></div>
+              <div className="asmr-tabs">
+                {(["preset", "upload", "ai"] as const).map((kind) => <button key={kind} type="button" className={bgType === kind ? "active" : ""} onClick={() => setBgType(kind)}>{kind === "preset" ? "🏡 Preset" : kind === "upload" ? "📷 Foto HP" : "✨ Gambar AI"}</button>)}
+              </div>
+              {bgType === "preset" && <><select className="asmr-select" value={bgPresetId} onChange={(e) => setBgPresetId(e.target.value)}>{PRESET_BG.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><p className="asmr-help">{PRESET_BG.find((item) => item.id === bgPresetId)?.desc}</p></>}
+              {bgType === "upload" && <label className="asmr-upload"><strong>📷 Pilih foto dari HP</strong><span>JPG/PNG · kamar, alam, jendela, meja</span><input type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleBackgroundFile(file); e.currentTarget.value = ""; }} /></label>}
+              {bgType === "ai" && <div className="asmr-stack"><textarea className="asmr-textarea" rows={3} value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="Contoh: kamar kayu dekat jendela, hujan malam, lampu hangat, sangat realistis…" /><button type="button" className="asmr-primary" onClick={() => void generateAiBackground()} disabled={aiBusy}>{aiBusy ? "⏳ Sedang membuat…" : "✨ Buat Latar Realistis"}</button>{!!aiStatus && <span className={`asmr-help ${aiStatus.startsWith("❌") ? "error" : "success"}`}>{aiStatus}</span>}</div>}
+            </section>
 
-          <section className="asmr-panel">
-            <div className="asmr-panel-title"><span className="asmr-step">03</span><div><b>Atmosfer visual</b><small>Hujan, salju, kabut, atau bara sebagai lapisan mandiri</small></div></div>
-            <div className="asmr-overlay-grid">{PRESET_OVERLAYS.map((item) => <button type="button" key={item.id} onClick={() => addEffectLayer(item.id)}><strong>{item.label}</strong><small>{item.desc}</small></button>)}</div>
-            <label className="asmr-upload compact"><strong>🎞️ Upload video overlay</strong><span>MP4/WebM · efek hujan, asap, bokeh, daun</span><input type="file" accept="video/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) addVideoLayer(file); e.currentTarget.value = ""; }} /></label>
-            <div className="asmr-layers-head"><span>{layers.length ? `${layers.length} LAPISAN` : "LAPISAN KOSONG"}</span><small>tap untuk edit</small></div>
-            {!layers.length && <p className="asmr-empty">Belum ada overlay. Foto sudah tetap bergerak lewat kontrol di atas.</p>}
-            <div className="asmr-layers">{layers.map((layer) => <div key={layer.id} className={`asmr-layer-row ${selectedLayerId === layer.id ? "selected" : ""}`} onClick={() => setSelectedLayerId(layer.id)}><span>{layer.type === "video" ? "🎞️" : layer.effect === "rain" ? "🌧️" : layer.effect === "fog" ? "🌫️" : layer.effect === "fire" ? "🔥" : "❄️"}</span><b>{layer.name}</b><button type="button" onClick={(e) => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} aria-label="Tampilkan atau sembunyikan layer">{layer.visible ? "◉" : "○"}</button><button type="button" onClick={(e) => { e.stopPropagation(); duplicateLayer(layer); }} aria-label="Duplikasi layer">＋</button><button type="button" className="delete" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} aria-label="Hapus layer">×</button></div>)}</div>
-          </section>
+            <section className="asmr-panel">
+              <div className="asmr-panel-title"><span className="asmr-step">02</span><div><b>Atmosfer & lapisan</b><small>Susun hujan, api, kabut, atau video overlay seperti editor</small></div></div>
+              <div className="asmr-overlay-grid">{PRESET_OVERLAYS.map((item) => <button type="button" key={item.id} onClick={() => addEffectLayer(item.id)}><strong>{item.label}</strong><small>{item.desc}</small></button>)}</div>
+              <div className="asmr-quick-row"><button type="button" onClick={() => addEffectLayer("rain", "window")}>🪟 Hujan di jendela</button><span>Tambah masker kaca otomatis</span></div>
+              <label className="asmr-upload compact"><strong>🎞️ Upload video overlay</strong><span>MP4/WebM · hujan, asap, bokeh, daun, api</span><input type="file" accept="video/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) addVideoLayer(file); e.currentTarget.value = ""; }} /></label>
+              <div className="asmr-layers-head"><span>{layers.length ? `${layers.length} LAPISAN` : "LAPISAN KOSONG"}</span><small>tap layer atau drag di preview</small></div>
+              {!layers.length && <p className="asmr-empty">Belum ada overlay. Foto tetap bergerak lewat alat Animation.</p>}
+              <div className="asmr-layers">{layers.map((layer) => <div key={layer.id} className={`asmr-layer-row ${selectedLayerId === layer.id ? "selected" : ""}`} onClick={() => setSelectedLayerId(layer.id)} onDoubleClick={() => { setSelectedLayerId(layer.id); setInspectorTab("mask"); }} tabIndex={0}><span>{layer.type === "video" ? "🎞️" : layer.effect === "rain" ? "🌧️" : layer.effect === "fog" ? "🌫️" : layer.effect === "fire" ? "🔥" : "❄️"}</span><b>{layer.name}</b><em>{layer.maskOn ? "MASK" : "FULL"}</em><button type="button" onClick={(e) => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} aria-label="Tampilkan atau sembunyikan layer">{layer.visible ? "◉" : "○"}</button><button type="button" onClick={(e) => { e.stopPropagation(); duplicateLayer(layer); }} aria-label="Duplikasi layer">＋</button><button type="button" className="delete" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} aria-label="Hapus layer">×</button></div>)}</div>
+            </section>
 
-          {activeLayer && <section className="asmr-panel asmr-edit-panel">
-            <div className="asmr-panel-title"><span className="asmr-step">EDIT</span><div><b>{activeLayer.name}</b><small>Kontrol lapisan yang sedang dipilih</small></div></div>
-            <label className="asmr-range"><span><b>Opacity</b><strong>{activeLayer.opacity}%</strong></span><input type="range" min={0} max={100} value={activeLayer.opacity} onChange={(e) => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })} /></label>
-            <label className="asmr-range"><span><b>Ukuran</b><strong>{activeLayer.width}%</strong></span><input type="range" min={20} max={180} value={activeLayer.width} onChange={(e) => { const value = Number(e.target.value); updateLayer(activeLayer.id, { width: value, height: activeLayer.lockRatio ? value : activeLayer.height }); }} /></label>
-            <div className="asmr-two-range"><label className="asmr-range"><span><b>X</b><strong>{activeLayer.posX}</strong></span><input type="range" min={-500} max={500} value={activeLayer.posX} onChange={(e) => updateLayer(activeLayer.id, { posX: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Y</b><strong>{activeLayer.posY}</strong></span><input type="range" min={-400} max={400} value={activeLayer.posY} onChange={(e) => updateLayer(activeLayer.id, { posY: Number(e.target.value) })} /></label></div>
-            <div className="asmr-inline-options"><label><input type="checkbox" checked={activeLayer.lockRatio} onChange={(e) => updateLayer(activeLayer.id, { lockRatio: e.target.checked })} /> Kunci rasio</label><select className="asmr-select" value={activeLayer.blendMode} onChange={(e) => updateLayer(activeLayer.id, { blendMode: e.target.value as BlendMode })}><option value="screen">Screen</option><option value="lighter">Lighter</option><option value="normal">Normal</option><option value="multiply">Multiply</option></select></div>
-            <label className="asmr-mask-toggle"><input type="checkbox" checked={activeLayer.maskOn} onChange={(e) => updateLayer(activeLayer.id, { maskOn: e.target.checked })} /><span><b>🔳 Masker kaca jendela</b><small>Efek hanya muncul di area kaca</small></span></label>
-            {activeLayer.maskOn && <div className="asmr-mask-controls"><label className="asmr-range"><span><b>Mask X</b><strong>{Math.round(activeLayer.maskX * 100)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.maskX} onChange={(e) => updateLayer(activeLayer.id, { maskX: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Mask Y</b><strong>{Math.round(activeLayer.maskY * 100)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.maskY} onChange={(e) => updateLayer(activeLayer.id, { maskY: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Lebar kaca</b><strong>{activeLayer.maskW}px</strong></span><input type="range" min={20} max={1280} value={activeLayer.maskW} onChange={(e) => updateLayer(activeLayer.id, { maskW: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Tinggi kaca</b><strong>{activeLayer.maskH}px</strong></span><input type="range" min={20} max={720} value={activeLayer.maskH} onChange={(e) => updateLayer(activeLayer.id, { maskH: Number(e.target.value) })} /></label></div>}
-            <button type="button" className="asmr-ghost" onClick={() => updateLayer(activeLayer.id, { width: 100, height: 100, posX: 0, posY: 0, opacity: 80, rotate: 0, maskOn: false, maskX: .25, maskY: .25, maskW: 360, maskH: 260, blendMode: "screen" })}>↺ Reset lapisan</button>
-          </section>}
+            {activeLayer && <section className="asmr-panel asmr-edit-panel">
+              <div className="asmr-panel-title"><span className="asmr-step">EDIT</span><div><b>{activeLayer.name}</b><small>Atur seperti inspector editor video — drag langsung di preview</small></div></div>
+              <div className="asmr-inspector-tabs">{(["basic", "mask", "matting"] as const).map((id) => <button key={id} type="button" className={inspectorTab === id ? "active" : ""} onClick={() => setInspectorTab(id)}>{id === "basic" ? "Basic" : id === "mask" ? "Mask" : "AI Matting"}</button>)}</div>
+              {inspectorTab === "basic" && <div className="asmr-inspector-body">
+                <div className="asmr-inspector-group"><div className="asmr-group-head"><b>● Transform</b><button type="button" onClick={() => updateLayer(activeLayer.id, { width: 100, height: 100, posX: 0, posY: 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false })}>↺ Reset</button></div>
+                  <label className="asmr-range"><span><b>Width</b><strong>{activeLayer.width.toFixed(0)}%</strong></span><input type="range" min={20} max={180} value={activeLayer.width} onChange={(e) => { const value = Number(e.target.value); updateLayer(activeLayer.id, { width: value, height: activeLayer.lockRatio ? value : activeLayer.height }); }} /></label>
+                  {!activeLayer.lockRatio && <label className="asmr-range"><span><b>Height</b><strong>{activeLayer.height.toFixed(0)}%</strong></span><input type="range" min={20} max={180} value={activeLayer.height} onChange={(e) => updateLayer(activeLayer.id, { height: Number(e.target.value) })} /></label>}
+                  <div className="asmr-two-range"><label className="asmr-range"><span><b>Position X</b><strong>{activeLayer.posX.toFixed(0)}</strong></span><input type="range" min={-500} max={500} value={activeLayer.posX} onChange={(e) => updateLayer(activeLayer.id, { posX: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Position Y</b><strong>{activeLayer.posY.toFixed(0)}</strong></span><input type="range" min={-400} max={400} value={activeLayer.posY} onChange={(e) => updateLayer(activeLayer.id, { posY: Number(e.target.value) })} /></label></div>
+                  <div className="asmr-two-range"><label className="asmr-range"><span><b>Anchor X</b><strong>{(activeLayer.anchorX * 100).toFixed(0)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.anchorX} onChange={(e) => updateLayer(activeLayer.id, { anchorX: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Anchor Y</b><strong>{(activeLayer.anchorY * 100).toFixed(0)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.anchorY} onChange={(e) => updateLayer(activeLayer.id, { anchorY: Number(e.target.value) })} /></label></div>
+                  <label className="asmr-range"><span><b>Rotate</b><strong>{activeLayer.rotate.toFixed(0)}°</strong></span><input type="range" min={-180} max={180} value={activeLayer.rotate} onChange={(e) => updateLayer(activeLayer.id, { rotate: Number(e.target.value) })} /></label>
+                  <div className="asmr-flip-row"><span>Flip</span><button type="button" className={activeLayer.flipH ? "active" : ""} onClick={() => updateLayer(activeLayer.id, { flipH: !activeLayer.flipH })}>↔ Horizontal</button><button type="button" className={activeLayer.flipV ? "active" : ""} onClick={() => updateLayer(activeLayer.id, { flipV: !activeLayer.flipV })}>↕ Vertikal</button><label><input type="checkbox" checked={activeLayer.lockRatio} onChange={(e) => updateLayer(activeLayer.id, { lockRatio: e.target.checked })} /> Kunci</label></div>
+                </div>
+                <div className="asmr-inspector-group"><div className="asmr-group-head"><b>● Compositing</b><button type="button" onClick={() => updateLayer(activeLayer.id, { opacity: 80, blendMode: "screen" })}>↺ Reset</button></div><div className="asmr-inline-options"><span>Blend mode</span><select className="asmr-select" value={activeLayer.blendMode} onChange={(e) => updateLayer(activeLayer.id, { blendMode: e.target.value as BlendMode })}><option value="screen">Screen</option><option value="lighter">Lighter</option><option value="normal">Normal</option><option value="multiply">Multiply</option></select></div><label className="asmr-range"><span><b>Opacity</b><strong>{activeLayer.opacity}%</strong></span><input type="range" min={0} max={100} value={activeLayer.opacity} onChange={(e) => updateLayer(activeLayer.id, { opacity: Number(e.target.value) })} /></label></div>
+              </div>}
+              {inspectorTab === "mask" && <div className="asmr-inspector-body"><div className="asmr-mask-hero"><b>Mask area / kaca jendela</b><span>Aktifkan masker, lalu drag kotak cyan di preview. Titik pojok untuk resize.</span><label><input type="checkbox" checked={activeLayer.maskOn} onChange={(e) => updateLayer(activeLayer.id, { maskOn: e.target.checked })} /> Gunakan masker</label></div>{activeLayer.maskOn && <div className="asmr-mask-controls"><div className="asmr-quick-row"><button type="button" onClick={() => updateLayer(activeLayer.id, { maskOn: true, maskX: .27, maskY: .12, maskW: 620, maskH: 350 })}>🪟 Pasang ke jendela</button><span>Preset area kaca</span></div><label className="asmr-range"><span><b>Mask X</b><strong>{Math.round(activeLayer.maskX * 100)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.maskX} onChange={(e) => updateLayer(activeLayer.id, { maskX: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Mask Y</b><strong>{Math.round(activeLayer.maskY * 100)}%</strong></span><input type="range" min={0} max={1} step={.01} value={activeLayer.maskY} onChange={(e) => updateLayer(activeLayer.id, { maskY: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Lebar kaca</b><strong>{Math.round(activeLayer.maskW)}px</strong></span><input type="range" min={20} max={1280} value={activeLayer.maskW} onChange={(e) => updateLayer(activeLayer.id, { maskW: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Tinggi kaca</b><strong>{Math.round(activeLayer.maskH)}px</strong></span><input type="range" min={20} max={720} value={activeLayer.maskH} onChange={(e) => updateLayer(activeLayer.id, { maskH: Number(e.target.value) })} /></label></div>}</div>}
+              {inspectorTab === "matting" && <div className="asmr-matting-info"><b>✂️ AI Matting</b><p>ASMR paling stabil memakai video overlay dengan background transparan atau masker manual. Untuk hujan di luar jendela dan api di perapian, pilih <b>Mask</b> agar penempatan presisi.</p><button type="button" className="asmr-ghost" disabled>AI Matting belum diperlukan untuk overlay ASMR</button></div>}
+            </section>}
+          </>}
 
-          <section className="asmr-panel">
-            <div className="asmr-panel-title"><span className="asmr-step">04</span><div><b>Suara ambience</b><small>Loop otomatis sepanjang durasi video</small></div></div>
-            <select className="asmr-select" value={soundId} onChange={(e) => setSoundId(e.target.value)}><option value="custom">📁 {soundName || "Audio HP"}</option>{PRESET_SOUNDS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
-            <p className="asmr-help">{soundId === "custom" ? "Audio milikmu sendiri." : PRESET_SOUNDS.find((item) => item.id === soundId)?.desc}</p>
-            <label className="asmr-upload compact"><strong>🎙️ Upload audio dari HP</strong><span>WAV/MP3/OGG/M4A · loop otomatis</span><input type="file" accept="audio/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleSoundFile(file); e.currentTarget.value = ""; }} /></label>
-            <label className="asmr-range"><span><b>Volume ambience</b><strong>{soundVolume}%</strong></span><input type="range" min={0} max={100} value={soundVolume} onChange={(e) => setSoundVolume(Number(e.target.value))} /></label>
-            <div className={`asmr-audio-status ${soundReady ? "ready" : ""}`}>{soundLoading ? "⏳ Memuat audio…" : soundReady ? `✅ ${soundName} siap diputar & diloop` : soundError || "🔇 Belum ada audio — ekspor tetap bisa tanpa suara"}</div>
-          </section>
+          {toolTab === "animation" && <>
+            <section className="asmr-panel asmr-motion-panel">
+              <div className="asmr-panel-title"><span className="asmr-step">ANIM</span><div><b>Hidupkan foto latar</b><small>Gerak kamera lembut agar satu gambar terasa seperti video nyata</small></div></div>
+              <div className="asmr-motion-grid">{MOTION_OPTIONS.map((option) => <button key={option.id} type="button" className={motionMode === option.id ? "active" : ""} onClick={() => setMotionMode(option.id)}><strong>{option.label}</strong><small>{option.desc}</small></button>)}</div>
+              <label className="asmr-range"><span><b>Intensitas kamera</b><strong>{motionStrength}%</strong></span><input type="range" min={0} max={100} value={motionStrength} onChange={(e) => setMotionStrength(Number(e.target.value))} /></label>
+              <label className="asmr-range"><span><b>Kecepatan kamera</b><strong>{motionSpeed.toFixed(1)}×</strong></span><input type="range" min={.2} max={2} step={.1} value={motionSpeed} onChange={(e) => setMotionSpeed(Number(e.target.value))} /></label>
+              <p className="asmr-tip">💡 Untuk video tidur/relaks: <b>Ken Burns · 25–40% · 0.8–1.0×</b>.</p>
+            </section>
+            {activeLayer && <section className="asmr-panel"><div className="asmr-panel-title"><span className="asmr-step">LAYER</span><div><b>Animasi {activeLayer.name}</b><small>Gerakan kecil untuk api, kabut, atau overlay</small></div></div><select className="asmr-select" value={activeLayer.animation} onChange={(e) => updateLayer(activeLayer.id, { animation: e.target.value as LayerAsmr["animation"] })}><option value="none">Tidak ada</option><option value="float">Float / naik turun</option><option value="pulse">Pulse / bernapas</option><option value="sway">Sway / bergoyang</option></select><label className="asmr-range"><span><b>Intensitas animasi</b><strong>{activeLayer.animationAmount}%</strong></span><input type="range" min={0} max={100} value={activeLayer.animationAmount} onChange={(e) => updateLayer(activeLayer.id, { animationAmount: Number(e.target.value) })} /></label></section>}
+          </>}
 
-          <section className="asmr-panel">
-            <div className="asmr-panel-title"><span className="asmr-step">05</span><div><b>Ekspor & review</b><small>Setelan ini hanya milik ASMR Studio</small></div></div>
-            <div className="asmr-output-grid"><label><span>Durasi</span><select className="asmr-select" value={duration} onChange={(e) => setDuration(Number(e.target.value))}><option value={30}>30 detik</option><option value={60}>1 menit</option><option value={300}>5 menit</option><option value={600}>10 menit</option><option value={1800}>30 menit</option><option value={3600}>1 jam</option><option value={7200}>2 jam</option></select></label><label><span>Resolusi</span><select className="asmr-select" value={resolution} onChange={(e) => setResolution(e.target.value as typeof resolution)}><option value="1080p">1080p</option><option value="720p">720p HD</option><option value="480p">480p hemat HP</option></select></label><label><span>Frame rate</span><select className="asmr-select" value={fps} onChange={(e) => setFps(Number(e.target.value))}><option value={30}>30 FPS halus</option><option value={24}>24 FPS cinematic</option><option value={15}>15 FPS long-form</option></select></label></div>
-            <div className="asmr-render-note">{duration >= 1800 ? "⏱️ Video panjang perlu ruang penyimpanan dan waktu render besar. Untuk HP, pakai 480p + 15 FPS." : "⚡ WebCodecs akan dipakai bila browser mendukung; jika tidak, aplikasi memakai render real-time yang durasinya sesuai video."}</div>
+          {toolTab === "color" && <section className="asmr-panel"><div className="asmr-panel-title"><span className="asmr-step">COLOR</span><div><b>Warna & ambience</b><small>Gelapkan, hangatkan, atau lembutkan latar dan overlay</small></div></div><div className="asmr-inspector-group"><div className="asmr-group-head"><b>Latar belakang</b><button type="button" onClick={() => { setBgBrightness(100); setBgContrast(100); setBgSaturation(100); setBgBlur(0); }}>↺ Reset</button></div><label className="asmr-range"><span><b>Brightness</b><strong>{bgBrightness}%</strong></span><input type="range" min={50} max={150} value={bgBrightness} onChange={(e) => setBgBrightness(Number(e.target.value))} /></label><label className="asmr-range"><span><b>Contrast</b><strong>{bgContrast}%</strong></span><input type="range" min={50} max={150} value={bgContrast} onChange={(e) => setBgContrast(Number(e.target.value))} /></label><label className="asmr-range"><span><b>Saturation</b><strong>{bgSaturation}%</strong></span><input type="range" min={0} max={200} value={bgSaturation} onChange={(e) => setBgSaturation(Number(e.target.value))} /></label><label className="asmr-range"><span><b>Blur latar</b><strong>{bgBlur}px</strong></span><input type="range" min={0} max={20} value={bgBlur} onChange={(e) => setBgBlur(Number(e.target.value))} /></label></div>{activeLayer && <div className="asmr-inspector-group"><div className="asmr-group-head"><b>Layer terpilih</b><button type="button" onClick={() => updateLayer(activeLayer.id, { brightness: 100, contrast: 100, saturation: 100, blur: 0 })}>↺ Reset</button></div><label className="asmr-range"><span><b>Brightness</b><strong>{activeLayer.brightness}%</strong></span><input type="range" min={50} max={150} value={activeLayer.brightness} onChange={(e) => updateLayer(activeLayer.id, { brightness: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Contrast</b><strong>{activeLayer.contrast}%</strong></span><input type="range" min={50} max={150} value={activeLayer.contrast} onChange={(e) => updateLayer(activeLayer.id, { contrast: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Saturation</b><strong>{activeLayer.saturation}%</strong></span><input type="range" min={0} max={200} value={activeLayer.saturation} onChange={(e) => updateLayer(activeLayer.id, { saturation: Number(e.target.value) })} /></label><label className="asmr-range"><span><b>Blur layer</b><strong>{activeLayer.blur}px</strong></span><input type="range" min={0} max={20} value={activeLayer.blur} onChange={(e) => updateLayer(activeLayer.id, { blur: Number(e.target.value) })} /></label></div>}</section>}
+
+          {toolTab === "audio" && <section className="asmr-panel"><div className="asmr-panel-title"><span className="asmr-step">AUDIO</span><div><b>Suara ambience</b><small>Loop otomatis sepanjang durasi video</small></div></div><select className="asmr-select" value={soundId} onChange={(e) => setSoundId(e.target.value)}><option value="custom">📁 {soundName || "Audio HP"}</option>{PRESET_SOUNDS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><p className="asmr-help">{soundId === "custom" ? "Audio milikmu sendiri." : PRESET_SOUNDS.find((item) => item.id === soundId)?.desc}</p><label className="asmr-upload compact"><strong>🎙️ Upload audio dari HP</strong><span>WAV/MP3/OGG/M4A · loop otomatis</span><input type="file" accept="audio/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) void handleSoundFile(file); e.currentTarget.value = ""; }} /></label><label className="asmr-range"><span><b>Volume ambience</b><strong>{soundVolume}%</strong></span><input type="range" min={0} max={100} value={soundVolume} onChange={(e) => setSoundVolume(Number(e.target.value))} /></label><div className={`asmr-audio-status ${soundReady ? "ready" : ""}`}>{soundLoading ? "⏳ Memuat audio…" : soundReady ? `✅ ${soundName} siap diputar & diloop` : soundError || "🔇 Belum ada audio — ekspor tetap bisa tanpa suara"}</div></section>}
+
+          {toolTab === "speed" && <section className="asmr-panel"><div className="asmr-panel-title"><span className="asmr-step">SPEED</span><div><b>Kecepatan & durasi</b><small>Atur durasi video dan speed layer overlay</small></div></div>{activeLayer && <><label className="asmr-range"><span><b>Speed layer {activeLayer.type === "video" ? "video" : "efek"}</b><strong>{(activeLayer.speed || 1).toFixed(2)}×</strong></span><input type="range" min={.25} max={3} step={.05} value={activeLayer.speed || 1} onChange={(e) => updateLayer(activeLayer.id, { speed: Number(e.target.value) })} /></label><p className="asmr-help">Speed ini hanya memengaruhi layer yang dipilih, bukan fitur video lain.</p></>}{activeLayer?.type === "video" && <label className="asmr-range"><span><b>Loop overlay</b><strong>{activeLayer.el?.loop === false ? "OFF" : "ON"}</strong></span><input type="checkbox" checked={activeLayer.el?.loop !== false} onChange={(e) => { if (activeLayer.el) activeLayer.el.loop = e.target.checked; }} /></label>}<div className="asmr-output-grid"><label><span>Durasi</span><select className="asmr-select" value={duration} onChange={(e) => setDuration(Number(e.target.value))}><option value={30}>30 detik</option><option value={60}>1 menit</option><option value={300}>5 menit</option><option value={600}>10 menit</option><option value={1800}>30 menit</option><option value={3600}>1 jam</option><option value={7200}>2 jam</option></select></label><label><span>FPS</span><select className="asmr-select" value={fps} onChange={(e) => setFps(Number(e.target.value))}><option value={30}>30</option><option value={24}>24</option><option value={15}>15</option></select></label></div></section>}
+
+          <section className="asmr-panel asmr-export-panel">
+            <div className="asmr-panel-title"><span className="asmr-step">EXPORT</span><div><b>Render & review</b><small>Setelan ini hanya milik ASMR Studio</small></div></div>
+            <div className="asmr-output-grid"><label><span>Durasi</span><select className="asmr-select" value={duration} onChange={(e) => setDuration(Number(e.target.value))}><option value={30}>30 detik</option><option value={60}>1 menit</option><option value={300}>5 menit</option><option value={600}>10 menit</option><option value={1800}>30 menit</option><option value={3600}>1 jam</option><option value={7200}>2 jam</option></select></label><label><span>Resolusi</span><select className="asmr-select" value={resolution} onChange={(e) => setResolution(e.target.value as typeof resolution)}><option value="1080p">1080p</option><option value="720p">720p HD</option><option value="480p">480p hemat HP</option></select></label><label><span>FPS</span><select className="asmr-select" value={fps} onChange={(e) => setFps(Number(e.target.value))}><option value={30}>30 halus</option><option value={24}>24 cinematic</option><option value={15}>15 long-form</option></select></label></div>
+            <div className="asmr-render-note">{duration >= 1800 ? "⏱️ Video panjang perlu ruang penyimpanan dan RAM besar. Untuk HP, pakai 480p + 15 FPS." : "⚡ WebCodecs dipakai bila tersedia; fallback merekam real-time dengan durasi yang benar."}</div>
             <button type="button" className="asmr-primary big" onClick={() => void renderAsmrVideo()} disabled={rendering || (!bgReady && !bgError)}>{rendering ? `⏳ Merender ${Math.round(progress * 100)}%` : renderedUrl ? "🔁 Render ulang & review" : "🎬 Render Video ASMR"}</button>
             {rendering && <button type="button" className="asmr-ghost danger" onClick={() => { renderCancelledRef.current = true; }}>⏹ Batalkan render</button>}
           </section>
