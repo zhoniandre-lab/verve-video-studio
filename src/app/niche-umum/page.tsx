@@ -7,7 +7,7 @@ const NICHES = [
   { id: "rakyat", label: "📜 Cerita Rakyat (Kisah Daerah, Mitos)", emoji: "📜" },
   { id: "komentar", label: "💬 Lagu dari Komentar Netizen (Curhat)", emoji: "💬" },
   { id: "parodi", label: "🎭 Parodi Kejadian Viral (Trending)", emoji: "🎭" },
-  { id: "misteri", label: "🕵️ Misteri & Konspirasi (ASMR/Horor)", emoji: "🕵️" }
+  { id: "misteri", label: "🕵️ Misteri & Konspirasi (Horor)", emoji: "🕵️" }
 ];
 
 const PRESET_TITLES: Record<string, string[]> = {
@@ -65,8 +65,8 @@ export default function NicheUmumPage() {
     setSelectedTitle(t);
     setCustomTitle(t);
     // Auto-generate Metadata SEO
-    setDesc(`🎥 Video ASMR & Musik Religi: ${t}\n\nKisah penuh hikmah yang dibalut dengan alunan musik syahdu orisinal AI dan visualisasi cozy alami yang menenangkan jiwa. Sangat cocok diputar sebelum tidur atau saat santai.\n\nSemoga video ini bermanfaat dan menjadi ladang amal jariyah untuk kita semua. Aamiin.\n\nDon't forget to Like, Comment, and Subscribe! 🔔`);
-    setTags(`${niche}, asmr indonesia, cerita jadi lagu, ${t.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(" ").slice(0, 4).join(", ")}, lagu viral, visualizer syahdu`);
+    setDesc(`🎥 Video narasi & Musik Religi: ${t}\n\nKisah penuh hikmah yang dibalut dengan alunan musik syahdu orisinal AI dan visualisasi cozy alami yang menenangkan jiwa. Sangat cocok diputar sebelum tidur atau saat santai.\n\nSemoga video ini bermanfaat dan menjadi ladang amal jariyah untuk kita semua. Aamiin.\n\nDon't forget to Like, Comment, and Subscribe! 🔔`);
+    setTags(`${niche}, musik religi indonesia, cerita jadi lagu, ${t.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(" ").slice(0, 4).join(", ")}, lagu viral, visualizer syahdu`);
     setThumbPrompt(`High quality realistic YouTube thumbnail, representing: ${t}, dramatic emotional cinematic lighting, highly detailed faces, 8k resolution.`);
   };
 
@@ -167,11 +167,11 @@ export default function NicheUmumPage() {
 
             <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12, display: "flex", gap: 8 }}>
               <button className="v6-bigcta" style={{ flex: 1, marginTop: 0 }} onClick={() => {
-                // Simpan draf & beralih ke editor ASMR / Spectrum untuk ekspor visual
-                alert("✨ Metadata SEO siap! Beralih ke ASMR Studio untuk merakit videomu...");
-                location.href = "/asmr";
+                // Metadata siap — lanjutkan perakitan di editor studio profesional.
+                alert("✨ Metadata SEO siap! Beralih ke Studio Edit Profesional untuk merakit videomu...");
+                location.href = "/studio-preview";
               }}>
-                🎧 Buka ASMR Studio & Edit Visual ›
+                🎬 Buka Studio Edit Profesional ›
               </button>
               <button className="v6-bigcta" style={{ flex: 1, marginTop: 0, background: "#059669" }} onClick={() => {
                 alert("✨ Metadata SEO siap! Beralih ke Spectrum Studio untuk membuat visualizer...");

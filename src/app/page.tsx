@@ -387,7 +387,6 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "🎤", lb: "Suno Studio", bb: "NEW", act: () => { location.href = "/suno"; } },
     { ic: "📖", lb: "Niche Qur'an", bb: "NEW", act: () => { location.href = "/quran"; } },
     { ic: "🎯", lb: "Niche Umum", bb: "NEW", act: () => { location.href = "/niche-umum"; } },
-    { ic: "🎧", lb: "ASMR Studio", bb: "NEW", act: () => { location.href = "/asmr"; } },
     { ic: "⚡", lb: "AutoCut", act: () => gotoEditor(undefined, { tool: "media", newProject: Date.now() }) },
     { ic: "🪄", lb: "Retouch", act: () => gotoEditor(undefined, { tool: "filter", applyAdjust: Date.now() }) },
     { ic: "🧠", lb: "Pembuat AI", bb: "AI", act: () => gotoEditor(undefined, { tool: "wizard", newProject: Date.now() }) },
@@ -541,7 +540,6 @@ const TEMPLATE_PRESETS = [
   },
   { id: "sedih", icon: "🥀", name: "Klip Sedih Sinematik", desc: "9:16 · transisi lembut · vignette · cap karaoke kuning", cfg: { ratio: "9:16", transition: "fadeblack", transitionDur: 0.7, adj: { ...DEFAULT_ADJUST, vig: 90, fade: 18 }, caption: "karaoke" } },
   { id: "energi", icon: "⚡", name: "Shorts Energi", desc: "9:16 · denyut · denyar beat · teks pop", cfg: { ratio: "9:16", transition: "glitch", transitionDur: 0.35, adj: { ...DEFAULT_ADJUST, vig: 40 }, effect: "pulse", caption: "pop" } },
-  { id: "asmr", icon: "🌧️", name: "Suasana Hujan Santai", desc: "16:9 · hujan + kabut · fade lambat", cfg: { ratio: "16:9", transition: "dissolve", transitionDur: 1.2, adj: { ...DEFAULT_ADJUST, b: -8 }, effect: "hujan", caption: "boldwhite" } },
   { id: "cerita", icon: "📖", name: "Storytelling Narasi", desc: "16:9 · zoom pelan · caption standar", cfg: { ratio: "16:9", transition: "zoomin", transitionDur: 0.8, adj: { ...DEFAULT_ADJUST }, loop: "zoompelan", caption: "capcut" } },
   { id: "motivasi", icon: "💬", name: "Quotes Motivasi", desc: "9:16 · dissolve lembut · caption neon", cfg: { ratio: "9:16", transition: "dissolve", transitionDur: 0.5, adj: { ...DEFAULT_ADJUST, c: 18, vig: 55 }, caption: "neon" } },
   { id: "produk", icon: "🛍️", name: "Jualan Produk", desc: "1:1 · wipe kiri · warna pop · caption gradasi", cfg: { ratio: "1:1", transition: "wipe-l", transitionDur: 0.45, adj: { ...DEFAULT_ADJUST, s: 15, c: 10 }, caption: "gradient" } },
@@ -564,7 +562,6 @@ function TemplatePage({ gotoEditor }: { gotoEditor: (id?: string, cmd?: any) => 
     cinematic_travel: "https://videos.pexels.com/video-files/1722697/1722697-uhd_1440_2560_30fps.mp4",
     sedih: "https://videos.pexels.com/video-files/3248357/3248357-hd_1920_1080_25fps.mp4",
     energi: "https://videos.pexels.com/video-files/4038483/4038483-hd_1920_1080_30fps.mp4",
-    asmr: "https://videos.pexels.com/video-files/3125244/3125244-hd_1920_1080_25fps.mp4",
     cerita: "https://videos.pexels.com/video-files/3121436/3121436-hd_1920_1080_25fps.mp4",
   };
 
@@ -790,7 +787,6 @@ function LabPage({ gotoEditor, go }: { gotoEditor: (id?: string, cmd?: any) => v
     { ic: "🎵", t: "Musik AI (Suno)", d: "Buat lagu/instrumen orisinal bebas royalti", act: () => gotoEditor(undefined, { tool: "musik" }) },
     { ic: "🎤", t: "Suno Studio (Khusus)", d: "Menu khusus generate lagu — utuh & langsung pakai di Spectrum", act: () => { location.href = "/suno"; } },
     { ic: "🎯", t: "Niche Umum", d: "Click-worthy ideation & metadata generator", act: () => { location.href = "/niche-umum"; } },
-    { ic: "🎧", t: "ASMR Studio", d: "Editor video ASMR dengan glass masking & loop mixers", act: () => { location.href = "/asmr"; } },
     { ic: "🗣️", t: "Teks ke Audio", d: "Narasi suara AI dari teks (id-ID)", act: () => gotoEditor(undefined, { tool: "tts" }) },
     { ic: "🎨", t: "Gambar AI", d: "Generate visual sinematik utk klip", act: () => gotoEditor(undefined, { tool: "media" }) },
     { ic: "🎬", t: "Video AI", d: "Teks/gambar → video pendek (beta)", act: () => gotoEditor(undefined, { tool: "videoai" }) },
