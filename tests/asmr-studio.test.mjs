@@ -12,6 +12,7 @@ const motion = await import(enc(motionJs));
 const studio = readFileSync(new URL("../src/components/AsmrStudio.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const proxy = readFileSync(new URL("../src/app/api/proxy-img/route.ts", import.meta.url), "utf8");
+const stockRoute = readFileSync(new URL("../src/app/api/hcnsec/stock-video/route.ts", import.meta.url), "utf8");
 
 let gagal = 0;
 const T = (nama, ok, info = "") => {
@@ -41,6 +42,13 @@ T("AI background tidak tergantung createClient", !/createClient/.test(studio) &&
 T("timeout/blank asset tidak membuat ekspor hitam diam-diam", /bgReady/.test(studio) && /Tunggu latar selesai dimuat/.test(studio));
 T("UI mobile memakai layout satu kolom", /@media \(max-width:920px\)/.test(css) && /\.asmr-workspace\{grid-template-columns:1fr/.test(css));
 T("proxy gambar mengizinkan Unsplash preset", /host\.includes\("unsplash"\)/.test(proxy));
+T("ASMR punya koleksi overlay Pexels/Pixabay/Coverr", /searchStock/.test(studio) && /api\/hcnsec\/stock-video/.test(studio) && /Koleksi overlay realistis/.test(studio));
+T("koleksi masuk sebagai video layer ringan", /addStockLayer/.test(studio) && /stockMediaSrc/.test(studio));
+T("saat masuk otomatis mencari rain window", /searchStock\("rain window"\)/.test(studio));
+T("hujan real punya preset masker jendela", /addEffectLayer\("rain", "window"\)/.test(studio) && /Masker jendela otomatis aktif/.test(studio));
+T("drag layer dan resize mask tersedia", /onPointerDown=\{beginCanvasDrag\}/.test(studio) && /mask-resize/.test(studio));
+T("preview canvas dibatasi 30fps untuk HP", /1000 \/ 30/.test(studio) && /satu path untuk semua garis/i.test(studio));
+T("route katalog jujur saat semua kunci kosong", /code: "TANPA_KUNCI"/.test(stockRoute));
 
 if (gagal) {
   console.error(`\n💥 ${gagal} uji ASMR gagal`);

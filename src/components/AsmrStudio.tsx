@@ -55,6 +55,7 @@ type LayerAsmr = {
 type PresetBackground = { id: string; label: string; desc: string; prompt: string; src: string };
 type PresetSound = { id: string; label: string; desc: string; src: string };
 type PresetOverlay = { id: EffectType; label: string; desc: string };
+type StockClip = { id: number; src: string; sd?: string; thumb?: string; dur?: number; by?: string; link?: string; w?: number; h?: number; provider?: string };
 
 type ProjectSnapshot = {
   bgType: "preset" | "upload" | "ai";
@@ -168,16 +169,18 @@ function drawRain(ctx: CanvasRenderingContext2D, width: number, height: number, 
   ctx.strokeStyle = "rgba(190,220,245,.52)";
   ctx.lineWidth = Math.max(1, width / 900);
   ctx.lineCap = "round";
-  const density = Math.max(32, Math.round(width / 18));
+  // Satu path untuk semua garis jauh lebih ringan di HP daripada begin/stroke
+  // per tetes. Overlay stok realistis tetap tersedia di panel koleksi.
+  const density = Math.max(24, Math.round(width / 34));
+  ctx.beginPath();
   for (let i = 0; i < density; i++) {
     const x = positiveMod(i * 97 + time * width * 0.16, width + 30) - 15;
     const y = positiveMod(i * 137 + time * height * 0.62, height + 50) - 25;
     const len = Math.max(8, height * (0.012 + (i % 4) * 0.003));
-    ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x - len * 0.16, y + len);
-    ctx.stroke();
   }
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -515,6 +518,11 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
 
   const [layers, setLayers] = useState<LayerAsmr[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState("");
+  const [stockQuery, setStockQuery] = useState("rain window");
+  const [stockResults, setStockResults] = useState<StockClip[]>([]);
+  const [stockBusy, setStockBusy] = useState(false);
+  const [stockError, setStockError] = useState("");
+  const [stockRole, setStockRole] = useState<"rain" | "fire" | "general">("rain");
 
   const [soundId, setSoundId] = useState("rain");
   const [customSoundSrc, setCustomSoundSrc] = useState("");
@@ -550,12 +558,14 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const previewEpochRef = useRef(0);
   const startAtRef = useRef(0);
   const lastPreviewUiRef = useRef(0);
+  const lastPreviewFrameRef = useRef(0);
   const loadSoundSeqRef = useRef(0);
   const bgLoadSeqRef = useRef(0);
   const renderCancelledRef = useRef(false);
   const outputUrlRef = useRef("");
   const objectUrlsRef = useRef<Set<string>>(new Set());
   const canvasDragRef = useRef<CanvasDrag | null>(null);
+  const stockInitialRef = useRef(false);
 
   const activeLayer = layers.find((layer) => layer.id === selectedLayerId);
 
@@ -618,6 +628,16 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     } catch {
       setProjectStatus("⚠️ Draf ASMR lama tidak terbaca — mulai dari setelan baru");
     }
+  }, []);
+
+  // Begitu masuk, siapkan koleksi overlay hujan. Jika kunci stok belum ada,
+  // panel tetap bisa dipakai dengan preset canvas dan tombol cari akan memberi
+  // pesan yang jelas — tidak mengganggu fitur ASMR lainnya.
+  useEffect(() => {
+    if (stockInitialRef.current) return;
+    stockInitialRef.current = true;
+    void searchStock("rain window");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Background loader uses the same-origin image proxy for remote sources so
@@ -796,6 +816,13 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const now = performance.now();
+    // Preview cukup 30fps; 60fps di HP membuat efek canvas terasa berat tanpa
+    // memberi manfaat visual untuk ambience ASMR yang geraknya pelan.
+    if (now - lastPreviewFrameRef.current < 1000 / 30) {
+      rafRef.current = requestAnimationFrame(drawPreviewFrame);
+      return;
+    }
+    lastPreviewFrameRef.current = now;
     const time = playing && audioContextRef.current
       ? Math.max(0, audioContextRef.current.currentTime - startAtRef.current)
       : Math.max(0, (now - (previewEpochRef.current || now)) / 1000);
@@ -932,6 +959,64 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     setLayers((old) => [...old, layer]);
     setSelectedLayerId(layer.id);
     setNotice("Video overlay ditambahkan. Atur opacity/masker di panel kanan.");
+  }
+
+  function stockMediaSrc(url: string): string {
+    if (!url) return "";
+    if (url.startsWith("/")) return url;
+    return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
+  }
+
+  async function searchStock(query = stockQuery) {
+    const q = query.trim();
+    if (q.length < 2) { setStockError("Tulis minimal 2 huruf, misalnya rain window atau fireplace."); return; }
+    setStockQuery(q);
+    setStockRole(/fire|flame|fireplace|api|bara/i.test(q) ? "fire" : /rain|hujan|water|drizzle/i.test(q) ? "rain" : "general");
+    setStockBusy(true);
+    setStockError("");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(`/api/hcnsec/stock-video?q=${encodeURIComponent(q)}&page=1&per=8`, { cache: "no-store", signal: controller.signal });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        if (data?.code === "TANPA_KUNCI") throw new Error("Koleksi Pexels/Pixabay/Coverr belum aktif di server. Preset dan upload video HP tetap bisa dipakai.");
+        throw new Error(data?.error || `Gudang video HTTP ${response.status}`);
+      }
+      const result = Array.isArray(data.hasil) ? data.hasil : [];
+      setStockResults(result);
+      if (!result.length) setStockError("Koleksi kosong. Coba kata rain, fireplace, fire, fog, smoke, atau water.");
+    } catch (error: any) {
+      setStockResults([]);
+      setStockError(error?.message || "Koleksi video belum bisa dihubungi. Coba lagi.");
+    } finally {
+      clearTimeout(timeout);
+      setStockBusy(false);
+    }
+  }
+
+  function addStockLayer(clip: StockClip) {
+    const rainRole = stockRole === "rain" || /rain|hujan|water|drizzle/i.test(`${stockQuery} ${clip.by || ""}`);
+    const fireRole = stockRole === "fire" || /fire|flame|fireplace|api|bara/i.test(`${stockQuery} ${clip.by || ""}`);
+    // Pakai file sd untuk preview/overlay agar HP tidak decode video 1080p
+    // setiap frame. Background/output tetap mengikuti resolusi ekspor.
+    const src = stockMediaSrc(clip.sd || clip.src || "");
+    if (!src) { setStockError("Video ini tidak punya file yang bisa dipakai."); return; }
+    const layer: LayerAsmr = {
+      id: uid("stock"), name: `${rainRole ? "🌧️" : fireRole ? "🔥" : "🎞️"} ${String(clip.by || clip.provider || "Stock video").slice(0, 28)}`,
+      type: "video", src, visible: true,
+      width: fireRole ? 42 : 100, height: fireRole ? 42 : 100, lockRatio: true,
+      posX: 0, posY: fireRole ? 170 : 0, rotate: 0, anchorX: .5, anchorY: .5, flipH: false, flipV: false,
+      speed: 1, animation: "none", animationAmount: 20, brightness: 100, contrast: 100, saturation: 100, blur: 0,
+      blendMode: "screen", opacity: rainRole ? 86 : 95,
+      maskOn: rainRole, maskX: .27, maskY: .12, maskW: 620, maskH: 350,
+      el: makeVideoElement(src),
+    };
+    setLayers((old) => [...old, layer]);
+    setSelectedLayerId(layer.id);
+    setToolTab("video");
+    setInspectorTab(rainRole ? "mask" : "basic");
+    setNotice(`${layer.name} ditambahkan. ${rainRole ? "Masker jendela otomatis aktif." : fireRole ? "Geser langsung ke area perapian." : "Atur posisinya di preview."}`);
   }
 
   function duplicateLayer(layer: LayerAsmr) {
@@ -1245,6 +1330,7 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
               <div className="asmr-overlay-grid">{PRESET_OVERLAYS.map((item) => <button type="button" key={item.id} onClick={() => addEffectLayer(item.id)}><strong>{item.label}</strong><small>{item.desc}</small></button>)}</div>
               <div className="asmr-quick-row"><button type="button" onClick={() => addEffectLayer("rain", "window")}>🪟 Hujan di jendela</button><span>Tambah masker kaca otomatis</span></div>
               <label className="asmr-upload compact"><strong>🎞️ Upload video overlay</strong><span>MP4/WebM · hujan, asap, bokeh, daun, api</span><input type="file" accept="video/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) addVideoLayer(file); e.currentTarget.value = ""; }} /></label>
+              <div className="asmr-stock-box"><div className="asmr-stock-head"><div><b>🧺 Koleksi overlay realistis</b><small>Pexels · Pixabay · Coverr · pilih lalu Tambah</small></div><span className="asmr-stock-role">{stockRole === "fire" ? "🔥 API" : stockRole === "rain" ? "🌧️ HUJAN" : "🎞️ UMUM"}</span></div><div className="asmr-stock-search"><input value={stockQuery} onChange={(e) => setStockQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void searchStock(); }} placeholder="rain window / fireplace / fog" /><button type="button" onClick={() => void searchStock()} disabled={stockBusy}>{stockBusy ? "…" : "Cari"}</button></div><div className="asmr-stock-presets"><button type="button" onClick={() => void searchStock("rain window")}>🌧️ Rain</button><button type="button" onClick={() => void searchStock("fireplace flame")}>🔥 Fire</button><button type="button" onClick={() => void searchStock("fog smoke")}>🌫️ Fog</button></div>{stockError && <p className="asmr-help error">{stockError}</p>}{stockBusy && <p className="asmr-help">⏳ Mengambil koleksi video…</p>}{!stockBusy && stockResults.length > 0 && <div className="asmr-stock-grid">{stockResults.map((clip) => <button type="button" key={`${clip.provider}-${clip.id}`} className="asmr-stock-card" onClick={() => addStockLayer(clip)} title="Tambah overlay ke canvas"><span className="asmr-stock-thumb">{clip.thumb ? <img src={clip.thumb} alt="" loading="lazy" /> : <i>🎞️</i>}</span><span><b>{clip.provider || "stock"}</b><small>{clip.dur ? `${Math.round(clip.dur)} dtk` : "video"} · Tambah ＋</small></span></button>)}</div>}</div>
               <div className="asmr-layers-head"><span>{layers.length ? `${layers.length} LAPISAN` : "LAPISAN KOSONG"}</span><small>tap layer atau drag di preview</small></div>
               {!layers.length && <p className="asmr-empty">Belum ada overlay. Foto tetap bergerak lewat alat Animation.</p>}
               <div className="asmr-layers">{layers.map((layer) => <div key={layer.id} className={`asmr-layer-row ${selectedLayerId === layer.id ? "selected" : ""}`} onClick={() => setSelectedLayerId(layer.id)} onDoubleClick={() => { setSelectedLayerId(layer.id); setInspectorTab("mask"); }} tabIndex={0}><span>{layer.type === "video" ? "🎞️" : layer.effect === "rain" ? "🌧️" : layer.effect === "fog" ? "🌫️" : layer.effect === "fire" ? "🔥" : "❄️"}</span><b>{layer.name}</b><em>{layer.maskOn ? "MASK" : "FULL"}</em><button type="button" onClick={(e) => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} aria-label="Tampilkan atau sembunyikan layer">{layer.visible ? "◉" : "○"}</button><button type="button" onClick={(e) => { e.stopPropagation(); duplicateLayer(layer); }} aria-label="Duplikasi layer">＋</button><button type="button" className="delete" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} aria-label="Hapus layer">×</button></div>)}</div>

@@ -108,6 +108,9 @@ export async function GET(req: Request) {
     }
     if (!rawQ)
       return NextResponse.json({ ok: false, error: "q (kata kunci) wajib diisi" }, { status: 400 });
+    if (!kunciP && !kunciX && !kunciC) {
+      return NextResponse.json({ ok: false, code: "TANPA_KUNCI", error: "Kunci Pexels/Pixabay/Coverr belum terpasang di server." }, { status: 503 });
+    }
 
     // 🐛 v20.24: TIDAK terjemahkan ulang dengan AI — client sudah kirim query
     // Inggris (terjemahkanKueri di lib). Terjemahan AI dobel bikin query ngawur.
