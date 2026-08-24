@@ -54,6 +54,9 @@ T("video koleksi memakai versi SD agar ringan", /Pakai file sd untuk preview/.te
 T("hapus background hitam/green benar-benar tersedia", /keyMode/.test(studio) && /Hapus background hitam/.test(studio) && /getImageData/.test(studio));
 T("video overlay bisa dipotong masuk/keluar", /trimIn/.test(studio) && /trimOut/.test(studio) && /Trim video overlay/.test(studio));
 T("video overlay dapat diputar ulang dari rentang trim", /Loop bagian trim/.test(studio) && /currentTime = trimIn/.test(studio));
+T("mode mudah punya resep satu klik", /Mode Mudah/.test(studio) && /Jadi ASMR dalam 1 klik/.test(studio) && /prepareQuickAsmr/.test(studio));
+T("resep hujan dan perapian tersedia", /Hujan di jendela/.test(studio) && /Perapian hangat/.test(studio));
+T("mode pro tetap menyimpan semua inspector", /Studio Pro/.test(studio) && /asmr-tool-tabs/.test(studio) && /AI Matting/.test(studio));
 
 if (gagal) {
   console.error(`\n💥 ${gagal} uji ASMR gagal`);

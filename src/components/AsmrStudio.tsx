@@ -138,6 +138,13 @@ const MOTION_OPTIONS: { id: AsmrMotionMode; label: string; desc: string }[] = [
   { id: "still", label: "⏸ Tetap", desc: "Tanpa gerak kamera" },
 ];
 
+const QUICK_ASMR_RECIPES: { id: string; label: string; desc: string; query: string; sound: string; role: "rain" | "fire"; icon: string }[] = [
+  { id: "rain-window", label: "Hujan di jendela", desc: "Ruangan hangat + tetes hujan realistis", query: "rain window", sound: "rain", role: "rain", icon: "🌧️" },
+  { id: "fireplace", label: "Perapian hangat", desc: "Api kecil hidup di sudut perapian", query: "fireplace flame", sound: "campfire", role: "fire", icon: "🔥" },
+  { id: "forest-rain", label: "Hutan setelah hujan", desc: "Kabut tipis + ambience hutan", query: "forest rain fog", sound: "forest", role: "rain", icon: "🌲" },
+  { id: "cafe-rain", label: "Kafe saat hujan", desc: "Bokeh kota + suara kafe lembut", query: "rain cafe window", sound: "cafe", role: "rain", icon: "☕" },
+];
+
 function uid(prefix = "asmr") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -524,6 +531,8 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
   const [motionMode, setMotionMode] = useState<AsmrMotionMode>("kenburns");
   const [motionStrength, setMotionStrength] = useState(35);
   const [motionSpeed, setMotionSpeed] = useState(1);
+  const [asmrMode, setAsmrMode] = useState<"easy" | "pro">("easy");
+  const [quickBusy, setQuickBusy] = useState("");
   const [toolTab, setToolTab] = useState<"video" | "audio" | "speed" | "animation" | "color">("video");
   const [inspectorTab, setInspectorTab] = useState<"basic" | "mask" | "matting">("basic");
 
@@ -1079,9 +1088,9 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
   }
 
-  async function searchStock(query = stockQuery, append = false) {
+  async function searchStock(query = stockQuery, append = false): Promise<StockClip[]> {
     const q = query.trim();
-    if (q.length < 2) { setStockError("Tulis minimal 2 huruf, misalnya rain window atau fireplace."); return; }
+    if (q.length < 2) { setStockError("Tulis minimal 2 huruf, misalnya rain window atau fireplace."); return []; }
     const requestedPage = append && q === stockQuery ? stockPage + 1 : 1;
     setStockQuery(q);
     setStockRole(/fire|flame|fireplace|api|bara/i.test(q) ? "fire" : /rain|hujan|water|drizzle/i.test(q) ? "rain" : "general");
@@ -1109,18 +1118,21 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         setStockResults(result);
         if (!result.length) setStockError("Koleksi kosong. Coba kata rain, fireplace, fire, fog, smoke, atau water.");
       }
+      return result;
     } catch (error: any) {
       if (!append) setStockResults([]);
       setStockError(error?.message || "Koleksi video belum bisa dihubungi. Coba lagi.");
+      return [];
     } finally {
       clearTimeout(timeout);
       setStockBusy(false);
     }
   }
 
-  function addStockLayer(clip: StockClip) {
-    const rainRole = stockRole === "rain" || /rain|hujan|water|drizzle/i.test(`${stockQuery} ${clip.by || ""}`);
-    const fireRole = stockRole === "fire" || /fire|flame|fireplace|api|bara/i.test(`${stockQuery} ${clip.by || ""}`);
+  function addStockLayer(clip: StockClip, roleOverride?: "rain" | "fire" | "general") {
+    const role = roleOverride || stockRole;
+    const rainRole = role === "rain" || (role === "general" && /rain|hujan|water|drizzle/i.test(`${stockQuery} ${clip.by || ""}`));
+    const fireRole = role === "fire" || (role === "general" && /fire|flame|fireplace|api|bara/i.test(`${stockQuery} ${clip.by || ""}`));
     // Pakai file sd untuk preview/overlay agar HP tidak decode video 1080p
     // setiap frame. Background/output tetap mengikuti resolusi ekspor.
     const src = stockMediaSrc(clip.sd || clip.src || "");
@@ -1144,6 +1156,41 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
     setToolTab("video");
     setInspectorTab(rainRole ? "mask" : "basic");
     setNotice(`${layer.name} ditambahkan. ${rainRole ? "Masker jendela otomatis aktif." : fireRole ? "Geser langsung ke area perapian." : "Atur posisinya di preview."}`);
+  }
+
+  function clearLayersForQuick() {
+    const urls = new Set<string>();
+    for (const layer of layers) {
+      try { layer.el?.pause(); layer.el?.remove(); } catch {}
+      if (layer.src.startsWith("blob:")) urls.add(layer.src);
+    }
+    urls.forEach((url) => { URL.revokeObjectURL(url); objectUrlsRef.current.delete(url); });
+    setLayers([]);
+    setSelectedLayerId("");
+  }
+
+  async function prepareQuickAsmr(recipe: typeof QUICK_ASMR_RECIPES[number]) {
+    if (quickBusy) return;
+    setQuickBusy(recipe.id);
+    setNotice(`⚡ Menyiapkan ${recipe.label}…`);
+    clearLayersForQuick();
+    setMotionMode(recipe.role === "fire" ? "breathe" : "kenburns");
+    setMotionStrength(recipe.role === "fire" ? 18 : 28);
+    setMotionSpeed(.8);
+    setDuration(60);
+    setResolution("720p");
+    setFps(30);
+    setSoundId(recipe.sound);
+    setStockRole(recipe.role);
+    const clips = await searchStock(recipe.query);
+    const first = clips[0];
+    if (first) {
+      addStockLayer(first, recipe.role);
+      setNotice(`✅ ${recipe.label} siap. Tekan Preview atau Render Video ASMR.`);
+    } else {
+      setNotice(`⚠️ Koleksi ${recipe.label} belum tersedia. Upload overlay sendiri atau coba Cari lagi.`);
+    }
+    setQuickBusy("");
   }
 
   function duplicateLayer(layer: LayerAsmr) {
@@ -1436,6 +1483,18 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
         <aside className="asmr-controls" aria-label="Kontrol khusus ASMR">
           <div className="asmr-controls-title"><div><span className="asmr-kicker">ASMR CONTROL ROOM</span><b>Rakit suasana</b></div><span className="asmr-private">PRIVATE · ASMR ONLY</span></div>
 
+          <div className="asmr-mode-switch" role="tablist" aria-label="Mode ASMR"><button type="button" className={asmrMode === "easy" ? "active" : ""} onClick={() => setAsmrMode("easy")}>⚡ Mode Mudah</button><button type="button" className={asmrMode === "pro" ? "active" : ""} onClick={() => setAsmrMode("pro")}>🛠 Studio Pro</button></div>
+
+          {asmrMode === "easy" && <section className="asmr-quick-panel">
+            <div className="asmr-quick-title"><span>⚡</span><div><b>Jadi ASMR dalam 1 klik</b><small>Pilih resep — sistem menyiapkan gerak foto, ambience, dan overlay yang cocok.</small></div></div>
+            <label className="asmr-quick-bg"><span>Gambar ruangan</span><select className="asmr-select" value={bgPresetId} onChange={(e) => { setBgType("preset"); setBgPresetId(e.target.value); }} >{PRESET_BG.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <label className="asmr-upload compact"><strong>📷 Atau pakai foto dari HP</strong><span>{bgName || "JPG/PNG · kamar, jendela, perapian"}</span><input type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleBackgroundFile(file); e.currentTarget.value = ""; }} /></label>
+            <div className="asmr-recipe-grid">{QUICK_ASMR_RECIPES.map((recipe) => <button type="button" key={recipe.id} className="asmr-recipe" onClick={() => void prepareQuickAsmr(recipe)} disabled={!!quickBusy}><span>{recipe.icon}</span><b>{quickBusy === recipe.id ? "Menyiapkan…" : recipe.label}</b><small>{recipe.desc}</small></button>)}</div>
+            <p className="asmr-quick-note">✅ Setelah siap, tinggal tekan <b>Putar</b> untuk melihat preview atau <b>Render Video ASMR</b> untuk hasil akhir.</p>
+            <button type="button" className="asmr-advanced-link" onClick={() => setAsmrMode("pro")}>Buka semua alat detail →</button>
+          </section>}
+
+          {asmrMode === "pro" && <>
           <nav className="asmr-tool-tabs" aria-label="Alat ASMR">
             {([
               ["video", "🎞️ Video"], ["audio", "🔊 Audio"], ["speed", "⏱ Speed"], ["animation", "✨ Animation"], ["color", "🎨 Color"],
@@ -1529,6 +1588,8 @@ export default function AsmrStudio({ onExit }: { onExit: () => void }) {
               </div>
             </section>
           )}
+
+          </>}
 
           <section className="asmr-panel asmr-export-panel">
             <div className="asmr-panel-title"><span className="asmr-step">EXPORT</span><div><b>Render & review</b><small>Setelan ini hanya milik ASMR Studio</small></div></div>
