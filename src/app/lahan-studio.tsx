@@ -1341,10 +1341,10 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   }
 
   async function checkOnce(id: string): Promise<"done" | "pending"> {
-    // 🛡 v10.6 ANTI-BEKU: tiap cek punya tenggat 40 dtk — sinyal 4G nyangkut tidak
-    // lagi menggantung monitor tanpa akhir (kasus beku 10+ mnt di "Cek #1").
+    // 🛡 ANTI-BEKU: satu cek dibatasi 15 dtk. Jika 4G/provider sedang
+    // nyangkut, monitor lanjut mencoba pada tick berikutnya.
     const ac = new AbortController();
-    const wd = setTimeout(() => ac.abort(), 40000);
+    const wd = setTimeout(() => ac.abort(), 15000);
     const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store", signal: ac.signal })
       .finally(() => clearTimeout(wd));
     const pd = await r.json().catch(() => ({}));

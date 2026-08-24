@@ -244,9 +244,12 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
 
   async function checkOnce(id: string): Promise<"done" | "pending"> {
     const ac = new AbortController();
-    const wd = setTimeout(() => ac.abort(), 40000);
+    // Satu cek tidak boleh menahan polling sampai 40 detik. Jika server/Vercel
+    // sedang cold-start atau provider lambat, tick berikutnya akan mencoba lagi.
+    const wd = setTimeout(() => ac.abort(), 15000);
     const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
     const pd = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(pd.error || `HTTP ${r.status}`), { code: r.status });
     const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
     const clips = pilihKlipDariHasil(pd);
     const url = clips[0]?.url || pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
@@ -265,6 +268,12 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     setDone(res);
     onSong(res.url, res.title, res.duration);
     setPollMsg("✅ Lagu jadi! Auto-terpasang sebagai audio.");
+  }
+
+  function isTransientPollError(e: unknown): boolean {
+    const err = e as { name?: string; message?: string; code?: number };
+    const msg = `${err?.name || ""} ${err?.message || e || ""}`;
+    return [408, 502, 503, 504].includes(Number(err?.code)) || /abort|timeout|timed out|failed to fetch|network|502|503|504|gateway|server terlalu lama/i.test(msg);
   }
 
   function startPolling(id: string) {
@@ -292,6 +301,13 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
           pollTimer.current = setTimeout(tick, Math.min(5000 + idx * 700, 12000));
         }
       } catch (e) {
+        // Timeout/jaringan saat polling bukan berarti lagu gagal. Jangan
+        // mematikan polling; lanjutkan tick berikutnya sampai batas wajar.
+        if (isTransientPollError(e) && idx < MAX_POLL) {
+          setPollMsg(`⏳ Server/provider belum menjawab — polling dilanjutkan otomatis (cek #${idx})`);
+          pollTimer.current = setTimeout(tick, Math.min(6000 + idx * 700, 12000));
+          return;
+        }
         setPolling(false);
         setErr("⚠️ " + terjemahErr(e instanceof Error ? e.message : "Gagal cek hasil"));
       }

@@ -41,6 +41,9 @@ T("route: apiframe MATI ditolak di POST & GET", (route.match(/provider === "apif
 /* 🕐 polling tampilkan durasi & interval lebih cepat */
 T("panel: pesan polling tampilkan durasi (m s)", /sudah \$\{Math\.floor\(detik \/ 60\)\}m/.test(panel));
 T("panel: interval polling 5s awal → 12s maks (lebih cepat)", /5000 \+ idx \* 700/.test(panel));
+T("panel: satu cek dibatasi 15 detik", /setTimeout\(\(\) => ac\.abort\(\), 15000\)/.test(panel));
+T("panel: timeout jaringan tidak mematikan polling", /isTransientPollError/.test(panel) && /polling dilanjutkan otomatis/.test(panel));
+T("route GET: auth error tidak disamarkan sebagai pending", /Jangan mengubah 401\/402 menjadi/.test(route) && /status: "error"/.test(route));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI KESEHATAN LAGU GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI KESEHATAN LAGU HIJAU — generate lagu jujur & berfungsi!");

@@ -3085,7 +3085,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         try { setPollUi(p => ({ ...p, attempt: tries, last: p.last === "antre" ? "menghubungi server" : p.last })); } catch {}
         try {
           const ac = new AbortController();
-          const wd = setTimeout(() => { try{ ac.abort(); }catch{} }, 40000);
+          // Satu cek tidak boleh menggantung 40 dtk; cek berikutnya akan
+          // melanjutkan pemantauan bila server/provider sedang lambat.
+          const wd = setTimeout(() => { try{ ac.abort(); }catch{} }, 15000);
           const pr = await fetch(`/api/hcnsec/music?id=${id}`, { headers: hdrs, cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
           const pd = await pr.json().catch(() => ({}));
           const url = pd.audio_url || pd.audioUrl || pd.url || pd.stream_url || (pd.audio_urls?.length ? pd.audio_urls[0] : "");

@@ -382,7 +382,9 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
     for (let i = attempt; i <= 60; i++) {
       setPollUi((p) => ({ ...p, attempt: i, last: i === 1 ? "menghubungi server" : `cek #${i}` }));
       try {
-        const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: { "X-Suno-Key": key.trim(), "X-Suno-Provider": prov }, cache: "no-store" });
+        const ac = new AbortController();
+        const wd = setTimeout(() => ac.abort(), 15000);
+        const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: { "X-Suno-Key": key.trim(), "X-Suno-Provider": prov }, cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
         const j = await r.json().catch(() => ({}));
         if (j.audio_url || j.audio_urls?.length) { await pakaiHasil(j); return; }
         if (j.status === "error" || j.error) throw new Error(j.error || "Provider error");

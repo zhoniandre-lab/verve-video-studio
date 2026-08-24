@@ -601,12 +601,35 @@ export async function GET(req: Request) {
         const t = setTimeout(()=>controller.abort(), 8000);
         const r = await fetch(url, { headers, cache: "no-store", signal: controller.signal });
         clearTimeout(t);
-        if (!r.ok) continue;
-        const txt = await r.text().catch(()=>"");
+        const txt = await r.text().catch(() => "");
         let data: any = {};
-        try { data = txt ? JSON.parse(txt) : {}; } catch { continue; }
+        try { data = txt ? JSON.parse(txt) : {}; } catch { data = {}; }
+        if (!r.ok) {
+          // Jangan mengubah 401/402 menjadi "pending" selamanya. Ini yang
+          // membuat key MusicAPI yang ditolak terlihat seperti server timeout.
+          if (r.status === 401 || r.status === 403) {
+            if (r.status === 403 && /credit|quota|balance|subscription|insufficient/i.test(txt)) {
+              return NextResponse.json({ status: "error", error: `Kredit ${PROVIDERS[provider].label} habis atau akun belum aktif. Cek dashboard provider.`, provider }, { status: 402 });
+            }
+            return NextResponse.json({ status: "error", error: `API key ${PROVIDERS[provider].label} ditolak. Pastikan key dibuat di dashboard provider yang sama.`, provider }, { status: 401 });
+          }
+          if (r.status === 402 || r.status === 429) {
+            return NextResponse.json({ status: "error", error: `Kredit ${PROVIDERS[provider].label} habis atau sedang rate-limit. Cek dashboard provider.`, provider }, { status: 402 });
+          }
+          continue;
+        }
         const n = normalize(data, provider);
         n.provider = provider;
+        if (n.status === "error") {
+          const providerError = String(n.error || data?.msg || data?.message || "");
+          const providerCode = Number(data?.code);
+          if (providerCode === 401 || /unauthori[sz]|authentication.*(?:fail|required)|api.?key.*(?:incorrect|invalid)|invalid.*(?:api.?key|token)|missing.*(?:api.?key|authorization)|no token provided/i.test(providerError)) {
+            return NextResponse.json({ status: "error", error: `API key ${PROVIDERS[provider].label} ditolak. Pastikan key dibuat di dashboard provider yang sama.`, provider }, { status: 401 });
+          }
+          if (providerCode === 402 || /insufficient|not enough|balance|quota|kredit/i.test(providerError)) {
+            return NextResponse.json({ status: "error", error: `Kredit ${PROVIDERS[provider].label} habis atau saldo tidak cukup.`, provider }, { status: 402 });
+          }
+        }
         if (n.audio_url || n.status === "error" || n.status === "completed") {
           // 🐛 v19.63: validasi audio sebelum "jadi" — cegah "0:00 / 0:00" palsu
           if (n.audio_url) {
