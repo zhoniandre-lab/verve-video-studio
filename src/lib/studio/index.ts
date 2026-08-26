@@ -4,3 +4,4 @@ export * from "./auto-terminate";
 export * from "./project-store";
 export * from "./extract-duration";
 export * from "./renderer";
+export * from "./subtitles";

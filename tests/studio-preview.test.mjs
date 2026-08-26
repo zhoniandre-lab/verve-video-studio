@@ -70,6 +70,15 @@ log(/renderTimeline/.test(code), "fungsi renderTimeline dipakai");
 log(/MediaRecorder/.test(code) || /extractMediaDuration/.test(code), "media upload/render logic ada");
 log(/saveProject/.test(code) || /loadProject/.test(code), "save/load project dipakai");
 
+// === 6. Subtitle Arab → bahasa pilihan
+log(/transcriptionToCues/.test(code), "hasil Whisper dinormalisasi menjadi cue subtitle");
+log(/subtitle-translate/.test(code), "endpoint terjemahan subtitle dipakai");
+log(/Buat Subtitle Otomatis/.test(code), "tombol subtitle otomatis tampil");
+log(/SUBTITLE_LANGUAGES/.test(code) && /subtitleTarget/.test(code), "bahasa tujuan subtitle bisa dipilih");
+log(/cuesToSrt/.test(code) && /SRT hasil/.test(code), "subtitle bisa diunduh sebagai SRT");
+log(/subtitles: subtitleCues/.test(code) && /subtitleStyle/.test(code), "subtitle ikut tersimpan dan dibakar saat render");
+log(/location\.href = \"\/studio-preview\"/.test(readFileSync(join(ROOT, "src/app/page.tsx"), "utf8")), "Dashboard punya pintu langsung ke Studio Edit Pro");
+
 console.log(`\n📊 ${pass} lulus, ${fail} gagal`);
 if (fail > 0) {
   console.log("❌ STUDIO PREVIEW GAGAL");

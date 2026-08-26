@@ -7,12 +7,15 @@
    ===================================================================== */
 
 import type { Track, ClipBlock, MediaItem } from "./types";
+import type { SubtitleCue, SubtitleRenderStyle } from "./subtitles";
 
 export interface RenderOptions {
   width?: number;
   height?: number;
   fps?: number;
   bitrate?: number;
+  subtitles?: SubtitleCue[];
+  subtitleStyle?: SubtitleRenderStyle;
   onProgress?: (progress: number) => void;
 }
 
@@ -20,6 +23,69 @@ export interface RenderResult {
   blob: Blob;
   url: string;
   duration: number;
+}
+
+function wrapSubtitleLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length) return [];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && ctx.measureText(candidate).width > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.slice(0, 3);
+}
+
+/** Draw one translated/original cue directly onto the export canvas. */
+function drawSubtitles(
+  ctx: CanvasRenderingContext2D,
+  cues: SubtitleCue[],
+  time: number,
+  width: number,
+  height: number,
+  style: SubtitleRenderStyle,
+): void {
+  const cue = cues.find((item) => time >= item.start && time < item.end);
+  if (!cue || !cue.text.trim()) return;
+  const fontSize = Math.max(22, Math.round(height * 0.042));
+  const lineHeight = Math.round(fontSize * 1.22);
+  const maxWidth = width * 0.86;
+  ctx.save();
+  ctx.font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const lines = wrapSubtitleLines(ctx, cue.text, maxWidth);
+  if (!lines.length) { ctx.restore(); return; }
+  const widest = Math.max(...lines.map((line) => ctx.measureText(line).width));
+  const padX = Math.round(fontSize * 0.55);
+  const padY = Math.round(fontSize * 0.3);
+  const blockHeight = lines.length * lineHeight + padY * 2;
+  const y = Math.min(height - blockHeight / 2 - height * 0.035, height * 0.82);
+  const boxWidth = Math.min(maxWidth + padX * 2, widest + padX * 2);
+
+  if (style === "box") {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.68)";
+    ctx.fillRect(width / 2 - boxWidth / 2, y - blockHeight / 2, boxWidth, blockHeight);
+  }
+  ctx.lineWidth = Math.max(3, Math.round(fontSize / 9));
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+  ctx.fillStyle = style === "yellow" ? "#fde047" : "#ffffff";
+  ctx.shadowColor = style === "clean" ? "rgba(0, 0, 0, 0.8)" : "transparent";
+  ctx.shadowBlur = style === "clean" ? 8 : 0;
+  lines.forEach((line, index) => {
+    const lineY = y - ((lines.length - 1) * lineHeight) / 2 + index * lineHeight;
+    ctx.strokeText(line, width / 2, lineY);
+    ctx.fillText(line, width / 2, lineY);
+  });
+  ctx.restore();
 }
 
 /**
@@ -171,6 +237,9 @@ export async function renderTimeline(
         }
       }
     }
+
+    // Subtitle dibakar ke setiap frame setelah gambar/video selesai dilukis.
+    drawSubtitles(ctx, opts.subtitles || [], t, width, height, opts.subtitleStyle || "box");
 
     // Progress callback
     if (opts.onProgress) {

@@ -6,6 +6,7 @@
    ===================================================================== */
 
 import type { Track, ClipBlock, MediaItem } from "./types";
+import type { SubtitleCue } from "./subtitles";
 
 const STORAGE_KEY = "verve-studio-project-v1";
 
@@ -14,6 +15,7 @@ export interface ProjectState {
   tracks: Track[];
   clips: ClipBlock[];
   media: MediaItem[];
+  subtitles?: SubtitleCue[];
   savedAt: number;
 }
 
@@ -51,6 +53,7 @@ export function newProject(): ProjectState {
     tracks: [],
     clips: [],
     media: [],
+    subtitles: [],
     savedAt: Date.now(),
   };
 }

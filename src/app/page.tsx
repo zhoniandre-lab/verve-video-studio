@@ -439,12 +439,12 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
 
       {/* 🚀 STUDIO HUB ACTION TILES */}
       <div className="v6-studio-hub">
-        <button className="v6-btn-main" onClick={() => gotoEditor(undefined, { newProject: Date.now() })}>
+        <button className="v6-btn-main" onClick={() => { location.href = "/studio-preview"; }}>
           <span className="glow-back" />
-          <span className="ic">＋</span>
+          <span className="ic">🎬</span>
           <div className="text-group">
-            <span className="title">Video Baru</span>
-            <span className="desc">Editor studio profesional</span>
+            <span className="title">Studio Edit Pro</span>
+            <span className="desc">Timeline · trim · subtitle AI</span>
           </div>
         </button>
         <div className="v6-hub-col">

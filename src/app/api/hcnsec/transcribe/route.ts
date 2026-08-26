@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     let j: any = {};
     let ab: ArrayBuffer | null = null;
     let srcType = "audio/mpeg";
+    let srcName = "audio.mp3";
     if (ctReq.includes("multipart/form-data")) {
       const form = await req.formData().catch(() => null);
       const f: any = form ? form.get("file") : null;
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "file audio wajib diisi (multipart/form-data)" }, { status: 400 });
       ab = await f.arrayBuffer();
       if (f.type) srcType = f.type;
+      if (f.name) srcName = String(f.name).slice(0, 120);
       j = { hint: form!.get("hint") || "", lang: form!.get("lang") || "", model: form!.get("model") || "" };
     } else {
       j = await req.json().catch(() => ({}));
@@ -63,6 +65,10 @@ export async function POST(req: Request) {
       if (!ar.ok) return NextResponse.json({ ok: false, error: `fetch audio upstream ${ar.status}` });
       ab = await ar.arrayBuffer();
       if (ar.headers.get("content-type")) srcType = ar.headers.get("content-type")!;
+      try {
+        const name = new URL(u).pathname.split("/").pop();
+        if (name) srcName = name.slice(0, 120);
+      } catch { /* nama file opsional */ }
     }
     if (!ab || ab.byteLength < 10_000) return NextResponse.json({ ok: false, error: "audio terlalu kecil/kosong" });
     if (ab.byteLength > 40 * 1024 * 1024) return NextResponse.json({ ok: false, error: "audio terlalu besar (>40MB)" });
@@ -73,12 +79,13 @@ export async function POST(req: Request) {
     for (const c of calon) {
       try {
         const fd2 = new FormData();
-        fd2.append("file", new Blob([ab], { type: srcType }), "lagu.mp3");
+        fd2.append("file", new Blob([ab], { type: srcType }), srcName);
         fd2.append("model", c.model || String(j.model || "whisper-1"));
         fd2.append("response_format", "verbose_json");
         fd2.append("timestamp_granularities[]", "word");
         fd2.append("timestamp_granularities[]", "segment");
-        fd2.append("language", String(j.lang || "id"));
+        const requestedLanguage = String(j.lang || "").trim().toLowerCase();
+        if (requestedLanguage && requestedLanguage !== "auto") fd2.append("language", requestedLanguage);
         if (j.hint) fd2.append("prompt", String(j.hint).slice(0, 700)); // bias lirik asli → akurasi naik
         const wc = new AbortController();
         const wt = setTimeout(() => wc.abort(), 50_000);
