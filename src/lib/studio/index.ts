@@ -5,3 +5,4 @@ export * from "./project-store";
 export * from "./extract-duration";
 export * from "./renderer";
 export * from "./subtitles";
+export * from "./reference-audio";

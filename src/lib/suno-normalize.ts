@@ -429,6 +429,7 @@ export function mapModelMusicApi(modelId: string): string {
   if (m.includes("v5.5")) return "sonic-v5-5";
   if (m.includes("v5")) return "sonic-v5";
   if (m.includes("v4.5plus")) return "sonic-v4-5-plus";
+  if (m.includes("v4.5all")) return "sonic-v4-5-all";
   if (m.includes("v4.5")) return "sonic-v4-5";
   if (m.includes("v4")) return "sonic-v4";
   return "sonic-v3-5";

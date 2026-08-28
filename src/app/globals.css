@@ -2275,3 +2275,26 @@ b.ok, b.warn, b.err { color:inherit; }
 .tub-slot-geser{touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .tub-slot-geser:active{cursor:grabbing}
 @media (prefers-reduced-motion:reduce){.tub-muncul,.tub-blink{animation:none}}
+
+/* =====================================================================
+   SPECTRUM · Advanced Audio Reference generation
+   Simple mode tetap memakai generator lama; Advanced mode menyiapkan
+   sample-to-song dari audio, voice memo, atau potongan video.
+   ===================================================================== */
+.lh-mode-switch{display:flex;gap:6px;margin:10px 0;padding:4px;border:1px solid rgba(139,92,246,.28);border-radius:12px;background:rgba(139,92,246,.06)}
+.lh-mode-switch button{flex:1;min-height:36px;border:1px solid transparent;border-radius:9px;background:transparent;color:#a7a2b9;font:700 11px Poppins,system-ui,sans-serif;cursor:pointer}
+.lh-mode-switch button.on{border-color:rgba(167,139,250,.55);background:rgba(139,92,246,.22);color:#ede9fe;box-shadow:0 4px 15px rgba(124,58,237,.14)}
+.lh-mode-switch button:disabled{opacity:.5;cursor:not-allowed}
+.lh-reference-box{margin-top:10px;padding:12px;border:1px solid rgba(139,92,246,.36);border-radius:14px;background:linear-gradient(145deg,rgba(76,29,149,.13),rgba(15,23,42,.28))}
+.lh-reference-box>.lh-h2{color:#ddd6fe}
+.lh-ref-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px}
+.lh-ref-btn{min-width:0;min-height:58px;padding:8px 7px;border:1px dashed rgba(167,139,250,.52);border-radius:10px;background:rgba(139,92,246,.1);color:#f5f3ff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;text-align:center;cursor:pointer;font:700 11px Poppins,system-ui,sans-serif}
+.lh-ref-btn:hover{border-color:#c4b5fd;background:rgba(139,92,246,.2)}
+.lh-ref-btn:disabled{opacity:.5;cursor:not-allowed}
+.lh-ref-btn span{font-size:12px}.lh-ref-btn small{color:#a7a2b9;font-size:8.5px;font-weight:500;line-height:1.25}
+.lh-reference-file{position:relative;margin-top:9px;padding:8px;border:1px solid rgba(255,255,255,.13);border-radius:10px;background:rgba(2,6,23,.45);color:#e5e7eb;font-size:10px;line-height:1.4}
+.lh-reference-file audio{width:100%;height:34px;margin-bottom:5px}.lh-reference-file video{display:block;width:100%;max-height:190px;border-radius:7px;background:#000;margin-bottom:6px}
+.lh-reference-file small{display:block;color:#94a3b8;margin-top:2px}.lh-reference-file .lh-mini{margin-top:7px}
+.lh-ref-range{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.lh-ref-range label,.lh-ref-sliders label{display:block;min-width:0}.lh-ref-range label>span,.lh-ref-sliders label>span{display:flex;justify-content:space-between;gap:6px;color:#cbd5e1;font-size:9.5px}.lh-ref-range b,.lh-ref-sliders b{color:#c4b5fd;font:700 9.5px ui-monospace,SFMono-Regular,Menlo,monospace}.lh-ref-range input,.lh-ref-sliders input{width:100%;margin-top:3px;accent-color:#8b5cf6}
+.lh-ref-sliders{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px}.lh-ref-sliders label{padding:7px;border:1px solid rgba(255,255,255,.09);border-radius:9px;background:rgba(2,6,23,.25)}
+@media(max-width:560px){.lh-ref-actions{grid-template-columns:1fr 1fr}.lh-ref-actions .lh-ref-btn:last-child{grid-column:1/-1}.lh-ref-range,.lh-ref-sliders{grid-template-columns:1fr}.lh-mode-switch button{font-size:10px}}

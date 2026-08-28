@@ -85,6 +85,72 @@ function getCreds(req: Request) {
   return { key, base, provider };
 }
 
+const REFERENCE_PROVIDERS = new Set<Provider>(["musicapi", "aimusicapi", "kie", "sunoapi"]);
+
+function buildReferenceBody(payload: any, provider: Provider): any {
+  const audioUrl = String(payload.audio_url || payload.audioUrl || "").trim();
+  const title = String(payload.title || "Verve Reference Song").trim().slice(0, 80);
+  const lyrics = String(payload.lyrics || payload.prompt || "").trim();
+  const style = String(payload.style || payload.tags || "professional song, clean arrangement").trim();
+  const instrumental = !!payload.instrumental;
+  const vocalGender = String(payload.vocalGender || "");
+  const start = Math.max(0, Number(payload.sample_start ?? payload.chop_sample_start_s) || 0);
+  const requestedEnd = Number(payload.sample_end ?? payload.chop_sample_end_s);
+  const end = Math.max(start + 0.5, Number.isFinite(requestedEnd) && requestedEnd > start ? requestedEnd : start + 30);
+  const custom = !instrumental && lyrics.length > 0;
+  const numberOr = (value: unknown, fallback: number) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const audioWeight = Math.max(0, Math.min(1, numberOr(payload.audio_weight, 0.75)));
+  const styleWeight = Math.max(0, Math.min(1, numberOr(payload.style_weight, 0.65)));
+  const weirdness = Math.max(0, Math.min(1, numberOr(payload.weirdness_constraint, 0.3)));
+
+  if (provider === "musicapi" || provider === "aimusicapi") {
+    const body: any = {
+      url: audioUrl,
+      chop_sample_start_s: start,
+      chop_sample_end_s: end,
+      custom_mode: custom,
+      mv: provider === "musicapi" ? mapModelMusicApi(payload.model) : mapModelAimusicApi(payload.model),
+      make_instrumental: instrumental,
+      title,
+      tags: style.slice(0, 1000),
+      style_weight: styleWeight,
+      weirdness_constraint: weirdness,
+      audio_weight: audioWeight,
+    };
+    if (!instrumental && vocalGender === "male") body.vocal_gender = "m";
+    if (!instrumental && vocalGender === "female") body.vocal_gender = "f";
+    if (custom) body.prompt = lyrics.slice(0, 3000);
+    else body.gpt_description_prompt = style.slice(0, 200);
+    return body;
+  }
+
+  if (provider === "kie" || provider === "sunoapi") {
+    const body: any = {
+      uploadUrl: audioUrl,
+      customMode: custom,
+      instrumental,
+      model: mapModelKie(payload.model),
+      title,
+      style: style.slice(0, 1000),
+      audioWeight,
+      styleWeight,
+      weirdnessConstraint: weirdness,
+      callBackUrl: "playground",
+    };
+    if (!instrumental && vocalGender === "male") body.vocalGender = "m";
+    if (!instrumental && vocalGender === "female") body.vocalGender = "f";
+    body.prompt = custom ? lyrics.slice(0, 5000) : style.slice(0, 500);
+    return body;
+  }
+  return null;
+}
+
+function getReferenceEndpoints(provider: Provider, base: string): string[] {
+  if (provider === "musicapi" || provider === "aimusicapi") return [`${base}/api/v1/sonic/sample`];
+  if (provider === "kie" || provider === "sunoapi") return [`${base}/generate/upload-cover`];
+  return [];
+}
+
 function buildBody(payload: any, provider: Provider): any {
   const result = buildBodyRaw(payload, provider);
   if (result && typeof result === "object") {
@@ -450,9 +516,29 @@ export async function POST(req: Request) {
     if (provider === "apiframe") {
       return NextResponse.json({ error: "apiframe.ai sudah MATI (endpoint 404). Pilih 🥇 Kie.ai atau Sunor.cc di panel Provider — dan tambah key-nya di 🔑 Setelan API Key.", status: "provider_mati", provider }, { status: 502 });
     }
-    const body = buildBody(payload, provider);
+    const referenceMode = payload?.operation === "sample";
+    if (referenceMode && !/^https?:\/\//i.test(String(payload?.audio_url || payload?.audioUrl || ""))) {
+      return NextResponse.json({ error: "Audio reference belum punya URL publik. Upload/rekam lewat panel Audio Reference dulu.", status: "reference_url_required", provider }, { status: 400 });
+    }
+    if (referenceMode) {
+      const sampleStart = Number(payload?.sample_start ?? 0);
+      const sampleEnd = Number(payload?.sample_end ?? 0);
+      if (!Number.isFinite(sampleStart) || !Number.isFinite(sampleEnd) || sampleEnd - sampleStart < 6 || sampleEnd - sampleStart > 60) {
+        return NextResponse.json({ error: "Audio reference harus berdurasi antara 6 dan 60 detik.", status: "reference_duration_invalid", provider }, { status: 400 });
+      }
+    }
+    if (referenceMode && !REFERENCE_PROVIDERS.has(provider)) {
+      return NextResponse.json({
+        error: `Mode Audio Reference belum didukung oleh ${PROVIDERS[provider].label}. Pilih MusicAPI, AIMusicAPI, atau Kie.ai untuk mode ini.`,
+        status: "reference_unsupported", provider,
+      }, { status: 422 });
+    }
+    const body = referenceMode ? buildReferenceBody(payload, provider) : buildBody(payload, provider);
+    if (referenceMode && !body) {
+      return NextResponse.json({ error: "Konfigurasi Audio Reference provider tidak tersedia.", status: "reference_unsupported", provider }, { status: 422 });
+    }
     const headers = buildHeaders(key, provider);
-    const endpoints = getEndpoints(provider, base);
+    const endpoints = referenceMode ? getReferenceEndpoints(provider, base) : getEndpoints(provider, base);
 
     // 🎛 BOS (L3.5): kill switch + batas harian untuk fitur musik — sebelum keluar duit Suno
     const _g = await gerbangFitur("musik");

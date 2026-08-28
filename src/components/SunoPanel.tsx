@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { META_PROV_SUNO, LINK_AMBIL_KEY, LINK_DASH_PROV } from "@/lib/suno-providers";
+import { mediaDuration, prepareReferenceAudio, recordReferenceAudio } from "@/lib/studio/reference-audio";
 import {
   SUNO_PROVIDER_KEY,
   addSunoKeys,
@@ -62,9 +63,10 @@ type Props = {
   defaultLyrics?: string;
   onSong: (url: string, title: string, duration?: number) => void;
   onClose?: () => void;
+  allowAdvanced?: boolean;
 };
 
-export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSong, onClose }: Props) {
+export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSong, onClose, allowAdvanced = false }: Props) {
   // Hydrasi dari localStorage dilakukan di effect agar SSR/hydration tidak
   // menghapus tampilan key atau membuat input berubah kembali ke kosong.
   const [sunoProv, setSunoProv] = useState("kie");
@@ -84,6 +86,19 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   const [vocal, setVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
   const [lyrics, setLyrics] = useState(defaultLyrics);
   const [mStyle, setMStyle] = useState("");
+  const [panelMode, setPanelMode] = useState<"simple" | "advanced">("simple");
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [referencePreviewUrl, setReferencePreviewUrl] = useState("");
+  const [referenceRole, setReferenceRole] = useState<"audio" | "voice">("audio");
+  const [referenceDuration, setReferenceDuration] = useState(0);
+  const [sampleStart, setSampleStart] = useState(0);
+  const [sampleEnd, setSampleEnd] = useState(30);
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceMsg, setReferenceMsg] = useState("");
+  const [referenceAudioWeight, setReferenceAudioWeight] = useState(0.78);
+  const [referenceStyleWeight, setReferenceStyleWeight] = useState(0.68);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
+  const voiceInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [polling, setPolling] = useState(false);
@@ -98,6 +113,16 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   const MAX_POLL = 40;
 
   useEffect(() => () => { if (pollTimer.current) clearTimeout(pollTimer.current); }, []);
+
+  useEffect(() => {
+    if (!referenceFile) {
+      setReferencePreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(referenceFile);
+    setReferencePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [referenceFile]);
 
   useEffect(() => {
     try {
@@ -228,6 +253,132 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     finally { setCheckingCredit(false); }
   }
 
+  const supportsReference = ["musicapi", "aimusicapi", "kie", "sunoapi"].includes(sunoProv);
+
+  async function pilihReference(file: File | null, role: "audio" | "voice") {
+    if (!file) return;
+    setReferenceBusy(true);
+    setErr("");
+    setReferenceRole(role);
+    setReferenceMsg("Membaca referensi…");
+    try {
+      const d = await mediaDuration(file);
+      setReferenceFile(file);
+      setReferenceDuration(d);
+      setSampleStart(0);
+      setSampleEnd(Math.min(30, Math.max(0.5, d || 30)));
+      setReferenceMsg(`${role === "voice" ? "Voice" : "Audio"} siap — pilih potongan 0–60 detik, lalu generate.`);
+    } catch (error: any) {
+      setReferenceMsg("");
+      setErr(String(error?.message || "File referensi tidak bisa dibaca."));
+    } finally {
+      setReferenceBusy(false);
+    }
+  }
+
+  async function rekamReference() {
+    if (referenceBusy || busy || polling) return;
+    setReferenceBusy(true);
+    setErr("");
+    setReferenceRole("voice");
+    setReferenceMsg("🎙 Rekam melodi/voice maksimal 30 detik…");
+    try {
+      const file = await recordReferenceAudio(30, (p) => setReferenceMsg(`🎙 Merekam voice… ${Math.round(p * 100)}%`));
+      setReferenceFile(file);
+      setReferenceDuration(30);
+      setSampleStart(0);
+      setSampleEnd(30);
+      setReferenceMsg("Voice selesai direkam — siap dijadikan acuan melodi.");
+    } catch (error: any) {
+      setReferenceMsg("");
+      setErr(String(error?.message || "Rekaman voice gagal."));
+    } finally {
+      setReferenceBusy(false);
+    }
+  }
+
+  async function uploadReference(file: File): Promise<{ url: string; duration: number }> {
+    const prepared = await prepareReferenceAudio(file, sampleStart, sampleEnd, (p) => setReferenceMsg(`Menyiapkan potongan audio… ${Math.round(p * 100)}%`));
+    const preparedDuration = await mediaDuration(prepared);
+    const form = new FormData();
+    form.append("file", prepared, prepared.name);
+    setReferenceMsg("☁️ Mengunggah acuan ke penyedia…");
+    const response = await fetch("/api/hcnsec/music/reference-upload", { method: "POST", body: form });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false || !body?.url) throw new Error(String(body?.error || `Upload acuan gagal (HTTP ${response.status})`));
+    return { url: String(body.url), duration: preparedDuration > 0 ? preparedDuration : Math.max(0.5, sampleEnd - sampleStart) };
+  }
+
+  async function generateReference() {
+    const title = defaultTitle.trim();
+    if (!title) { setErr("Isi judul dulu."); return; }
+    if (!referenceFile) { setErr("Pilih +Audio, +Voice, atau rekam voice dulu."); return; }
+    if (!supportsReference) { setErr("Provider ini belum menyediakan mode Audio Reference. Pilih MusicAPI, AIMusicAPI, atau Kie.ai."); return; }
+    const instrumental = vocal === "instrumental";
+    const lyr = lyrics.trim();
+    if (!instrumental && lyr.length < 30) { setErr("Isi lirik minimal 30 karakter, atau pilih Instrumental."); return; }
+    const keys = keysForProvider();
+    if (health[sunoProv] === false) { setErr("Provider ini terdeteksi mati. Pilih provider lain."); return; }
+    if (!keys.length) { setKeyPanel(true); setErr("Tambahkan API key provider terlebih dahulu."); return; }
+
+    setErr(""); setBusy("reference"); setDone(null); setReferenceMsg("Menyiapkan audio reference…");
+    try {
+      const uploaded = await uploadReference(referenceFile);
+      if (uploaded.duration < 6) throw new Error("Audio reference minimal 6 detik. Pilih potongan yang lebih panjang.");
+      const styleStr = (mStyle.trim() || [genre, mood, sEra, sTempo, sInstr.join(", ")].filter(Boolean).join(", ")).slice(0, 1000);
+      const payload = {
+        operation: "sample",
+        title: title.slice(0, 80),
+        lyrics: instrumental ? "" : lyr,
+        style: styleStr,
+        instrumental,
+        vocalGender: instrumental ? undefined : vocal === "auto" ? undefined : vocal,
+        model: sunoModel,
+        audio_url: uploaded.url,
+        sample_start: 0,
+        sample_end: uploaded.duration,
+        audio_weight: referenceAudioWeight,
+        style_weight: referenceStyleWeight,
+        weirdness_constraint: 0.28,
+      };
+      let lastError: Error | null = null;
+      for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+        const selectedKey = keys[keyIndex]?.key || "";
+        setReferenceMsg(`🚀 Mengirim Audio Reference ke mesin musik… (${keyIndex + 1}/${keys.length})`);
+        try {
+          const acg = new AbortController();
+          const wdg = setTimeout(() => acg.abort(), 65000);
+          const response = await fetch("/api/hcnsec/music", { method: "POST", headers: sunoHeaders(selectedKey), body: JSON.stringify(payload), signal: acg.signal }).finally(() => clearTimeout(wdg));
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body?.error) throw Object.assign(new Error(String(body?.error || `HTTP ${response.status}`)), { code: body?.status || response.status });
+          const dur = Number(body.duration);
+          if (body.audio_url) {
+            const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
+            const clips = pilihKlipDariHasil(body);
+            const singleDur = clips[0]?.duration || (body.duration && clips.length ? Number(body.duration) / clips.length : dur);
+            finishSong({ url: body.audio_url, title: body.title || title, duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined });
+            setBusy(""); setReferenceMsg("✅ Audio Reference selesai."); return;
+          }
+          const id = body.id || body.taskId || body.task_id;
+          if (!id) throw new Error("Server tidak memberi taskId.");
+          launchKeyRef.current = selectedKey;
+          setBusy(""); setReferenceMsg("⏳ Audio Reference sedang diolah…"); startPolling(id);
+          return;
+        } catch (error: any) {
+          lastError = error instanceof Error ? error : new Error(String(error || "Generate gagal"));
+          const keyProblem = ["quota_error", "auth_error", "need_key"].includes(String(error?.code || "")) || /401|402|kredit|habis|invalid|credit|insufficient|balance/i.test(lastError.message);
+          if (!keyProblem || keyIndex >= keys.length - 1) throw lastError;
+          flash(`🔑 Kunci ${keyIndex + 1} ditolak — pindah kunci ${keyIndex + 2}/${keys.length}…`);
+        }
+      }
+      throw lastError || new Error("Generate Audio Reference gagal");
+    } catch (error: any) {
+      setBusy("");
+      setErr(error?.name === "AbortError" ? "Provider terlalu lama merespons. Coba lagi atau ganti provider." : String(error?.message || "Generate Audio Reference gagal"));
+      setReferenceMsg("");
+    }
+  }
+
   async function genLyrics() {
     if (!defaultTitle.trim()) { setErr("Judul belum ada — isi judul dulu."); return; }
     setBusy("lyrics"); setErr("");
@@ -319,6 +470,10 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   }
 
   async function generate() {
+    if (allowAdvanced && panelMode === "advanced") {
+      await generateReference();
+      return;
+    }
     const title = defaultTitle.trim();
     if (!title) { setErr("Isi judul dulu."); return; }
     const instrumental = vocal === "instrumental";
@@ -386,6 +541,12 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       <div className="lh-h1">🎵 Generate Lagu (Suno) <span style={{ fontSize: 9, background: "rgba(139,92,246,.15)", color: "#8b5cf6", padding: "2px 8px", borderRadius: 999, verticalAlign: "middle" }}>SAMA SEPERTI DI LAHAN</span></div>
       {!!onClose && <button className="lh-mini" style={{ float: "right" }} onClick={onClose}>✕</button>}
       <p className="lh-sub">Judul: <b>{defaultTitle || "— (isi judul dulu)"}</b> · lagu diolah Suno lewat provider pilihanmu. API key disimpan di HP-mu saja.</p>
+      {allowAdvanced && (
+        <div className="lh-mode-switch" role="tablist" aria-label="Mode generate lagu">
+          <button type="button" className={panelMode === "simple" ? "on" : ""} onClick={() => setPanelMode("simple")} disabled={busy === "song" || busy === "reference" || polling}>⚡ Simple</button>
+          <button type="button" className={panelMode === "advanced" ? "on" : ""} onClick={() => setPanelMode("advanced")} disabled={busy === "song" || busy === "reference" || polling}>🎛 Advanced · Audio/Voice</button>
+        </div>
+      )}
 
       <div className="lh-kv"><span>Provider</span><b>
         <select className="lh-sel" value={sunoProv} onChange={(e) => pilihProvider(e.target.value)}>
@@ -442,6 +603,58 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
         </div>
       )}
 
+      {panelMode === "advanced" ? (
+        <div className="lh-reference-box">
+          <div className="lh-h2" style={{ marginTop: 10 }}>🎛️ Advanced · Sample to Song</div>
+          <p className="lh-note">Masukkan potongan melodi sekitar 6–60 detik. Audio bisa MP3/WAV, video MP4/WebM, atau rekam langsung. Hasil baru memakai melodi acuan lalu diolah dengan lirik dan style yang bro pilih. Gunakan rekaman milikmu sendiri atau yang berizin.</p>
+          <div className="lh-h2" style={{ marginTop: 10 }}>🎚️ Model</div>
+          <div className="lh-chips" style={{ flexWrap: "wrap" }}>
+            {SUNO_MODELS.map((m) => <button key={m.id} className={`lh-chip ${sunoModel === m.id ? "on" : ""}`} onClick={() => setSunoModel(m.id)}>{m.label} <small style={{ opacity: .6 }}>{m.note}</small></button>)}
+          </div>
+          <div className="lh-ref-actions">
+            <label className="lh-ref-btn">
+              <span>＋ Audio</span>
+              <small>Upload audio/video</small>
+              <input ref={referenceInputRef} type="file" accept="audio/*,video/*" hidden onChange={(e) => { void pilihReference(e.target.files?.[0] || null, "audio"); e.currentTarget.value = ""; }} />
+            </label>
+            <label className="lh-ref-btn">
+              <span>＋ Voice</span>
+              <small>Upload nyanyian/humming</small>
+              <input ref={voiceInputRef} type="file" accept="audio/*,video/*" hidden onChange={(e) => { void pilihReference(e.target.files?.[0] || null, "voice"); e.currentTarget.value = ""; }} />
+            </label>
+            <button type="button" className="lh-ref-btn" onClick={() => void rekamReference()} disabled={referenceBusy || !!busy || polling}>
+              <span>🎙 Rekam</span>
+              <small>Maksimal 30 detik</small>
+            </button>
+          </div>
+          {referencePreviewUrl && referenceFile && (
+            <div className="lh-reference-file">
+              {referenceFile.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|3gp|mkv)$/i.test(referenceFile.name) ? <video src={referencePreviewUrl} controls playsInline /> : <audio src={referencePreviewUrl} controls />}
+              <div><b>{referenceRole === "voice" ? "Voice" : "Audio"} acuan:</b> {referenceFile.name}</div>
+              <small>{referenceDuration > 0 ? `${referenceDuration.toFixed(1)} detik` : "durasi belum terbaca"} · hasil akan dipotong ke bagian pilihan</small>
+              <button type="button" className="lh-mini" onClick={() => { setReferenceFile(null); setReferenceMsg(""); }}>✕ Hapus acuan</button>
+            </div>
+          )}
+          <div className="lh-ref-range">
+            <label><span>Mulai <b>{sampleStart.toFixed(1)}d</b></span><input type="range" min={0} max={Math.max(0, Math.floor(Math.max(0, referenceDuration - 0.5)))} step={0.5} value={Math.min(sampleStart, Math.max(0, referenceDuration - 0.5))} onChange={(e) => setSampleStart(Math.min(Number(e.target.value), Math.max(0, sampleEnd - 0.5)))} disabled={!referenceFile || referenceBusy} /></label>
+            <label><span>Akhir <b>{sampleEnd.toFixed(1)}d</b></span><input type="range" min={0.5} max={Math.max(0.5, Math.min(60, Math.floor(referenceDuration || 60)))} step={0.5} value={Math.min(sampleEnd, Math.max(0.5, Math.min(60, referenceDuration || 60)))} onChange={(e) => setSampleEnd(Math.max(sampleStart + 0.5, Number(e.target.value)))} disabled={!referenceFile || referenceBusy} /></label>
+          </div>
+          {!!referenceMsg && <p className="lh-note" style={{ color: referenceBusy ? "#fbbf24" : "#6ee7b7" }}>{referenceBusy ? "⏳ " : ""}{referenceMsg}</p>}
+          {!supportsReference && <p className="lh-note" style={{ color: "#fbbf24" }}>⚠️ Provider ini hanya bisa Simple. Pilih MusicAPI, AIMusicAPI, Kie.ai, atau SunoAPI.org untuk Audio Reference.</p>}
+          <div className="lh-h2" style={{ marginTop: 10 }}>🎼 Lirik & style hasil</div>
+          <div className="lh-chips">
+            {VOICES.map(([id, lb]) => <button key={id} className={`lh-chip ${vocal === id ? "on" : ""}`} onClick={() => setVocal(id)}>{lb}</button>)}
+          </div>
+          <textarea className="lh-ta" rows={5} placeholder={vocal === "instrumental" ? "Instrumental — tanpa lirik" : "Tulis lirik baru yang ingin dinyanyikan…"} value={lyrics} onChange={(e) => setLyrics(e.target.value)} />
+          <textarea className="lh-ta" rows={3} placeholder="Style baru: cinematic religi, piano lembut, oud, string, vokal hangat…" value={mStyle} onChange={(e) => setMStyle(e.target.value)} />
+          <div className="lh-ref-sliders">
+            <label><span>🎯 Pengaruh melodi <b>{Math.round(referenceAudioWeight * 100)}%</b></span><input type="range" min={0.4} max={1} step={0.01} value={referenceAudioWeight} onChange={(e) => setReferenceAudioWeight(Number(e.target.value))} /></label>
+            <label><span>🎨 Pengaruh style <b>{Math.round(referenceStyleWeight * 100)}%</b></span><input type="range" min={0.3} max={1} step={0.01} value={referenceStyleWeight} onChange={(e) => setReferenceStyleWeight(Number(e.target.value))} /></label>
+          </div>
+          <p className="lh-note">Voice di sini dipakai sebagai acuan audio. Untuk cloning suara persis, provider harus menyediakan alur Voice/Persona dan verifikasi khusus.</p>
+        </div>
+      ) : (
+        <>
       <div className="lh-h2" style={{ marginTop: 10 }}>🎚️ Versi model</div>
       <div className="lh-chips" style={{ flexWrap: "wrap" }}>
         {SUNO_MODELS.map((m) => (
@@ -476,6 +689,8 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       <div className="lh-h2" style={{ marginTop: 10 }}>🎨 STYLE LAGU (bebas — tulis apa saja)</div>
       <textarea className="lh-ta" rows={2} placeholder="Contoh: epic orchestral, female vocal, dramatic build-up, emotional piano&#10;Atau: orkestra megah, vokal wanita, piano sendu, sedih mengharu" value={mStyle} onChange={(e) => setMStyle(e.target.value)} />
       <p className="lh-note" style={{ marginTop: 4 }}>Kosongkan = pakai genre + mood di atas. Style ini yang dikirim ke Suno (bebas bahasa Inggris/Indonesia).</p>
+        </>
+      )}
 
       {!!err && <p className="lh-note" style={{ color: "#e85c5c", marginTop: 8 }}>⚠️ {err}</p>}
       {!!pollMsg && <p className="lh-note" style={{ color: "#6ee7b7", marginTop: 6 }}>{pollMsg}</p>}
@@ -492,8 +707,8 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
         </div>
       )}
 
-      <button className="lh-btn" style={{ marginTop: 10 }} disabled={busy === "song" || polling} onClick={generate}>
-        {busy === "song" ? "⏳ Mengirim ke dapur lagu…" : polling ? "⏳ Lagu sedang diolah…" : "🎵 Generate Lagu"}
+      <button className="lh-btn" style={{ marginTop: 10 }} disabled={busy === "song" || busy === "reference" || polling || (panelMode === "advanced" && (!referenceFile || !supportsReference))} onClick={generate}>
+        {busy === "song" || busy === "reference" ? "⏳ Mengirim ke dapur lagu…" : polling ? "⏳ Lagu sedang diolah…" : panelMode === "advanced" ? "🚀 Buat dari Audio Reference" : "🎵 Generate Lagu"}
       </button>
     </div>
   );

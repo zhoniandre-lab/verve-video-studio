@@ -2333,6 +2333,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 defaultLyrics={mLyrics}
                 onSong={onSunoSong}
                 onClose={() => setShowSuno(false)}
+                allowAdvanced
               />
             )}
           </>
