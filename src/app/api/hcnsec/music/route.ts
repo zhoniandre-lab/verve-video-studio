@@ -85,7 +85,10 @@ function getCreds(req: Request) {
   return { key, base, provider };
 }
 
-const REFERENCE_PROVIDERS = new Set<Provider>(["musicapi", "aimusicapi", "kie", "sunoapi"]);
+// Provider yang punya kontrak audio-reference/cover yang terdokumentasi.
+// EvoLink saat ini tetap Simple: endpoint Suno publiknya mendokumentasikan prompt,
+// custom lyrics, instrumental, dan persona, bukan upload-cover/sample.
+const REFERENCE_PROVIDERS = new Set<Provider>(["musicapi", "aimusicapi", "kie", "sunoapi", "cometapi", "ttapi"]);
 
 function buildReferenceBody(payload: any, provider: Provider): any {
   const audioUrl = String(payload.audio_url || payload.audioUrl || "").trim();
@@ -142,12 +145,117 @@ function buildReferenceBody(payload: any, provider: Provider): any {
     body.prompt = custom ? lyrics.slice(0, 5000) : style.slice(0, 500);
     return body;
   }
+
+  if (provider === "ttapi") {
+    const body: any = {
+      custom: custom,
+      instrumental,
+      mv: mapModelTtapi(payload.model),
+      audio_url: audioUrl,
+      title,
+      tags: style.slice(0, 1000),
+      negative_tags: "heavy metal, distorted, off-key",
+      style_weight: styleWeight,
+      weirdness_constraint: weirdness,
+      audio_weight: audioWeight,
+      duration: 120,
+      auto_lyrics: false,
+      isStorage: true,
+    };
+    if (custom) body.prompt = lyrics.slice(0, 5000);
+    else body.gpt_description_prompt = style.slice(0, 3000);
+    if (!instrumental && vocalGender === "male") body.vocal_gender = "Male";
+    if (!instrumental && vocalGender === "female") body.vocal_gender = "Female";
+    return body;
+  }
+
+  if (provider === "cometapi") {
+    const body: any = {
+      prompt: custom ? lyrics.slice(0, 5000) : style.slice(0, 3000),
+      generation_type: "TEXT",
+      tags: style.slice(0, 1000),
+      negative_tags: "heavy metal, distorted, off-key",
+      mv: mapModelComet(payload.model),
+      title,
+      task: "cover",
+      cover_clip_id: String(payload.cover_clip_id || ""),
+      make_instrumental: instrumental,
+      style_weight: styleWeight,
+      weirdness_constraint: weirdness,
+      audio_weight: audioWeight,
+      metadata: {
+        create_mode: custom ? "custom" : "inspiration",
+        control_sliders: { style_weight: styleWeight, audio_weight: audioWeight, weirdness_constraint: weirdness },
+        can_control_sliders: ["style_weight", "audio_weight", "weirdness_constraint"],
+        is_remix: true,
+      },
+    };
+    if (!custom) body.prompt = style.slice(0, 3000);
+    return body;
+  }
   return null;
+}
+
+function findStringByKeys(value: any, keys: string[], depth = 0, seen = new Set<any>()): string {
+  if (!value || typeof value !== "object" || depth > 8 || seen.has(value)) return "";
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringByKeys(item, keys, depth + 1, seen);
+      if (found) return found;
+    }
+    return "";
+  }
+  for (const key of keys) {
+    if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+  }
+  for (const key of Object.keys(value)) {
+    const found = findStringByKeys(value[key], keys, depth + 1, seen);
+    if (found) return found;
+  }
+  return "";
+}
+
+async function uploadCometReference(audioUrl: string, base: string, headers: Record<string, string>): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 50_000);
+  try {
+    const response = await fetch(`${base}/suno/uploads/audio-url`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ url: audioUrl }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const text = await response.text().catch(() => "");
+    let body: any = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { body = {}; }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const directClipId = findStringByKeys(body, ["clip_id", "clipId", "music_id", "musicId"]);
+    if (directClipId) return directClipId;
+    const uploadTaskId = findStringByKeys(body, ["task_id", "taskId", "jobId"]);
+    if (!uploadTaskId) throw new Error("upload tidak mengembalikan clip_id");
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, attempt ? 1800 : 500));
+      const poll = await fetch(`${base}/suno/fetch/${encodeURIComponent(uploadTaskId)}`, { headers, cache: "no-store" });
+      const pollBody = await poll.json().catch(() => ({}));
+      const clipId = findStringByKeys(pollBody, ["clip_id", "clipId", "music_id", "musicId"]);
+      if (clipId) return clipId;
+      const state = String(pollBody?.status || pollBody?.state || "").toLowerCase();
+      if (/fail|error|cancel/.test(state)) throw new Error(String(pollBody?.message || "upload Comet gagal"));
+    }
+    throw new Error("Comet belum mengembalikan clip_id setelah upload");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function getReferenceEndpoints(provider: Provider, base: string): string[] {
   if (provider === "musicapi" || provider === "aimusicapi") return [`${base}/api/v1/sonic/sample`];
   if (provider === "kie" || provider === "sunoapi") return [`${base}/generate/upload-cover`];
+  if (provider === "ttapi") return [`${base}/suno/v1/upload-cover`];
+  if (provider === "cometapi") return [`${base}/suno/submit/music`];
   return [];
 }
 
@@ -529,16 +637,11 @@ export async function POST(req: Request) {
     }
     if (referenceMode && !REFERENCE_PROVIDERS.has(provider)) {
       return NextResponse.json({
-        error: `Mode Audio Reference belum didukung oleh ${PROVIDERS[provider].label}. Pilih MusicAPI, AIMusicAPI, atau Kie.ai untuk mode ini.`,
+        error: `Mode Audio Reference belum didukung oleh ${PROVIDERS[provider].label}. Pilih MusicAPI, AIMusicAPI, Kie.ai, CometAPI, atau TTAPI untuk mode ini.`,
         status: "reference_unsupported", provider,
       }, { status: 422 });
     }
-    const body = referenceMode ? buildReferenceBody(payload, provider) : buildBody(payload, provider);
-    if (referenceMode && !body) {
-      return NextResponse.json({ error: "Konfigurasi Audio Reference provider tidak tersedia.", status: "reference_unsupported", provider }, { status: 422 });
-    }
     const headers = buildHeaders(key, provider);
-    const endpoints = referenceMode ? getReferenceEndpoints(provider, base) : getEndpoints(provider, base);
 
     // 🎛 BOS (L3.5): kill switch + batas harian untuk fitur musik — sebelum keluar duit Suno
     const _g = await gerbangFitur("musik");
@@ -554,6 +657,24 @@ export async function POST(req: Request) {
         status: "need_key", provider,
       }, { status: 401 });
     }
+
+    let requestPayload = payload;
+    if (referenceMode && provider === "cometapi") {
+      try {
+        const coverClipId = await uploadCometReference(String(payload?.audio_url || payload?.audioUrl || ""), base, headers);
+        requestPayload = { ...payload, cover_clip_id: coverClipId };
+      } catch (error: any) {
+        return NextResponse.json({
+          error: `CometAPI gagal menyiapkan upload audio: ${String(error?.message || "clip_id tidak diterima").slice(0, 180)}`,
+          status: "reference_upload_failed", provider,
+        }, { status: 502 });
+      }
+    }
+    const body = referenceMode ? buildReferenceBody(requestPayload, provider) : buildBody(requestPayload, provider);
+    if (referenceMode && !body) {
+      return NextResponse.json({ error: "Konfigurasi Audio Reference provider tidak tersedia.", status: "reference_unsupported", provider }, { status: 422 });
+    }
+    const endpoints = referenceMode ? getReferenceEndpoints(provider, base) : getEndpoints(provider, base);
 
     let lastErr: any = null;
     for (const url of endpoints) {

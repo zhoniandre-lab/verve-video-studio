@@ -253,7 +253,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     finally { setCheckingCredit(false); }
   }
 
-  const supportsReference = ["musicapi", "aimusicapi", "kie", "sunoapi"].includes(sunoProv);
+  const supportsReference = ["musicapi", "aimusicapi", "kie", "sunoapi", "cometapi", "ttapi"].includes(sunoProv);
 
   async function pilihReference(file: File | null, role: "audio" | "voice") {
     if (!file) return;
@@ -640,7 +640,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
             <label><span>Akhir <b>{sampleEnd.toFixed(1)}d</b></span><input type="range" min={0.5} max={Math.max(0.5, Math.min(60, Math.floor(referenceDuration || 60)))} step={0.5} value={Math.min(sampleEnd, Math.max(0.5, Math.min(60, referenceDuration || 60)))} onChange={(e) => setSampleEnd(Math.max(sampleStart + 0.5, Number(e.target.value)))} disabled={!referenceFile || referenceBusy} /></label>
           </div>
           {!!referenceMsg && <p className="lh-note" style={{ color: referenceBusy ? "#fbbf24" : "#6ee7b7" }}>{referenceBusy ? "⏳ " : ""}{referenceMsg}</p>}
-          {!supportsReference && <p className="lh-note" style={{ color: "#fbbf24" }}>⚠️ Provider ini hanya bisa Simple. Pilih MusicAPI, AIMusicAPI, Kie.ai, atau SunoAPI.org untuk Audio Reference.</p>}
+          {!supportsReference && <p className="lh-note" style={{ color: "#fbbf24" }}>⚠️ Provider ini hanya bisa Simple. Pilih MusicAPI, AIMusicAPI, Kie.ai, CometAPI, atau TTAPI untuk Audio Reference.</p>}
           <div className="lh-h2" style={{ marginTop: 10 }}>🎼 Lirik & style hasil</div>
           <div className="lh-chips">
             {VOICES.map(([id, lb]) => <button key={id} className={`lh-chip ${vocal === id ? "on" : ""}`} onClick={() => setVocal(id)}>{lb}</button>)}
