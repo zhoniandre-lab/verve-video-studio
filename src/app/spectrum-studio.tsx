@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { paintEffect, paintPreviewCaptions, CC_TEMPLATES, ensureFontsLoaded } from "@/lib/editing";
 import type { CapWord } from "@/lib/editing";
 import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
+import { WHISPER_LANGUAGES } from "@/lib/whisper-languages"; // 🌍 bahasa Auto Lirik dunia
 import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
 import { cariKlimaksBuffer, energiPerDetik, hitungPuncak } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
 import { buildAudioChain } from "@/lib/audio-chain"; // 🎚 v19.33: rantai EQ/kompresor shared (live + offline)
@@ -675,12 +676,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         setLyrMsg("⚠️ Tidak ada kata terdeteksi (lagu instrumental? coba yang ada vokalnya).");
         return;
       }
-      // 3) Filter kata aneh — buang aksara tak dikenal & simbol doang (bukan bahasa spesifik,
-      // supaya lirik Inggris/Jepang/Korea tetap bisa kalau memang lagunya begitu)
-      const aksaraAneh = /[\u0600-\u06FF\u0400-\u04FF\u0590-\u05FF\u0900-\u097F]/; // Arab/Kiril/Ibrani/Devanagari (jarang buat lagu pop)
+      // 3) Filter token kosong/simbol saja — JANGAN membuang aksara Arab,
+      // Devanagari, Kiril, CJK, dan aksara dunia lain yang memang valid.
       const kataAsli = (res.words as { w: string; start: number; end: number }[])
         .map((w) => ({ ...w, w: String(w.w || "").trim() }))
-        .filter((w) => w.w && !aksaraAneh.test(w.w) && /[\p{L}\p{N}]/u.test(w.w));
+        .filter((w) => w.w && /[\p{L}\p{N}]/u.test(w.w));
       const dibuang = (res.words as { w: string }[]).length - kataAsli.length;
       // 4) Kelompokkan kata jadi BARIS (baris baru tiap jeda >0.8s atau panjang)
       const words = kataAsli;
@@ -2907,13 +2907,21 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                   </button>
                   {lyrAuto && <button className="v6-chip" style={{ color: "#fbbf24" }} onClick={() => { setLyrAuto(false); autoWordsRef.current = []; }}>↺ Manual</button>}
                 </div>
-                {/* 🌏 v19.19: pilih bahasa lagu (auto = deteksi; bisa Inggris/Jepang/dll) */}
-                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, opacity: .7 }}>🌏 Bahasa lagu:</span>
-                  {[["auto", "🌐 Auto"], ["id", "🇮🇩 Indonesia"], ["en", "🇬🇧 Inggris"], ["ja", "🇯🇵 Jepang"], ["ko", "🇰🇷 Korea"], ["ms", "🇲🇾 Melayu"]].map(([v, lb]) => (
-                    <button key={v} className={`v6-chip ${transLang === v ? "on" : ""}`} style={{ fontSize: 10 }} onClick={() => setTransLang(v)}>{lb}</button>
-                  ))}
-                </div>
+                {/* 🌍 Bahasa lirik global — pilih bahasa audio agar Whisper tidak salah menebak */}
+                <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, opacity: .7, whiteSpace: "nowrap" }}>🌏 Bahasa lirik:</span>
+                  <select
+                    className="v6-inp"
+                    style={{ flex: 1, minWidth: 0, margin: 0, padding: "7px 8px", fontSize: 11 }}
+                    value={transLang}
+                    onChange={(e) => setTransLang(e.target.value)}
+                    disabled={lyrBusy}
+                    aria-label="Pilih bahasa audio untuk Auto Lirik"
+                  >
+                    {WHISPER_LANGUAGES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+                  </select>
+                </label>
+                <p style={{ fontSize: 9.5, opacity: .58, margin: "0 0 6px" }}>Pilih sesuai bahasa yang dinyanyikan/diucapkan. Hindi India, Turki, Arab, Indonesia, dan bahasa dunia tersedia. Auto = deteksi otomatis.</p>
                 {!!lyrMsg && <p style={{ fontSize: 11, color: lyrMsg.startsWith("✅") ? "#86efac" : "#fbbf24", margin: "0 0 6px" }}>{lyrMsg}</p>}
                 {lyrAuto && <p style={{ fontSize: 10, opacity: .7, margin: "0 0 6px" }}>✨ Timing dari deteksi suara asli (Whisper) — setiap kata menyala PERSIS saat dinyanyikan, bukan dibagi rata.</p>}
                 <textarea className="v6-inp v6-ta" style={{ minHeight: 130 }} placeholder={"Tempel lirik di sini — satu baris = satu keterangan.\nKata akan menyala satu per satu pas dinyanyikan ✨"} value={lyricsText} onChange={e => { setLyricsText(e.target.value); setLyrAuto(false); }} />
