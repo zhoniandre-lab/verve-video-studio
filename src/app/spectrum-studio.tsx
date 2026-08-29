@@ -211,6 +211,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // 👑 v19.13 PRO PACK: logo channel di tengah + sinar + shockwave + bintang + ember + overlay pro
   const [logoImg, setLogoImg] = useState("");
   const logoImgRef = useRef<HTMLImageElement | null>(null);
+  const logoFrameCacheRef = useRef<{ canvas: HTMLCanvasElement; w: number; h: number; t: number; key: string } | null>(null);
   const starsRef = useRef<{ x: number; y: number; r: number; ph: number }[]>([]);
   const embersRef = useRef<{ x: number; y: number; vx: number; vy: number; r: number; ph: number }[]>([]);
   const shockRef = useRef<{ x: number; y: number; r: number; a: number }[]>([]);
@@ -1727,71 +1728,100 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
     // 👑 v19.13/v19.14 PRO PACK: LOGO PUSAT — denyut ikut bass + sinar berputar + ring
     // 🎛️ v19.14: posisi bebas (drag), skala, kecepatan rotasi, mode ikut-beat
+    // ⚡ Render cepat: logo dianimasikan maksimal 12fps lalu di-composite ulang
+    // pada frame video berikutnya. Preview tetap memakai animasi penuh.
     if (layerVis.logo !== false) {
-    ctx.save(); ctx.globalAlpha = layerOp.logo ?? 1;
-    const punyaLogo = logoImgRef.current || title.trim() || mTitle.trim();
-    if (punyaLogo) {
-      const cx = logoPos.x * W, cy = logoPos.y * H;
-      const beatK = beatMode === "statis" ? 0 : 1; // denyut/membesar pakai bass
-      const beatBoost = beatMode === "membesar" ? 0.10 : 0.05;
-      const logoR = Math.min(W, H) * (0.11 * logoScale + bass * beatBoost * beatK);
-      ctx.save();
-      // sinar (god rays) berputar
-      ctx.translate(cx, cy); ctx.rotate(t * rotSpeed);
-      ctx.globalCompositeOperation = "lighter";
-      const RAYS = cepat ? 0 : 12;
-      for (let i = 0; i < RAYS; i++) {
-        const ang0 = (i / RAYS) * Math.PI * 2;
-        ctx.save(); ctx.rotate(ang0);
-        const rg = ctx.createLinearGradient(0, 0, logoR * 3.4, 0);
-        rg.addColorStop(0, `rgba(${r},${g2},${b},${(0.30 + bass * 0.25).toFixed(3)})`);
-        rg.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = rg;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(logoR * 3.4, -logoR * 0.16);
-        ctx.lineTo(logoR * 3.4, logoR * 0.16);
-        ctx.closePath(); ctx.fill();
-        ctx.restore();
+      const punyaLogo = logoImgRef.current || title.trim() || mTitle.trim();
+      if (punyaLogo) {
+        const gambarLogo = (target: CanvasRenderingContext2D) => {
+          const cx = logoPos.x * W, cy = logoPos.y * H;
+          const beatK = beatMode === "statis" ? 0 : 1;
+          const beatBoost = beatMode === "membesar" ? 0.10 : 0.05;
+          const logoR = Math.min(W, H) * (0.11 * logoScale + bass * beatBoost * beatK);
+          target.save();
+          // sinar (god rays) berputar; jalur render cepat memang menonaktifkan
+          // bagian ini karena paling mahal dan tidak mengubah logo utama.
+          target.translate(cx, cy); target.rotate(t * rotSpeed);
+          target.globalCompositeOperation = "lighter";
+          const RAYS = cepat ? 0 : 12;
+          for (let i = 0; i < RAYS; i++) {
+            const ang0 = (i / RAYS) * Math.PI * 2;
+            target.save(); target.rotate(ang0);
+            const rg = target.createLinearGradient(0, 0, logoR * 3.4, 0);
+            rg.addColorStop(0, `rgba(${r},${g2},${b},${(0.30 + bass * 0.25).toFixed(3)})`);
+            rg.addColorStop(1, "rgba(0,0,0,0)");
+            target.fillStyle = rg;
+            target.beginPath();
+            target.moveTo(0, 0);
+            target.lineTo(logoR * 3.4, -logoR * 0.16);
+            target.lineTo(logoR * 3.4, logoR * 0.16);
+            target.closePath(); target.fill();
+            target.restore();
+          }
+          target.restore();
+          // glow pusat
+          const lg2 = target.createRadialGradient(cx, cy, 0, cx, cy, logoR * 2.2);
+          lg2.addColorStop(0, "rgba(255,255,255,0.9)");
+          lg2.addColorStop(0.18, `rgba(${r},${g2},${b},0.8)`);
+          lg2.addColorStop(0.45, `rgba(${r},${g2},${b},0.28)`);
+          lg2.addColorStop(1, "rgba(0,0,0,0)");
+          target.fillStyle = lg2;
+          target.beginPath(); target.arc(cx, cy, logoR * 2.2, 0, Math.PI * 2); target.fill();
+          // ring dalam ikut beat
+          target.strokeStyle = "rgba(255,255,255,0.9)";
+          target.lineWidth = 2 + bass * 3;
+          target.beginPath(); target.arc(cx, cy, logoR * (0.9 + bass * 0.18), 0, Math.PI * 2); target.stroke();
+          // ring luar putus-putus berputar
+          target.save(); target.translate(cx, cy); target.rotate(-t * rotSpeed * 1.4);
+          target.strokeStyle = `rgba(${r},${g2},${b},0.55)`;
+          target.lineWidth = 2; target.setLineDash([10, 8]);
+          target.beginPath(); target.arc(0, 0, logoR * 1.55, 0, Math.PI * 2); target.stroke();
+          target.restore();
+          // logo gambar / teks
+          if (logoImgRef.current) {
+            const size = logoR * 1.5;
+            target.save();
+            target.beginPath(); target.arc(cx, cy, size / 2, 0, Math.PI * 2); target.clip();
+            target.drawImage(logoImgRef.current, cx - size / 2, cy - size / 2, size, size);
+            target.restore();
+          } else {
+            target.fillStyle = "#fff"; target.textAlign = "center"; target.textBaseline = "middle";
+            const fs = Math.min(logoR * 0.34, 54);
+            target.font = `900 ${fs}px 'Poppins',system-ui,sans-serif`;
+            const words = (title || mTitle).split(" ");
+            const l1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
+            const l2 = words.slice(Math.ceil(words.length / 2)).join(" ");
+            if (l2) { target.fillText(l1, cx, cy - fs * 0.55); target.fillText(l2, cx, cy + fs * 0.55); }
+            else target.fillText(l1, cx, cy);
+          }
+        };
+
+        if (cepat) {
+          const cacheKey = `${W}|${H}|${r}|${g2}|${b}|${title}|${mTitle}|${logoPos.x}|${logoPos.y}|${logoScale}|${rotSpeed}|${beatMode}|${logoImgRef.current?.src || ""}`;
+          let cache = logoFrameCacheRef.current;
+          if (!cache || cache.w !== W || cache.h !== H) {
+            const canvas = document.createElement("canvas");
+            canvas.width = W; canvas.height = H;
+            cache = { canvas, w: W, h: H, t: -Infinity, key: "" };
+            logoFrameCacheRef.current = cache;
+          }
+          if (cache.key !== cacheKey || t - cache.t >= 1 / 12) {
+            const cacheCtx = cache.canvas.getContext("2d", { alpha: true });
+            if (cacheCtx) {
+              cacheCtx.clearRect(0, 0, W, H);
+              gambarLogo(cacheCtx);
+              cache.t = t; cache.key = cacheKey;
+            }
+          }
+          ctx.save(); ctx.globalAlpha = layerOp.logo ?? 1;
+          ctx.drawImage(cache.canvas, 0, 0);
+          ctx.restore();
+        } else {
+          ctx.save(); ctx.globalAlpha = layerOp.logo ?? 1;
+          gambarLogo(ctx);
+          ctx.restore();
+        }
       }
-      ctx.restore();
-      // glow pusat
-      const lg2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, logoR * 2.2);
-      lg2.addColorStop(0, "rgba(255,255,255,0.9)");
-      lg2.addColorStop(0.18, `rgba(${r},${g2},${b},0.8)`);
-      lg2.addColorStop(0.45, `rgba(${r},${g2},${b},0.28)`);
-      lg2.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = lg2;
-      ctx.beginPath(); ctx.arc(cx, cy, logoR * 2.2, 0, Math.PI * 2); ctx.fill();
-      // ring dalam ikut beat
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = 2 + bass * 3;
-      ctx.beginPath(); ctx.arc(cx, cy, logoR * (0.9 + bass * 0.18), 0, Math.PI * 2); ctx.stroke();
-      // ring luar putus-putus berputar
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(-t * rotSpeed * 1.4);
-      ctx.strokeStyle = `rgba(${r},${g2},${b},0.55)`;
-      ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
-      ctx.beginPath(); ctx.arc(0, 0, logoR * 1.55, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-      // logo gambar / teks
-      if (logoImgRef.current) {
-        const size = logoR * 1.5;
-        ctx.save();
-        ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.clip();
-        ctx.drawImage(logoImgRef.current, cx - size / 2, cy - size / 2, size, size);
-        ctx.restore();
-      } else {
-        ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        const fs = Math.min(logoR * 0.34, 54);
-        ctx.font = `900 ${fs}px 'Poppins',system-ui,sans-serif`;
-        const words = (title || mTitle).split(" ");
-        const l1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
-        const l2 = words.slice(Math.ceil(words.length / 2)).join(" ");
-        if (l2) { ctx.fillText(l1, cx, cy - fs * 0.55); ctx.fillText(l2, cx, cy + fs * 0.55); }
-        else ctx.fillText(l1, cx, cy);
-      }
-    }
-    ctx.restore();
     } // tutup lapisan logo
 
     // 👑 v19.13 PRO PACK: EMBER NAIK — partikel ringan (murah, tanpa shadowBlur)

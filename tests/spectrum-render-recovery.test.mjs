@@ -29,6 +29,7 @@ T(/v6-recovery/.test(css), "banner pemulihan punya styling mobile");
 T(/gradientCacheRef/.test(studio) && /cachedGradient/.test(studio), "gradient canvas dicache untuk mengurangi beban CPU per frame");
 T(!/const peakH = new Array<number>\(N\)\.fill\(0\)/.test(studio) && !/const peakF = new Array<number>\(N\)\.fill\(0\)/.test(studio), "render tidak membuat array peak baru setiap frame");
 T(/benchmarkRender/.test(studio) && /tanpa kredit/.test(studio), "benchmark throughput perangkat tersedia sebelum render panjang");
+T(/logoFrameCacheRef/.test(studio) && /t - cache\.t >= 1 \/ 12/.test(studio), "logo render panjang memakai cache 12fps agar tidak berat tiap frame");
 
 console.log(`\n📊 ${pass} lulus, ${fail} gagal`);
 if (fail) process.exit(1);
