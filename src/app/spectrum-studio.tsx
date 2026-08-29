@@ -44,16 +44,21 @@ function downloadBlobX(b: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(u), 4000);
 }
 
-async function fetchSpectrumAudioBytes(url: string, signal: AbortSignal): Promise<{ raw: ArrayBuffer; contentType: string; source: string }> {
-  const candidates = Array.from(new Set([
-    url,
-    /^https?:/i.test(url) && !/proxy-audio/.test(url) ? proxify(url) : "",
-    /^\/?api\/hcnsec\/proxy-audio\?url=/.test(url) ? (() => { try { return decodeURIComponent(url.split("url=")[1] || ""); } catch { return ""; } })() : "",
-  ].filter(Boolean)));
+type SpectrumAudioAccess = { provider: string; key: string };
+
+async function fetchSpectrumAudioBytes(url: string, signal: AbortSignal, access?: SpectrumAudioAccess): Promise<{ raw: ArrayBuffer; contentType: string; source: string }> {
+  const proxy = /^https?:/i.test(url) && !/proxy-audio/.test(url) ? proxify(url) : "";
+  const original = /^\/?api\/hcnsec\/proxy-audio\?url=/.test(url) ? (() => { try { return decodeURIComponent(url.split("url=")[1] || ""); } catch { return ""; } })() : "";
+  const candidates = Array.from(new Set((access?.key ? [proxy, url, original] : [url, proxy, original]).filter(Boolean)));
   const errors: string[] = [];
   for (const source of candidates) {
     try {
-      const response = await fetch(source, { signal, cache: "no-store" });
+      // Credential hanya dikirim ke gerbang same-origin, tidak pernah langsung
+      // ke host CDN dari browser.
+      const headers = access?.key && source.startsWith("/")
+        ? { "x-suno-key": access.key, "x-suno-provider": access.provider }
+        : undefined;
+      const response = await fetch(source, { signal, cache: "no-store", headers });
       const contentType = (response.headers.get("content-type") || "").toLowerCase();
       const declaredLength = Number(response.headers.get("content-length") || 0);
       if (declaredLength > 80 * 1024 * 1024) throw new Error("file audio terlalu besar (>80MB)");
@@ -233,6 +238,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const audioBlobUrlRef = useRef<string | null>(null);
   const audioLoadSeqRef = useRef(0); // 🛡️ satu pekerjaan audio terbaru saja yang boleh commit state
   const audioLoadAbortRef = useRef<AbortController | null>(null);
+  const audioAccessRef = useRef<SpectrumAudioAccess | null>(null);
   // 🎛 peaks asli (per 0.25 dtk) — dipakai animasi subscribe saat render offline
   const peaksRef = useRef<number[]>([]);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
@@ -597,9 +603,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   /* ---------- decode audio sekali ---------- */
   /* 🎵 v19.29: hasil generate lagu → langsung jadi audio visualizer */
-  function onSunoSong(url: string, title: string, duration?: number) {
+  function onSunoSong(url: string, title: string, duration?: number, access?: SpectrumAudioAccess) {
     setSunoTitle(title);
-    void loadAudio(url, title);
+    audioAccessRef.current = access || null;
+    void loadAudio(url, title, access);
     if (duration) setDuration(duration);
     // 🐛 v20.46 FIX: setelah Suno selesai → auto ke Video review (step 1) supaya user LANGSUNG lihat
     // canvas spektrum dengan audio barunya — bukan stuck di step Musik tanpa preview.
@@ -613,9 +620,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     return actxRef.current;
   }
 
-  async function loadAudio(url: string, name: string) {
+  async function loadAudio(url: string, name: string, access?: SpectrumAudioAccess) {
     const job = audioLoadSeqRef.current + 1;
     audioLoadSeqRef.current = job;
+    audioAccessRef.current = access || null;
     audioLoadAbortRef.current?.abort();
     const controller = new AbortController();
     audioLoadAbortRef.current = controller;
@@ -627,7 +635,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (srcRef.current) stopPlayback();
     setErr(""); setMBusy(true);
     try {
-      const loaded = await fetchSpectrumAudioBytes(url, controller.signal);
+      const loaded = await fetchSpectrumAudioBytes(url, controller.signal, access);
       if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
       const bytes = loaded.raw.byteLength;
       const buf = await decodeSpectrumAudio(loaded.raw);
@@ -726,8 +734,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       // 1) Ambil blob audio (dari URL atau buffer)
       let blob: Blob;
       if (audioUrl && !audioUrl.startsWith("blob:")) {
-        const r = await fetch(proxify(audioUrl));
-        blob = await r.blob();
+        const ac = new AbortController();
+        const wd = window.setTimeout(() => ac.abort(), 120_000);
+        try {
+          const loaded = await fetchSpectrumAudioBytes(audioUrl, ac.signal, audioAccessRef.current || undefined);
+          blob = new Blob([loaded.raw], { type: loaded.contentType || "audio/mpeg" });
+        } finally {
+          window.clearTimeout(wd);
+        }
       } else {
         // konversi AudioBuffer → WAV
         const b = bufRef.current!;

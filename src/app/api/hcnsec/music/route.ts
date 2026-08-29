@@ -490,7 +490,7 @@ function buildBodyRaw(payload: any, provider: Provider): any {
  *  LUPA DIPAKAI di sini → CDN Suno/TTAPI balas 206 untuk Range 0-2047, lagu
  *  yang sudah jadi malah ditolak "file audio tidak valid/kosong (2048 byte)".
  *  Sekarang pakai audioProbeCukup + baca ukuran asli dari Content-Range. */
-async function cekUrlAudioValid(url: string, headers: Record<string,string>): Promise<{ ok: boolean; msg?: string; bytes?: number }> {
+async function cekUrlAudioValid(url: string, headers: Record<string,string>): Promise<{ ok: boolean; msg?: string; bytes?: number; requiresAuth?: boolean }> {
   const coba = async (h: Record<string,string>): Promise<{ status: number; bytes: number; total?: number } | null> => {
     try {
       const ac = new AbortController();
@@ -509,7 +509,9 @@ async function cekUrlAudioValid(url: string, headers: Record<string,string>): Pr
   if (tanpa && audioProbeCukup(tanpa)) return { ok: true, bytes: tanpa.bytes };
   const dengan = await coba(headers);
   if (dengan && audioProbeCukup(dengan)) {
-    return { ok: false, msg: "butuh autentikasi (tidak bisa diunduh publik) — provider kasih link yang nggak bisa didownload browser." };
+    // Valid bila provider memang menjaga CDN dengan API key. Client akan
+    // mengambilnya kembali lewat gerbang proxy ber-auth, bukan membuang hasil.
+    return { ok: true, requiresAuth: true, bytes: dengan.bytes };
   }
   const st = tanpa?.status || dengan?.status || 0;
   if (st === 401 || st === 403) return { ok: false, msg: "link audio butuh autentikasi (401/403) — tidak bisa diunduh publik." };
@@ -766,6 +768,7 @@ export async function POST(req: Request) {
                 status: "audio_rusak", provider,
               }, { status: 502 });
             }
+            n.audio_needs_auth = !!cek.requiresAuth;
           }
           return NextResponse.json(n);
         }
@@ -849,6 +852,7 @@ export async function GET(req: Request) {
                 provider,
               });
             }
+            n.audio_needs_auth = !!cek.requiresAuth;
           }
           return NextResponse.json(n);
         }

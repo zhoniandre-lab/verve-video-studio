@@ -58,10 +58,12 @@ function proxify(url: string): string {
   } catch { return url; }
 }
 
+type SunoAudioAccess = { provider: string; key: string };
+
 type Props = {
   defaultTitle?: string;
   defaultLyrics?: string;
-  onSong: (url: string, title: string, duration?: number) => void;
+  onSong: (url: string, title: string, duration?: number, access?: SunoAudioAccess) => void;
   onClose?: () => void;
   allowAdvanced?: boolean;
 };
@@ -356,7 +358,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
             const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
             const clips = pilihKlipDariHasil(body);
             const singleDur = clips[0]?.duration || (body.duration && clips.length ? Number(body.duration) / clips.length : dur);
-            finishSong({ url: body.audio_url, title: body.title || title, duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined });
+            finishSong({ url: body.audio_url, title: body.title || title, duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined }, { provider: sunoProv, key: selectedKey });
             setBusy(""); setReferenceMsg("✅ Audio Reference selesai."); return;
           }
           const id = body.id || body.taskId || body.task_id;
@@ -413,11 +415,15 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     return "pending";
   }
 
-  function finishSong(res: { url: string; title: string; duration?: number }) {
+  function finishSong(res: { url: string; title: string; duration?: number }, access?: SunoAudioAccess) {
     if (pollTimer.current) clearTimeout(pollTimer.current);
     setPolling(false);
     setDone(res);
-    onSong(res.url, res.title, res.duration);
+    const resolvedAccess = access || {
+      provider: sunoProv,
+      key: launchKeyRef.current || keysForProvider()[0]?.key || "",
+    };
+    onSong(res.url, res.title, res.duration, resolvedAccess.key ? resolvedAccess : undefined);
     setPollMsg("✅ Lagu jadi! Auto-terpasang sebagai audio.");
   }
 
@@ -513,7 +519,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
           const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
           const clips = pilihKlipDariHasil(j);
           const singleDur = clips[0]?.duration || (j.duration && clips.length ? Number(j.duration) / clips.length : dur);
-          finishSong({ url: j.audio_url, title: j.title || title, duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined });
+          finishSong({ url: j.audio_url, title: j.title || title, duration: isFinite(singleDur) && singleDur > 0 ? singleDur : undefined }, { provider: sunoProv, key: keys[ki]?.key || "" });
           setBusy(""); return;
         }
         const id = j.id || j.taskId || j.task_id;

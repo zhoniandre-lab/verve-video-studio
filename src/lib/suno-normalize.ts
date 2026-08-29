@@ -27,6 +27,8 @@ export interface HasilNormal {
   image_url?: string;
   duration?: number;
   error?: string;
+  /** URL hasil hanya bisa diambil dengan credential provider */
+  audio_needs_auth?: boolean;
   /** ditambahkan route sesudahnya (asal provider) */
   provider?: string;
 }

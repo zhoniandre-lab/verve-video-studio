@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+function stripBearer(value: string): string {
+  return String(value || "").replace(/^Authorization\s*:\s*/i, "").replace(/^Bearer\s+/i, "").trim();
+}
+
+function mayForwardProviderAuth(host: string): boolean {
+  const known = ["musicapi.ai", "aimusicapi.ai", "kie.ai", "sunoapi.org", "sunor.cc", "ttapi.io", "cometapi.com", "evolink.ai", "suno.ai"];
+  return known.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
 /**
  * Proxy audio biar lolos CORS (khususnya Kie.ai / apiframe / Sunor yang CDN-nya
  * kadang gak set Access-Control-Allow-Origin). Client fetch URL ini, server fetch
@@ -29,12 +38,24 @@ export async function GET(req: Request) {
 
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 120_000);
+    const upstreamHeaders: Record<string, string> = {
+      // Mirip browser biasa
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "audio/*,video/*,*/*",
+    };
+    const providerKey = stripBearer(req.headers.get("x-suno-key") || "");
+    const provider = (req.headers.get("x-suno-provider") || "").toLowerCase();
+    const forwardedAuth = !!providerKey && mayForwardProviderAuth(host);
+    if (forwardedAuth) {
+      if (provider === "suno-resmi") upstreamHeaders.Cookie = providerKey;
+      else {
+        upstreamHeaders.Authorization = `Bearer ${providerKey}`;
+        if (provider === "sunor") upstreamHeaders["x-api-key"] = providerKey;
+        if (provider === "ttapi") upstreamHeaders["TT-API-KEY"] = providerKey;
+      }
+    }
     const r = await fetch(u, {
-      headers: {
-        // Mirip browser biasa
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "audio/*,video/*,*/*",
-      },
+      headers: upstreamHeaders,
       signal: ac.signal,
       cache: "no-store",
     });
@@ -54,7 +75,7 @@ export async function GET(req: Request) {
     headers.set("Content-Type", ct);
     headers.set("Accept-Ranges", "bytes");
     headers.set("Access-Control-Allow-Origin", "*");
-    headers.set("Cache-Control", "public, max-age=86400");
+    headers.set("Cache-Control", forwardedAuth ? "private, max-age=3600" : "public, max-age=86400");
     if (cl) headers.set("Content-Length", cl);
 
     return new NextResponse(r.body as any, {
