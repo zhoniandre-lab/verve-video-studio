@@ -44,6 +44,47 @@ function downloadBlobX(b: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(u), 4000);
 }
 
+async function fetchSpectrumAudioBytes(url: string, signal: AbortSignal): Promise<{ raw: ArrayBuffer; contentType: string; source: string }> {
+  const candidates = Array.from(new Set([
+    url,
+    /^https?:/i.test(url) && !/proxy-audio/.test(url) ? proxify(url) : "",
+    /^\/?api\/hcnsec\/proxy-audio\?url=/.test(url) ? (() => { try { return decodeURIComponent(url.split("url=")[1] || ""); } catch { return ""; } })() : "",
+  ].filter(Boolean)));
+  const errors: string[] = [];
+  for (const source of candidates) {
+    try {
+      const response = await fetch(source, { signal, cache: "no-store" });
+      const contentType = (response.headers.get("content-type") || "").toLowerCase();
+      const declaredLength = Number(response.headers.get("content-length") || 0);
+      if (declaredLength > 80 * 1024 * 1024) throw new Error("file audio terlalu besar (>80MB)");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (/text\/html|application\/(json|xml)/i.test(contentType)) throw new Error(`respons bukan audio (${contentType || "teks"})`);
+      const raw = await response.arrayBuffer();
+      if (raw.byteLength < 2048) throw new Error(`file terlalu kecil (${raw.byteLength} byte)`);
+      if (raw.byteLength > 80 * 1024 * 1024) throw new Error("file audio terlalu besar (>80MB)");
+      return { raw, contentType, source };
+    } catch (error: any) {
+      if (error?.name === "AbortError") throw error;
+      errors.push(`${/proxy-audio/.test(source) ? "proxy" : "langsung"}: ${String(error?.message || "gagal").slice(0, 90)}`);
+    }
+  }
+  throw new Error(`Audio gagal diambil. ${errors.join(" · ") || "sumber kosong"}`);
+}
+
+async function decodeSpectrumAudio(raw: ArrayBuffer): Promise<AudioBuffer> {
+  const Ctor = typeof window !== "undefined" ? ((window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined) : undefined;
+  if (!Ctor) throw new Error("Browser ini belum mendukung AudioContext.");
+  const decoder = new Ctor();
+  try {
+    // Buffer hanya dipakai oleh decoder ini; tidak membuat salinan kedua dengan slice().
+    return await decoder.decodeAudioData(raw);
+  } catch {
+    throw new Error("Format audio tidak bisa didecode browser. Coba MP3/WAV atau konversi M4A ke WAV.");
+  } finally {
+    try { await decoder.close(); } catch { /* abaikan */ }
+  }
+}
+
 const SPEC_STYLES = [
   { id: "bars", label: "📊 Bars", desc: "Bar warna klasik" },
   { id: "mirror", label: "⬍ Mirror", desc: "Cermin atas-bawah" },
@@ -190,6 +231,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const freqFramesRef = useRef<FreqFrames | null>(null);
   // 🐛 FIX v19.47.1: lacak blob URL audio (upload dari HP) — di-revoke saat ganti lagu (anti leak)
   const audioBlobUrlRef = useRef<string | null>(null);
+  const audioLoadSeqRef = useRef(0); // 🛡️ satu pekerjaan audio terbaru saja yang boleh commit state
+  const audioLoadAbortRef = useRef<AbortController | null>(null);
   // 🎛 peaks asli (per 0.25 dtk) — dipakai animasi subscribe saat render offline
   const peaksRef = useRef<number[]>([]);
   const multiImgsRef = useRef<HTMLImageElement[]>([]);
@@ -563,53 +606,88 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setStep(1);
   }
 
+  function audioContextForPlayback(): AudioContext {
+    const Ctor = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+    if (!Ctor) throw new Error("Browser ini belum mendukung AudioContext.");
+    if (!actxRef.current || actxRef.current.state === "closed") actxRef.current = new Ctor();
+    return actxRef.current;
+  }
+
   async function loadAudio(url: string, name: string) {
+    const job = audioLoadSeqRef.current + 1;
+    audioLoadSeqRef.current = job;
+    audioLoadAbortRef.current?.abort();
+    const controller = new AbortController();
+    audioLoadAbortRef.current = controller;
+    const releaseUncommittedBlob = () => {
+      if (url.startsWith("blob:") && audioBlobUrlRef.current !== url) {
+        try { URL.revokeObjectURL(url); } catch { /* aman */ }
+      }
+    };
+    if (srcRef.current) stopPlayback();
     setErr(""); setMBusy(true);
     try {
-      const r = await fetch(proxify(url));
-      const raw = await r.arrayBuffer();
-      if (!actxRef.current) actxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const buf = await actxRef.current.decodeAudioData(raw.slice(0));
-      bufRef.current = buf;
-      // 🐛 FIX v19.47.1: revoke blob URL audio LAMA (hanya yang dari upload HP) — anti leak memori
-      if (audioBlobUrlRef.current && audioBlobUrlRef.current !== url) {
-        try { URL.revokeObjectURL(audioBlobUrlRef.current); } catch { /* aman */ }
+      const loaded = await fetchSpectrumAudioBytes(url, controller.signal);
+      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+      const bytes = loaded.raw.byteLength;
+      const buf = await decodeSpectrumAudio(loaded.raw);
+      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+
+      // Analisis dijalankan ke variabel lokal terlebih dahulu. Jika user memilih
+      // lagu lain di tengah proses, hasil lama tidak boleh menimpa state baru.
+      const energy = energiPerDetik(buf, 0.5);
+      const climax = cariKlimaksBuffer(buf, 30);
+      const peaks = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
+      const beats = deteksiBeats(peaks, 0.25);
+      let freqFrames: FreqFrames | null = null;
+      logDiag(`Audio terbaca: ${fmtD(buf.duration)} · ${(bytes / 1048576).toFixed(1)}MB · ${loaded.contentType || "tipe tidak diumumkan"}`);
+      logDiag("Analisis frekuensi (FFT) untuk spektrum akurat…");
+      try {
+        freqFrames = await hitungFreqFramesChunked(buf, 10, 128);
+        if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+        logDiag(`FFT siap: ${freqFrames.frames.length} frame × ${freqFrames.bins} bin @${freqFrames.fps}fps`);
+      } catch { freqFrames = null; }
+      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+
+      audioContextForPlayback();
+      const previousBlob = audioBlobUrlRef.current;
+      if (previousBlob && previousBlob !== url) {
+        try { URL.revokeObjectURL(previousBlob); } catch { /* aman */ }
       }
       audioBlobUrlRef.current = url.startsWith("blob:") ? url : null;
+      bufRef.current = buf;
+      peaksRef.current = peaks;
+      beatsRef.current = beats;
+      freqFramesRef.current = freqFrames;
       setAudioUrl(url); setAudioName(name);
       setDuration(buf.duration);
       if (!title) setTitle(name);
-      // 🎬 v19.32 DUAL RENDER: hitung energi & deteksi klimaks OTOMATIS
-      setEnergiArr(energiPerDetik(buf, 0.5));
-      const k = cariKlimaksBuffer(buf, 30);
-      setShortStart(Math.round(k.start * 10) / 10);
+      setEnergiArr(energy);
+      setShortStart(Math.round(climax.start * 10) / 10);
       setShortAuto(true);
-      // 🥁 v19.36: analisis BEAT & BPM (timeline beat)
-      const pk = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
-      peaksRef.current = pk;
-      const bt = deteksiBeats(pk, 0.25);
-      beatsRef.current = bt;
-      setBeatsArr(bt);
-      setBpmN(bpmDariBeats(bt));
-      // 🎛 v19.39: hitung FFT frekuensi asli (chunked biar HP nggak nge-freeze)
-      logDiag("Analisis frekuensi (FFT) untuk spektrum akurat…");
-      try {
-        const fr = await hitungFreqFramesChunked(buf, 10, 128);
-        freqFramesRef.current = fr;
-        logDiag(`FFT siap: ${fr.frames.length} frame × ${fr.bins} bin @${fr.fps}fps`);
-      } catch { freqFramesRef.current = null; }
-      // 🔬 v19.33: DIAGNOSTIK — berapa detik yang BENAR-BENAR terbaca browser?
-      // File besar tapi durasi pendek = header durasi file rusak → render pasti pendek.
-      logDiag(`Audio dimuat: terbaca=${fmtD(buf.duration)} bytes=${raw.byteLength} (${(raw.byteLength / 1048576).toFixed(1)} MB)`);
-      const mb = raw.byteLength / 1048576;
+      setBeatsArr(beats);
+      setBpmN(bpmDariBeats(beats));
+      const mb = bytes / 1048576;
       if (buf.duration < 150 && mb > 4) {
-        setDurWarn(`⚠️ Browser cuma membaca ${fmtD(buf.duration)} dari file ${mb.toFixed(0)} MB. Kalau lagu aslinya lebih panjang dari itu, header durasi file-nya rusak — hasil render pasti ikut pendek. Solusi: convert ulang file (aplikasi konverter MP3/WAV) lalu upload lagi.`);
+        setDurWarn(`⚠️ Browser membaca ${fmtD(buf.duration)} dari file ${mb.toFixed(0)} MB. Jika durasi aslinya lebih panjang, convert ulang file lalu upload lagi.`);
       } else {
         setDurWarn("");
       }
-    } catch (e: any) { setErr("Audio tidak bisa dibaca: " + (e?.message || "")); }
-    setMBusy(false);
+      logDiag(`✅ Audio aktif: ${name} · ${fmtD(buf.duration)} · job #${job}`);
+    } catch (error: any) {
+      releaseUncommittedBlob();
+      if (job !== audioLoadSeqRef.current || error?.name === "AbortError") return;
+      const message = String(error?.message || "audio tidak terbaca");
+      logDiag(`❌ Upload audio gagal · ${message.slice(0, 140)}`);
+      setErr(`Audio tidak bisa dibaca: ${message}`);
+    } finally {
+      if (job === audioLoadSeqRef.current) {
+        setMBusy(false);
+        audioLoadAbortRef.current = null;
+      }
+    }
   }
+
 
   // 🎬 v19.56: upload VIDEO sebagai latar — audio video otomatis jadi sumber spektrum & lirik
   function uploadVideoLatar(f?: File | null) {
@@ -721,6 +799,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setPlaying(false);
   }
   useEffect(() => () => stopPlayback(), []); // eslint-disable-line
+  useEffect(() => () => {
+    audioLoadAbortRef.current?.abort();
+    if (audioBlobUrlRef.current) {
+      try { URL.revokeObjectURL(audioBlobUrlRef.current); } catch { /* aman */ }
+    }
+  }, []);
 
   /* ---------- painter ---------- */
   /* 🎞️ v19.95 LEMARI VIDEO STOK — cari video Pexels/Pixabay/Coverr → jadi latar (di-loop) */
@@ -1741,7 +1825,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   function audition() {
     if (!bufRef.current || rendering) return;
     if (playing) { stopPlayback(); return; }
-    const actx = actxRef.current!;
+    const actx = audioContextForPlayback();
     actx.resume().catch(() => {});
     const src = actx.createBufferSource();
     src.buffer = bufRef.current;
@@ -1760,7 +1844,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   function auditionAt(offset: number, dur: number) {
     if (!bufRef.current || rendering) return;
     stopPlayback();
-    const actx = actxRef.current!;
+    const actx = audioContextForPlayback();
     actx.resume().catch(() => {});
     const o = Math.max(0, Math.min(offset, bufRef.current.duration - 0.1));
     const d = Math.max(0.5, Math.min(dur, bufRef.current.duration - o));
@@ -2258,9 +2342,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <span style={{ fontSize: 20 }}>📥</span>
               <div className="tt">Upload musik / lagu dari HP<div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>{mBusy ? "Memproses…" : audioName ? `✅ ${audioName} — terbaca ${fmtD(duration)}` : "mp3/wav/m4a"}</div></div>
               <span className="arr">›</span>
-              <input type="file" accept="audio/*" hidden onChange={e => {
-                const f = e.target.files?.[0]; if (!f) return;
-                loadAudio(URL.createObjectURL(f), f.name.replace(/\.[^.]+$/, "").slice(0, 40));
+              <input type="file" accept="audio/*" hidden disabled={mBusy} onChange={e => {
+                const f = e.target.files?.[0];
+                e.currentTarget.value = ""; // File yang sama tetap bisa dicoba ulang setelah gagal.
+                if (!f) return;
+                if (!f.type.startsWith("audio/")) { setErr("Pilih file audio MP3/WAV/M4A dulu bro"); return; }
+                void loadAudio(URL.createObjectURL(f), f.name.replace(/\.[^.]+$/, "").slice(0, 40));
               }} />
             </label>
             {/* 🎬 v19.56: upload VIDEO — audio video jadi musik + video jadi latar */}
