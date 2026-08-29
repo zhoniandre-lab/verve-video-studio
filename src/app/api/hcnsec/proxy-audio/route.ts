@@ -43,6 +43,13 @@ export async function GET(req: Request) {
       "User-Agent": "Mozilla/5.0",
       "Accept": "audio/*,video/*,*/*",
     };
+    // Video CDN (terutama Pixabay/Coverr) memerlukan Range untuk metadata,
+    // seek, dan pemutaran bertahap di Android. Tanpa ini browser sering hanya
+    // menampilkan kotak kosong saat video dipilih di Review.
+    const range = req.headers.get("range");
+    if (range) upstreamHeaders.Range = range;
+    const ifRange = req.headers.get("if-range");
+    if (ifRange) upstreamHeaders["If-Range"] = ifRange;
     const providerKey = stripBearer(req.headers.get("x-suno-key") || "");
     const provider = (req.headers.get("x-suno-provider") || "").toLowerCase();
     const forwardedAuth = !!providerKey && mayForwardProviderAuth(host);
@@ -70,16 +77,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: `Bukan media (content-type: ${ctRaw.slice(0, 60)})` }, { status: 415 });
     }
     const ct = ctRaw || "audio/mpeg";
-    const cl = r.headers.get("content-length");
     const headers = new Headers();
     headers.set("Content-Type", ct);
-    headers.set("Accept-Ranges", "bytes");
+    headers.set("Accept-Ranges", r.headers.get("accept-ranges") || "bytes");
     headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified");
     headers.set("Cache-Control", forwardedAuth ? "private, max-age=3600" : "public, max-age=86400");
-    if (cl) headers.set("Content-Length", cl);
+    for (const name of ["content-length", "content-range", "etag", "last-modified"]) {
+      const value = r.headers.get(name);
+      if (value) headers.set(name === "content-length" ? "Content-Length" : name === "content-range" ? "Content-Range" : name === "etag" ? "ETag" : "Last-Modified", value);
+    }
 
     return new NextResponse(r.body as any, {
-      status: 200,
+      // Pertahankan 206 supaya HTMLVideoElement bisa melanjutkan request
+      // berikutnya. Audio biasa tetap 200 seperti sebelumnya.
+      status: r.status === 206 ? 206 : 200,
       headers,
     });
   } catch (e: any) {

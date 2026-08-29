@@ -57,6 +57,13 @@ const COVERR = "https://api.coverr.co/videos";
 const ID_GESER_PIXABAY = 900_000_000;
 const ID_GESER_COVERR = 1_800_000_000;
 
+// Semua video stok dikembalikan lewat gerbang same-origin. Selain mengatasi
+// CORS, proxy ini sekarang meneruskan Range sehingga HTMLVideoElement Android
+// bisa membaca metadata dan melakukan seek tanpa mengunduh file utuh dulu.
+function gerbangMedia(url: string): string {
+  return `/api/hcnsec/proxy-audio?url=${encodeURIComponent(url)}`;
+}
+
 // 🛡️ Penjaga kuota sederhana (per instance serverless): maks 300 cari / 10 menit / IP. 🐛 v20.18: dinaikkan (60 terlalu kencang saat coba-coba).
 const jejak = new Map<string, number[]>();
 function bolehLewat(ip: string) {
@@ -128,9 +135,8 @@ export async function GET(req: Request) {
         { status: 429 },
       );
 
-    const gerbang = (u: string) => `/api/hcnsec/proxy-audio?url=${encodeURIComponent(u)}`;
-
-    // --- Gudang 1: PEXELS (langsung — CDN-nya CORS *) ---
+    // --- Gudang 1: PEXELS (juga lewat gerbang agar semua stok punya jalur
+    // Range/CORS yang sama di Android) ---
     const janjiPexels: Promise<{ hasil: any[]; total: number } | null> = !kunciP
       ? Promise.resolve(null)
       : (async () => {
@@ -145,7 +151,7 @@ export async function GET(req: Request) {
             .map((v) => {
               const f = pilihFile(v.video_files);
               if (!f) return null;
-              return { id: v.id, dur: v.duration, src: f.src, sd: f.sd, w: f.w, h: f.h, thumb: v.image, by: v.user?.name || "Pexels", link: v.url, provider: "pexels" };
+              return { id: v.id, dur: v.duration, src: gerbangMedia(f.src), sd: gerbangMedia(f.sd), w: f.w, h: f.h, thumb: gerbangMedia(v.image), by: v.user?.name || "Pexels", link: v.url, provider: "pexels" };
             })
             .filter(Boolean);
           return { hasil, total: j.total_results ?? hasil.length };
@@ -177,11 +183,11 @@ export async function GET(req: Request) {
               return {
                 id: ID_GESER_PIXABAY + (h.id || 0),
                 dur: h.duration || 0,
-                src: gerbang(src),
-                sd: gerbang(sd),
+                src: gerbangMedia(src),
+                sd: gerbangMedia(sd),
                 w: med.width || sml.width || 0,
                 h: med.height || sml.height || 0,
-                thumb: thumb ? gerbang(thumb) : "",
+                thumb: thumb ? gerbangMedia(thumb) : "",
                 by: `${h.user || "Pixabay"} · Pixabay`,
                 link: h.pageURL || "",
                 provider: "pixabay",
@@ -213,11 +219,11 @@ export async function GET(req: Request) {
               return {
                 id: ID_GESER_COVERR + Math.abs(String(v.id || src).split("").reduce((a, ch) => ((a * 33) + ch.charCodeAt(0)) | 0, 5381)),
                 dur,
-                src: gerbang(src),
-                sd: gerbang(src),
+                src: gerbangMedia(src),
+                sd: gerbangMedia(src),
                 w: Number(v.max_width || v.width || 0) || 0,
                 h: Number(v.max_height || v.height || 0) || 0,
-                thumb: thumb ? gerbang(String(thumb)) : "",
+                thumb: thumb ? gerbangMedia(String(thumb)) : "",
                 by: `${typeof creator === "string" ? creator : "Coverr"} · Coverr`,
                 link: v.canonical_url || v.url || "",
                 provider: "coverr",

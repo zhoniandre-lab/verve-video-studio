@@ -107,8 +107,13 @@ function buildReferenceBody(payload: any, provider: Provider): any {
   const weirdness = Math.max(0, Math.min(1, numberOr(payload.weirdness_constraint, 0.3)));
 
   if (provider === "musicapi" || provider === "aimusicapi") {
+    // MusicAPI/AIMusicAPI mendokumentasikan dua mode input yang MUTUALLY
+    // EXCLUSIVE: `url` (auto-upload) atau `sample_clip_id` (upload terpisah).
+    // Upload terpisah lebih stabil untuk WAV hasil ekstraksi video dan menghindari
+    // error generik "Upload request failed" di endpoint sample.
+    const sampleClipId = String(payload.sample_clip_id || "").trim();
     const body: any = {
-      url: audioUrl,
+      ...(sampleClipId ? { sample_clip_id: sampleClipId } : { url: audioUrl }),
       chop_sample_start_s: start,
       chop_sample_end_s: end,
       custom_mode: custom,
@@ -214,6 +219,56 @@ function findStringByKeys(value: any, keys: string[], depth = 0, seen = new Set<
     if (found) return found;
   }
   return "";
+}
+
+/** Upload acuan lewat endpoint resmi sebelum /sonic/sample.
+ * MusicAPI/AIMusicAPI sendiri menyarankan alur ini; jangan mengandalkan
+ * auto-upload di endpoint sample untuk WAV hasil ekstraksi video. */
+async function uploadSonicReference(provider: Provider, audioUrl: string, base: string, headers: Record<string, string>): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 50_000);
+  try {
+    const response = await fetch(`${base}/api/v1/sonic/upload`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ url: audioUrl }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const text = await response.text().catch(() => "");
+    let body: any = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { body = {}; }
+    if (!response.ok || Number(body?.code) >= 400) {
+      const detail = String(body?.message || body?.error || text || `HTTP ${response.status}`).slice(0, 180);
+      throw new Error(`${provider === "musicapi" ? "MusicAPI" : "AIMusicAPI"} upload acuan gagal (${response.status}): ${detail}`);
+    }
+    const directClipId = findStringByKeys(body, ["clip_id", "clipId", "sample_clip_id"]);
+    if (directClipId) return directClipId;
+
+    // Default sync mode mestinya langsung memberi clip_id. Toleransi terhadap
+    // akun/provider yang tetap mengembalikan task_id tanpa mengirim callback.
+    const taskId = findStringByKeys(body, ["task_id", "taskId", "jobId"]);
+    if (!taskId) throw new Error("endpoint upload tidak mengembalikan clip_id");
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, attempt ? 1800 : 500));
+      if (controller.signal.aborted) throw new Error("upload acuan timeout");
+      const poll = await fetch(`${base}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
+        headers,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const pollText = await poll.text().catch(() => "");
+      let pollBody: any = {};
+      try { pollBody = pollText ? JSON.parse(pollText) : {}; } catch { pollBody = {}; }
+      const clipId = findStringByKeys(pollBody, ["clip_id", "clipId", "sample_clip_id"]);
+      if (clipId) return clipId;
+      const state = String(pollBody?.state || pollBody?.status || "").toLowerCase();
+      if (/fail|error|cancel/.test(state)) throw new Error(String(pollBody?.message || "upload acuan ditolak provider"));
+    }
+    throw new Error("upload acuan belum selesai setelah polling");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function uploadCometReference(audioUrl: string, base: string, headers: Record<string, string>): Promise<string> {
@@ -661,6 +716,17 @@ export async function POST(req: Request) {
     }
 
     let requestPayload = payload;
+    if (referenceMode && (provider === "musicapi" || provider === "aimusicapi")) {
+      try {
+        const sampleClipId = await uploadSonicReference(provider, String(payload?.audio_url || payload?.audioUrl || ""), base, headers);
+        requestPayload = { ...payload, sample_clip_id: sampleClipId };
+      } catch (error: any) {
+        return NextResponse.json({
+          error: `Provider ${PROVIDERS[provider].label} tidak berhasil membaca audio/video reference. Upload acuan dihentikan sebelum generate: ${String(error?.message || "upload gagal").slice(0, 220)} Coba MP3/WAV yang lebih kecil atau provider Kie.ai.`,
+          status: "reference_upload_failed", provider,
+        }, { status: 502 });
+      }
+    }
     if (referenceMode && provider === "cometapi") {
       try {
         const coverClipId = await uploadCometReference(String(payload?.audio_url || payload?.audioUrl || ""), base, headers);

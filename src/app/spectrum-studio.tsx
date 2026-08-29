@@ -171,6 +171,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   // audio video otomatis jadi sumber spektrum & lirik
   const [videoBg, setVideoBg] = useState("");
   const videoBgSesiRef = useRef(false); // true = blob sesi (terlalu besar utk disimpan)
+  const videoBgFallbackRef = useRef(""); // sumber HD cadangan bila URL preview stok gagal
   // 🔁 v19.91: LOOP VIDEO — auto (pas durasi lagu) / 1× / 2× / 3×
   const [videoLoop, setVideoLoop] = useState<ModeLoopVideo>("auto");
   const [videoDur, setVideoDur] = useState(0); // durasi video (dtk) setelah metadata termuat
@@ -706,12 +707,17 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 🐛 v19.91: kalau sudah ADA lagu → video cuma jadi LATAR (lagu tidak ketimpa)
     const sudahAdaLagu = !!bufRef.current || !!audioUrl;
     const pasang = (url: string, sesi: boolean) => {
+      videoBgFallbackRef.current = "";
       setVideoBg(url); videoBgSesiRef.current = sesi; setVideoDur(0);
       if (sudahAdaLagu) {
-        setErr(""); // bersihkan error — video terpasang sebagai latar, lagu tetap jalan
+        setErr(""); // video terpasang sebagai latar, lagu tetap jalan
       } else {
-        void loadAudio(url, nama); // belum ada lagu → audio video jadi musik & spektrum
+        // Pertahankan perilaku lama: audio video lokal tetap dicoba menjadi
+        // sumber musik. Review dibuka lebih dulu supaya kegagalan decode tidak
+        // membuat user terjebak di langkah Musik.
+        void loadAudio(url, nama);
       }
+      setStep(1);
     };
     if (f.size <= 2 * 1024 * 1024) {
       const r = new FileReader();
@@ -719,7 +725,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       r.readAsDataURL(f);
     } else {
       pasang(URL.createObjectURL(f), true);
-      setErr(""); // bersihkan error lama — video besar jalan sebagai sesi
+      if (sudahAdaLagu) setErr(""); // video besar jalan sebagai sesi tanpa menghapus pesan musik
     }
   }
 
@@ -852,11 +858,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   }
   function pilihVidStok(v: VidPick) {
     // 🎞️ video stok jadi LATAR video — di-loop mengikuti durasi lagu (loop mulus ON)
-    setVideoBg(v.sd || v.src); videoBgSesiRef.current = true; setVideoDur(v.dur);
-    setVidSheetOpen(false);
-    // kalau belum ada lagu → audio video jadi musik & spektrum (seperti upload video)
-    if (!bufRef.current && !audioUrl) void loadAudio(v.sd || v.src, `Stok: ${v.by || "video"}`);
-    setErr("");
+    // Pakai versi ringan untuk HP, tetapi simpan HD sebagai fallback bila CDN
+    // preview lambat/gagal. URL Pixabay/Coverr sudah melalui proxy Range-aware.
+    const sumber = v.sd || v.src;
+    videoBgFallbackRef.current = v.src && v.src !== sumber ? v.src : "";
+    setVideoBg(sumber); videoBgSesiRef.current = true; setVideoDur(v.dur); setVidSheetOpen(false);
+    // Memilih visual harus langsung membawa user ke Review. Jika belum ada
+    // lagu, jangan decode MP4 stok sebagai AudioBuffer secara paksa — tambahkan
+    // musik dulu lewat Upload/Generate Lagu.
+    setErr(bufRef.current || audioUrl ? "" : "Video stok terpasang sebagai latar. Tambahkan musik untuk mengaktifkan spectrum.");
+    setStep(1);
   }
 
   // 🎨 v19.11: GENERATE BACKGROUND AI dari suasana/lirik (16:9 & 9:16) — otak gambar, bar jalan di atas
@@ -1815,21 +1826,42 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!videoBg) {
       videoBgRef.current = null; videoBg2Ref.current = null;
       videoCurRef.current = 0; videoSwapRef.current = null;
+      setVideoDur(0);
       return;
     }
+    const selectedUrl = videoBg;
+    const fallbackUrl = videoBgFallbackRef.current;
+    let failedOver = false;
     const mk = () => {
       const v = document.createElement("video");
       v.muted = true; v.loop = true; v.playsInline = true; v.preload = "auto";
       v.crossOrigin = "anonymous";
-      v.src = videoBg;
+      v.src = selectedUrl;
+      v.onloadedmetadata = () => {
+        if (selectedUrl === videoBg) setVideoDur(Number.isFinite(v.duration) ? v.duration : 0);
+      };
+      v.onerror = () => {
+        // Bila URL SD/CDN gagal, coba sekali versi HD. Jangan loop fallback
+        // tanpa batas karena itu membuat Review tampak menggantung.
+        if (!failedOver && fallbackUrl && selectedUrl === videoBg && fallbackUrl !== selectedUrl) {
+          failedOver = true;
+          videoBgFallbackRef.current = "";
+          setVideoDur(0);
+          setVideoBg(fallbackUrl);
+          return;
+        }
+        if (selectedUrl === videoBg) setErr("Video stok gagal dimuat. Pilih hasil stok lain atau coba lagi.");
+      };
       return v;
     };
-    const a = mk(); a.play().catch(() => {});
+    const a = mk(); a.load(); a.play().catch(() => {});
     const b = mk(); // siap dipakai saat crossfade
     videoBgRef.current = a; videoBg2Ref.current = b;
     videoCurRef.current = 0; videoSwapRef.current = null;
     return () => {
       try { a.pause(); } catch {} try { b.pause(); } catch {}
+      a.removeAttribute("src"); b.removeAttribute("src");
+      try { a.load(); b.load(); } catch {}
       videoBgRef.current = null; videoBg2Ref.current = null;
     };
   }, [videoBg]);

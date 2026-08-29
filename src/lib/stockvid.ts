@@ -16,7 +16,8 @@ export async function cariStokVideo(q: string, page = 1, per = 8, tipe: "film" |
   const translated = terjemahkanKueri(q);
   const query = translated.trim().replace(/\s+/g, " ").slice(0, 60);
   if (query.length < 2) return { ok: false, hasil: [], total: 0, err: "Kata kunci terlalu pendek bro." };
-  const cached = readMaterialCache<CariHasil>(`${query}|${tipe}`, page, per);
+  const cacheKey = `${query}|${tipe}|proxy-range-v2`;
+  const cached = readMaterialCache<CariHasil>(cacheKey, page, per);
   if (cached?.ok && Array.isArray(cached.hasil)) return { ...cached, err: "" };
   // 🎌 v20.25: kirim tipe (anime = video animasi) ke route
   const res = await fetchJsonResult<any>(`/api/hcnsec/stock-video?q=${encodeURIComponent(query)}&page=${page}&per=${per}&tipe=${tipe}`, {
@@ -36,7 +37,7 @@ export async function cariStokVideo(q: string, page = 1, per = 8, tipe: "film" |
     return { ok: false, hasil: [], total: 0, err: j.error || `Gudang gagal dihubungi (HTTP ${res.status})` };
   }
   const out = { ok: true, hasil: j.hasil || [], total: j.total || 0, err: "" };
-  writeMaterialCache(`${query}|${tipe}`, page, per, out);
+  writeMaterialCache(cacheKey, page, per, out);
   return out;
 }
 
