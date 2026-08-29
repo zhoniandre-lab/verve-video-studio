@@ -25,6 +25,7 @@ import type { TextStyle } from "@/lib/textstyles";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v19.91: loop video
 import { cariStokVideo, type VidPick } from "@/lib/stockvid"; // 🎞️ v19.95/v20.23: lemari video stok (Pexels/Pixabay/Coverr)
 import { keysForSunoProvider, readSunoActiveKey, readSunoActiveProvider, readSunoKeyPool } from "@/lib/suno-keys";
+import { loadRecoveryAudio, saveRecoveryAudio } from "@/lib/studio/recovery-audio";
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -240,6 +241,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const freqFramesRef = useRef<FreqFrames | null>(null);
   // 🐛 FIX v19.47.1: lacak blob URL audio (upload dari HP) — di-revoke saat ganti lagu (anti leak)
   const audioBlobUrlRef = useRef<string | null>(null);
+  const audioRecoveryRef = useRef(false); // audio aktif disalin ke IndexedDB untuk pemulihan setelah reset
+  const audioRecoverySaveRef = useRef<Promise<boolean> | null>(null);
   const audioLoadSeqRef = useRef(0); // 🛡️ satu pekerjaan audio terbaru saja yang boleh commit state
   const audioLoadAbortRef = useRef<AbortController | null>(null);
   const audioAccessRef = useRef<SpectrumAudioAccess | null>(null);
@@ -585,6 +588,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       step, title, mTitle, mLyrics,
       audioUrl: /^https?:\/\//i.test(audioUrl) || audioUrl.startsWith("/api/") ? audioUrl : "",
       audioName, duration,
+      audioRecovery: audioRecoveryRef.current,
       audioProvider: audioAccessRef.current?.provider || "",
       videoBg: savedVideo, videoLoop, videoSeamless,
       ratio, bgType, bgGrad, bgColor, bgImg: compactCheckpointAsset(bgImg),
@@ -642,8 +646,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setIf(p.lirikOn, setLirikOn); setIf(p.lyricsText, setLyricsText); setIf(p.ccTpl, setCcTpl); setIf(p.capSize, setCapSize); setIf(p.capY, setCapY); setIf(p.titleSize, setTitleSize); setIf(p.titleBeat, setTitleBeat); setIf(p.transLang, setTransLang);
     setIf(p.eq, setEq); setIf(p.comp, setComp); setIf(p.gain, setGain); setIf(p.fades, setFades); setIf(p.shorts, setShorts); setIf(p.seamless, setSeamless); setIf(p.dualRender, setDualRender); setIf(p.shortDur, setShortDur); setIf(p.shortStart, setShortStart); setIf(p.shortAuto, setShortAuto);
     setRecovery(null);
-    if (p.audioUrl) {
-      setTimeout(() => void loadAudio(p.audioUrl, p.audioName || "Audio dipulihkan", aksesDariCheckpoint(p.audioProvider)), 80);
+    if (p.audioUrl || p.audioRecovery) {
+      setTimeout(async () => {
+        // Utamakan salinan lokal karena URL provider bisa kedaluwarsa atau
+        // membutuhkan key; fallback ke URL remote bila IndexedDB kosong.
+        const stored = p.audioRecovery ? await loadRecoveryAudio() : null;
+        if (stored?.blob) {
+          audioRecoveryRef.current = true;
+          const localUrl = URL.createObjectURL(stored.blob);
+          void loadAudio(localUrl, stored.name || p.audioName || "Audio dipulihkan");
+        } else if (p.audioUrl) {
+          void loadAudio(p.audioUrl, p.audioName || "Audio dipulihkan", aksesDariCheckpoint(p.audioProvider));
+        }
+      }, 80);
     }
     if (p.render?.status === "done" && p.render?.outputName) {
       setTimeout(async () => {
@@ -754,6 +769,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const loaded = await fetchSpectrumAudioBytes(url, controller.signal, access);
       if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
       const bytes = loaded.raw.byteLength;
+      // Salinan audio disimpan di IndexedDB secara best-effort. Ini membuat
+      // upload lokal/mix panjang tetap dapat dipulihkan setelah tab reload;
+      // kegagalan backup tidak boleh menghentikan render atau playback.
+      if (bytes <= 90 * 1024 * 1024) {
+        audioRecoveryRef.current = true;
+        audioRecoverySaveRef.current = saveRecoveryAudio(loaded.raw, loaded.contentType || "audio/mpeg", name).then((ok) => {
+          if (!ok && job === audioLoadSeqRef.current) audioRecoveryRef.current = false;
+          return ok;
+        }).catch(() => { if (job === audioLoadSeqRef.current) audioRecoveryRef.current = false; return false; });
+      } else {
+        audioRecoveryRef.current = false;
+        audioRecoverySaveRef.current = null;
+      }
       const buf = await decodeSpectrumAudio(loaded.raw);
       if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
 
@@ -2204,6 +2232,12 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   async function render() {
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
+    // Jangan mulai render sebelum salinan audio selesai ditulis ke IndexedDB;
+    // kalau tab mati sesudah ini, proyek masih punya bahan audio pemulihan.
+    if (audioRecoverySaveRef.current) {
+      setRenderNote("🛡️ Menyelesaikan backup audio lokal sebelum render…");
+      await audioRecoverySaveRef.current.catch(() => false);
+    }
     stopPlayback();
     // 🐛 FIX v19.39.1: toggle "Potong maks 59 dtk" TIDAK boleh motong LONG saat
     // Dual Render aktif (short 9:16 sudah punya durasi sendiri 30 dtk) —

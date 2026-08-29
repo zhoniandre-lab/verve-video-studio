@@ -6,6 +6,7 @@ const ROOT = process.cwd();
 const offline = readFileSync(join(ROOT, "src/lib/render-offline.ts"), "utf8");
 const studio = readFileSync(join(ROOT, "src/app/spectrum-studio.tsx"), "utf8");
 const css = readFileSync(join(ROOT, "src/app/globals.css"), "utf8");
+const audioRecovery = readFileSync(join(ROOT, "src/lib/studio/recovery-audio.ts"), "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -21,6 +22,8 @@ T(/realtime tidak aman/.test(studio) && /tidak memaksa fallback realtime/.test(s
 T(/saveCheckpoint/.test(studio) && /SPECTRUM_RECOVERY_KEY/.test(studio), "checkpoint proyek/render disimpan otomatis");
 T(/pagehide/.test(studio) && /Pemulihan otomatis tersedia/.test(studio), "reset halaman punya pemulihan setelan");
 T(/pulihkanCheckpoint/.test(studio) && /aksesDariCheckpoint/.test(studio), "audio remote dapat dipulihkan memakai key yang sudah tersimpan");
+T(/indexedDB\.open/.test(audioRecovery) && /saveRecoveryAudio/.test(audioRecovery) && /loadRecoveryAudio/.test(audioRecovery), "audio lokal/mix disalin ke IndexedDB untuk pemulihan");
+T(/saveRecoveryAudio\(loaded\.raw/.test(studio) && /audioRecovery/.test(studio), "audio aktif dicadangkan best-effort saat selesai diambil");
 T(/Output render terakhir dipulihkan dari OPFS/.test(studio), "output render yang sudah selesai bisa dipulihkan dari OPFS");
 T(/v6-recovery/.test(css), "banner pemulihan punya styling mobile");
 
