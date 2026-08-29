@@ -6,6 +6,7 @@
  * era/tempo/instrumen, genre/mood/vokal, lirik AI, generate + polling cerdas.
  * Hasil dikirim lewat callback `onSong(url, title, duration)`.
  */
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { META_PROV_SUNO, LINK_AMBIL_KEY, LINK_DASH_PROV } from "@/lib/suno-providers";
 import { mediaDuration, prepareReferenceAudio, recordReferenceAudio } from "@/lib/studio/reference-audio";
@@ -26,6 +27,9 @@ import {
 
 const SUNO_PROVIDERS = META_PROV_SUNO;
 const SUNO_PROVIDER_IDS = SUNO_PROVIDERS.map((p) => p.id);
+// Mix panjang di-load sebagai chunk terpisah supaya mode Simple/Advanced lama
+// tidak ikut membawa encoder audio sebelum user membukanya.
+const SunoMixPanel = dynamic(() => import("@/components/SunoMixPanel"), { ssr: false });
 const PROVIDER_KEY_LINK = LINK_AMBIL_KEY;
 /** 🛡 v19.35.4: dashboard tempat cek hasil manual kalau polling lama */
 const PROVIDER_DASH: Record<string, string> = { ...LINK_DASH_PROV, apiframe: "https://apiframe.ai" };
@@ -89,6 +93,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   const [lyrics, setLyrics] = useState(defaultLyrics);
   const [mStyle, setMStyle] = useState("");
   const [panelMode, setPanelMode] = useState<"simple" | "advanced">("simple");
+  const [mixOpen, setMixOpen] = useState(false);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [referencePreviewUrl, setReferencePreviewUrl] = useState("");
   const [referenceRole, setReferenceRole] = useState<"audio" | "voice">("audio");
@@ -552,6 +557,30 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
           <button type="button" className={panelMode === "simple" ? "on" : ""} onClick={() => setPanelMode("simple")} disabled={busy === "song" || busy === "reference" || polling}>⚡ Simple</button>
           <button type="button" className={panelMode === "advanced" ? "on" : ""} onClick={() => setPanelMode("advanced")} disabled={busy === "song" || busy === "reference" || polling}>🎛 Advanced · Audio/Voice</button>
         </div>
+      )}
+      {allowAdvanced && (
+        <>
+          <button type="button" className="lh-btn sec" style={{ marginTop: 8 }} onClick={() => setMixOpen((open) => !open)} disabled={busy === "song" || busy === "reference" || polling}>
+            {mixOpen ? "🎚️ Tutup EDM Mix Panjang ▴" : "🎚️ Buka EDM Mix Panjang · Hemat Kredit ▾"}
+          </button>
+          {mixOpen && (
+            <SunoMixPanel
+              defaultTitle={defaultTitle}
+              defaultLyrics={lyrics}
+              defaultStyle={mStyle}
+              genre={genre}
+              mood={mood}
+              era={sEra}
+              tempo={sTempo}
+              instruments={sInstr}
+              vocal={vocal}
+              provider={sunoProv}
+              model={sunoModel}
+              keys={keysForProvider()}
+              onSong={(url, title, duration) => onSong(url, title, duration)}
+            />
+          )}
+        </>
       )}
 
       <div className="lh-kv"><span>Provider</span><b>
