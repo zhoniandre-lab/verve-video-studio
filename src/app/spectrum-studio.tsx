@@ -433,6 +433,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [turbo, setTurbo] = useState(true);
   const renderingRef = useRef(false);
   const [estSisa, setEstSisa] = useState("");
+  const [benchmarking, setBenchmarking] = useState(false);
+  const [benchmarkMsg, setBenchmarkMsg] = useState("");
   function logDiag(s: string) {
     const row = { t: new Date().toISOString().slice(11, 19), s };
     diagRef.current = [...diagRef.current.slice(-60), row];
@@ -572,6 +574,16 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } catch { /* abaikan */ }
   }
   const barsRef = useRef<Float32Array>(new Float32Array(128)); // 🐛 FIX v19.17.1: harus ≥ barCount maks (128) — dulu 64 → naikkan bar >64 bikin NaN
+  // CanvasGradient terikat ke context tertentu. WeakMap mencegah pembuatan
+  // ribuan gradient baru per frame saat render panjang, tanpa mengubah visual.
+  const gradientCacheRef = useRef<WeakMap<CanvasRenderingContext2D, Map<string, CanvasGradient>>>(new WeakMap());
+  function cachedGradient(ctx: CanvasRenderingContext2D, key: string, create: () => CanvasGradient): CanvasGradient {
+    let map = gradientCacheRef.current.get(ctx);
+    if (!map) { map = new Map(); gradientCacheRef.current.set(ctx, map); }
+    const found = map.get(key);
+    if (found) return found;
+    const made = create(); map.set(key, made); return made;
+  }
 
   function compactCheckpointAsset(value: string, maxBytes = 220_000): string {
     return value && value.length <= maxBytes ? value : "";
@@ -1273,11 +1285,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const bw = W / N;
       const baseY = H - 8;
       // 🎨 v19.36.2: gradient VIVID (tetap berwarna di puncak — bukan putih pucat)
-      const grad3 = ctx.createLinearGradient(0, H, 0, 0);
-      grad3.addColorStop(0, acc);
-      grad3.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.65 + 130))},${Math.min(255, Math.round(g2 * 0.55 + 110))},255)`);
-      grad3.addColorStop(0.82, `rgb(${Math.min(255, Math.round(r * 0.4 + 205))},${Math.min(255, Math.round(g2 * 0.35 + 190))},255)`);
-      grad3.addColorStop(1, `rgb(${Math.min(255, Math.round(r * 0.3 + 225))},${Math.min(255, Math.round(g2 * 0.25 + 220))},255)`);
+      // Dicache per CanvasRenderingContext2D; gradient tidak berubah antar frame.
+      const grad3 = cachedGradient(ctx, `bars|${W}|${H}|${r}|${g2}|${b}`, () => {
+        const gradient = ctx.createLinearGradient(0, H, 0, 0);
+        gradient.addColorStop(0, acc);
+        gradient.addColorStop(0.5, `rgb(${Math.min(255, Math.round(r * 0.65 + 130))},${Math.min(255, Math.round(g2 * 0.55 + 110))},255)`);
+        gradient.addColorStop(0.82, `rgb(${Math.min(255, Math.round(r * 0.4 + 205))},${Math.min(255, Math.round(g2 * 0.35 + 190))},255)`);
+        gradient.addColorStop(1, `rgb(${Math.min(255, Math.round(r * 0.3 + 225))},${Math.min(255, Math.round(g2 * 0.25 + 220))},255)`);
+        return gradient;
+      });
       // reflection bawah (flip) — dilewati saat render cepat (mahal di HP)
       if (!cepat) {
       ctx.save(); ctx.globalAlpha = 0.26; ctx.translate(0, baseY + 4); ctx.scale(1, -0.45);
@@ -1299,7 +1315,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.fillStyle = glowBg; ctx.fillRect(0, 0, W, H);
       ctx.restore();
       // ✨ v19.36.2: PEAK CAP — titik terang di ujung tiap bar (tanda visualizer pro)
-      const peakH = new Array<number>(N).fill(0);
+      // Tidak membuat array baru per frame; cap sebelumnya selalu di-reset ke
+      // tinggi bar yang sama sehingga alokasi array hanya menambah garbage collection.
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(3, v * H * 0.62);
         const x = i * bw + bw * 0.16, w = bw * 0.68, r2 = bw * 0.3;
@@ -1323,10 +1340,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         ctx.fillRect(x + w * 0.12, baseY - h, w * 0.16, h);
         // peak cap
         const targetCap = h;
-        peakH[i] = Math.max(peakH[i] * 0.82, targetCap);
         ctx.fillStyle = "rgba(255,255,255,0.95)";
-        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5, 2.5);
-        else ctx.fillRect(x + w * 0.18, baseY - peakH[i] - 4, w * 0.64, 5);
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(x + w * 0.18, baseY - targetCap - 4, w * 0.64, 5, 2.5);
+        else ctx.fillRect(x + w * 0.18, baseY - targetCap - 4, w * 0.64, 5);
         }
       }
       // lingkar bass di bawah tengah — 🧹 v19.45.1: hanya kalau fx.ring ON
@@ -1336,12 +1352,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       }
     } else if (specStyle === "mirror") {
       const bw = W / N; const cy = H * 0.56;
+      const grd = cachedGradient(ctx, `mirror|${W}|${H}|${r}|${g2}|${b}`, () => {
+        const gradient = ctx.createLinearGradient(0, cy - H * 0.28, 0, cy + H * 0.28);
+        gradient.addColorStop(0, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
+        gradient.addColorStop(1, acc);
+        return gradient;
+      });
       ctx.save();
       for (let i = 0; i < N; i++) {
         const v = bars[i]; const h = Math.max(2, v * H * 0.28);
-        const grd = ctx.createLinearGradient(0, cy - h, 0, cy + h);
-        grd.addColorStop(0, `rgb(${Math.min(255, r + 60)},${Math.min(255, g2 + 40)},255)`);
-        grd.addColorStop(1, acc);
         ctx.fillStyle = grd; ctx.globalAlpha = 0.95;
         ctx.fillRect(i * bw + bw * 0.18, cy - h, bw * 0.64, h);
         ctx.globalAlpha = 0.35;
@@ -1494,10 +1513,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } else if (specStyle === "dual") { // 🪞 v19.43: DUAL — spektrum kiri & kanan dari tengah (simetris, mewah)
       const cx = W * 0.5, baseY = H - 8;
       const bw = W / 2 / N;
-      const gradD = ctx.createLinearGradient(0, H, 0, 0);
-      gradD.addColorStop(0, acc);
-      gradD.addColorStop(0.6, `rgb(${Math.min(255, Math.round(r * 0.6 + 140))},${Math.min(255, Math.round(g2 * 0.5 + 120))},255)`);
-      gradD.addColorStop(1, "#ffffff");
+      const gradD = cachedGradient(ctx, `dual|${W}|${H}|${r}|${g2}|${b}`, () => {
+        const gradient = ctx.createLinearGradient(0, H, 0, 0);
+        gradient.addColorStop(0, acc);
+        gradient.addColorStop(0.6, `rgb(${Math.min(255, Math.round(r * 0.6 + 140))},${Math.min(255, Math.round(g2 * 0.5 + 120))},255)`);
+        gradient.addColorStop(1, "#ffffff");
+        return gradient;
+      });
       ctx.save();
       for (let side = 0; side < 2; side++) {
         const dir = side === 0 ? -1 : 1;
@@ -1524,11 +1546,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } else if (specStyle === "flame") { // 🔥 v19.43: BARA — bars gradien api (merah→kuning) + glow
       const bw = W / N;
       const baseY = H - 8;
-      const gradF = ctx.createLinearGradient(0, H, 0, 0);
-      gradF.addColorStop(0, "#7f1d1d");
-      gradF.addColorStop(0.4, "#ef4444");
-      gradF.addColorStop(0.75, "#f97316");
-      gradF.addColorStop(1, "#fde047");
+      const gradF = cachedGradient(ctx, `flame|${W}|${H}`, () => {
+        const gradient = ctx.createLinearGradient(0, H, 0, 0);
+        gradient.addColorStop(0, "#7f1d1d");
+        gradient.addColorStop(0.4, "#ef4444");
+        gradient.addColorStop(0.75, "#f97316");
+        gradient.addColorStop(1, "#fde047");
+        return gradient;
+      });
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       const fg = ctx.createRadialGradient(W / 2, baseY, 0, W / 2, baseY, H * 0.55);
@@ -1536,7 +1561,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       fg.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = fg; ctx.fillRect(0, 0, W, H);
       ctx.restore();
-      const peakF = new Array<number>(N).fill(0);
+      // Peak cap tidak perlu array per frame; nilainya sama dengan tinggi bar
+      // pada frame ini. Menghindari ribuan alokasi array saat render panjang.
       for (let i = 0; i < N; i++) {
         const v = bars[i];
         const h = Math.max(3, v * H * 0.68);
@@ -1548,11 +1574,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         // highlight atas (lidah api)
         ctx.fillStyle = "rgba(253,224,71,0.85)";
         ctx.fillRect(i * bw + bw * 0.28, baseY - h, bw * 0.44, Math.max(2, h * 0.12));
-        peakF[i] = Math.max(peakF[i] * 0.8, h);
         ctx.fillStyle = "rgba(255,255,255,0.9)";
         ctx.beginPath();
-        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.22, baseY - peakF[i] - 4, bw * 0.56, 4, 2);
-        else ctx.fillRect(i * bw + bw * 0.22, baseY - peakF[i] - 4, bw * 0.56, 4);
+        if (typeof (ctx as any).roundRect === "function") (ctx as any).roundRect(i * bw + bw * 0.22, baseY - h - 4, bw * 0.56, 4, 2);
+        else ctx.fillRect(i * bw + bw * 0.22, baseY - h - 4, bw * 0.56, 4);
       }
       // ember api di dasar — dilewati saat render cepat
       if (!cepat) {
@@ -1649,8 +1674,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       ctx.fill();
       // bars mini
       const NB = 24, bw2 = fw / NB;
-      const gradM = ctx.createLinearGradient(0, fy0 + fh, 0, fy0);
-      gradM.addColorStop(0, acc); gradM.addColorStop(1, "#ffffff");
+      const gradM = cachedGradient(ctx, `mini|${Math.round(fy0)}|${Math.round(fw)}|${Math.round(fh)}|${r}|${g2}|${b}`, () => {
+        const gradient = ctx.createLinearGradient(0, fy0 + fh, 0, fy0);
+        gradient.addColorStop(0, acc); gradient.addColorStop(1, "#ffffff");
+        return gradient;
+      });
       for (let i = 0; i < NB; i++) {
         const v = bars[Math.floor((i / NB) * N)];
         const h2 = Math.max(2, v * fh * 0.85);
@@ -2230,7 +2258,40 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     });
   }
 
+  /** Ukur throughput perangkat tanpa kredit AI dan tanpa membuat file panjang.
+   * Ini sengaja dijalankan dengan konfigurasi render yang sama agar estimasi
+   * 40 menit tidak lagi berdasarkan tebakan. */
+  async function benchmarkRender() {
+    if (benchmarking || rendering) return;
+    if (!bufRef.current) { setBenchmarkMsg("Pilih musik dulu bro."); return; }
+    setBenchmarking(true); setBenchmarkMsg("⏱ Menguji render sampel 12 detik…"); setErr("");
+    renderingRef.current = true;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    const sample = Math.min(12, Math.max(1, bufRef.current.duration));
+    const started = performance.now();
+    try {
+      const mampu = await cekRenderOfflineMampu();
+      if (!mampu.ok) throw new Error(mampu.alasan || "WebCodecs tidak tersedia");
+      await renderOffline({
+        w: dim.w, h: dim.h, offset: 0, dur: sample, audioCodec: mampu.audioCodec,
+        onProg: (p) => setBenchmarkMsg(`⏱ Benchmark ${Math.round(p * 100)}%…`),
+      });
+      const elapsed = Math.max(0.1, (performance.now() - started) / 1000);
+      const speed = sample / elapsed;
+      const estimateMin = (bufRef.current.duration / speed) / 60;
+      setBenchmarkMsg(`✅ Kecepatan ${speed.toFixed(2)}× realtime · estimasi musik ${fmtD(bufRef.current.duration)} ≈ ${fmtD(Math.round(estimateMin * 60))} render. Tidak memakai kredit AI.`);
+      logDiag(`Benchmark: sampel=${sample}s waktu=${elapsed.toFixed(2)}s speed=${speed.toFixed(2)}x estimasi=${estimateMin.toFixed(1)}m`);
+    } catch (error: any) {
+      setBenchmarkMsg(`⚠️ Benchmark gagal: ${String(error?.message || error).slice(0, 180)}`);
+    } finally {
+      renderingRef.current = false;
+      setBenchmarking(false);
+      startPreviewLoop();
+    }
+  }
+
   async function render() {
+    if (benchmarking) return;
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     // Jangan mulai render sebelum salinan audio selesai ditulis ke IndexedDB;
     // kalau tab mati sesudah ini, proyek masih punya bahan audio pemulihan.
@@ -2260,9 +2321,9 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 🛡 v19.32.1: peringatan sebelum render panjang — biar user tahu & jaga layar
     // 🚀 v19.34: mode KUAT jauh lebih cepat dari realtime — estimasi diukur otomatis
     if (total > 600) {
-      setRenderNote(`🎬 Musik ${fmtD(total)} (~${Math.round(total / 60)} menit). Mode KUAT: render jauh lebih cepat dari realtime — estimasi muncul di layar. Untuk lebih cepat lagi bisa pilih 24 fps di atas. Boleh tinggalin HP (layar mati render tetap lanjut), tapi biarkan tab terbuka.`);
+      setRenderNote(`🎬 Musik ${fmtD(total)} (~${Math.round(total / 60)} menit). Mode KUAT: render offline, estimasi muncul di layar. Hindari hemat baterai ekstrem dan jangan tutup tab.`);
     } else if (total > 120) {
-      setRenderNote("⏳ Mode KUAT: render lebih cepat dari realtime — estimasi muncul di layar. Boleh tinggalin HP, biarkan tab terbuka.");
+      setRenderNote("⏳ Mode KUAT: render offline lebih cepat dari realtime — estimasi muncul di layar. Jangan tutup tab.");
     } else {
       setRenderNote("");
     }
@@ -3449,15 +3510,19 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               ))}
             </div>
             <p style={{ fontSize: 10, opacity: .6, margin: "2px 0 0" }}>24 fps tetap mulus untuk visualizer & dipakai banyak channel besar — video panjang jadi jauh lebih cepat.</p>
+            <button className="v6-chip" style={{ width: "100%", marginTop: 7, borderColor: "rgba(34,197,94,.45)", color: "#86efac" }} onClick={() => void benchmarkRender()} disabled={rendering || benchmarking || !audioUrl}>
+              {benchmarking ? "⏱ Menguji 12 detik…" : "🧪 Uji Kecepatan Render (tanpa kredit)"}
+            </button>
+            {!!benchmarkMsg && <p className="v6-note" style={{ color: benchmarkMsg.startsWith("⚠️") ? "#fbbf24" : "#a7f3d0", margin: "5px 0 0" }}>{benchmarkMsg}</p>}
             <div className="v6-note" style={{ borderColor: "rgba(34,197,94,.35)", color: "#a7f3d0", fontSize: 11 }}>
               ⚡ Mode render: {pakaiMode === "offline" ? "KUAT (offline WebCodecs) — tahan layar mati, durasi presisi, render jauh lebih cepat dari realtime" : pakaiMode === "realtime" ? "real-time (MediaRecorder) — layar wajib menyala" : "otomatis dipilih saat render"}
             </div>
             {!!estSisa && <div className="v6-okbox" style={{ fontSize: 12 }}>{estSisa}</div>}
-            <button className="v6-bigcta" onClick={render} disabled={rendering || !audioUrl}>
+            <button className="v6-bigcta" onClick={render} disabled={rendering || benchmarking || !audioUrl}>
               {rendering
                 ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${renderFase ? `(${renderFase === "audio" ? "audio" : renderFase === "video" ? "gambar" : "gabung"}) ` : ""}${Math.round(progress * 100)}%`
                 : videoUrl ? "🔄 Render ulang" : dualRender ? "🚀 Render 2 video (Long + Short)" : "🚀 Render video spectrum"}</button>
-            {rendering && <div className="v6-note" style={{ textAlign: "center" }}>{pakaiMode === "offline" ? "Mode KUAT: proses jalan sendiri tanpa bunyi — layar boleh mati, render tetap lanjut. " : "Biarkan layar menyala — render berjalan realtime (audio ikut diproses). "}{dualRender && "Setelah Long selesai, otomatis lanjut render Short."}</div>}
+            {rendering && <div className="v6-note" style={{ textAlign: "center" }}>{pakaiMode === "offline" ? "Mode KUAT: proses offline tanpa bunyi — biarkan tab terbuka dan hindari hemat baterai ekstrem. " : "Biarkan layar menyala — render berjalan realtime (audio ikut diproses). "}{dualRender && "Setelah Long selesai, otomatis lanjut render Short."}</div>}
             {!!diag.length && !rendering && (
               <details style={{ marginTop: 8, fontSize: 10.5, opacity: .85 }}>
                 <summary style={{ cursor: "pointer", padding: "6px 8px", background: "rgba(255,255,255,.05)", borderRadius: 8 }}>🔍 Laporan teknis render (untuk cek kalau ada masalah)</summary>
