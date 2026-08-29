@@ -17,14 +17,21 @@
    Hasilnya: render TAHAN terhadap layar mati/HP terkunci, dan durasi
    video = durasi yang diminta, persis.
    ===================================================================== */
-import { Muxer, ArrayBufferTarget } from "mp4-muxer";
+import { Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget } from "mp4-muxer";
 import { buildAudioChain } from "./audio-chain";
 import { freqAt } from "./fft";
 import type { FreqFrames } from "./fft";
 import { sambungAmbience, buatReverbIR, type JenisAmbience } from "./ambience"; // 🌧️🎙️ v20.0
 
+export interface RenderFileSink {
+  stream: FileSystemWritableFileStream;
+  getFile: () => Promise<Blob>;
+}
+
 export interface OptsRenderOffline {
   buf: AudioBuffer;
+  /** Opsional: tulis langsung ke OPFS/disk, bukan menampung MP4 40–60 menit di RAM. */
+  fileSink?: RenderFileSink;
   w: number;
   h: number;
   offset: number;
@@ -162,15 +169,39 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   const audioCodec = o.audioCodec || "aac";
   // Opus wajib 48kHz; AAC pakai 44.1kHz (OfflineAudioContext otomatis resample sumber)
   const SR = audioCodec === "opus" ? 48000 : 44100;
+  const W = o.w, H = o.h;
+  const fps = o.fps && (o.fps === 24 || o.fps === 30 || o.fps === 25) ? o.fps : FPS_DEF;
+  // ⚡ v19.46.1 TURBO: encode LANGSUNG di resolusi kecil (bukan upscale ke 1080).
+  // 🐛 v19.75: SELALU align16 — 1080 % 16 = 8 → banyak HP Chrome jatuh ke encoder SOFTWARE.
+  const turbo = o.resScale && o.resScale > 0.3 && o.resScale < 1 ? o.resScale : 1;
+  const cw = align16(Math.max(160, Math.round(W * turbo)));
+  const ch = align16(Math.max(90, Math.round(H * turbo)));
+  const px = cw * ch;
+  let bitrate = o.videoBitrate;
+  if (!bitrate) {
+    const base = px <= 640 * 360 ? 1_800_000 : px <= 848 * 480 ? 2_400_000 : px <= 1280 * 720 ? 3_200_000 : 4_500_000;
+    bitrate = dur > 40 * 60 ? Math.min(base, 2_400_000) : dur > 10 * 60 ? Math.min(base, 3_000_000) : base;
+  }
+  // Render panjang diarahkan ke OPFS melalui target streaming. Fallback pendek
+  // tetap memakai ArrayBufferTarget agar perilaku lama tidak berubah.
+  const muxTarget = o.fileSink
+    ? new FileSystemWritableFileStreamTarget(o.fileSink.stream, { chunkSize: 16 * 1024 * 1024 })
+    : new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target: muxTarget,
+    video: { codec: "avc", width: cw, height: ch, frameRate: fps },
+    audio: { codec: audioCodec === "opus" ? "opus" : "aac", sampleRate: SR, numberOfChannels: 2 },
+    fastStart: o.fileSink ? "fragmented" : "in-memory",
+  });
 
   o.onFase?.("audio");
   // ---------- 1) AUDIO: OfflineAudioContext per segmen → AAC/Opus ----------
-  const audioChunks: EncodedAudioChunk[] = [];
   let encA: AudioEncoder | null = null;
   await new Promise<void>((res, rej) => {
     try {
       encA = new AudioEncoder({
-        output: (c) => audioChunks.push(c),
+        // Mux audio saat keluar; jangan menampung semua chunk 40–60 menit di RAM.
+        output: (c) => muxer.addAudioChunk(c),
         error: (e) => rej(e instanceof Error ? e : new Error(String(e))),
       });
       encA.configure({
@@ -259,19 +290,6 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
 
   // ---------- 2) VIDEO: frame → H.264 (WebCodecs) ----------
   o.onFase?.("video");
-  const W = o.w, H = o.h;
-  const fps = o.fps && (o.fps === 24 || o.fps === 30 || o.fps === 25) ? o.fps : FPS_DEF;
-  // ⚡ v19.46.1 TURBO: encode LANGSUNG di resolusi kecil (bukan upscale ke 1080).
-  // 🐛 v19.75: SELALU align16 — 1080 % 16 = 8 → banyak HP Chrome jatuh ke encoder SOFTWARE (3–10× lambat).
-  const turbo = o.resScale && o.resScale > 0.3 && o.resScale < 1 ? o.resScale : 1;
-  const cw = align16(Math.max(160, Math.round(W * turbo)));
-  const ch = align16(Math.max(90, Math.round(H * turbo)));
-  const px = cw * ch;
-  let bitrate = o.videoBitrate;
-  if (!bitrate) {
-    const base = px <= 640 * 360 ? 1_800_000 : px <= 848 * 480 ? 2_400_000 : px <= 1280 * 720 ? 3_200_000 : 4_500_000;
-    bitrate = dur > 40 * 60 ? Math.min(base, 2_400_000) : dur > 10 * 60 ? Math.min(base, 3_000_000) : base;
-  }
   const cv = document.createElement("canvas");
   cv.width = cw;
   cv.height = ch;
@@ -282,14 +300,6 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   // 🐛 v19.75: SKIP benchmark 60× drawScene (buang 1–3 dtk di HP). Pakai berlapis kalau tersedia.
   const pakaiLapis = !!o.drawBg && !!o.drawDin;
 
-  const muxer = new Muxer({
-    target: new ArrayBufferTarget(),
-    video: { codec: "avc", width: cw, height: ch, frameRate: fps },
-    audio: { codec: audioCodec === "opus" ? "opus" : "aac", sampleRate: SR, numberOfChannels: 2 },
-    fastStart: "in-memory",
-  });
-  for (const c of audioChunks) muxer.addAudioChunk(c);
-  audioChunks.length = 0;
 
   const totalFrames = Math.round(dur * fps);
   const usPer = 1e6 / fps;
@@ -356,6 +366,13 @@ export async function renderOfflineVideo(o: OptsRenderOffline): Promise<Blob> {
   // ---------- 3) GABUNG jadi MP4 ----------
   o.onFase?.("mux");
   muxer.finalize();
+  if (o.fileSink) {
+    // close() menunggu write() OPFS yang masih antre sebelum file dibaca kembali.
+    await o.fileSink.stream.close();
+    const file = await o.fileSink.getFile();
+    o.onProg?.(1);
+    return file;
+  }
   const bytes = new Uint8Array((muxer.target as ArrayBufferTarget).buffer);
   o.onProg?.(1);
   return new Blob([bytes], { type: "video/mp4" });

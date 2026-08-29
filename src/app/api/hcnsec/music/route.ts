@@ -17,6 +17,7 @@ import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelMusic
  *   Tanpa key sama sekali → error need_key + panduan dapat key gratis.
  */
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 type Provider = "kie" | "apiframe" | "sunor" | "suno-resmi" | "mureka" | "musicapi" | "aimusicapi" | "sunoapi" | "evolink" | "cometapi" | "ttapi";
 

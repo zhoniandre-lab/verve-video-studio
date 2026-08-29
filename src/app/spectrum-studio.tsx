@@ -13,7 +13,7 @@ import { WHISPER_LANGUAGES } from "@/lib/whisper-languages"; // 🌍 bahasa Auto
 import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
 import { cariKlimaksBuffer, energiPerDetik, hitungPuncak } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
 import { buildAudioChain } from "@/lib/audio-chain"; // 🎚 v19.33: rantai EQ/kompresor shared (live + offline)
-import { renderOfflineVideo, cekRenderOfflineMampu } from "@/lib/render-offline"; // ⚡ v19.33: mesin render KUAT (WebCodecs, anti-kepotong)
+import { renderOfflineVideo, cekRenderOfflineMampu, type RenderFileSink } from "@/lib/render-offline"; // ⚡ v19.33: mesin render KUAT (WebCodecs, anti-kepotong)
 import { deteksiBeats, bpmDariBeats } from "@/lib/beats"; // 🥁 v19.36: deteksi beat & BPM (timeline beat)
 import { hitungFreqFramesChunked } from "@/lib/fft"; // 🎛 v19.39: FFT frekuensi ASLI → spektrum render akurat
 import type { FreqFrames } from "@/lib/fft";
@@ -24,6 +24,7 @@ import { FONT_OPTS, TEXT_DEFAULT, TEKS_WARNA, gambarTeksCustom } from "@/lib/tex
 import type { TextStyle } from "@/lib/textstyles";
 import { hitungKaliLoop, durasiLoopTotal, type ModeLoopVideo } from "@/lib/videoloop"; // 🔁 v19.91: loop video
 import { cariStokVideo, type VidPick } from "@/lib/stockvid"; // 🎞️ v19.95/v20.23: lemari video stok (Pexels/Pixabay/Coverr)
+import { keysForSunoProvider, readSunoActiveKey, readSunoActiveProvider, readSunoKeyPool } from "@/lib/suno-keys";
 
 /* ---- helper lokal ---- */
 function uid(): string { return `sp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
@@ -146,9 +147,11 @@ const EQ_PRESETS = [
   { id: "hangat", label: "🔥 Hangat" }, { id: "cerah", label: "✨ Cerah" },
 ];
 const STEPS = ["Musik", "Visual", "Lirik", "Master", "Ekspor"];
+const SPECTRUM_RECOVERY_KEY = "verve_spectrum_recovery_v2";
 
 export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [step, setStep] = useState(0);
+  const [recovery, setRecovery] = useState<{ savedAt: number; title: string; audioName: string; progress: number; status: string } | null>(null);
   /* musik */
   // 🎵 v19.85: rute "hasil Suno dari /suno → Spectrum" DIHAPUS (di sini sudah ada
   // panel Generate Lagu sendiri). Audio cuma datang dari upload / generate di sini.
@@ -566,6 +569,118 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     } catch { /* abaikan */ }
   }
   const barsRef = useRef<Float32Array>(new Float32Array(128)); // 🐛 FIX v19.17.1: harus ≥ barCount maks (128) — dulu 64 → naikkan bar >64 bikin NaN
+
+  function compactCheckpointAsset(value: string, maxBytes = 220_000): string {
+    return value && value.length <= maxBytes ? value : "";
+  }
+
+  /** Simpan proyek ringan ke localStorage. Audio/video blob besar tidak dipaksa
+   * masuk localStorage; URL remote dan semua pengaturan editor tetap dicatat. */
+  function checkpointData(extra: Record<string, unknown> = {}) {
+    const savedVideo = videoBg && !videoBg.startsWith("blob:") && videoBg.length < 500_000 ? videoBg : "";
+    const savedImages = multiImgs.filter((url) => url && url.length < 220_000).slice(0, 6);
+    return {
+      version: 2,
+      savedAt: Date.now(),
+      step, title, mTitle, mLyrics,
+      audioUrl: /^https?:\/\//i.test(audioUrl) || audioUrl.startsWith("/api/") ? audioUrl : "",
+      audioName, duration,
+      audioProvider: audioAccessRef.current?.provider || "",
+      videoBg: savedVideo, videoLoop, videoSeamless,
+      ratio, bgType, bgGrad, bgColor, bgImg: compactCheckpointAsset(bgImg),
+      specStyle, specColor, themeId, overlay,
+      logoImg: compactCheckpointAsset(logoImg), layoutId, logoPos, titlePos, barCount, logoScale, rotSpeed, glowInt, beatMode,
+      multiImgs: savedImages, multiBeat, danceZoom, layerVis, layerOp,
+      subOn, subStyle, subSize, subPos, subAnim, subStart, subEnd, subTeks,
+      floatSpec, floatStyle, floatSize, floatPos, frameOn, frameStyle,
+      textOn, textCustom, textStyle, textSize, textPos, fx,
+      lirikOn, lyricsText, ccTpl, capSize, capY, titleSize, titleBeat, transLang,
+      eq, comp, gain, fades, shorts, seamless, dualRender, shortDur, shortStart, shortAuto,
+      render: extra,
+    };
+  }
+
+  function saveCheckpoint(extra: Record<string, unknown> = {}) {
+    try {
+      let previous: any = null;
+      try { previous = JSON.parse(localStorage.getItem(SPECTRUM_RECOVERY_KEY) || "null"); } catch { previous = null; }
+      const renderState = { ...(previous?.render || {}), ...extra };
+      localStorage.setItem(SPECTRUM_RECOVERY_KEY, JSON.stringify(checkpointData(renderState)));
+    } catch { /* storage penuh/private mode */ }
+  }
+
+  function clearCheckpoint() {
+    try { localStorage.removeItem(SPECTRUM_RECOVERY_KEY); } catch { /* abaikan */ }
+    setRecovery(null);
+  }
+
+  function aksesDariCheckpoint(provider: string): SpectrumAudioAccess | undefined {
+    if (!provider) return undefined;
+    try {
+      const pool = readSunoKeyPool(localStorage);
+      const active = readSunoActiveKey(localStorage);
+      const activeProvider = readSunoActiveProvider(localStorage);
+      const first = keysForSunoProvider(pool, provider, active, activeProvider)[0];
+      return first?.key ? { provider, key: first.key } : undefined;
+    } catch { return undefined; }
+  }
+
+  function pulihkanCheckpoint() {
+    let p: any = null;
+    try { p = JSON.parse(localStorage.getItem(SPECTRUM_RECOVERY_KEY) || "null"); } catch { p = null; }
+    if (!p || p.version !== 2) { setRecovery(null); return; }
+    const setIf = (value: any, setter: (next: any) => void) => { if (value !== undefined && value !== null) setter(value); };
+    setIf(p.step, setStep); setIf(p.title, setTitle); setIf(p.mTitle, setMTitle); setIf(p.mLyrics, setMLyrics);
+    setIf(p.ratio, setRatio); setIf(p.bgType, setBgType); setIf(p.bgGrad, setBgGrad); setIf(p.bgColor, setBgColor); setIf(p.bgImg, setBgImg);
+    setIf(p.videoLoop, setVideoLoop); setIf(p.videoSeamless, setVideoSeamless); if (p.videoBg) { setVideoBg(p.videoBg); videoBgSesiRef.current = false; }
+    setIf(p.specStyle, setSpecStyle); setIf(p.specColor, setSpecColor); setIf(p.themeId, setThemeId); setIf(p.overlay, setOverlay);
+    setIf(p.logoImg, setLogoImg); setIf(p.layoutId, setLayoutId); setIf(p.logoPos, setLogoPos); setIf(p.titlePos, setTitlePos); setIf(p.barCount, setBarCount); setIf(p.logoScale, setLogoScale); setIf(p.rotSpeed, setRotSpeed); setIf(p.glowInt, setGlowInt); setIf(p.beatMode, setBeatMode);
+    if (Array.isArray(p.multiImgs)) setMultiImgs(p.multiImgs); setIf(p.multiBeat, setMultiBeat); setIf(p.danceZoom, setDanceZoom); if (p.layerVis) setLayerVis(p.layerVis); if (p.layerOp) setLayerOp(p.layerOp);
+    setIf(p.subOn, setSubOn); setIf(p.subStyle, setSubStyle); setIf(p.subSize, setSubSize); setIf(p.subPos, setSubPos); setIf(p.subAnim, setSubAnim); setIf(p.subStart, setSubStart); setIf(p.subEnd, setSubEnd); setIf(p.subTeks, setSubTeks);
+    setIf(p.floatSpec, setFloatSpec); setIf(p.floatStyle, setFloatStyle); setIf(p.floatSize, setFloatSize); setIf(p.floatPos, setFloatPos); setIf(p.frameOn, setFrameOn); setIf(p.frameStyle, setFrameStyle);
+    setIf(p.textOn, setTextOn); setIf(p.textCustom, setTextCustom); if (p.textStyle) setTextStyle({ ...TEXT_DEFAULT, ...p.textStyle }); setIf(p.textSize, setTextSize); setIf(p.textPos, setTextPos); if (p.fx) setFx(p.fx);
+    setIf(p.lirikOn, setLirikOn); setIf(p.lyricsText, setLyricsText); setIf(p.ccTpl, setCcTpl); setIf(p.capSize, setCapSize); setIf(p.capY, setCapY); setIf(p.titleSize, setTitleSize); setIf(p.titleBeat, setTitleBeat); setIf(p.transLang, setTransLang);
+    setIf(p.eq, setEq); setIf(p.comp, setComp); setIf(p.gain, setGain); setIf(p.fades, setFades); setIf(p.shorts, setShorts); setIf(p.seamless, setSeamless); setIf(p.dualRender, setDualRender); setIf(p.shortDur, setShortDur); setIf(p.shortStart, setShortStart); setIf(p.shortAuto, setShortAuto);
+    setRecovery(null);
+    if (p.audioUrl) {
+      setTimeout(() => void loadAudio(p.audioUrl, p.audioName || "Audio dipulihkan", aksesDariCheckpoint(p.audioProvider)), 80);
+    }
+    if (p.render?.status === "done" && p.render?.outputName) {
+      setTimeout(async () => {
+        try {
+          const root = await (navigator as any)?.storage?.getDirectory?.();
+          const handle = await root?.getFileHandle?.(String(p.render.outputName), { create: false });
+          const file = await handle?.getFile?.();
+          if (file?.size) {
+            setVideoBlob(file);
+            setVideoUrl(URL.createObjectURL(file));
+            logDiag("Output render terakhir dipulihkan dari OPFS");
+          }
+        } catch { /* file belum selesai atau sudah dibersihkan */ }
+      }, 120);
+    }
+  }
+
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem(SPECTRUM_RECOVERY_KEY) || "null");
+      if (p?.version === 2 && Number.isFinite(p.savedAt) && Date.now() - p.savedAt < 7 * 24 * 60 * 60 * 1000) {
+        setRecovery({ savedAt: p.savedAt, title: p.title || "Proyek Spectrum", audioName: p.audioName || "", progress: Number(p.render?.progress || 0), status: p.render?.status || "tersimpan" });
+      }
+      // OPFS Chrome Android perlu diberi kesempatan tetap bertahan dari eviction.
+      void (navigator as any)?.storage?.persist?.().catch?.(() => {});
+    } catch { /* abaikan */ }
+  }, []);
+
+  // Simpan perubahan penting secara debounce dan juga saat pagehide. Dengan
+  // begitu reset/crash tidak menghapus seluruh setelan proyek seperti dulu.
+  useEffect(() => {
+    if (!audioUrl && !audioName && !title && !lyricsText && !videoBg) return;
+    const timer = window.setTimeout(() => saveCheckpoint({ status: renderingRef.current ? "rendering" : "idle", progress: renderingRef.current ? progress : 0 }), 900);
+    const onPageHide = () => saveCheckpoint({ status: renderingRef.current ? "rendering" : "idle", progress: renderingRef.current ? progress : 0 });
+    window.addEventListener("pagehide", onPageHide);
+    return () => { window.clearTimeout(timer); window.removeEventListener("pagehide", onPageHide); };
+  }, [step, audioUrl, audioName, duration, title, lyricsText, videoBg, ratio, bgType, bgGrad, bgColor, videoLoop, videoSeamless, eq, comp, gain, fades, dualRender, shortDur, shortStart, specStyle, specColor, overlay, lirikOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dim = useMemo(() => ratio === "9:16" ? { w: 720, h: 1280 } : { w: 1280, h: 720 }, [ratio]);
   const tpl = useMemo(() => CC_TEMPLATES.find(t => t.id === ccTpl) || CC_TEMPLATES[1], [ccTpl]);
@@ -2021,11 +2136,47 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     }
   }
 
+  type DiskRenderOutput = RenderFileSink & {
+    name: string;
+    abort: () => Promise<void>;
+    remove: () => Promise<void>;
+  };
+
+  /**
+   * 🛡️ Render panjang: OPFS menyimpan MP4 bertahap di storage browser, bukan
+   * satu ArrayBuffer raksasa di RAM. Ini penting di Chrome Android: ketika
+   * buffer video 40–60 menit menumpuk, tab bisa direload/OOM tepat menjelang
+   * selesai. Jika OPFS tidak tersedia, renderer tetap memakai fallback lama.
+   */
+  async function bukaRenderDisk(label: string): Promise<DiskRenderOutput | null> {
+    try {
+      const storage = (navigator as any)?.storage;
+      if (!storage?.getDirectory) return null;
+      const root = await storage.getDirectory();
+      const safe = label.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 18) || "long";
+      const name = `verve_${safe}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp4`;
+      const handle = await root.getFileHandle(name, { create: true });
+      const stream = await handle.createWritable();
+      return {
+        name,
+        stream,
+        getFile: async () => handle.getFile(),
+        abort: async () => {
+          try { await stream.abort(); } catch { try { await stream.close(); } catch {} }
+        },
+        remove: async () => { try { await root.removeEntry(name); } catch {} },
+      };
+    } catch (error: any) {
+      logDiag(`OPFS render tidak tersedia: ${String(error?.message || error).slice(0, 100)} → fallback memori`);
+      return null;
+    }
+  }
+
   /* ⚡ v19.33: render KUAT (offline WebCodecs) — anti-kepotong.
      Bar sintetis dari puncak audio ASLI (bukan AnalyserNode) — visual tetap
      ikut energi musik, tapi prosesnya murni komputasi (tahan layar mati).
      🚀 v19.34: BERLAPIS — latar di-cache (drawBg tiap 4 frame), bar/lirik tiap frame (drawDin). */
-  async function renderOffline(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void; audioCodec?: "aac" | "opus" }): Promise<Blob> {
+  async function renderOffline(opts: { w: number; h: number; offset: number; dur: number; onProg: (p: number) => void; audioCodec?: "aac" | "opus" }, fileSink?: RenderFileSink): Promise<Blob> {
     await ensureFontsLoaded().catch(() => {});
     const buf = bufRef.current!;
     const peaks = hitungPuncak(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : null, buf.sampleRate, 0.25);
@@ -2037,6 +2188,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     logDiag(`Render offline ${opts.w}×${opts.h} · ${fpsOpt}fps · ${(vbr / 1e6).toFixed(1)} Mbps · turbo=${turbo} · cepat=1`);
     return renderOfflineVideo({
       buf, w: opts.w, h: opts.h, offset: opts.offset, dur: opts.dur,
+      fileSink,
       eq, comp, gain, fades, peaks, audioCodec: opts.audioCodec, fps: fpsOpt, videoBitrate: vbr,
       resScale: turbo ? 0.72 : undefined, // ⚡ Turbo: encode 72% (lalu align16 di mesin)
       // 🎛 v19.39: pakai FFT asli → spektrum render AKURAT ikut musik (bukan sintetis)
@@ -2062,6 +2214,15 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     const pakai = mampu.ok ? "offline" : "realtime";
     setPakaiMode(pakai);
     logDiag(`Mode render: ${pakai} (${mampu.alasan || `WebCodecs H.264 + ${mampu.audioCodec}`}) | buffer=${fmtD(bufRef.current.duration)} target=${fmtD(total)} dual=${dualRender}`);
+    // Jangan memaksa MediaRecorder + ArrayBuffer untuk video panjang. Jalur
+    // realtime mengumpulkan chunk di RAM dan itulah pola yang bisa membuat HP
+    // reset menjelang selesai. Minta browser dengan WebCodecs/OPFS saja.
+    if (pakai === "realtime" && total > 10 * 60) {
+      setErr("Render aman untuk video panjang membutuhkan Chrome/Edge terbaru dengan WebCodecs. Saya hentikan sebelum mulai agar HP tidak hang/reset; coba Chrome terbaru atau desktop.");
+      setRenderNote("⚠️ Browser ini belum menyediakan mode render disk yang aman untuk durasi panjang.");
+      logDiag(`Render dibatalkan sebelum mulai: realtime tidak aman untuk ${fmtD(total)}`);
+      return;
+    }
     // 🛡 v19.32.1: peringatan sebelum render panjang — biar user tahu & jaga layar
     // 🚀 v19.34: mode KUAT jauh lebih cepat dari realtime — estimasi diukur otomatis
     if (total > 600) {
@@ -2079,6 +2240,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     // 🚀 v19.34: estimasi waktu & kecepatan DIUKUR dari render yang sedang berjalan (bukan tebakan)
     const tMulai = Date.now();
     let lastProgAt = 0;
+    let lastCheckpointAt = 0;
     const catatProg = (p: number, scale: number, off: number, target: number) => {
       const now = Date.now();
       if (now - lastProgAt < 400 && p < 0.99) return;
@@ -2090,21 +2252,52 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         const kecepatan = el / Math.max(0.001, p * target);
         setEstSisa(`⏱ Estimasi selesai ±${fmtD(Math.round(sisa))} · ${kecepatan.toFixed(1)}× lebih cepat dari realtime`);
       }
+      const overall = clampN(off + p * scale, 0, 1);
+      if (now - lastCheckpointAt >= 5000) {
+        lastCheckpointAt = now;
+        saveCheckpoint({ status: "rendering", progress: overall, target, phase: phase });
+      }
     };
+    saveCheckpoint({ status: "rendering", progress: 0, target: total, phase: "long" });
+    setRecovery(null);
+    // 🛡️ Di Android, render panjang diarahkan ke OPFS bila tersedia. Hasil
+    // tetap kembali sebagai File biasa setelah selesai, jadi tombol download
+    // dan Review lama tidak berubah.
+    let longDisk: DiskRenderOutput | null = null;
+    if (pakai === "offline" && total > 10 * 60) {
+      longDisk = await bukaRenderDisk("long");
+      if (longDisk) {
+        setRenderNote(`🛡️ Penyimpanan anti-reset aktif: MP4 ditulis bertahap ke storage browser. ${fmtD(total)} · boleh biarkan HP bekerja, jangan tutup tab.`);
+        logDiag("Output long: OPFS/FileSystemWritableFileStreamTarget (tidak menumpuk MP4 di RAM)");
+      } else {
+        setRenderNote(`⚠️ Storage anti-reset tidak tersedia di browser ini. Untuk musik ${fmtD(total)}, gunakan Chrome Android terbaru atau desktop agar risiko tab reset lebih kecil.`);
+      }
+    }
+    const longOutputName = longDisk?.name || "";
+    saveCheckpoint({ status: "rendering", progress: 0, target: total, phase: "long", outputName: longOutputName });
     try {
       // 🎬 v19.32 DUAL RENDER: video 1 = LONG (rasio dipilih), video 2 = SHORT 9:16 native dari bagian paling seru
       setPhase("long");
       let longBlob: Blob;
       try {
         longBlob = pakai === "offline"
-          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) })
+          ? await renderOffline({ w: dim.w, h: dim.h, offset: 0, dur: total, audioCodec: mampu.audioCodec, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) }, longDisk || undefined)
           : await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) });
       } catch (e: any) {
+        if (longDisk) { await longDisk.abort(); await longDisk.remove(); longDisk = null; }
         if (pakai === "offline") {
+          if (total > 10 * 60) {
+            // Untuk long, fallback realtime mengembalikan bug lama (chunk
+            // menumpuk di RAM). Lebih baik berhenti jujur daripada reset HP.
+            throw new Error(`Mode render aman gagal: ${String(e?.message || e).slice(0, 180)}. Saya tidak memaksa fallback realtime agar HP tidak hang/reset.`);
+          }
           logDiag(`Mode offline gagal (${e?.message || e}) → fallback realtime`);
           longBlob = await renderSatu({ w: dim.w, h: dim.h, offset: 0, dur: total, fps: fpsOpt, onProg: p => catatProg(p, dualRender ? 0.62 : 1, 0, total) });
         } else throw e;
       }
+      // renderOffline menutup sink setelah finalize; jangan hapus file long yang
+      // sudah valid bila nantinya pembuatan Short gagal.
+      longDisk = null;
       setVideoBlob(longBlob);
       setVideoUrl(URL.createObjectURL(longBlob));
       // 🛡 v19.32.1: verifikasi hasil — kalau kepotong (layar mati/suspend), lapor JELAS
@@ -2142,7 +2335,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       setRenderFase("");
       setProgress(1);
       setEstSisa("");
-    } catch (e: any) { setErr(e?.message || "Render gagal"); setEstSisa(""); }
+      saveCheckpoint({ status: "done", progress: 1, target: total, phase: "done", outputName: longOutputName });
+    } catch (e: any) {
+      if (longDisk) { await longDisk.abort(); await longDisk.remove(); longDisk = null; }
+      saveCheckpoint({ status: "error", progress, target: total, phase: phase, error: e?.message || "Render gagal" });
+      setErr(e?.message || "Render gagal");
+      setEstSisa("");
+    }
     lepasWakeLock(); // 🛡 layar boleh mati lagi setelah selesai
     renderingRef.current = false;
     setRendering(false);
@@ -2161,7 +2360,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
 
   function download() {
     if (!videoBlob) return;
-    const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
+    const ext = videoBlob.type.includes("mp4") || /\.mp4$/i.test(String((videoBlob as File).name || "")) ? "mp4" : "webm";
     downloadBlobX(videoBlob, `spectrum_${(title || audioName || "verve").replace(/[^\w\- ]+/g, "").slice(0, 30)}_${Date.now()}.${ext}`);
   }
 
@@ -2243,6 +2442,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
             onClick={() => (i === 0 || audioUrl) && setStep(i)}>{i + 1}. {s}</button>
         ))}
       </div>
+
+      {!!recovery && (
+        <div className="v6-recovery" role="status">
+          <div><b>🛡️ Pemulihan otomatis tersedia</b><small>{recovery.title || recovery.audioName || "Proyek Spectrum"} · {new Date(recovery.savedAt).toLocaleString()} {recovery.status === "rendering" && recovery.progress > 0 ? `· render terakhir ${Math.round(recovery.progress * 100)}%` : ""}</small></div>
+          <div className="v6-recovery-actions"><button className="v6-chip" onClick={pulihkanCheckpoint}>↩ Pulihkan</button><button className="v6-chip" onClick={clearCheckpoint}>✕ Abaikan</button></div>
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 14px 90px" }}>
         {/* pratinjau selalu terlihat */}
