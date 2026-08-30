@@ -15,6 +15,7 @@ T(/LongShortCutter/.test(studio) && /shortCutterOpen/.test(studio), "menu potong
 T(/maxDuration=\{duration\}/.test(studio) && /videoBlob/.test(studio), "cutter hanya muncul setelah video Long tersedia");
 T(/renderShortFromLong/.test(studio) && /potongLongLangsung/.test(studio) && /video Long yang sudah tersimpan|video Long; hanya membuat Blob baru/.test(studio), "short diambil dari video Long tanpa menyentuh output Long");
 T(/gambarFrameShortUtuh/.test(studio) && /fitScale = Math\.min/.test(studio) && /blur\(22px\)/.test(studio), "frame Long dibuat responsif 9:16 tanpa crop dengan latar blur");
+T(/Hanya ambil dari file Long/.test(studio) && !/fallback timeline Spectrum/.test(studio), "Short tidak fallback ke layout berbeda yang dapat menghilangkan logo/judul");
 T(/captureStream/.test(studio) && /MediaRecorder/.test(studio) && /seeked/.test(studio), "potong short mempertahankan audio dan posisi waktu Long");
 T(/Mulai \(detik\)/.test(cutter) && /type="range"/.test(cutter), "posisi potong bisa diatur dengan angka dan timeline");
 T(/DURATION_PRESETS = \[15, 30, 60\]/.test(cutter), "durasi short 15/30/60 detik tersedia");

@@ -2408,7 +2408,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   /** Render satu potongan 9:16 setelah Long selesai. Ini tidak membersihkan
    * video Long; hanya membuat Blob baru untuk item short yang dipilih. */
   async function renderShortFromLong(start: number, dur: number, onProgress: (progress: number, message?: string) => void): Promise<Blob> {
-    if (!videoBlob && !bufRef.current) throw new Error("Video Long/audio sumber belum siap. Tunggu pemulihan selesai atau pilih musik lagi.");
+    if (!videoBlob) throw new Error("Video Long belum siap. Tunggu pemulihan selesai atau render Long dulu.");
     if (shortCutBusy || rendering) throw new Error("Renderer sedang dipakai. Tunggu sampai selesai.");
     setShortCutBusy(true);
     setErr("");
@@ -2416,26 +2416,11 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     await mintaWakeLock();
     try {
-      // Prioritas utama: potong file Long yang sudah jadi agar logo, judul,
-      // lirik, dan visual benar-benar sama dengan Long.
-      if (videoBlob) {
-        try {
-          onProgress(0, "Membuka frame video Long…");
-          return await potongLongLangsung(videoBlob, Number(start) || 0, Number(dur) || 30, onProgress);
-        } catch (error: any) {
-          logDiag(`Potong langsung gagal (${error?.message || error}) → fallback timeline Spectrum`);
-        }
-      }
-      if (!bufRef.current) throw new Error("Audio sumber belum siap.");
-      const offset = clampN(Number(start) || 0, 0, Math.max(0, bufRef.current.duration - 0.5));
-      const target = clampN(Number(dur) || 30, 5, Math.min(60, bufRef.current.duration - offset));
-      const mampu: { ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" } = await cekRenderOfflineMampu().catch(() => ({ ok: false, alasan: "cek gagal" }));
-      if (mampu.ok) {
-        onProgress(0, "Mode WebCodecs aman: menyiapkan short…");
-        try { return await renderOffline({ w: 720, h: 1280, offset, dur: target, audioCodec: mampu.audioCodec, onProg: onProgress }); } catch (error: any) { logDiag(`WebCodecs short gagal (${error?.message || error}) → fallback realtime`); }
-      }
-      onProgress(0, "Mode realtime short: proses sebentar…");
-      return await renderSatu({ w: 720, h: 1280, offset, dur: target, fps: fpsOpt, onProg: onProgress });
+      // Hanya ambil dari file Long yang sudah jadi. Tidak ada fallback ke
+      // render project karena fallback berisiko menghasilkan layout berbeda;
+      // lebih baik Short gagal jujur daripada keluar dengan judul/logo terpotong.
+      onProgress(0, "Membuka frame video Long…");
+      return await potongLongLangsung(videoBlob, Number(start) || 0, Number(dur) || 30, onProgress);
     } finally {
       lepasWakeLock();
       renderingRef.current = false;

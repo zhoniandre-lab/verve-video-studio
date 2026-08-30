@@ -163,7 +163,7 @@ export default function LongShortCutter({ maxDuration, title = "Spectrum", onRen
   return (
     <section className="v6-short-cutter" aria-label="Potong video long menjadi short">
       <div className="v6-short-head"><div><b>✂️ Potong Long menjadi Shorts</b><small>Long tetap aman. Pilih menit berbeda lalu render short satu per satu.</small></div><span>{ready.length}/{cuts.length} siap</span></div>
-      <p className="v6-note">Short dibuat dari timeline Spectrum yang sama dalam format 9:16. Tidak memakai kredit AI dan tidak menghapus video Long.</p>
+      <p className="v6-note">Short diambil langsung dari file Long dalam format 9:16 dengan mode <b>Fit Utuh — tanpa crop</b>. Jika Long berukuran 16:9, area kosong diisi blur dari frame yang sama. Tidak memakai kredit AI dan tidak menghapus video Long.</p>
       {safeMax < 5 ? <p className="v6-risk">Musik/video Long belum cukup panjang untuk dibuat short.</p> : <>
         {cuts.map((cut, index) => {
           const maxStart = Math.max(0, safeMax - cut.duration);
