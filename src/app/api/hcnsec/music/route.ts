@@ -126,8 +126,11 @@ function buildReferenceBody(payload: any, provider: Provider): any {
       weirdness_constraint: weirdness,
       audio_weight: audioWeight,
     };
-    if (!instrumental && vocalGender === "male") body.vocal_gender = "m";
-    if (!instrumental && vocalGender === "female") body.vocal_gender = "f";
+    // MusicAPI menerima vocal_gender pada model Sonic yang dipetakan di atas.
+    // AIMusicAPI saat ini membalas 400 untuk field ini ketika mv=sonic-*;
+    // gender tetap masuk ke tags/style agar Simple/Advanced tidak gagal.
+    if (provider === "musicapi" && !instrumental && vocalGender === "male") body.vocal_gender = "m";
+    if (provider === "musicapi" && !instrumental && vocalGender === "female") body.vocal_gender = "f";
     if (custom) body.prompt = lyrics.slice(0, 3000);
     else body.gpt_description_prompt = style.slice(0, 200);
     return body;
@@ -428,8 +431,10 @@ function buildBodyRaw(payload: any, provider: Provider): any {
       body.prompt = finalLyrics.slice(0, 5000);
       body.title = finalTitle;
       body.tags = tagsPenuh;
-      if (vocalGender === "male") body.vocal_gender = "m";
-      else if (vocalGender === "female") body.vocal_gender = "f";
+      // AIMusicAPI menolak vocal_gender ketika mv memakai sonic-*;
+      // styleStr sudah memuat male/female vocalist sebagai fallback aman.
+      if (provider === "musicapi" && vocalGender === "male") body.vocal_gender = "m";
+      else if (provider === "musicapi" && vocalGender === "female") body.vocal_gender = "f";
     } else {
       // Description mode memakai gpt_description_prompt; title/tags/style
       // tidak dikirim agar sesuai schema provider dan tidak dianggap custom.
