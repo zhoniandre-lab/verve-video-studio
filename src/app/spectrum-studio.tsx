@@ -2291,30 +2291,148 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     });
   }
 
+  /** Gambar frame Long utuh ke kanvas 9:16 tanpa memotong sisi. Untuk sumber
+   * 16:9, ruang kosong diisi salinan blur + scrim sehingga judul/logo Long tetap
+   * terlihat persis seperti hasil Long. */
+  function gambarFrameShortUtuh(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, W: number, H: number) {
+    const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+    const vr = vw / vh, cr = W / H;
+    ctx.fillStyle = "#050509"; ctx.fillRect(0, 0, W, H);
+    // Latar blur hanya sebagai pengisi, bukan sumber utama; kualitas frame Long
+    // di tengah tetap utuh dan tidak di-crop.
+    const coverScale = Math.max(W / vw, H / vh);
+    const cw = vw * coverScale, ch = vh * coverScale;
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.filter = "blur(22px)";
+    ctx.drawImage(video, (W - cw) / 2, (H - ch) / 2, cw, ch);
+    ctx.filter = "none";
+    ctx.restore();
+    ctx.fillStyle = "rgba(0,0,0,.38)"; ctx.fillRect(0, 0, W, H);
+    const fitScale = Math.min(W / vw, H / vh);
+    const fw = vw * fitScale, fh = vh * fitScale;
+    ctx.drawImage(video, (W - fw) / 2, (H - fh) / 2, fw, fh);
+    // Garis aman tipis membantu video 16:9 tetap terbaca saat masuk Shorts.
+    if (vr !== cr) {
+      ctx.fillStyle = "rgba(0,0,0,.12)";
+      ctx.fillRect(0, 0, W, Math.max(0, (H - fh) / 2));
+      ctx.fillRect(0, (H + fh) / 2, W, Math.max(0, (H - fh) / 2));
+    }
+  }
+
+  /** Potong langsung dari file Long yang sudah selesai. Ini menjaga logo,
+   * judul, lirik, dan visual tetap identik; hanya kanvas Shorts yang dibuat
+   * baru. Tidak menyentuh Blob/URL video Long. */
+  async function potongLongLangsung(source: Blob, start: number, dur: number, onProgress: (progress: number, message?: string) => void): Promise<Blob> {
+    if (typeof (HTMLVideoElement.prototype as any).captureStream !== "function" || typeof MediaRecorder === "undefined") {
+      throw new Error("Browser ini belum mendukung potong video langsung. Gunakan Chrome Android terbaru.");
+    }
+    const objectUrl = URL.createObjectURL(source);
+    const video = document.createElement("video");
+    video.preload = "auto"; video.playsInline = true; video.muted = false; video.volume = 1; video.src = objectUrl;
+    const canvas = document.createElement("canvas"); canvas.width = 720; canvas.height = 1280;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) { URL.revokeObjectURL(objectUrl); throw new Error("Canvas Shorts tidak tersedia."); }
+    let sourceStream: MediaStream | null = null;
+    let outputStream: MediaStream | null = null;
+    let recorder: MediaRecorder | null = null;
+    let raf = 0;
+    let timer = 0;
+    let finished = false;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Video Long tidak bisa dibaca browser."));
+      });
+      const maxStart = Math.max(0, video.duration - 0.2);
+      const offset = clampN(start, 0, maxStart);
+      const target = Math.max(1, Math.min(dur, video.duration - offset));
+      sourceStream = (video as any).captureStream() as MediaStream;
+      const audioTracks = sourceStream.getAudioTracks();
+      if (!audioTracks.length) throw new Error("Audio Long tidak ditemukan untuk potongan Shorts.");
+      outputStream = new MediaStream([...canvas.captureStream(24).getVideoTracks(), ...audioTracks]);
+      const mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/webm;codecs=vp9,opus", "video/webm"].find((item) => { try { return MediaRecorder.isTypeSupported(item); } catch { return false; } }) || "";
+      recorder = mime ? new MediaRecorder(outputStream, { mimeType: mime, videoBitsPerSecond: 4_000_000 }) : new MediaRecorder(outputStream);
+      const chunks: Blob[] = [];
+      const result = await new Promise<Blob>((resolve, reject) => {
+        const stop = (error?: Error) => {
+          if (finished) return;
+          finished = true;
+          if (raf) cancelAnimationFrame(raf);
+          if (timer) window.clearTimeout(timer);
+          if (error) { try { if (recorder?.state !== "inactive") recorder?.stop(); } catch {} reject(error); return; }
+          try { if (recorder?.state !== "inactive") recorder?.stop(); } catch (e) { reject(e); }
+        };
+        recorder!.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
+        recorder!.onerror = () => stop(new Error("Perekaman Shorts gagal."));
+        recorder!.onstop = () => {
+          const blob = new Blob(chunks, { type: (chunks[0]?.type || mime || "video/webm").split(";")[0] });
+          if (!blob.size) reject(new Error("Hasil Shorts kosong.")); else resolve(blob);
+        };
+        video.onended = () => stop();
+        const draw = () => {
+          if (finished) return;
+          const current = Math.max(0, video.currentTime - offset);
+          gambarFrameShortUtuh(ctx!, video, canvas.width, canvas.height);
+          const p = Math.max(0, Math.min(1, current / target));
+          onProgress(p, `Memotong Long ke Shorts… ${Math.round(p * 100)}%`);
+          if (p >= 0.999) stop(); else raf = requestAnimationFrame(draw);
+        };
+        let started = false;
+        const mulai = () => {
+          if (started || finished) return;
+          started = true;
+          recorder!.start(250);
+          void video.play().then(() => { draw(); }).catch(() => stop(new Error("Browser menolak pemutaran audio Long. Sentuh layar lalu coba lagi.")));
+        };
+        const onSeeked = () => { video.removeEventListener("seeked", onSeeked); mulai(); };
+        video.addEventListener("seeked", onSeeked);
+        video.currentTime = offset;
+        if (video.readyState >= 2 && Math.abs(video.currentTime - offset) < 0.05) onSeeked();
+        timer = window.setTimeout(() => stop(), Math.max(2_000, (target + 1.5) * 1000));
+      });
+      onProgress(1, "✅ Shorts selesai dari video Long asli.");
+      return result;
+    } finally {
+      if (raf) cancelAnimationFrame(raf);
+      if (timer) window.clearTimeout(timer);
+      try { video.pause(); } catch {}
+      sourceStream?.getTracks().forEach((track) => track.stop());
+      outputStream?.getTracks().forEach((track) => track.stop());
+      try { recorder?.stop(); } catch {}
+      video.removeAttribute("src"); try { video.load(); } catch {}
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   /** Render satu potongan 9:16 setelah Long selesai. Ini tidak membersihkan
    * video Long; hanya membuat Blob baru untuk item short yang dipilih. */
   async function renderShortFromLong(start: number, dur: number, onProgress: (progress: number, message?: string) => void): Promise<Blob> {
-    if (!bufRef.current) throw new Error("Audio sumber belum siap. Tunggu pemulihan audio selesai atau pilih musik lagi.");
+    if (!videoBlob && !bufRef.current) throw new Error("Video Long/audio sumber belum siap. Tunggu pemulihan selesai atau pilih musik lagi.");
     if (shortCutBusy || rendering) throw new Error("Renderer sedang dipakai. Tunggu sampai selesai.");
     setShortCutBusy(true);
     setErr("");
     renderingRef.current = true;
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    const offset = clampN(Number(start) || 0, 0, Math.max(0, bufRef.current.duration - 0.5));
-    const target = clampN(Number(dur) || 30, 5, Math.min(60, bufRef.current.duration - offset));
     await mintaWakeLock();
     try {
+      // Prioritas utama: potong file Long yang sudah jadi agar logo, judul,
+      // lirik, dan visual benar-benar sama dengan Long.
+      if (videoBlob) {
+        try {
+          onProgress(0, "Membuka frame video Long…");
+          return await potongLongLangsung(videoBlob, Number(start) || 0, Number(dur) || 30, onProgress);
+        } catch (error: any) {
+          logDiag(`Potong langsung gagal (${error?.message || error}) → fallback timeline Spectrum`);
+        }
+      }
+      if (!bufRef.current) throw new Error("Audio sumber belum siap.");
+      const offset = clampN(Number(start) || 0, 0, Math.max(0, bufRef.current.duration - 0.5));
+      const target = clampN(Number(dur) || 30, 5, Math.min(60, bufRef.current.duration - offset));
       const mampu: { ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" } = await cekRenderOfflineMampu().catch(() => ({ ok: false, alasan: "cek gagal" }));
       if (mampu.ok) {
         onProgress(0, "Mode WebCodecs aman: menyiapkan short…");
-        try {
-          const blob = await renderOffline({ w: 720, h: 1280, offset, dur: target, audioCodec: mampu.audioCodec, onProg: onProgress });
-          return blob;
-        } catch (error: any) {
-          // Short hanya 5–60 detik, jadi fallback realtime masih aman dan
-          // tidak mengganggu render Long yang sudah tersimpan.
-          logDiag(`WebCodecs short gagal (${error?.message || error}) → fallback realtime`);
-        }
+        try { return await renderOffline({ w: 720, h: 1280, offset, dur: target, audioCodec: mampu.audioCodec, onProg: onProgress }); } catch (error: any) { logDiag(`WebCodecs short gagal (${error?.message || error}) → fallback realtime`); }
       }
       onProgress(0, "Mode realtime short: proses sebentar…");
       return await renderSatu({ w: 720, h: 1280, offset, dur: target, fps: fpsOpt, onProg: onProgress });

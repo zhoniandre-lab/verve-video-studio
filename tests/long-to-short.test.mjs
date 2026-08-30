@@ -13,7 +13,9 @@ const T = (ok, message) => ok ? (pass++, console.log("✅", message)) : (fail++,
 
 T(/LongShortCutter/.test(studio) && /shortCutterOpen/.test(studio), "menu potong Shorts terpisah tersedia setelah Long");
 T(/maxDuration=\{duration\}/.test(studio) && /videoBlob/.test(studio), "cutter hanya muncul setelah video Long tersedia");
-T(/renderShortFromLong/.test(studio) && /video Long yang sudah tersimpan|video Long; hanya membuat Blob baru/.test(studio), "short dirender dari timeline tanpa menyentuh output Long");
+T(/renderShortFromLong/.test(studio) && /potongLongLangsung/.test(studio) && /video Long yang sudah tersimpan|video Long; hanya membuat Blob baru/.test(studio), "short diambil dari video Long tanpa menyentuh output Long");
+T(/gambarFrameShortUtuh/.test(studio) && /fitScale = Math\.min/.test(studio) && /blur\(22px\)/.test(studio), "frame Long dibuat responsif 9:16 tanpa crop dengan latar blur");
+T(/captureStream/.test(studio) && /MediaRecorder/.test(studio) && /seeked/.test(studio), "potong short mempertahankan audio dan posisi waktu Long");
 T(/Mulai \(detik\)/.test(cutter) && /type="range"/.test(cutter), "posisi potong bisa diatur dengan angka dan timeline");
 T(/DURATION_PRESETS = \[15, 30, 60\]/.test(cutter), "durasi short 15/30/60 detik tersedia");
 T(/MAX_CUTS = 8/.test(cutter) && /Tambah potongan/.test(cutter), "beberapa potongan short bisa direncanakan");
