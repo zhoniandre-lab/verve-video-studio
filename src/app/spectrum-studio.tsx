@@ -11,6 +11,7 @@ import type { CapWord } from "@/lib/editing";
 import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
 import { WHISPER_LANGUAGES } from "@/lib/whisper-languages"; // 🌍 bahasa Auto Lirik dunia
 import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
+import LongShortCutter from "@/components/LongShortCutter";
 import { cariKlimaksBuffer, energiPerDetik, hitungPuncak } from "@/lib/climax"; // 🎬 v19.32: deteksi bagian paling seru (Dual Render)
 import { buildAudioChain } from "@/lib/audio-chain"; // 🎚 v19.33: rantai EQ/kompresor shared (live + offline)
 import { renderOfflineVideo, cekRenderOfflineMampu, type RenderFileSink } from "@/lib/render-offline"; // ⚡ v19.33: mesin render KUAT (WebCodecs, anti-kepotong)
@@ -415,6 +416,8 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   const [energiArr, setEnergiArr] = useState<number[]>([]); // energi per 0.5 dtk → gambar timeline
   const [shortUrl, setShortUrl] = useState("");
   const [shortBlob, setShortBlob] = useState<Blob | null>(null);
+  const [shortCutterOpen, setShortCutterOpen] = useState(false);
+  const [shortCutBusy, setShortCutBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "long" | "short">("idle"); // fase render (biar tombol jujur)
   const miniRef = useRef<HTMLCanvasElement | null>(null);
   /* 🛡 v19.32.1: Wake Lock — jaga layar tetap nyala selama render panjang.
@@ -2288,6 +2291,41 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     });
   }
 
+  /** Render satu potongan 9:16 setelah Long selesai. Ini tidak membersihkan
+   * video Long; hanya membuat Blob baru untuk item short yang dipilih. */
+  async function renderShortFromLong(start: number, dur: number, onProgress: (progress: number, message?: string) => void): Promise<Blob> {
+    if (!bufRef.current) throw new Error("Audio sumber belum siap. Tunggu pemulihan audio selesai atau pilih musik lagi.");
+    if (shortCutBusy || rendering) throw new Error("Renderer sedang dipakai. Tunggu sampai selesai.");
+    setShortCutBusy(true);
+    setErr("");
+    renderingRef.current = true;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    const offset = clampN(Number(start) || 0, 0, Math.max(0, bufRef.current.duration - 0.5));
+    const target = clampN(Number(dur) || 30, 5, Math.min(60, bufRef.current.duration - offset));
+    await mintaWakeLock();
+    try {
+      const mampu: { ok: boolean; alasan?: string; audioCodec?: "aac" | "opus" } = await cekRenderOfflineMampu().catch(() => ({ ok: false, alasan: "cek gagal" }));
+      if (mampu.ok) {
+        onProgress(0, "Mode WebCodecs aman: menyiapkan short…");
+        try {
+          const blob = await renderOffline({ w: 720, h: 1280, offset, dur: target, audioCodec: mampu.audioCodec, onProg: onProgress });
+          return blob;
+        } catch (error: any) {
+          // Short hanya 5–60 detik, jadi fallback realtime masih aman dan
+          // tidak mengganggu render Long yang sudah tersimpan.
+          logDiag(`WebCodecs short gagal (${error?.message || error}) → fallback realtime`);
+        }
+      }
+      onProgress(0, "Mode realtime short: proses sebentar…");
+      return await renderSatu({ w: 720, h: 1280, offset, dur: target, fps: fpsOpt, onProg: onProgress });
+    } finally {
+      lepasWakeLock();
+      renderingRef.current = false;
+      setShortCutBusy(false);
+      startPreviewLoop();
+    }
+  }
+
   /** Ukur throughput perangkat tanpa kredit AI dan tanpa membuat file panjang.
    * Ini sengaja dijalankan dengan konfigurasi render yang sama agar estimasi
    * 40 menit tidak lagi berdasarkan tebakan. */
@@ -2321,7 +2359,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   }
 
   async function render() {
-    if (benchmarking) return;
+    if (benchmarking || shortCutBusy) return;
     if (!bufRef.current) { setErr("Pilih musik dulu bro"); return; }
     // Jangan mulai render sebelum salinan audio selesai ditulis ke IndexedDB;
     // kalau tab mati sesudah ini, proyek masih punya bahan audio pemulihan.
@@ -3476,7 +3514,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               <span style={{ fontSize: 18 }}>🎬</span>
               <div className="tt">
                 <b>Dual Render: Long + Short otomatis</b>
-                <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>1× render → 2 video: video utama + Short 9:16 ({shortDur} dtk) dari bagian PALING SERU — tanpa kepotong (layout 9:16 asli)</div>
+                <div style={{ fontSize: 10, color: "#8b8b98", fontWeight: 500 }}>1× render → 2 video: video utama + Short 9:16 ({shortDur} dtk) dari bagian PALING SERU. Untuk HP/video panjang disarankan OFF dulu, lalu pakai menu ✂️ Potong Long menjadi Shorts setelah Long selesai.</div>
               </div>
               <button className={`v6-toggle ${dualRender ? "on" : ""}`} />
             </div>
@@ -3548,7 +3586,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
               ⚡ Mode render: {pakaiMode === "offline" ? "KUAT (offline WebCodecs) — tahan layar mati, durasi presisi, render jauh lebih cepat dari realtime" : pakaiMode === "realtime" ? "real-time (MediaRecorder) — layar wajib menyala" : "otomatis dipilih saat render"}
             </div>
             {!!estSisa && <div className="v6-okbox" style={{ fontSize: 12 }}>{estSisa}</div>}
-            <button className="v6-bigcta" onClick={render} disabled={rendering || benchmarking || !audioUrl}>
+            <button className="v6-bigcta" onClick={render} disabled={rendering || benchmarking || shortCutBusy || !audioUrl}>
               {rendering
                 ? `⏳ Merender ${phase === "short" ? "SHORT (bagian seru)…" : phase === "long" ? "LONG…" : "…"} ${renderFase ? `(${renderFase === "audio" ? "audio" : renderFase === "video" ? "gambar" : "gabung"}) ` : ""}${Math.round(progress * 100)}%`
                 : videoUrl ? "🔄 Render ulang" : dualRender ? "🚀 Render 2 video (Long + Short)" : "🚀 Render video spectrum"}</button>
@@ -3566,6 +3604,20 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
                 <div className="v6-lbl">▭ LONG {dim.w}×{dim.h} {dualRender ? "— full video" : ""}</div>
                 <video src={videoUrl} controls style={{ width: "100%", borderRadius: 12, marginTop: 10, border: "1px solid rgba(255,255,255,.14)" }} />
                 <button className="v6-bigcta" style={{ background: "#22c55e", color: "#052e16" }} onClick={download}>⬇️ Download Long {videoBlob ? `(${(videoBlob.size / 1048576).toFixed(1)} MB)` : ""}</button>
+                {!!videoBlob && (
+                  <>
+                    <button className="v6-bigcta" style={{ background: "linear-gradient(135deg,#0f766e,#14b8a6)", color: "#ecfeff", marginTop: 8 }} onClick={() => setShortCutterOpen((open) => !open)} disabled={shortCutBusy}>
+                      {shortCutterOpen ? "✂️ Tutup Potong Long → Shorts ▴" : "✂️ Buat Potongan Shorts dari Long ▾"}
+                    </button>
+                    {shortCutterOpen && (
+                      <LongShortCutter
+                        maxDuration={duration}
+                        title={title || audioName || "spectrum"}
+                        onRenderShort={renderShortFromLong}
+                      />
+                    )}
+                  </>
+                )}
               </>
             )}
             {!!shortUrl && (
