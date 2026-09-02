@@ -437,9 +437,22 @@ export function mapModelMusicApi(modelId: string): string {
   return "sonic-v3-5";
 }
 
-/** Peta model AIMusicAPI (kontrak Sonic memakai sonic-v* pada reference API). */
+/** Peta model AIMusicAPI create (endpoint create mendokumentasikan sonic-v*). */
 export function mapModelAimusicApi(modelId: string): string {
   return mapModelMusicApi(modelId);
+}
+
+/** Peta model untuk endpoint Sonic sample/upload-cover yang memakai nama chirp-*. */
+export function mapModelSonicSample(modelId: string): string {
+  const m = normalisasiModel(modelId);
+  if (m.includes("v5.5")) return "chirp-v5-5";
+  if (m.includes("v5")) return "chirp-v5";
+  if (m.includes("v4.5plus")) return "chirp-v4-5-plus";
+  if (m.includes("v4.5all")) return "chirp-v4-5-all";
+  if (m.includes("v4.5")) return "chirp-v4-5";
+  if (m.includes("v4")) return "chirp-v4";
+  if (m.includes("v3.5")) return "chirp-v3-5";
+  return "chirp-v5";
 }
 
 /** 🎵 v19.78 EvoLink: suno-v5.5-beta dst. */

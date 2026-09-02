@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { catatKredit } from "../../../../lib/ledger";
 import { gerbangFitur } from "../../../../lib/setelan";
-import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelMusicApi, mapModelAimusicApi, mapModelEvolink, mapModelComet, mapModelTtapi, audioProbeCukup } from "../../../../lib/suno-normalize";
+import { normalizeLagu as normalize, mapModelKie, mapModelGeneric, mapModelMusicApi, mapModelAimusicApi, mapModelSonicSample, mapModelEvolink, mapModelComet, mapModelTtapi, audioProbeCukup } from "../../../../lib/suno-normalize";
 
 /**
  * Generate AI music via Suno-compatible API.
@@ -90,6 +90,7 @@ function getCreds(req: Request) {
 // EvoLink saat ini tetap Simple: endpoint Suno publiknya mendokumentasikan prompt,
 // custom lyrics, instrumental, dan persona, bukan upload-cover/sample.
 const REFERENCE_PROVIDERS = new Set<Provider>(["musicapi", "aimusicapi", "kie", "sunoapi", "cometapi", "ttapi"]);
+const SAMPLE_VOCAL_MODELS = new Set(["chirp-v4-5", "chirp-v4-5-plus", "chirp-v5"]);
 
 function buildReferenceBody(payload: any, provider: Provider): any {
   const audioUrl = String(payload.audio_url || payload.audioUrl || "").trim();
@@ -113,12 +114,15 @@ function buildReferenceBody(payload: any, provider: Provider): any {
     // Upload terpisah lebih stabil untuk WAV hasil ekstraksi video dan menghindari
     // error generik "Upload request failed" di endpoint sample.
     const sampleClipId = String(payload.sample_clip_id || "").trim();
+    const sampleModel = mapModelSonicSample(payload.model);
     const body: any = {
       ...(sampleClipId ? { sample_clip_id: sampleClipId } : { url: audioUrl }),
       chop_sample_start_s: start,
       chop_sample_end_s: end,
       custom_mode: custom,
-      mv: provider === "musicapi" ? mapModelMusicApi(payload.model) : mapModelAimusicApi(payload.model),
+      // Endpoint sample memakai nomenklatur chirp-* pada dokumentasi kedua
+      // provider; create_music tetap memakai sonic-* di bawah.
+      mv: sampleModel,
       make_instrumental: instrumental,
       title,
       tags: style.slice(0, 1000),
@@ -129,8 +133,8 @@ function buildReferenceBody(payload: any, provider: Provider): any {
     // MusicAPI menerima vocal_gender pada model Sonic yang dipetakan di atas.
     // AIMusicAPI saat ini membalas 400 untuk field ini ketika mv=sonic-*;
     // gender tetap masuk ke tags/style agar Simple/Advanced tidak gagal.
-    if (provider === "musicapi" && !instrumental && vocalGender === "male") body.vocal_gender = "m";
-    if (provider === "musicapi" && !instrumental && vocalGender === "female") body.vocal_gender = "f";
+    if (provider === "musicapi" && SAMPLE_VOCAL_MODELS.has(sampleModel) && !instrumental && vocalGender === "male") body.vocal_gender = "m";
+    if (provider === "musicapi" && SAMPLE_VOCAL_MODELS.has(sampleModel) && !instrumental && vocalGender === "female") body.vocal_gender = "f";
     if (custom) body.prompt = lyrics.slice(0, 3000);
     else body.gpt_description_prompt = style.slice(0, 200);
     return body;
@@ -484,11 +488,11 @@ function buildBodyRaw(payload: any, provider: Provider): any {
       prompt: isCustom ? finalLyrics.slice(0, 5000) : finalPrompt.slice(0, 500),
     };
     // EvoLink menolak style/title pada simple mode; keduanya hanya untuk custom.
+    // Kontrak publik EvoLink tidak mendokumentasikan vocal_gender, jadi gender
+    // hanya disampaikan lewat prompt/style agar provider tidak membalas 400.
     if (isCustom) {
       body.title = finalTitle;
       body.style = styleStr.slice(0, 1000);
-      if (vocalGender === "male") body.vocal_gender = "m";
-      else if (vocalGender === "female") body.vocal_gender = "f";
     }
     return body;
   }
