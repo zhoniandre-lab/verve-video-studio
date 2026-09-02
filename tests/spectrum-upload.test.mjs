@@ -17,6 +17,8 @@ T(/decodeSpectrumAudio/.test(source) && /decoder\.close/.test(source), "decoder 
 T(/e\.currentTarget\.value = ""/.test(source), "input file di-reset agar file sama bisa dicoba ulang");
 T(/disabled=\{mBusy\}/.test(source), "upload dikunci saat lagu masih diproses");
 T(/audioContextForPlayback/.test(source), "context playback dibuat ulang bila sudah closed");
+T(/loadAudio\(url, title, access\)\.then\(\(ok\) => \{[\s\S]*if \(ok\) setStep\(1\)/.test(source), "Review baru dibuka setelah audio hasil generate benar-benar termuat");
+T(/Promise<boolean>/.test(source) && /return false/.test(source) && /return true/.test(source), "loadAudio mengembalikan status sukses/gagal secara eksplisit");
 T(/Analisis dijalankan ke variabel lokal/.test(source), "analisis lama tidak menimpa lagu baru");
 
 console.log(`\n📊 ${pass} lulus, ${fail} gagal`);

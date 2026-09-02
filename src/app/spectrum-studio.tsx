@@ -753,11 +753,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
   function onSunoSong(url: string, title: string, duration?: number, access?: SpectrumAudioAccess) {
     setSunoTitle(title);
     audioAccessRef.current = access || null;
-    void loadAudio(url, title, access);
     if (duration) setDuration(duration);
-    // 🐛 v20.46 FIX: setelah Suno selesai → auto ke Video review (step 1) supaya user LANGSUNG lihat
-    // canvas spektrum dengan audio barunya — bukan stuck di step Musik tanpa preview.
-    setStep(1);
+    // Jangan pindah ke Review sebelum audio benar-benar berhasil diambil dan
+    // didecode. Sebelumnya panel langsung pindah, lalu Review gagal dan terlihat
+    // seperti lagu "hilang"/generator keluar sendiri.
+    void loadAudio(url, title, access).then((ok) => {
+      if (ok) setStep(1);
+    });
   }
 
   function audioContextForPlayback(): AudioContext {
@@ -767,7 +769,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     return actxRef.current;
   }
 
-  async function loadAudio(url: string, name: string, access?: SpectrumAudioAccess) {
+  async function loadAudio(url: string, name: string, access?: SpectrumAudioAccess): Promise<boolean> {
     const job = audioLoadSeqRef.current + 1;
     audioLoadSeqRef.current = job;
     audioAccessRef.current = access || null;
@@ -783,7 +785,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     setErr(""); setMBusy(true);
     try {
       const loaded = await fetchSpectrumAudioBytes(url, controller.signal, access);
-      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return false; }
       const bytes = loaded.raw.byteLength;
       // Salinan audio disimpan di IndexedDB secara best-effort. Ini membuat
       // upload lokal/mix panjang tetap dapat dipulihkan setelah tab reload;
@@ -799,7 +801,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         audioRecoverySaveRef.current = null;
       }
       const buf = await decodeSpectrumAudio(loaded.raw);
-      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return false; }
 
       // Analisis dijalankan ke variabel lokal terlebih dahulu. Jika user memilih
       // lagu lain di tengah proses, hasil lama tidak boleh menimpa state baru.
@@ -812,10 +814,10 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       logDiag("Analisis frekuensi (FFT) untuk spektrum akurat…");
       try {
         freqFrames = await hitungFreqFramesChunked(buf, 10, 128);
-        if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+        if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return false; }
         logDiag(`FFT siap: ${freqFrames.frames.length} frame × ${freqFrames.bins} bin @${freqFrames.fps}fps`);
       } catch { freqFrames = null; }
-      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return; }
+      if (job !== audioLoadSeqRef.current) { releaseUncommittedBlob(); return false; }
 
       audioContextForPlayback();
       const previousBlob = audioBlobUrlRef.current;
@@ -842,12 +844,14 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
         setDurWarn("");
       }
       logDiag(`✅ Audio aktif: ${name} · ${fmtD(buf.duration)} · job #${job}`);
+      return true;
     } catch (error: any) {
       releaseUncommittedBlob();
-      if (job !== audioLoadSeqRef.current || error?.name === "AbortError") return;
+      if (job !== audioLoadSeqRef.current || error?.name === "AbortError") return false;
       const message = String(error?.message || "audio tidak terbaca");
       logDiag(`❌ Upload audio gagal · ${message.slice(0, 140)}`);
       setErr(`Audio tidak bisa dibaca: ${message}`);
+      return false;
     } finally {
       if (job === audioLoadSeqRef.current) {
         setMBusy(false);

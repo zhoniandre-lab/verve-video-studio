@@ -43,6 +43,9 @@ T("panel: pesan polling tampilkan durasi (m s)", /sudah \$\{Math\.floor\(detik \
 T("panel: interval polling 5s awal → 12s maks (lebih cepat)", /5000 \+ idx \* 700/.test(panel));
 T("panel: satu cek dibatasi 15 detik", /setTimeout\(\(\) => ac\.abort\(\), 15000\)/.test(panel));
 T("panel: timeout jaringan tidak mematikan polling", /isTransientPollError/.test(panel) && /polling dilanjutkan otomatis/.test(panel));
+T("panel: batas polling provider lambat lebih panjang", /MAX_POLL_BY_PROVIDER/.test(panel) && /evolink: 90/.test(panel));
+T("panel: provider dan key task dikunci saat polling", /pollProviderRef/.test(panel) && /pollKeyRef/.test(panel) && /X-Suno-Provider.*provider/.test(panel));
+T("panel: dropdown provider dikunci saat polling", /<select className="lh-sel"[\s\S]*disabled=\{busy === "song"/.test(panel));
 T("route GET: auth error tidak disamarkan sebagai pending", /Jangan mengubah 401\/402 menjadi/.test(route) && /status: "error"/.test(route));
 
 if (gagal) { console.error(`\n💥 ${gagal} UJI KESEHATAN LAGU GAGAL`); process.exit(1); }
