@@ -117,7 +117,10 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   const [health, setHealth] = useState<Record<string, boolean>>({});
   const [checkingHealth, setCheckingHealth] = useState(false);
   const lastTaskRef = useRef("");
+  const pollProviderRef = useRef("");
+  const pollKeyRef = useRef("");
   const MAX_POLL = 40;
+  const MAX_POLL_BY_PROVIDER: Record<string, number> = { evolink: 90, cometapi: 60, ttapi: 60 };
 
   useEffect(() => () => { if (pollTimer.current) clearTimeout(pollTimer.current); }, []);
 
@@ -178,10 +181,11 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     setErr("");
     try { window.localStorage.setItem(SUNO_PROVIDER_KEY, next); } catch { /* abaikan */ }
   }
-  function sunoHeaders(keyOverride?: string): Record<string, string> {
+  function sunoHeaders(keyOverride?: string, providerOverride?: string): Record<string, string> {
+    const provider = providerOverride || sunoProv;
     const k = (keyOverride ?? (launchKeyRef.current || keysForProvider()[0]?.key || "")).trim();
     const h: Record<string, string> = { "Content-Type": "application/json" };
-    if (k) { h["X-Suno-Key"] = k; h["X-Suno-Provider"] = sunoProv; }
+    if (k) { h["X-Suno-Key"] = k; h["X-Suno-Provider"] = provider; }
     return h;
   }
   /* 🧠 v19.38: bawa key Dompet Bansos (OpenAI-compatible) — dipakai route lyrics
@@ -369,7 +373,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
           const id = body.id || body.taskId || body.task_id;
           if (!id) throw new Error("Server tidak memberi taskId.");
           launchKeyRef.current = selectedKey;
-          setBusy(""); setReferenceMsg("⏳ Audio Reference sedang diolah…"); startPolling(id);
+          setBusy(""); setReferenceMsg("⏳ Audio Reference sedang diolah…"); startPolling(id, sunoProv, selectedKey);
           return;
         } catch (error: any) {
           lastError = error instanceof Error ? error : new Error(String(error || "Generate gagal"));
@@ -400,12 +404,14 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     finally { setBusy(""); }
   }
 
-  async function checkOnce(id: string): Promise<"done" | "pending"> {
+  async function checkOnce(id: string, providerOverride?: string, keyOverride?: string): Promise<"done" | "pending"> {
+    const provider = providerOverride || pollProviderRef.current || sunoProv;
+    const key = keyOverride || pollKeyRef.current || launchKeyRef.current;
     const ac = new AbortController();
     // Satu cek tidak boleh menahan polling sampai 40 detik. Jika server/Vercel
     // sedang cold-start atau provider lambat, tick berikutnya akan mencoba lagi.
     const wd = setTimeout(() => ac.abort(), 15000);
-    const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(), cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
+    const r = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(id)}`, { headers: sunoHeaders(key, provider), cache: "no-store", signal: ac.signal }).finally(() => clearTimeout(wd));
     const pd = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(pd.error || `HTTP ${r.status}`), { code: r.status });
     const { pilihKlipDariHasil } = await import("@/lib/suno-normalize");
@@ -413,7 +419,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     const url = clips[0]?.url || pd.audio_url || pd.audioUrl || pd.url || pd.stream_url;
     if (url) {
       const dur = Number(clips[0]?.duration ?? (pd.duration && clips.length ? Number(pd.duration) / clips.length : Number(pd.duration)));
-      finishSong({ url, title: clips[0]?.title || pd.title || defaultTitle || "Lagu AI", duration: isFinite(dur) && dur > 0 ? dur : undefined });
+      finishSong({ url, title: clips[0]?.title || pd.title || defaultTitle || "Lagu AI", duration: isFinite(dur) && dur > 0 ? dur : undefined }, key ? { provider, key } : undefined);
       return "done";
     }
     if (pd.status === "error" || pd.error) throw new Error(pd.error || "Provider gagal generate");
@@ -438,12 +444,17 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     return [408, 502, 503, 504].includes(Number(err?.code)) || /abort|timeout|timed out|failed to fetch|network|502|503|504|gateway|server terlalu lama/i.test(msg);
   }
 
-  function startPolling(id: string) {
+  function startPolling(id: string, providerOverride = sunoProv, keyOverride = launchKeyRef.current) {
     setPolling(true);
     setErr("");
     lastTaskRef.current = id;
+    pollProviderRef.current = providerOverride;
+    pollKeyRef.current = keyOverride;
+    const maxPoll = MAX_POLL_BY_PROVIDER[providerOverride] || MAX_POLL;
     const tMulai = Date.now();
-    setPollMsg("⏳ Lagu sedang diolah… (bisa 1-6 menit, tergantung provider)");
+    setPollMsg(providerOverride === "evolink"
+      ? "⏳ EvoLink sedang mengolah lagu… prosesnya bisa lebih lama, polling diteruskan sampai ±18 menit."
+      : "⏳ Lagu sedang diolah… (bisa 1-6 menit, tergantung provider)");
     let idx = 0;
     const tick = async () => {
       idx++;
@@ -451,12 +462,13 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       const detik = Math.floor((Date.now() - tMulai) / 1000);
       setPollMsg(`⏳ Mengecek hasil… (#${idx} · sudah ${Math.floor(detik / 60)}m ${String(detik % 60).padStart(2, "0")}s)`);
       try {
-        const r = await checkOnce(id);
+        const r = await checkOnce(id, pollProviderRef.current, pollKeyRef.current);
         if (r === "pending") {
-          // 🛡 v19.35.4: batas polling wajar — jangan nunggu selamanya
-          if (idx >= MAX_POLL) {
+          // 🛡️ Provider tertentu (terutama EvoLink) dapat lebih lama dari 8 menit;
+          // batas disesuaikan tanpa membuat polling berjalan selamanya.
+          if (idx >= maxPoll) {
             setPolling(false);
-            setErr(`⏱ Provider belum selesai setelah ${Math.round((Date.now() - tMulai) / 60000)} menit. Lagu MUNGKIN sudah jadi di dashboard provider — cek manual via tautan di bawah, atau tap "Cek ulang".`);
+            setErr(`⏱ ${pollProviderRef.current || "Provider"} belum selesai setelah ${Math.round((Date.now() - tMulai) / 60000)} menit. Lagu MUNGKIN sudah jadi di dashboard provider — cek manual atau tekan "Cek ulang".`);
             return;
           }
           // 🐛 FIX v19.35.5: interval lebih cepat (5s awal → 12s maks) — hasil cepat kedeteksi
@@ -465,8 +477,8 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       } catch (e) {
         // Timeout/jaringan saat polling bukan berarti lagu gagal. Jangan
         // mematikan polling; lanjutkan tick berikutnya sampai batas wajar.
-        if (isTransientPollError(e) && idx < MAX_POLL) {
-          setPollMsg(`⏳ Server/provider belum menjawab — polling dilanjutkan otomatis (cek #${idx})`);
+        if (isTransientPollError(e) && idx < maxPoll) {
+          setPollMsg(`⏳ Server/provider belum menjawab — polling dilanjutkan otomatis (cek #${idx}/${maxPoll})`);
           pollTimer.current = setTimeout(tick, Math.min(6000 + idx * 700, 12000));
           return;
         }
@@ -477,7 +489,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
     pollTimer.current = setTimeout(tick, 4000);
   }
   function pollUlang() {
-    if (lastTaskRef.current) startPolling(lastTaskRef.current);
+    if (lastTaskRef.current) startPolling(lastTaskRef.current, pollProviderRef.current || sunoProv, pollKeyRef.current || launchKeyRef.current);
   }
 
   async function generate() {
@@ -531,7 +543,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
         if (!id) throw new Error("Server tidak kasih taskId — coba lagi.");
         launchKeyRef.current = keys[ki]?.key || "";
         setBusy("");
-        startPolling(id);
+        startPolling(id, sunoProv, keys[ki]?.key || "");
         return;
       } catch (e) {
         const er = e as Error & { code?: string };
@@ -584,7 +596,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
       )}
 
       <div className="lh-kv"><span>Provider</span><b>
-        <select className="lh-sel" value={sunoProv} onChange={(e) => pilihProvider(e.target.value)}>
+        <select className="lh-sel" value={sunoProv} onChange={(e) => pilihProvider(e.target.value)} disabled={busy === "song" || busy === "reference" || polling}>
           {SUNO_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}{health[p.id] === false ? " — 💀 MATI" : health[p.id] === true ? " — ✅ hidup" : ""}</option>)}
         </select>
       </b>

@@ -294,7 +294,15 @@ export function normalizeGeneric(d: any): HasilNormal {
 }
 
 /** 🎵 v19.78 EvoLink — POST /v1/audios/generations → {id,status:pending}
- *  GET /v1/tasks/{id} → {status:completed, result_data:[{audio_url,…}]} */
+ *  GET /v1/tasks/{id} → {status:completed, result_data:[{audio_url,…}]}
+ *  Sebagian respons terbaru juga menyertakan `results: [url, url]`. */
+function clipsDariUrlList(value: unknown): KlipLagu[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url) && !/\.(?:jpg|jpeg|png|webp|gif|svg)(?:\?|$)/i.test(url))
+    .map((url) => ({ url }));
+}
+
 export function normalizeEvolink(d: any): HasilNormal {
   const id = String(d?.id || d?.task_id || d?.data?.id || "");
   const st = String(d?.status || d?.data?.status || "pending").toLowerCase();
@@ -302,8 +310,17 @@ export function normalizeEvolink(d: any): HasilNormal {
     const err = (typeof d?.error === "object" ? d.error?.message : d?.error) || d?.message || st;
     return { id, status: "error", error: String(err) };
   }
-  const clips = clipsDariRespons(d);
-  if (clips.length && (/complete|success|done/.test(st) || Number(d?.progress) === 100)) {
+  const nested = d?.data && typeof d.data === "object" ? d.data : {};
+  const direct = clipsDariUrlList(d?.results).concat(clipsDariUrlList(nested?.results));
+  const fromObjects = clipsDariRespons(d);
+  const clips: KlipLagu[] = [];
+  const seen = new Set<string>();
+  for (const clip of [...fromObjects, ...direct]) {
+    if (!clip?.url || seen.has(clip.url)) continue;
+    seen.add(clip.url); clips.push(clip);
+  }
+  const done = /complete|success|succeed|done|finished/.test(st) || Number(d?.progress ?? nested?.progress) === 100;
+  if (clips.length && done) {
     return {
       id, status: "completed",
       audio_url: clips[0].url, audio_urls: clips.map((c) => c.url), clips,

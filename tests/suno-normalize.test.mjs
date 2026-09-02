@@ -103,5 +103,12 @@ T("MusicAPI state=succeeded → completed", sonicPoll.status === "completed" && 
 const sonicFail = normalizeLagu({ code: 200, data: [{ clip_id: "m1", state: "failed", message: "quota" }] }, "musicapi");
 T("MusicAPI state=failed → error", sonicFail.status === "error");
 
+/* 15. EvoLink: respons terbaru dapat mengembalikan results sebagai array URL. */
+const evoResults = normalizeLagu({
+  id: "evo-task-1", status: "completed", progress: 100,
+  results: ["https://media.evolink.ai/a.mp3", "https://media.evolink.ai/b.mp3"],
+}, "evolink");
+T("EvoLink results URL array → completed", evoResults.status === "completed" && evoResults.audio_urls?.length === 2);
+
 if (gagal) { console.error(`\n💥 ${gagal} UJI NORMALISASI GAGAL`); process.exit(1); }
 console.log("\n🎉 SEMUA UJI NORMALISASI HIJAU — polling bisa mengekstrak hasil dari semua format!");

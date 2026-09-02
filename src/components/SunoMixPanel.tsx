@@ -14,6 +14,7 @@ import { pilihKlipDariHasil } from "@/lib/suno-normalize";
 import { type SunoKey } from "@/lib/suno-keys";
 
 const REFERENCE_PROVIDERS = new Set(["musicapi", "aimusicapi", "kie", "sunoapi", "cometapi", "ttapi"]);
+const MAX_POLL_BY_PROVIDER: Record<string, number> = { evolink: 90, cometapi: 60, ttapi: 60 };
 const MIX_HINTS = [
   "atmospheric intro, gradual build-up",
   "euphoric melodic drop, bright supersaw",
@@ -332,9 +333,10 @@ export default function SunoMixPanel({
   }
 
   async function pollClip(taskId: string, key: string, signal: AbortSignal, fallbackTitle: string, index: number): Promise<GeneratedResult> {
-    for (let attempt = 0; attempt < 40; attempt++) {
+    const maxPoll = MAX_POLL_BY_PROVIDER[provider] || 40;
+    for (let attempt = 0; attempt < maxPoll; attempt++) {
       if (signal.aborted) throw new DOMException("Dibatalkan", "AbortError");
-      updateClip(index, { status: "generating", message: `Menunggu hasil provider… cek ${attempt + 1}/40` });
+      updateClip(index, { status: "generating", message: `Menunggu hasil provider… cek ${attempt + 1}/${maxPoll}` });
       const timed = timedSignal(signal, 15_000);
       try {
         const response = await fetch(`/api/hcnsec/music?id=${encodeURIComponent(taskId)}`, {
