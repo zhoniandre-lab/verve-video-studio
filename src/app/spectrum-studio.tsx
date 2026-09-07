@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { paintEffect, paintPreviewCaptions, CC_TEMPLATES, ensureFontsLoaded } from "@/lib/editing";
 import type { CapWord } from "@/lib/editing";
 import { transcribeBlobBesar } from "@/lib/audiocc"; // 🎤 v19.17: auto-pas lirik dari audio (Whisper)
+import { audioBufferToWavFile } from "@/lib/studio/reference-audio";
 import { WHISPER_LANGUAGES } from "@/lib/whisper-languages"; // 🌍 bahasa Auto Lirik dunia
 import SunoPanel from "@/components/SunoPanel"; // 🎵 v19.29: generate lagu (sama seperti di Lahan)
 import LongShortCutter from "@/components/LongShortCutter";
@@ -900,9 +901,13 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
     if (!audioUrl && !bufRef.current) { setLyrMsg("⚠️ Isi musik dulu di langkah 1."); return; }
     setLyrBusy(true); setLyrMsg("🎤 Mendengarkan audio & deteksi kata… (bisa 30-60 detik)");
     try {
-      // 1) Ambil blob audio (dari URL atau buffer)
+      // 1) AudioBuffer aktif adalah sumber paling stabil. Jangan mengambil
+      // ulang URL provider terlebih dahulu: link CDN/private bisa sudah expired
+      // atau proxy mengembalikan 0 byte, padahal audio sedang berjalan normal.
       let blob: Blob;
-      if (audioUrl && !audioUrl.startsWith("blob:")) {
+      if (bufRef.current) {
+        blob = audioBufferToWavFile(bufRef.current, 0, bufRef.current.duration, audioName || "spectrum_audio");
+      } else if (audioUrl) {
         const ac = new AbortController();
         const wd = window.setTimeout(() => ac.abort(), 120_000);
         try {
@@ -912,21 +917,7 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
           window.clearTimeout(wd);
         }
       } else {
-        // konversi AudioBuffer → WAV
-        const b = bufRef.current!;
-        const ch = b.numberOfChannels, sr = b.sampleRate;
-        const n = Math.floor(b.duration * sr);
-        const pcm = new Float32Array(n * ch);
-        for (let c = 0; c < ch; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) pcm[i * ch + c] = d[i]; }
-        const wavBuf = new ArrayBuffer(44 + n * ch * 2);
-        const dv = new DataView(wavBuf);
-        const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
-        ws(0, "RIFF"); dv.setUint32(4, 36 + n * ch * 2, true); ws(8, "WAVE"); ws(12, "fmt ");
-        dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, ch, true); dv.setUint32(24, sr, true);
-        dv.setUint32(28, sr * ch * 2, true); dv.setUint16(32, ch * 2, true); dv.setUint16(34, 16, true);
-        ws(36, "data"); dv.setUint32(40, n * ch * 2, true);
-        for (let i = 0; i < n * ch; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
-        blob = new Blob([wavBuf], { type: "audio/wav" });
+        throw new Error("Audio belum siap untuk Auto Lirik.");
       }
       // 2) Transkripsi (Whisper) → kata + timestamp
       // 🌏 v19.19: bahasa TIDAK dipaksa "id" — ikut bahasa lagu (default: auto-detect),
