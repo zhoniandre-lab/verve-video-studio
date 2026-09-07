@@ -938,21 +938,24 @@ export default function SpectrumStudio({ onExit }: { onExit: () => void }) {
       const words = kataAsli;
       if (!words.length) { setLyrMsg("⚠️ Tidak ada kata terdeteksi (lagu instrumental? coba yang ada vokalnya)."); return; }
       const lines: string[] = [];
-      const grouped: { w: string; start: number; end: number; line: number }[] = [];
+      // `lines` hanya untuk tampilan textarea. Untuk karaoke, simpan KATA ASLI
+      // satu per satu agar highlight tidak menunggu satu baris penuh selesai.
+      const timedWords: { w: string; start: number; end: number; line: number }[] = [];
       let cur = "", curStart = words[0].start, curEnd = words[0].end, li = 0;
       for (let i = 0; i < words.length; i++) {
         const w = words[i];
         const gap = i > 0 ? w.start - words[i - 1].end : 0;
         if (gap > 0.8 || cur.length > 60) {
-          lines.push(cur.trim()); grouped.push({ w: cur.trim(), start: curStart, end: curEnd, line: li }); li++;
+          lines.push(cur.trim()); li++;
           cur = w.w; curStart = w.start; curEnd = w.end;
         } else {
           cur = cur ? cur + " " + w.w : w.w; curEnd = w.end;
         }
+        timedWords.push({ w: w.w, start: w.start, end: w.end, line: li });
       }
-      if (cur.trim()) { lines.push(cur.trim()); grouped.push({ w: cur.trim(), start: curStart, end: curEnd, line: li }); }
-      // 5) Simpan → lyricsText (baris) & autoWords (timing presisi)
-      autoWordsRef.current = grouped;
+      if (cur.trim()) lines.push(cur.trim());
+      // 5) Simpan → lyricsText (baris) & autoWords (timing PER KATA presisi)
+      autoWordsRef.current = timedWords;
       setLyrAuto(true);
       setLyricsText(lines.join("\n"));
       setLyrMsg(`✅ ${words.length} kata terdeteksi (${dibuang} kata asing dibuang) → ${lines.length} baris. Timing PAS audio!`);

@@ -1201,6 +1201,12 @@ export const CC_TEMPLATES: CCTemplate[] = [
   { id: "dual",      label: "Dua Nada",       desc: "Abu lembut + merah muda aktif", capStyle: "dual",     sample: "Suara yang hangat",      color: "#fb7185" },
   { id: "bar",       label: "Bar Bawah",      desc: "Garis emas di bawah baris",    capStyle: "bar",       sample: "Lirik rapi tengah",      color: "#fbbf24" },
   { id: "serifgold", label: "Serif Emas",     desc: "Huruf elegan, kata aktif emas", capStyle: "serifgold", sample: "Kisah yang indah",      color: "#f59e0b", yRatio: 0.78, sizeRatio: 0.040 },
+  // 💎 v21.0: template profesional tambahan — visual saja, timing kata tetap asli
+  { id: "cinemagold", label: "Cinema Gold",    desc: "Serif sinematik + highlight emas", capStyle: "serifgold", sample: "Sebuah kisah yang pulang", color: "#fbbf24", yRatio: 0.80, sizeRatio: 0.038 },
+  { id: "luxurymv",  label: "Luxury MV",      desc: "Karaoke emas elegan untuk MV",    capStyle: "emas",      sample: "Rindu yang tak selesai", color: "#fde68a", yRatio: 0.78, sizeRatio: 0.040 },
+  { id: "docuclean",  label: "Documentary",    desc: "Subtitle film dokumenter bersih", capStyle: "indie",     sample: "Catatan dari perjalanan", color: "#ffffff", yRatio: 0.82, sizeRatio: 0.036 },
+  { id: "cinemabox",  label: "Cinema Box",     desc: "Kotak subtitle bioskop premium",  capStyle: "boxhitam",  sample: "Malam menyimpan cerita", color: "#ffffff", yRatio: 0.80, sizeRatio: 0.038 },
+  { id: "neonlux",    label: "Neon Luxury",    desc: "Cyan premium dengan kata aktif", capStyle: "cyan",      sample: "Cahaya di ujung malam", color: "#67e8f9", yRatio: 0.78, sizeRatio: 0.040 },
 ];
 
 /* ---------- STIKER GAMBAR (overlay foto) ---------- */
