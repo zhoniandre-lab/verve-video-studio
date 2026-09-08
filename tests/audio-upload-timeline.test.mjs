@@ -10,7 +10,10 @@ const uploadBlock = page.match(/async function uploadMusic[\s\S]*?async function
 T("musik lokal memakai Blob URL, bukan data URL besar", /const u = URL\.createObjectURL\(f\)/.test(uploadBlock) && !/readAsDataURL/.test(uploadBlock));
 T("asset musik disimpan di snapshot", /musicUrl, musicAssetId, musicName/.test(page));
 T("toolbar klip utama diringkas", /\["split", "pangkas", "hapus", "ganti", "teks", "stiker", "speed", "transisi"\]/.test(page));
-T("fitur tambahan tetap tersedia lewat Lainnya", /clipMoreOpen[\s\S]*\["animasi", "efek", "gambarai", "hapus", "dup", "geserkir", "geserkan"\]/.test(page));
+T("fitur tambahan tetap tersedia lewat Lainnya", /clipMoreOpen[\s\S]*\["animasi", "efek", "gambarai", "audio", "dup", "geserkir", "geserkan"\]/.test(page));
+T("preview memakai field speed yang sama dengan panel Speed", /const spdC = \(optCur as any\)\?\.speed/.test(page) && !/const spdC = \(optCur as any\)\?\.spd/.test(page));
+T("render video memakai field speed yang sama", /\?\.\[slideIdx\]\?\.speed/.test(readFileSync(new URL("../src/lib/recorder.ts", import.meta.url), "utf8")));
+T("klip video punya aksi pisahkan audio", /async function extractSelectedAudio/.test(page) && /case "audio": void extractSelectedAudio\(\)/.test(page));
 
 if (failed) process.exit(1);
 console.log("\n🎵🧼 Kontrak upload audio dan toolbar bersih hijau.");

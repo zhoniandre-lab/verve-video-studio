@@ -2354,14 +2354,14 @@ async function renderWebCodecs(b:any){
         const isLastSlide = slideIdx === (timeline ? timeline.durs.length - 1 : imgs.length - 1);
         const adjustedRaw = isLastSlide ? Math.min(rawTime, slot0 - 0.05) : rawTime;
 
-        const pl = vidPlan(adjustedRaw, vC.a.duration || vC.b.duration || 1, slot0, ((slideOpts as any)?.[slideIdx]?.spd) || 1); // ⏱ v13.13
+        const pl = vidPlan(adjustedRaw, vC.a.duration || vC.b.duration || 1, slot0, ((slideOpts as any)?.[slideIdx]?.speed) || 1); // ⏱ v13.13
         const act = pl.act === "a" ? vC.a : vC.b; const nxt = pl.act === "a" ? vC.b : vC.a;
         await seekVid(act, Math.min(pl.pos, (act.duration || 1) - 0.06));
         blitVid(act, vC.c, (b as any).vigVideo, (b as any).vigStrV);
         if (pl.inX) { await seekVid(nxt, pl.x * Math.min(0.5, (nxt.duration || 1) * 0.15)); blitVid(nxt, vC.c, null, 0, pl.x); }
       }
       if (vN) { const s1 = timeline ? (timeline.starts[nextIdx] ?? 0) : nextIdx * perSlide; const slot1 = timeline ? (((timeline as any).durs?.[nextIdx]) ?? slideDur) : slideDur;
-        const pl2 = vidPlan(t - s1, vN.a.duration || vN.b.duration || 1, slot1, ((slideOpts as any)?.[nextIdx]?.spd) || 1); // ⏱ v13.13
+        const pl2 = vidPlan(t - s1, vN.a.duration || vN.b.duration || 1, slot1, ((slideOpts as any)?.[nextIdx]?.speed) || 1); // ⏱ v13.13
         const act2 = pl2.act === "a" ? vN.a : vN.b; const nxt2 = pl2.act === "a" ? vN.b : vN.a;
         await seekVid(act2, Math.min(pl2.pos, (act2.duration || 1) - 0.06));
         blitVid(act2, vN.c, (b as any).vigVideo, (b as any).vigStrV);
@@ -2609,7 +2609,7 @@ async function renderMediaRecorder(b:any){
           const isLastSlide = si === (timeline ? timeline.durs.length - 1 : imgs.length - 1);
           const adjustedRaw = isLastSlide ? Math.min(raw, slotm - 0.05) : raw;
 
-          const pl = vidPlan(adjustedRaw, vdm, slotm, ((slideOpts as any)?.[si]?.spd) || 1); // ⏱ v13.13
+          const pl = vidPlan(adjustedRaw, vdm, slotm, ((slideOpts as any)?.[si]?.speed) || 1); // ⏱ v13.13
           const act = pl.act === "a" ? o.a : o.b; const nxt = pl.act === "a" ? o.b : o.a;
           try { if (Math.abs(act.playbackRate - pl.rate) > 0.001) act.playbackRate = pl.rate; } catch {}
           const want = Math.min(pl.pos, vdm - 0.06);

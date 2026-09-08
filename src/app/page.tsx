@@ -1128,6 +1128,7 @@ const CLIP_TOOLS: { id: string; icon: string; label: string; bdg?: string; bdgCl
   { id: "pangkas", icon: "▭",   label: "Pangkas" },
   { id: "dup",     icon: "⧉",   label: "Duplikat" },
   { id: "ganti",   icon: "⇄",   label: "Ganti" },
+  { id: "audio",   icon: "🎙️",  label: "Pisahkan audio" },
   { id: "teks",    icon: "🔤",  label: "Teks" },
   { id: "stiker",  icon: "😀",  label: "Stiker" },
   { id: "speed",   icon: "⚡",  label: "Speed" },
@@ -1871,7 +1872,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     // MUNCUL VISUAL (tt − start + transDur sebelum), BUKAN clipT yang dijepit → video lama tak membeku
     // saat dissolve, video baru masuk nyambung (rate & posisi menerus), nol rewind di serah-terima.
     const slNow = sl[L.idx];
-    const spdC = (optCur as any)?.spd || 1;
+    const spdC = (optCur as any)?.speed || 1;
     const slVideoNow = slideVideoSource(slNow);
     const pr = slVideoNow ? getDeckPair(slNow.id, slVideoNow) : null;
     const slNxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? sl[L.nextIdx] : null;
@@ -1890,7 +1891,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         return { role, rate };
       };
       const RC = pr ? roleOf(pr, tt - (tl.starts[L.idx] || 0) + (L.idx > 0 ? (tl.tdurs[L.idx - 1] || 0) : 0), L.clipDur, spdC) : null;
-      const RN = prN ? roleOf(prN, tt - (tl.starts[L.nextIdx] || 0) + (tl.tdurs[L.idx] || 0), tl.durs[L.nextIdx] || 1, (optNxt as any)?.spd || 1) : null;
+      const RN = prN ? roleOf(prN, tt - (tl.starts[L.nextIdx] || 0) + (tl.tdurs[L.idx] || 0), tl.durs[L.nextIdx] || 1, (optNxt as any)?.speed || 1) : null;
       syncPrevDecks(pr, RC?.role || null, RC?.rate || 1, prN, RN?.role || null, RN?.rate || 1);
       const liveV = (v: HTMLVideoElement | null) => (v && !(v as any).__dead && v.readyState >= 2 && v.videoWidth) ? v : null;
       if (pr && RC) {
@@ -2425,6 +2426,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         break;
       }
       case "ganti": setModal("ganti"); break;
+      case "audio": void extractSelectedAudio(); break;
       case "teks": startTextEdit(id); break;
       case "stiker": setTool("stiker"); break;
       case "speed": setTool("speed"); break;
@@ -3075,24 +3077,46 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     } catch (e: any) { setErr(e); }
     setLoading(null);
   }
-  async function doEkstrak(f: File | undefined) {
+  async function doEkstrak(f: File | undefined, target: "music" | "voice" = "music", off = curTRef.current) {
     if (!f) return;
     setLoading("ekstrak"); setStageText("Mengekstrak audio dari video...");
     try {
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       const actx = new AC();
       const buf = await actx.decodeAudioData(await f.arrayBuffer()).catch(() => null);
-      if (!buf) throw new Error("Audio di video ini tidak bisa dibaca (codec tak didukung).");
+      if (!buf) throw new Error("Video ini tidak memiliki audio yang bisa dibaca browser.");
       const wav = bufferToWav(buf);
       const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
-      releaseMusicAssetUrl();
-      setMusicAssetId("");
-      setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40));
-      getAudioDuration(url).then(setMusicDur);
+      const start = Math.round(clampN(off, 0, 7190) * 100) / 100;
+      if (target === "voice") {
+        setVoiceUrl(url); setVoiceOff(start); getAudioDuration(url).then(setVoiceDur);
+        flash(`🎙️ Audio video dipisahkan — mulai ${formatDur(start)}. Musik asli tidak dihapus.`);
+      } else {
+        releaseMusicAssetUrl();
+        setMusicAssetId("");
+        setMusicUrl(url); setMusicOff(start); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 80));
+        getAudioDuration(url).then(setMusicDur);
+        flash(`🎬 Audio diekstrak ke track Musik — mulai ${formatDur(start)}`);
+      }
       actx.close();
-      flash(`🎬 Audio diekstrak — mulai ${formatDur(curTRef.current)}`);
     } catch (e: any) { setErr(e); }
     setLoading(null); setTimeout(() => setStageText(""), 100);
+  }
+  async function extractSelectedAudio() {
+    const selected = slidesRef.current.find(s => s.id === selId);
+    if (!selected?.videoUrl && !selected?.assetId) { flash("⚠️ Pilih klip video dulu"); return; }
+    try {
+      setStageText("🎙️ Menyiapkan audio klip video...");
+      const srcVideo = slideVideoSource(selected);
+      const fetchVideo = /^https?:/i.test(srcVideo) ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(srcVideo)}` : srcVideo;
+      const blob = selected.assetId
+        ? await getMediaAsset(selected.assetId)
+        : await fetch(fetchVideo).then(r => r.ok ? r.blob() : null);
+      if (!blob?.size) throw new Error("File video asli tidak ditemukan di brankas.");
+      const idx = slidesRef.current.findIndex(s => s.id === selected.id);
+      const start = timelineRef.current?.starts?.[idx] || 0;
+      await doEkstrak(new File([blob], `${projTitle || "video"}_audio.webm`, { type: blob.type || "video/mp4" }), "voice", start);
+    } catch (e: any) { setErr(e); setLoading(null); }
   }
   /* ---------- SUNO ---------- */
   // 🎵 v19.77: JANGAN gabung 2 variasi Suno jadi 1 file dua nada.
@@ -4805,7 +4829,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             <button className={`v6e-tlbtn ${clipMoreOpen ? "on" : ""}`} onClick={() => setClipMoreOpen(v => !v)}>
               ⋯<span>{clipMoreOpen ? "Tutup" : "Lainnya"}</span>
             </button>
-            {clipMoreOpen && CLIP_TOOLS.filter(t => ["animasi", "efek", "gambarai", "hapus", "dup", "geserkir", "geserkan"].includes(t.id)).map(t => (
+            {clipMoreOpen && CLIP_TOOLS.filter(t => ["animasi", "efek", "gambarai", "audio", "dup", "geserkir", "geserkan"].includes(t.id)).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => { setClipMoreOpen(false); onClipTool(t.id); }}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
@@ -4919,7 +4943,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             slideOptsById,
             exTab, setExTab, exRes, setExRes, exFps, setExFps, exMbps, setExMbps,
             estMB, clipsTotal, doRender, doRenderGif, downloadVideo, videoUrl, videoBlob, progress, loading, stageText, guardJob,
-            openModal: (m:string)=>{ setGambaraiReplaceId(undefined); setModal(m); }, addImageFiles, genImageForClip, uploadMusic, doEkstrak,
+            openModal: (m:string)=>{ setGambaraiReplaceId(undefined); setModal(m); }, addImageFiles, genImageForClip, uploadMusic, doEkstrak, extractSelectedAudio,
             setGambaraiReplaceId,
             musicUrl, hasVoice: !!(ttsUrl || voiceUrl),
             voiceUrl, setVoiceUrl,
