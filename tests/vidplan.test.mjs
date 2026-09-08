@@ -54,6 +54,7 @@ simulasi(10, 6, "Slot pendek 6s");
 
 console.log("\n=== KECEPATAN MANUAL (kendali bro) ===");
 simulasi(6, 39.6, "MANUAL 0.5× (puisi)", 0.5);
+simulasi(6, 6 / 0.5, "MANUAL 0.5× slot efektif (anti-freeze)", 0.5);
 simulasi(6, 39.6, "MANUAL 2× (gegas)", 2);
 simulasi(30, 39.6, "MANUAL 0.75× (dreamy)", 0.75);
 

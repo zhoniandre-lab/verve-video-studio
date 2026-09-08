@@ -451,16 +451,11 @@ function blitVid(v: HTMLVideoElement, c: HTMLCanvasElement, vig?: HTMLCanvasElem
 export function vidPlan(raw: number, vd: number, slot: number, spd = 1): { cyc: number; pos: number; inX: boolean; x: number; rate: number; act: "a" | "b" } {
   if (!(vd > 0.2) || !isFinite(vd)) return { cyc: 0, pos: 0, inX: false, x: 0, rate: 1, act: "a" };
   
-  // 🩹 v16.0 SMOOTH CINEMATIC FLUIDITY:
-  // Kita hilangkan pemaksaan slow-mo ekstrim (RMIN=0.20) yang membuat fps video anjlok menjadi patah-patah (6fps).
-  // Kecepatan otomatis dijepit secara ketat di [0.85, 1.2], sehingga video selalu berputar pada kecepatan aslinya yang super mulus (30fps/60fps murni)!
-  const RMIN = 0.85, RMAX = 1.2;
-  let rate = vd / (slot > 0.2 ? slot : vd);
-  if (rate < RMIN) rate = RMIN; else if (rate > RMAX) rate = RMAX;
-  
-  const sMul = spd >= 0.25 && spd <= 2 ? spd : 1;
-  rate *= sMul;
-  if (rate < 0.25) rate = 0.25; else if (rate > 2) rate = 2;
+  // Speed timeline sudah menyimpan durasi efektif = durasi sumber / speed.
+  // Jangan kalikan speed dua kali: bug lama membuat 0.5x menjadi 0.25x,
+  // video selesai di tengah slot lalu freeze-frame memanjang di ujung.
+  // Kecepatan sekarang mengikuti kontrol pengguna secara langsung.
+  const rate = spd >= 0.25 && spd <= 2 ? spd : 1;
   
   const st = Math.max(0, raw) * rate;
   
