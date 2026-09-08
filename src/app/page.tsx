@@ -2382,15 +2382,23 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "animasi": setTool("animasi"); setSheetTab("masuk"); break;
       case "efek": setTool("efek"); break;
       case "gambarai": setGambaraiReplaceId(undefined); setModal("gambarai"); break;
-      case "hapus": pushHist(); setSlides(c => c.filter(s => s.id !== id)); flash("🗑 Klip dihapus"); break;
+      case "hapus": {
+        pushHist();
+        setSlides(c => c.filter(s => s.id !== id));
+        setSlideOptsById(c => { const n = { ...c }; delete n[id]; return n; });
+        setSelId(""); setClipBar(false);
+        flash("🗑 Klip dihapus");
+        break;
+      }
       case "pangkas": setTool("pangkas"); break;
       case "dup": pushHist(); {
         const i = selIndex; const src = slides[i];
-        if (i < 0) break;
-        const ns = { id: uid("c"), imageUrl: src.imageUrl };
+        if (i < 0 || !src) break;
+        // Duplikat harus membawa video asli dan assetId, bukan turun menjadi gambar poster.
+        const ns: Slide = { id: uid("c"), imageUrl: src.imageUrl, videoUrl: src.videoUrl, dur: src.dur, assetId: src.assetId };
         setSlides(c => { const a = [...c]; a.splice(i + 1, 0, ns); return a; });
         setSlideOptsById(c => ({ ...c, [ns.id]: { ...(c[id] || {}) } }));
-        setSelId(ns.id); flash("⧉ Diduplikat");
+        setSelId(ns.id); flash("⧉ Diduplikat — video/aset asli ikut");
         break;
       }
       case "ganti": setModal("ganti"); break;
@@ -2399,11 +2407,11 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       case "speed": setTool("speed"); break;
       case "transisi": setTool("transisi"); break;
       case "geserkir": // 🗺️ v13.18: pindah urutan TANPA harus tahu tekan-tahan-seret
-        if (selIndex > 0) { pushHist(); moveSlide(selIndex, selIndex - 1); flash("◀ Adegan digeser ke kiri"); }
+        if (selIndex > 0) { moveSlide(selIndex, selIndex - 1); flash("◀ Adegan digeser ke kiri"); }
         else flash("Sudah paling kiri bro");
         break;
       case "geserkan":
-        if (selIndex >= 0 && selIndex < slides.length - 1) { pushHist(); moveSlide(selIndex, selIndex + 1); flash("▶ Adegan digeser ke kanan"); }
+        if (selIndex >= 0 && selIndex < slides.length - 1) { moveSlide(selIndex, selIndex + 1); flash("▶ Adegan digeser ke kanan"); }
         else flash("Sudah paling kanan bro");
         break;
     }
@@ -2421,8 +2429,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     pushHist();
     const speed = slideOptsById[sid]?.speed || 1;
     const src = slidesRef.current[i];
-    const left: Slide = { id: uid("c"), imageUrl: src.imageUrl };
-    const right: Slide = { id: uid("c"), imageUrl: src.imageUrl };
+    // Split hanya membagi waktu; sumber video/aset asli harus tetap sama di kedua sisi.
+    const left: Slide = { id: uid("c"), imageUrl: src.imageUrl, videoUrl: src.videoUrl, dur: src.dur, assetId: src.assetId };
+    const right: Slide = { id: uid("c"), imageUrl: src.imageUrl, videoUrl: src.videoUrl, dur: src.dur, assetId: src.assetId };
     const oldOpts = { ...(slideOptsById[sid] || {}) };
     const leftOpts: SlideOpt = { ...oldOpts, dur: local * speed, trans: "none", animOut: "none" };
     const rightOpts: SlideOpt = { ...oldOpts, dur: (d - local) * speed, animIn: "none" };
@@ -2438,8 +2447,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     flash("╫ Klip dibagi di posisi playhead");
   }
   function removeSlideAt(i: number) {
+    const sid = slidesRef.current[i]?.id;
+    if (!sid) return;
     pushHist();
     setSlides(c => c.filter((_, k) => k !== i));
+    setSlideOptsById(c => { const n = { ...c }; delete n[sid]; return n; });
+    if (selId === sid) { setSelId(""); setClipBar(false); }
   }
   function moveSlide(from: number, to: number) {
     if (from === to || from < 0 || to < 0) return;
