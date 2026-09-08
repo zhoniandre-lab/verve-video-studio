@@ -16,6 +16,7 @@ T("render video memakai field speed yang sama", /\?\.\[slideIdx\]\?\.speed/.test
 T("klip video punya aksi pisahkan audio", /async function extractSelectedAudio/.test(page) && /case "audio": void extractSelectedAudio\(\)/.test(page));
 T("upload video tidak mengekstrak audio otomatis", /Audio asli TIDAK diekstrak saat upload/.test(page));
 T("native video tidak otomatis bisu jika tidak ada track lain", /v\.muted = audMuted \|\| !!\(musicUrl \|\| ttsUrl \|\| voiceUrl\)/.test(page));
+T("native preview menerapkan speed yang dipilih", /v\.playbackRate = activeVideoInfo\.speed/.test(page));
 
 if (failed) process.exit(1);
 console.log("\n🎵🧼 Kontrak upload audio dan toolbar bersih hijau.");

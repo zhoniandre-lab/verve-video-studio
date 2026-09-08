@@ -4704,7 +4704,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       || !!o.text?.txt?.trim() || !!(o.texts || []).length || !!(o.stickers || []).length
       || !!o.effect || !!o.animIn || !!o.animOut || (!!o.loop && o.loop !== "none") || !!o.kb;
     if (dirty) return null;
-    return { url, localT: Math.max(0, curT - (timeline.starts[L.idx] || 0)) };
+    return { url, localT: Math.max(0, curT - (timeline.starts[L.idx] || 0)), speed: clampN(Number(o.speed || 1), 0.25, 3) };
   }, [slides, timeline, curT, slideOptsById, filterPreset, capWords, transition, mediaAssetEpoch]);
   const nativeVideoMode = !!activeVideoInfo;
   nativeVideoModeRef.current = nativeVideoMode;
@@ -4721,6 +4721,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       v.load();
     }
     v.muted = audMuted || !!(musicUrl || ttsUrl || voiceUrl);
+    try { v.playbackRate = activeVideoInfo.speed; } catch {}
     if (v.readyState >= 1) {
       const target = Math.max(0, activeVideoInfo.localT);
       if (Math.abs((v.currentTime || 0) - target) > 0.18) {
@@ -4729,7 +4730,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     if (playing) void v.play().catch(() => {});
     else v.pause();
-  }, [activeVideoInfo?.url, activeVideoInfo?.localT, nativeVideoMode, playing, audMuted, musicUrl, ttsUrl, voiceUrl]);
+  }, [activeVideoInfo?.url, activeVideoInfo?.localT, activeVideoInfo?.speed, nativeVideoMode, playing, audMuted, musicUrl, ttsUrl, voiceUrl]);
 
   return (
     <div className="v6e-root">
