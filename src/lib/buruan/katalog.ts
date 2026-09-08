@@ -156,15 +156,15 @@ const KATALOG_ASLI: Kasar[] = [
   /* 🎬 v19.35.3: Seedance — terverifikasi masih gratis (2026) */
   K({
     id: "seedance", nama: "Seedance (ByteDance)", url: "https://seedance.ai", kategori: "gambar-video",
-    gratis: "100 kredit/hari (di-refresh), 1080p TANPA watermark", jenis: "harian",
-    syarat: "Email doang", mudah: 5, stabil: "stabil",
-    tags: ["gambar bergerak", "tanpa watermark", "1080p", "text-to-video"],
-    desc: "Model video ByteDance — salah satu free tier TERBAIK 2026: 100 kredit harian, hasil 1080p dan TANPA watermark. Ini yang paling layak dicoba dulu.",
+    gratis: "Kredit gratis saat daftar + kredit harian (jumlah/fitur bergantung akun & region)", jenis: "harian",
+    syarat: "Email doang", mudah: 5, stabil: "cek",
+    tags: ["gambar bergerak", "text-to-video", "image-to-video"],
+    desc: "Mulai gratis untuk image/text-to-video. Jumlah kredit, resolusi, watermark, dan model bisa berbeda menurut akun/region—cek dashboard sebelum produksi banyak.",
     tutorial: [
-      { t: "Buka https://seedance.ai — daftar dengan email (tanpa kartu)." },
-      { t: "Login → klaim 100 kredit harian (biasanya otomatis di dashboard)." },
-      { t: "Pilih Image to Video → upload gambar → atur gerakan → Generate." },
-      { t: "Download (1080p, tanpa watermark) → upload di Verve (AutoCut) → edit & render." },
+      { t: "Buka https://www.seedance.ai — daftar dengan email." },
+      { t: "Cek saldo dan syarat free tier di dashboard (jangan mengandalkan angka promosi lama)." },
+      { t: "Pilih Image to Video atau Text to Video → Generate → download hasil." },
+      { t: "Upload hasilnya ke Verve untuk diedit, diberi lirik, atau dirender ulang." },
     ],
   }),
   K({
@@ -342,6 +342,18 @@ const KATALOG_ASLI: Kasar[] = [
       { t: "Buka https://invideo.io — daftar." },
       { t: "Ketik ide/naskah → InVideo rakit video otomatis." },
       { t: "Export (ada watermark di free) → potong/olah lagi di Verve." },
+    ],
+  }),
+  K({
+    id: "fliki", nama: "Fliki AI", url: "https://fliki.ai/features/ai-video-generator", kategori: "gambar-video",
+    gratis: "3 menit video/bulan, tanpa kartu (watermark kecil)", jenis: "bulanan",
+    syarat: "Email doang", berlaku: "3 menit/bulan", mudah: 5, stabil: "stabil",
+    tags: ["video otomatis", "naskah", "voiceover", "stock footage", "shorts"],
+    desc: "Tulis ide atau naskah → Fliki menyusun video, suara AI, stock footage, caption, dan musik. Cocok untuk produksi cepat; free export memakai watermark.",
+    tutorial: [
+      { t: "Buka https://fliki.ai/features/ai-video-generator — daftar tanpa kartu." },
+      { t: "Masukkan naskah/ide → pilih suara dan gaya visual → Generate." },
+      { t: "Download hasilnya → upload ke Verve untuk dipoles, diberi Spectrum, atau dirender ulang." },
     ],
   }),
   K({

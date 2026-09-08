@@ -118,6 +118,13 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
     });
   }, [items, q, kat, hanyaStabil, laporMap]);
 
+  // Rekomendasi cepat selalu memakai item kurasi lokal, bukan hasil parser
+  // komunitas yang kadang namanya tidak jelas atau link-nya sudah mati.
+  const videoPicks = useMemo(() => {
+    const order = ["fliki", "viggle", "pixverse", "kling", "seedance", "vidu"];
+    return order.map((id) => items.find((item) => item.id === id)).filter(Boolean) as BuruanItem[];
+  }, [items]);
+
   /* 🎯 Panduan cepat per kebutuhan — pilih "mau bikin apa" → langsung set kategori + pencarian.
      🐛 v19.54 FIX: dulu cuma set q (mis. "musik") padahal teks item Suno/Udio TIDAK mengandung
      kata "musik" → tombol panduan tidak nemu apa-apa. Sekarang set kategori juga. */
@@ -296,6 +303,19 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
             </button>
           ))}
         </div>
+        {!!videoPicks.length && !q && !kat && (
+          <div className="v6-buruan-picks">
+            <div className="v6-lbl">🚀 MULAI DARI SINI · VIDEO AI GRATIS</div>
+            <p>Daftar di situs resmi, klaim kredit/kuota, lalu download hasilnya ke Verve. Jumlah gratis bisa berubah menurut negara dan akun—cek saldo sebelum produksi.</p>
+            <div className="v6-buruan-pick-grid">
+              {videoPicks.slice(0, 6).map((item) => (
+                <button key={item.id} onClick={() => setDetail(item)}>
+                  <b>{item.nama}</b><small>{item.gratis}</small><span>📖 Lihat panduan →</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <input className="v6-inp" style={{ marginTop: 10 }} placeholder="🔎 Cari bebas: groq, gambar bergerak, avatar, musik…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="v6-chips" style={{ padding: 0, flexWrap: "wrap", marginTop: 6 }}>
           <button className={`v6-chip ${kat === "" ? "on" : ""}`} onClick={() => setKat("")}>Semua ({items.length})</button>

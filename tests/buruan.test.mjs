@@ -22,6 +22,8 @@ console.log("🏹 Menguji Bot Buruan AI");
 const kurasi = katalogKurasi();
 T("katalog kurasi ≥ 30 item (diperdalam)", kurasi.length >= 30, `${kurasi.length} item`);
 T("item gambar-video ≥ 15 (video AI dalam)", kurasi.filter((i) => i.kategori === "gambar-video").length >= 15, `${kurasi.filter((i) => i.kategori === "gambar-video").length} item`);
+T("Fliki gratis masuk katalog video", kurasi.some((i) => i.id === "fliki" && i.gratis.includes("3 menit")));
+
 T("semua item kurasi punya tutorial ≥ 2 langkah", kurasi.every((i) => i.tutorial.length >= 2));
 T("skor mudah semua 1..5", kurasi.every((i) => i.mudah >= 1 && i.mudah <= 5));
 T("item chat OpenAI-compatible punya baseUrl", kurasi.filter((i) => i.kategori === "chat").every((i) => !!i.baseUrl), `${kurasi.filter((i) => i.kategori === "chat").length} item chat`);
@@ -35,7 +37,7 @@ T("ElevenLabs & NVIDIA video = api", kurasi.filter((i) => i.id === "elevenlabs" 
 const { tandaiLapor, hapusLapor, STABIL_LABEL } = await import(enc(transpile("../src/lib/buruan/types.ts")));
 T("semua item punya stabil valid", kurasi.every((i) => ["stabil", "ubah", "cek"].includes(i.stabil)));
 T("Hailuo ditandai 'ubah' (jujur — daily credits pernah dihapus)", kurasi.find((i) => i.id === "hailuo")?.stabil === "ubah");
-T("Seedance (baru) stabil & gratis tanpa watermark", kurasi.find((i) => i.id === "seedance")?.stabil === "stabil" && (kurasi.find((i) => i.id === "seedance")?.gratis || "").includes("TANPA watermark"));
+T("Seedance (baru) gratis dengan syarat dicek jujur", kurasi.find((i) => i.id === "seedance")?.stabil === "cek" && (kurasi.find((i) => i.id === "seedance")?.gratis || "").includes("jumlah/fitur bergantung"));
 T("tandaiLapor menambah timestamp", !!tandaiLapor({}, "x")["x"]);
 T("hapusLapor menghapus", !("x" in hapusLapor({ x: 1 }, "x")));
 T("STABIL_LABEL lengkap", STABIL_LABEL.stabil && STABIL_LABEL.ubah && STABIL_LABEL.cek);
