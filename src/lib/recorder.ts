@@ -64,6 +64,11 @@ export interface RenderOptions {
   sharpen?: boolean;          // "Peningkat Ketajaman" (SVG convolve filter)
   onProgress?: (p: number) => void;
   onStage?: (s: string) => void;
+  /** OPFS/disk sink untuk render panjang; mencegah MP4 menumpuk di RAM. */
+  fileSink?: {
+    stream: any;
+    getFile: () => Promise<Blob>;
+  };
 }
 
 // ===== CapCut-style Text Layer =====
@@ -1985,7 +1990,7 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     (opts.slideOpts || []).forEach(o => (o?.stickers || []).forEach(st => { if ((st as any).img) stickerUrls.push((st as any).img); if ((st as any).videoUrl) stickerVidUrls.push((st as any).videoUrl); }));
   } catch {}
 
-  const [imgs, audio, _, logoImg] = await Promise.all([
+  const [imgs, audio, _stickerImgs, _stickerVids, logoImg] = await Promise.all([
     prepareImages(images, rW, rH, onStage, !!opts.sharpen),
     audioUrl ? decodeAudio(audioUrl, onStage).catch(() => null) : Promise.resolve(null),
     stickerUrls.length ? preloadStickerImages([...new Set(stickerUrls)]).catch(() => null) : Promise.resolve(null),
@@ -2079,13 +2084,17 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
     }
   }
 
-  let Mp4Muxer: any = null, MuxTarget: any = null;
+  let Mp4Muxer: any = null, MuxTarget: any = null, MuxFileTarget: any = null;
   try{
     const mod = await import("mp4-muxer").catch(()=>null);
     Mp4Muxer = mod?.Muxer || (window as any).Mp4Muxer || (window as any).MP4Muxer;
     // ArrayBufferTarget adalah EKSPOR TERPISAH dari Muxer (bukan properti!) — wajib ditangkap sendiri
     MuxTarget = mod?.ArrayBufferTarget || null;
+    MuxFileTarget = mod?.FileSystemWritableFileStreamTarget || null;
   }catch{}
+  if (opts.fileSink && (!MuxFileTarget || !Mp4Muxer || !MuxTarget || !supportsWebCodecs())) {
+    throw new Error("Renderer panjang membutuhkan WebCodecs + OPFS/FileSystemWritableFileStream yang tidak tersedia di browser ini.");
+  }
 
   const sharedV5 = {
     timeline, slideOpts,
@@ -2106,6 +2115,8 @@ export async function renderSlideshow(opts: RenderOptions): Promise<Blob> {
       spectrumSticker: opts.spectrumSticker,
       textLayers: opts.textLayers,
       mobileOptimized, // 🩹 Pass mobileOptimized to WebCodecs renderer
+      fileSink: opts.fileSink,
+      MuxFileTarget,
       ...sharedV5,
     } as any);
   }
@@ -2143,7 +2154,7 @@ interface RenderBase {
 }
 
 async function renderWebCodecs(b:any){
-  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,MuxTarget,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt,mobileOptimized} = b;
+  const {canvas,imgs,audio,fps,totalFrames,totalDur,slideDur,transDur,prof,rgb,vizStyle,vizColor,title,transition,spec,particles,onProgress,onStage,Mp4Muxer,MuxTarget,MuxFileTarget,fileSink,logoImg,logoPos,captions,captionStyle,showTitle,timeline,slideOpts,grainAmt,mobileOptimized} = b;
 
   // v8.1: PROBE dukungan encoder HP dulu (isConfigSupported) — sebelumnya codec dipatok
   // avc1.42001f (level 3.1) yang secara spesifikasi tidak sah untuk 1080p+, sehingga sebagian
@@ -2178,9 +2189,14 @@ async function renderWebCodecs(b:any){
   onStage?.(`⚡ Mesin MP4 NGEBUT v8.7 (${canvas.width}x${canvas.height} @${fps}fps${aCfg ? " + audio" : ""}) — cache bingkai aktif`);
   if (audio && !aCfg) onStage?.("⚠️ Encoder audio HP menolak — video tanpa suara. Coba render ulang.");
 
+  const muxTarget = fileSink
+    ? new MuxFileTarget(fileSink.stream, { chunkSize: 16 * 1024 * 1024 })
+    : new MuxTarget();
   const muxer = new Mp4Muxer({
-    target: new MuxTarget(),
-    fastStart:"in-memory",
+    target: muxTarget,
+    // Render panjang ditulis fragmented langsung ke OPFS; render pendek tetap
+    // memakai target in-memory agar perilaku lama dan download cepat terjaga.
+    fastStart: fileSink ? "fragmented" : "in-memory",
     video:{codec:"avc",width:canvas.width,height:canvas.height},
     // STEREO 44100Hz — kompatibel dengan SEMUA HP Android/iOS/WhatsApp/YouTube
     audio: aCfg?{codec:"aac",sampleRate:audio.sampleRate,numberOfChannels:audio.channels||2}:undefined,
@@ -2245,6 +2261,11 @@ async function renderWebCodecs(b:any){
         if (nCh>1) buf[frameSize+i] = (sR[sampleIdx]||0) * fadeFactor;
       }
       const ad=new (window as any).AudioData({format:"f32-planar",sampleRate:audio.sampleRate,numberOfFrames:frameSize,numberOfChannels:nCh,timestamp:(offset/audio.sampleRate)*1e6,data:buf});
+      // Backpressure audio: tanpa batas ini, lagu panjang menumpuk ribuan
+      // AudioData di antrean encoder dan HP bisa OOM menjelang render selesai.
+      while ((audioEncoder as any).encodeQueueSize > 40) {
+        await new Promise(r => setTimeout(r, mobileOptimized ? 10 : 1));
+      }
       audioEncoder.encode(ad); ad.close(); offset+=frameSize;
     }
     audioEncoder.flush().then(audioResolve);
@@ -2476,7 +2497,11 @@ async function renderWebCodecs(b:any){
 
     onProgress?.(1); onStage?.("✅ Selesai!");
     const __fd = (ms:number)=> (ms/1000).toFixed(1)+"d";
-    onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup} · mesin WEBCODECS(prefer-hw)`); // ⚡ v13.10: label mesin permanen utk diagnosa
+    onStage?.(`⏱ Telemetri: total ${__fd(performance.now()-tStart)} · lukis ${__fd(msPaint)} · capture ${__fd(msCap)} · antre-encoder ${__fd(msWait)} · unik ${encFrames}/${totalFrames} · skip ${skippedDup} · mesin WEBCODECS(prefer-hw)${fileSink ? " · OPFS" : ""}`); // ⚡ v13.10
+    if (fileSink) {
+      await fileSink.stream.close();
+      return await fileSink.getFile();
+    }
     return new Blob([muxer.target.buffer],{type:"video/mp4"});
   } finally {
     // 📦 v15.4B MEMORY CLEANUP: Pause video decks and revoke Blob URLs immediately to prevent OOM crash in Chrome on mobile

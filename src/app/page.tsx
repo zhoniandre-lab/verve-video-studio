@@ -4042,6 +4042,39 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }
 
   /* ---------- RENDER VIDEO ---------- */
+  type EditorRenderDisk = {
+    name: string;
+    stream: any;
+    getFile: () => Promise<Blob>;
+    abort: () => Promise<void>;
+    remove: () => Promise<void>;
+  };
+
+  /** OPFS sink untuk render editor panjang. Target ini membuat muxer menulis
+   *  potongan MP4 ke storage browser, bukan menumpuk seluruh output di RAM. */
+  async function bukaEditorRenderDisk(label: string): Promise<EditorRenderDisk | null> {
+    try {
+      const storage = (navigator as any)?.storage;
+      if (!storage?.getDirectory) return null;
+      void storage.persist?.().catch?.(() => {});
+      const root = await storage.getDirectory();
+      const safe = label.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 18) || "editor";
+      const name = `verve_editor_${safe}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp4`;
+      const handle = await root.getFileHandle(name, { create: true });
+      const stream = await handle.createWritable();
+      return {
+        name,
+        stream,
+        getFile: async () => handle.getFile(),
+        abort: async () => { try { await stream.abort(); } catch { try { await stream.close(); } catch {} } },
+        remove: async () => { try { await root.removeEntry(name); } catch {} },
+      };
+    } catch (e: any) {
+      setStageText(`⚠️ Storage render panjang tidak tersedia: ${String(e?.message || e).slice(0, 80)}`);
+      return null;
+    }
+  }
+
   async function doRender() {
     if (!slides.length) return setErr({ message: "Belum ada media — tambahkan klip dulu" });
     setLoading("render"); setError(""); setProgress(0);
@@ -4057,6 +4090,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const jobSet = (j: GuardJob) => { job = j; putGuardJob(j); };
     jobSet(setJobStage(job, "prepare", "running", "Menyiapkan font, wake-lock, dan media"));
     let wakeLock: any = null;
+    let diskRender: EditorRenderDisk | null = null;
     let lastBeat = 0; let rendering = false; let relock: any = null; let macetItv: any = null; // 🛡 v14.7 RENDER JAGA
     try {
       await ensureFontsLoaded().catch(() => {});
@@ -4108,7 +4142,20 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         const eta = Math.ceil((dt / Math.max(p, 0.01)) * (1 - p));
         return formatDur(Math.max(0, Math.min(eta, 5999)));
       };
-      if (job) jobSet(setJobStage(job, "render", "running", `Render ${exRes}p/${exFps}fps dimulai`));
+      const durGuess = Math.max(
+        clipsTotal,
+        musicOff + musicDur,
+        ttsOff + ttsDur,
+        voiceOff + voiceDur,
+      );
+      // Render editor >10 menit tidak lagi menumpuk MP4 raksasa di RAM.
+      // Jika OPFS tidak tersedia, berhenti jelas daripada mengambil risiko tab OOM.
+      if (durGuess > 10 * 60) {
+        diskRender = await bukaEditorRenderDisk(projTitle || "long");
+        if (!diskRender) throw new Error("Render panjang membutuhkan storage browser/OPFS. Aktifkan Chrome terbaru atau turunkan durasi lalu render per bagian.");
+        setStageText("🛡️ Render panjang memakai OPFS — output ditulis bertahap, bukan menumpuk di RAM");
+      }
+      if (job) jobSet(setJobStage(job, "render", "running", `Render ${exRes}p/${exFps}fps${diskRender ? " · OPFS" : ""} dimulai`));
       const blob = await renderSlideshow({
         images: useSlides.map(s => slideImageSource(s)),
         videos: useSlides.map(s => slideVideoSource(s) || null), // 🎬 v11.8 + vault: klip asli ikut di-render
@@ -4136,13 +4183,19 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         bgMode, bgColor,
         sharpen: qualitySharp,
         mobileOptimized: isMobile,
+        fileSink: diskRender || undefined,
         onProgress: (p: number) => { lastBeat = performance.now(); /* 🛡 v14.7 denyut */ if (!rEta0 && p > 0) rEta0 = performance.now(); setProgress(p); if (p > 0.005 && p < 0.98) setStageText(`⚡ Rendering ${Math.round(p * 100)}% · ± sisa ${renderEta(p)}`); const jp = Math.floor(p * 10) * 10; if (job && jp >= lastJobPct + 10) { lastJobPct = jp; job = { ...job, current: "render", progress: Math.max(job.progress, Math.min(95, 30 + Math.round(p * 65))), updatedAt: Date.now() }; putGuardJob(job); } },
         onStage: (s: string) => setStageText(s),
       } as any);
       // v8.1 SANITY: file super-kecil untuk durasi panjang = render busuk (frame kosong)
-      const durGuess = Math.max(clipsTotal || 0, musicDur || 0);
-      if (durGuess > 15 && blob.size < 150_000) {
-        throw new Error(`File render cuma ${(blob.size / 1024).toFixed(0)} KB untuk video ${Math.round(durGuess)} detik — ada yang ganjil. Coba Render Ulang ya bro.`);
+      const durRenderedGuess = Math.max(clipsTotal || 0, musicDur || 0);
+      if (durRenderedGuess > 15 && blob.size < 150_000) {
+        throw new Error(`File render cuma ${(blob.size / 1024).toFixed(0)} KB untuk video ${Math.round(durRenderedGuess)} detik — ada yang ganjil. Coba Render Ulang ya bro.`);
+      }
+      if (diskRender) {
+        const finishedDisk = diskRender;
+        diskRender = null;
+        void finishedDisk.remove(); // Blob sudah dibaca; hapus file sementara agar OPFS tidak menumpuk.
       }
       if (job) jobSet(setJobStage(job, "render", "done", `Blob ${(blob.size / 1048576).toFixed(1)}MB jadi`));
       if (job) jobSet(setJobStage(job, "package", "running", "Menyimpan hasil ke brankas"));
@@ -4154,7 +4207,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       setProgress(1); flash("✅ Video selesai!");
       persistSnapshot(true);
       genMetadata().catch(() => {});
-    } catch (e: any) { if (job) jobSet(failJob(job, job.current || "render", e?.message || String(e || "render gagal"))); setErr(e); }
+    } catch (e: any) {
+      if (diskRender) {
+        const failedDisk = diskRender;
+        diskRender = null;
+        await failedDisk.abort();
+        await failedDisk.remove();
+      }
+      if (job) jobSet(failJob(job, job.current || "render", e?.message || String(e || "render gagal")));
+      setErr(e);
+    }
     finally { rendering = false; if (relock) document.removeEventListener("visibilitychange", relock); if (macetItv) clearInterval(macetItv); try { wakeLock?.release?.(); } catch {} } // 🛡 v14.7: jagaan dicopot rapi
     setLoading(null); setTimeout(() => setStageText(""), 2500);
   }
