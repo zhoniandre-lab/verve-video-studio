@@ -9,7 +9,7 @@ T("musik lokal masuk ke media vault", /const assetId = await putMediaAsset\(f, f
 const uploadBlock = page.match(/async function uploadMusic[\s\S]*?async function mixAudioUrls/)?.[0] || "";
 T("musik lokal memakai Blob URL, bukan data URL besar", /const u = URL\.createObjectURL\(f\)/.test(uploadBlock) && !/readAsDataURL/.test(uploadBlock));
 T("asset musik disimpan di snapshot", /musicUrl, musicAssetId, musicName/.test(page));
-T("toolbar klip utama diringkas", /\["split", "pangkas", "ganti", "teks", "stiker", "speed", "transisi"\]/.test(page));
+T("toolbar klip utama diringkas", /\["split", "pangkas", "hapus", "ganti", "teks", "stiker", "speed", "transisi"\]/.test(page));
 T("fitur tambahan tetap tersedia lewat Lainnya", /clipMoreOpen[\s\S]*\["animasi", "efek", "gambarai", "hapus", "dup", "geserkir", "geserkan"\]/.test(page));
 
 if (failed) process.exit(1);

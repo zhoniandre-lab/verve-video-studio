@@ -4794,7 +4794,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {CLIP_TOOLS.filter(t => ["split", "pangkas", "ganti", "teks", "stiker", "speed", "transisi"].includes(t.id)).map(t => (
+            {CLIP_TOOLS.filter(t => ["split", "pangkas", "hapus", "ganti", "teks", "stiker", "speed", "transisi"].includes(t.id)).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
