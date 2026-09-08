@@ -257,7 +257,9 @@ function drawCoverToCanvas(img: HTMLImageElement, W: number, H: number): HTMLCan
   const cx = c.getContext("2d", { alpha:false, desynchronized:true })!;
   cx.fillStyle="#000"; cx.fillRect(0,0,W,H);
   cx.imageSmoothingEnabled = true;
-  cx.imageSmoothingQuality = "low"; // bilinear cukup — sumber AI umumnya 1024px
+  // Sumber asli sekarang dipertahankan oleh media vault; gunakan resampling kualitas
+  // tinggi untuk gambar statis agar hasil 1080p tidak tampak pecah/buram.
+  cx.imageSmoothingQuality = "high";
   cx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
   return c;
 }
