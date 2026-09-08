@@ -396,7 +396,6 @@ function HomeDash({ drafts, go, gotoEditor }: { drafts: Draft0[]; go: (s: Screen
     { ic: "📷", lb: "Kamera AI", act: () => gotoEditor(undefined, { tool: "kamera", newProject: Date.now() }) },
     { ic: "✨", lb: "Sempurnakan", act: () => gotoEditor(undefined, { applyAdjust: Date.now() }) },
     { ic: "💬", lb: "Keterangan", act: () => gotoEditor(undefined, { tool: "keterangan" }) },
-    { ic: "🫥", lb: "Hapus Latar", act: () => alert("🫥 Hapus latar otomatis butuh layanan khusus — untuk sekarang gunakan stiker/overlay kustom ya bro. Versi ini akan hadir berikutnya!") },
     { ic: "📝", lb: "Transkrip", act: () => go("transkrip") },
     { ic: "🏹", lb: "Bot Buruan", bb: "NEW", act: () => { location.href = "/buruan"; } },
     { ic: "💎", lb: "Jualan", bb: "DEMO", act: () => { location.href = "/jualan"; } },
