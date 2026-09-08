@@ -4,6 +4,7 @@ import { renderSlideshow, downloadBlob, vidPlan, vidLoopPrev } from "@/lib/recor
 import { transcribeBlobBesar, ccDiagMulai, ccDiag, ccDiagBaca } from "@/lib/audiocc";
 import { renderGif } from "@/lib/gif";
 import { avWarm, avPut } from "@/lib/avault";
+import { getMediaAsset, putMediaAsset } from "@/lib/media-vault";
 import { getAudioPeaks, estimateBeats } from "@/lib/waveform";
 import SpectrumStudio from "./spectrum-studio";
 import LahanStudio from "./lahan-studio";
@@ -37,7 +38,7 @@ import type { SlideOpt, ClipText, AdjustState, Timeline, CapWord, StickerItem } 
    resolusi kustom) + Spectrum Studio (modul terpisah).
    ===================================================================== */
 
-interface Slide { id: string; imageUrl: string; videoUrl?: string; dur?: number; } // 🎬 v11.8: klip video AI opsional (Animasi Studio lewat chat Sutradara)
+interface Slide { id: string; imageUrl: string; videoUrl?: string; dur?: number; assetId?: string; } // 🎬 v11.8 + vault: poster/preview terpisah dari file asli
 interface Draft0 { id: string; title: string; slides: number; updatedAt: number; thumb?: string; }
 type ScreenId = "home" | "template" | "lab" | "proyek" | "saya" | "editor" | "spectrum" | "editfoto" | "transkrip" | "lahan" | "growth" | "thumbnail";
 
@@ -1282,10 +1283,13 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [cloudBackups, setCloudBackups] = useState<any[]>([]);
   const [cloudListOpen, setCloudListOpen] = useState(false);
   useEffect(() => {
-    return () => {
-      if (videoUrl) { try { URL.revokeObjectURL(videoUrl); } catch {} }
-    };
+    return () => { if (videoUrl) { try { URL.revokeObjectURL(videoUrl); } catch {} } };
   }, [videoUrl]);
+  useEffect(() => () => {
+    mediaAssetUrlsRef.current.forEach((url) => { try { URL.revokeObjectURL(url); } catch {} });
+    mediaAssetUrlsRef.current.clear();
+    mediaAssetLoadsRef.current.clear();
+  }, []);
   /* ---------- ekspor v6 ---------- */
   const [tlPxs, setTlPxs] = useState(() => { try { return Number(localStorage.getItem("verve_tl_scale")) || 72; } catch { return 72; } }); // v15.2B CapCut-style
   useEffect(() => { try { localStorage.setItem("verve_tl_scale", String(tlPxs)); } catch {} }, [tlPxs]);
@@ -1437,6 +1441,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const imgsRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  // 📦 Media vault: assetId menunjuk Blob asli di IndexedDB; URL blob hanya hidup di sesi ini.
+  const mediaAssetUrlsRef = useRef<Map<string, string>>(new Map());
+  const mediaAssetLoadsRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const vidsRef = useRef<Map<string, HTMLVideoElement>>(new Map()); // 🎬 v11.8
   const vidBufRef = useRef<(HTMLCanvasElement | null)[]>([null, null]); // 🎬 v11.8: 2 buffer (cur + nxt saat transisi)
   const musicEl = useRef<HTMLAudioElement | null>(null);
@@ -1450,6 +1457,39 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const slidesRef = useRef(slides); useEffect(() => { slidesRef.current = slides; }, [slides]);
   const curTRef = useRef(0); useEffect(() => { curTRef.current = curT; }, [curT]);
   const durTRef = useRef(0); useEffect(() => { durTRef.current = durT; }, [durT]);
+
+  function slideImageSource(slide: Slide): string {
+    return (slide.assetId && mediaAssetUrlsRef.current.get(slide.assetId)) || slide.imageUrl || "";
+  }
+  function slideVideoSource(slide: Slide): string {
+    return (slide.assetId && mediaAssetUrlsRef.current.get(slide.assetId)) || slide.videoUrl || "";
+  }
+  async function hydrateMediaAssets(items: Slide[]): Promise<void> {
+    const jobs: Promise<string | null>[] = [];
+    for (const item of items) {
+      const id = item?.assetId;
+      if (!id || mediaAssetUrlsRef.current.has(id)) continue;
+      let job = mediaAssetLoadsRef.current.get(id);
+      if (!job) {
+        job = getMediaAsset(id).then((blob) => {
+          if (!blob) return null;
+          const url = URL.createObjectURL(blob);
+          mediaAssetUrlsRef.current.set(id, url);
+          return url;
+        }).catch(() => null);
+        mediaAssetLoadsRef.current.set(id, job);
+      }
+      jobs.push(job);
+    }
+    if (jobs.length) {
+      await Promise.all(jobs);
+      try { requestAnimationFrame(() => drawFrameRefCb.current(curTRef.current)); } catch {}
+    }
+  }
+  useEffect(() => {
+    void hydrateMediaAssets(slides);
+    return () => {};
+  }, [slides]);
   const optsRef = useRef(slideOptsById); useEffect(() => { optsRef.current = slideOptsById; }, [slideOptsById]);
   const adjRef = useRef(adj); useEffect(() => { adjRef.current = adj; }, [adj]);
   const filterRef = useRef(filterPreset); useEffect(() => { filterRef.current = filterPreset; }, [filterPreset]);
@@ -1803,16 +1843,18 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const L = locate(tl, tt);
     const optCur = optsRef.current[sl[L.idx].id] || null;
     const optNxt = sl[L.nextIdx] ? optsRef.current[sl[L.nextIdx].id] : null;
-    const cur = getImage(sl[L.idx].imageUrl);
-    const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(sl[L.nextIdx].imageUrl) : null;
+    const cur = getImage(slideImageSource(sl[L.idx]));
+    const nxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? getImage(slideImageSource(sl[L.nextIdx])) : null;
     // 🎬 v11.8 + 🌀🌉 v13.15/16: DECK KEMBAR untuk slide AKTIF & BERIKUTNYA. Isi dihitung dari WAKTU
     // MUNCUL VISUAL (tt − start + transDur sebelum), BUKAN clipT yang dijepit → video lama tak membeku
     // saat dissolve, video baru masuk nyambung (rate & posisi menerus), nol rewind di serah-terima.
     const slNow = sl[L.idx];
     const spdC = (optCur as any)?.spd || 1;
-    const pr = slNow.videoUrl ? getDeckPair(slNow.id, slNow.videoUrl!) : null;
+    const slVideoNow = slideVideoSource(slNow);
+    const pr = slVideoNow ? getDeckPair(slNow.id, slVideoNow) : null;
     const slNxt = (L.nextIdx !== L.idx && sl[L.nextIdx]) ? sl[L.nextIdx] : null;
-    const prN = slNxt?.videoUrl ? getDeckPair(slNxt.id, slNxt.videoUrl!) : null;
+    const slVideoNext = slNxt ? slideVideoSource(slNxt) : "";
+    const prN = slNxt && slVideoNext ? getDeckPair(slNxt.id, slVideoNext) : null;
     let curDraw: any = cur; let nxtDraw: any = nxt;
     if (pr || prN) {
       const roleOf = (pair: { a: HTMLVideoElement; b: HTMLVideoElement } | null, stVisual: number, slot: number, spd: number): { role: PrevRole; rate: number } => {
@@ -2800,76 +2842,81 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   function addImageFiles(files: FileList | null, replaceId?: string) {
     if (!files || !files.length) return;
     pushHist();
-    Promise.all(Array.from(files).slice(0, 14).map(f => new Promise<Slide>((res) => {
+    const importOne = async (f: File): Promise<Slide | null> => {
+      // 📦 Simpan file asli ke IndexedDB. Preview tetap ringan, tetapi preview/render
+      // bisa mengambil Blob asli sehingga gambar tidak dipaksa menjadi JPEG 2048px.
+      const assetId = await putMediaAsset(f, f.name);
+      const localUrl = URL.createObjectURL(f);
+      if (assetId) mediaAssetUrlsRef.current.set(assetId, localUrl);
+
       if (f.type.startsWith("video/")) {
-        // ⚡ OPTIMIZE: Tambah penanganan upload file video lokal!
-        // Membuat URL Blob untuk file video, lalu memuat metadata video tersebut dan mengambil frame pertamanya
-        // untuk dirender di kanvas sebagai gambar sampul/poster (imageUrl) agar terintegrasi sempurna di editor.
-        const video = document.createElement("video");
-        video.preload = "auto";
-        video.muted = true;
-        video.playsInline = true;
-        const videoUrl = URL.createObjectURL(f);
-        video.src = videoUrl;
-
-        // ⚡ OPTIMIZE: Lakukan seek ke detik 0.1 untuk memaksa decoder browser memproses dan menampilkan frame pertama video asli (mencegah poster hitam!)
-        video.onloadedmetadata = () => {
-          video.currentTime = 0.1;
-        };
-
-        video.onseeked = () => {
-          const c = document.createElement("canvas");
-          const W = video.videoWidth || 640;
-          const H = video.videoHeight || 360;
-          c.width = W; c.height = H;
-          const cx = c.getContext("2d")!;
-          cx.drawImage(video, 0, 0, W, H);
-          const imageUrl = c.toDataURL("image/jpeg", 0.85);
-          res({
-            id: uid("upvid"),
-            imageUrl,
-            videoUrl,
-            dur: video.duration || 3 // ⚡ OPTIMIZE: Ambil durasi asli file video dari HP!
-          });
-        };
-        video.onerror = () => {
-          res({ id: uid("badvid"), imageUrl: "" });
-        };
-      } else {
-        const r = new FileReader();
-        r.onload = () => {
-          const img = new Image();
-          const mime = (f.type === "image/png" || f.type === "image/webp") ? f.type : "image/jpeg";
-          img.onload = () => res({ id: uid("up"), imageUrl: fitMax(img, 2048, mime) });
-          img.onerror = () => res({ id: uid("bad"), imageUrl: "" });
-          img.src = r.result as string;
-        };
-        r.readAsDataURL(f);
+        return await new Promise<Slide | null>((resolve) => {
+          const video = document.createElement("video");
+          video.preload = "auto";
+          video.muted = true;
+          video.playsInline = true;
+          video.src = localUrl;
+          video.onloadedmetadata = () => { video.currentTime = Math.min(0.1, Math.max(0, (video.duration || 0) / 10)); };
+          video.onseeked = () => {
+            const c = document.createElement("canvas");
+            const W = video.videoWidth || 640;
+            const H = video.videoHeight || 360;
+            c.width = W; c.height = H;
+            const cx = c.getContext("2d")!;
+            cx.imageSmoothingEnabled = true;
+            cx.imageSmoothingQuality = "high";
+            cx.drawImage(video, 0, 0, W, H);
+            resolve({ id: uid("upvid"), imageUrl: c.toDataURL("image/jpeg", 0.92), videoUrl: localUrl, dur: video.duration || 3, ...(assetId ? { assetId } : {}) });
+          };
+          video.onerror = () => {
+            if (assetId) mediaAssetUrlsRef.current.delete(assetId);
+            try { URL.revokeObjectURL(localUrl); } catch {}
+            resolve(null);
+          };
+        });
       }
-    }))).then(ss => {
-      ss = ss.filter(s => s.imageUrl);
-      if (!ss.length) return;
 
-      // ⚡ OPTIMIZE: Daftarkan durasi asli video langsung ke dalam pengaturan klip slide!
+      const dataUrl = await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(f);
+      });
+      if (!dataUrl) {
+        if (assetId) mediaAssetUrlsRef.current.delete(assetId);
+        try { URL.revokeObjectURL(localUrl); } catch {}
+        return null;
+      }
+      const img = await new Promise<HTMLImageElement | null>((resolve) => {
+        const next = new Image();
+        next.onload = () => resolve(next);
+        next.onerror = () => resolve(null);
+        next.src = dataUrl;
+      });
+      if (!img) {
+        if (assetId) mediaAssetUrlsRef.current.delete(assetId);
+        try { URL.revokeObjectURL(localUrl); } catch {}
+        return null;
+      }
+      return { id: uid("up"), imageUrl: fitMax(img, 2048, f.type === "image/png" || f.type === "image/webp" ? f.type : "image/jpeg"), ...(assetId ? { assetId } : {}) };
+    };
+
+    void Promise.all(Array.from(files).slice(0, 14).map(importOne)).then((raw) => {
+      const ss = raw.filter(Boolean) as Slide[];
+      if (!ss.length) { flash("⚠️ Tidak ada media yang bisa dibaca browser"); return; }
       setSlideOptsById(cur => {
         const next = { ...cur };
         ss.forEach(s => {
-          if (s.videoUrl && typeof s.dur === "number") {
-            next[s.id] = {
-              ...(next[s.id] || {}),
-              dur: Math.round(s.dur * 100) / 100 // Gunakan durasi asli video
-            };
-          }
+          if (s.videoUrl && typeof s.dur === "number") next[s.id] = { ...(next[s.id] || {}), dur: Math.round(s.dur * 100) / 100 };
         });
         return next;
       });
-
       if (replaceId) {
-        setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: ss[0].imageUrl, videoUrl: ss[0].videoUrl } : s));
-        flash("⇄ Media diganti");
+        setSlides(c => c.map(s => s.id === replaceId ? { ...s, imageUrl: ss[0].imageUrl, videoUrl: ss[0].videoUrl, assetId: ss[0].assetId } : s));
+        flash("⇄ Media diganti — file asli dipertahankan di brankas bila tersedia");
       } else {
         setSlides(c => [...c, ...ss]);
-        flash(`✅ ${ss.length} media ditambahkan`);
+        flash(`✅ ${ss.length} media ditambahkan — file asli dipertahankan di brankas bila tersedia`);
       }
     });
   }
@@ -4010,8 +4057,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       // 🛡 (c) DETEKTOR MACET JUJUR: frame diam >4dtk saat layar terlihat = dikabari manusiawi, tak lagi diam membisu
       macetItv = setInterval(() => { const diam = (performance.now() - lastBeat) / 1000; if (rendering && diam > 4 && document.visibilityState === "visible") setStageText(`⚠️ Render tampak macet ${Math.round(diam)} dtk — usahakan TIDAK pindah aplikasi; kalau diam terus, ulangi render ya bro`); }, 1500);
       // v8.1: lewati klip tanpa gambar (dataURL raksasa dipangkas hemat memori saat simpan draf)
-      const useSlides = slides.filter(s => s.imageUrl && s.imageUrl.length > 8);
-      if (!useSlides.length) throw new Error("Semua klip tidak punya gambar (data terpangkas hemat memori) — rakit ulang draf dari Lahan ya bro.");
+      const useSlides = slides.filter(s => (s.imageUrl && s.imageUrl.length > 8) || s.assetId);
+      if (!useSlides.length) throw new Error("Semua klip tidak punya media yang bisa dibaca — impor ulang file atau pulihkan proyek dari brankas.");
+      await hydrateMediaAssets(useSlides);
       if (useSlides.length !== slides.length) flash(`⚠️ ${slides.length - useSlides.length} klip tanpa gambar dilewati`);
       if (job) jobSet(setJobStage(job, "prepare", "done", `${useSlides.length} klip siap dirender`));
       if (job) jobSet(setJobStage(job, "audio", "running", "Mengecek/mencampur audio"));
@@ -4050,8 +4098,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       };
       if (job) jobSet(setJobStage(job, "render", "running", `Render ${exRes}p/${exFps}fps dimulai`));
       const blob = await renderSlideshow({
-        images: useSlides.map(s => s.imageUrl),
-        videos: useSlides.map(s => s.videoUrl || null), // 🎬 v11.8: klip animasi ikut di-render
+        images: useSlides.map(s => slideImageSource(s)),
+        videos: useSlides.map(s => slideVideoSource(s) || null), // 🎬 v11.8 + vault: klip asli ikut di-render
         // 🐛 v19.58 FIX LELET BESAR: timeline TIDAK pernah dikirim → cache lapisan
         // (useV5fast) MATI → tiap frame di-paint PENUH (gambar+kenburns+transisi+filter+
         // caption+teks+stiker+spektrum) = 100-200ms/frame di HP → 7 menit = 40-50 menit!
@@ -4107,8 +4155,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       await ensureFontsLoaded().catch(() => {});
       const orderedOpts = slides.map(s => ({ ...(slideOptsById[s.id] || {}) } as SlideOpt));
       const gf = buildClipFilter(filterPreset, adj);
+      await hydrateMediaAssets(slides);
       const blob = await renderGif({
-        images: slides.map(s => s.imageUrl),
+        images: slides.map(s => slideImageSource(s)),
         slideOpts: orderedOpts as any,
         cinebars: cineBars, // 🎬 v13.5
         slideDuration, transition, transitionDur,
