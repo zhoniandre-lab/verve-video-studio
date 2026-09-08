@@ -1464,6 +1464,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   // 📦 Media vault: assetId menunjuk Blob asli di IndexedDB; URL blob hanya hidup di sesi ini.
   const mediaAssetUrlsRef = useRef<Map<string, string>>(new Map());
   const mediaAssetLoadsRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const [mediaAssetEpoch, setMediaAssetEpoch] = useState(0);
+  const nativeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const nativeVideoModeRef = useRef(false);
   const vidsRef = useRef<Map<string, HTMLVideoElement>>(new Map()); // 🎬 v11.8
   const vidBufRef = useRef<(HTMLCanvasElement | null)[]>([null, null]); // 🎬 v11.8: 2 buffer (cur + nxt saat transisi)
   const musicEl = useRef<HTMLAudioElement | null>(null);
@@ -1506,6 +1509,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     }
     if (jobs.length) {
       await Promise.all(jobs);
+      setMediaAssetEpoch(v => v + 1);
       try { requestAnimationFrame(() => drawFrameRefCb.current(curTRef.current)); } catch {}
     }
   }
@@ -1850,6 +1854,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   }, []);
 
   const drawFrame = useCallback((t: number) => {
+    // Video bersih diputar oleh elemen native agar frame dan audio identik
+    // dengan file asli; canvas renderer dipakai kembali saat ada overlay/edit.
+    if (nativeVideoModeRef.current) return;
     const cv = canvasRef.current; if (!cv) return;
     const W = cv.width, H = cv.height;
     const ctx = cv.getContext("2d") as CanvasRenderingContext2D | null; if (!ctx) return;
@@ -4659,6 +4666,48 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     dragSt.current = null; dragTx.current = null;
   }
 
+  // Jalur native untuk video yang belum diberi overlay/edit: browser mengurus
+  // decode, frame pacing, dan audio persis dari file asli. Canvas dipakai lagi
+  // saat ada teks, filter, stiker, transisi, atau efek.
+  const activeVideoInfo = useMemo(() => {
+    if (!timeline || !slides.length) return null;
+    const L = locate(timeline, Math.min(curT, Math.max(0, timeline.total - 0.001)));
+    const s = slides[L.idx];
+    const url = s?.videoUrl ? slideVideoSource(s) : "";
+    if (!url || L.inTrans) return null;
+    const o: any = slideOptsById[s.id] || {};
+    const dirty = filterPreset !== "none" || capWords.length > 0
+      || !!o.text?.txt?.trim() || !!(o.texts || []).length || !!(o.stickers || []).length
+      || !!o.effect || !!o.animIn || !!o.animOut || (!!o.loop && o.loop !== "none") || !!o.kb
+      || (slides.length > 1 && canonicalTrans(o.trans ?? transition) !== "none");
+    if (dirty) return null;
+    return { url, localT: Math.max(0, curT - (timeline.starts[L.idx] || 0)) };
+  }, [slides, timeline, curT, slideOptsById, filterPreset, capWords, transition, mediaAssetEpoch]);
+  const nativeVideoMode = !!activeVideoInfo;
+  nativeVideoModeRef.current = nativeVideoMode;
+  useEffect(() => {
+    const v = nativeVideoRef.current;
+    if (!v) return;
+    if (!activeVideoInfo || !nativeVideoMode) {
+      v.pause();
+      return;
+    }
+    if (v.dataset.src !== activeVideoInfo.url) {
+      v.dataset.src = activeVideoInfo.url;
+      v.src = activeVideoInfo.url;
+      v.load();
+    }
+    v.muted = audMuted || !!(musicUrl || ttsUrl || voiceUrl);
+    if (v.readyState >= 1) {
+      const target = Math.max(0, activeVideoInfo.localT);
+      if (Math.abs((v.currentTime || 0) - target) > 0.18) {
+        try { v.currentTime = target; } catch {}
+      }
+    }
+    if (playing) void v.play().catch(() => {});
+    else v.pause();
+  }, [activeVideoInfo?.url, activeVideoInfo?.localT, nativeVideoMode, playing, audMuted, musicUrl, ttsUrl, voiceUrl]);
+
   return (
     <div className="v6e-root">
       {/* ============ TOPBAR ============ */}
@@ -4687,9 +4736,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
            style={fullStage ? { position: "fixed", inset: 0, zIndex: 55, background: "#000" } : undefined}
            onClick={fullStage ? () => setFullStage(false) : undefined}>
         <div className="v6e-stage">
+          {nativeVideoMode && (
+            <video
+              ref={nativeVideoRef}
+              playsInline
+              preload="auto"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: bgMode === "cover" ? "cover" : "contain", background: bgColor, pointerEvents: "none", zIndex: 0 }}
+            />
+          )}
           <canvas ref={canvasRef}
             onPointerDown={onStageDown} onPointerMove={onStageMove} onPointerUp={onStageUp} onPointerCancel={onStageUp}
-            style={{ touchAction: "none" }} />
+            style={{ touchAction: "none", opacity: nativeVideoMode ? 0 : 1, position: "relative", zIndex: 1 }} />
           <div className={`selbox ${selId ? "on" : ""}`} />
           {/* v8.3: tombol hapus CEPAT di panggung saat objek (teks/stiker) terpilih */}
           {(selTextSid || selStik) && !tool && (
