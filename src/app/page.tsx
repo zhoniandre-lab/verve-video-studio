@@ -2962,15 +2962,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       } else {
         setSlides(c => [...c, ...ss]);
         flash(`✅ ${ss.length} media ditambahkan — file asli dipertahankan di brankas bila tersedia`);
-        // CapCut-style default: bila satu video lokal punya audio dan belum ada
-        // musik/narasi lain, pisahkan audio ke track terpisah otomatis. User
-        // tetap bebas menghapus/membisukan track itu tanpa menghapus visual.
-        if (ss.length === 1 && !!ss[0].videoUrl && !musicUrl && !voiceUrl) {
-          setTimeout(() => {
-            setSelId(ss[0].id); setClipBar(true); setClipMoreOpen(false);
-            void extractSelectedAudio();
-          }, 180);
-        }
+        // Audio asli TIDAK diekstrak saat upload. Video native tetap membawa
+        // track audio sendiri, jadi upload langsung berbunyi tanpa mengubah
+        // adegan menjadi poster/still. Pemisahan audio tetap tersedia manual
+        // lewat Klip → Lainnya → Pisahkan audio.
       }
     });
   }
@@ -4678,8 +4673,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const o: any = slideOptsById[s.id] || {};
     const dirty = filterPreset !== "none" || capWords.length > 0
       || !!o.text?.txt?.trim() || !!(o.texts || []).length || !!(o.stickers || []).length
-      || !!o.effect || !!o.animIn || !!o.animOut || (!!o.loop && o.loop !== "none") || !!o.kb
-      || (slides.length > 1 && canonicalTrans(o.trans ?? transition) !== "none");
+      || !!o.effect || !!o.animIn || !!o.animOut || (!!o.loop && o.loop !== "none") || !!o.kb;
     if (dirty) return null;
     return { url, localT: Math.max(0, curT - (timeline.starts[L.idx] || 0)) };
   }, [slides, timeline, curT, slideOptsById, filterPreset, capWords, transition, mediaAssetEpoch]);

@@ -14,7 +14,8 @@ T("fitur tambahan tetap tersedia lewat Lainnya", /clipMoreOpen[\s\S]*\["animasi"
 T("preview memakai field speed yang sama dengan panel Speed", /const spdC = \(optCur as any\)\?\.speed/.test(page) && !/const spdC = \(optCur as any\)\?\.spd/.test(page));
 T("render video memakai field speed yang sama", /\?\.\[slideIdx\]\?\.speed/.test(readFileSync(new URL("../src/lib/recorder.ts", import.meta.url), "utf8")));
 T("klip video punya aksi pisahkan audio", /async function extractSelectedAudio/.test(page) && /case "audio": void extractSelectedAudio\(\)/.test(page));
-T("satu video lokal mencoba mempertahankan audio otomatis", /ss\.length === 1 && !!ss\[0\]\.videoUrl && !musicUrl && !voiceUrl/.test(page));
+T("upload video tidak mengekstrak audio otomatis", /Audio asli TIDAK diekstrak saat upload/.test(page));
+T("native video tidak otomatis bisu jika tidak ada track lain", /v\.muted = audMuted \|\| !!\(musicUrl \|\| ttsUrl \|\| voiceUrl\)/.test(page));
 
 if (failed) process.exit(1);
 console.log("\n🎵🧼 Kontrak upload audio dan toolbar bersih hijau.");
