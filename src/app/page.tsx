@@ -1206,6 +1206,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [bgColor, setBgColor] = useState("#000000");
   /* ---------- audio ---------- */
   const [musicUrl, setMusicUrl] = useState("");
+  // 📦 Audio lokal disimpan sebagai Blob di IndexedDB, bukan data URL besar di localStorage.
+  const [musicAssetId, setMusicAssetId] = useState("");
+  const musicAssetUrlRef = useRef("");
   const [musicName, setMusicName] = useState("");
   const [ttsUrl, setTtsUrl] = useState("");
   const [ttsText, setTtsText] = useState("");
@@ -1259,6 +1262,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   /* ---------- UI panels ---------- */
   const [tool, setTool] = useState<string | null>(null);
   const [clipBar, setClipBar] = useState(false);
+  const [clipMoreOpen, setClipMoreOpen] = useState(false);
   // v8.4: susunan jalur track BEBAS & tersimpan permanen (aturan #6 — track bukan denah mati)
   const [laneOrder, setLaneOrder] = useState<string[]>(() => { try { const v = JSON.parse(localStorage.getItem("verve_laneorder_v1") || "[]"); return Array.isArray(v) ? v.filter((x: any) => typeof x === "string") : []; } catch { return []; } });
   const saveLaneOrder = useCallback((o: string[]) => { setLaneOrder(o); try { localStorage.setItem("verve_laneorder_v1", JSON.stringify(o)); } catch {} }, []);
@@ -1337,8 +1341,22 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       }
     })();
   }, [musicUrl, musicDur]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!musicAssetId) return;
+    let alive = true;
+    void getMediaAsset(musicAssetId).then((blob) => {
+      if (!alive || !blob) return;
+      const u = URL.createObjectURL(blob);
+      releaseMusicAssetUrl();
+      musicAssetUrlRef.current = u;
+      setMusicUrl(u);
+      void getAudioDuration(u).then((d) => { if (alive && d > 0.5) setMusicDur(d); });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [musicAssetId]);
   useEffect(() => { if (ttsUrl && !ttsDur) getAudioDuration(ttsUrl).then((d) => { if (d > 0.5) setTtsDur(d); }); }, [ttsUrl, ttsDur]);
   useEffect(() => { if (voiceUrl && !voiceDur) getAudioDuration(voiceUrl).then((d) => { if (d > 0.5) setVoiceDur(d); }); }, [voiceUrl, voiceDur]);
+  useEffect(() => () => { releaseMusicAssetUrl(); }, []);
   // 🛟 v13.7.1 BRANKAS LAGU — begitu proyek kebuka, salin byte audio ke brankas SEKARANG selagi link masih segar.
   // (Link AI mati dalam hitungan jam; brankas ini yang menyelamatkan render-render berikutnya.)
   useEffect(() => { if (musicUrl) void avWarm(musicUrl); }, [musicUrl]);
@@ -1405,6 +1423,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         if (raw) bak = JSON.parse(raw);
       }
       if (!bak || !bak.url) { flash("⚠️ Tidak ada backup lagu terakhir"); return; }
+      releaseMusicAssetUrl();
+      setMusicAssetId("");
       setMusicUrl(bak.url);
       setMusicName(bak.name || "Lagu AI (backup)");
       if (bak.dur) setMusicDur(bak.dur);
@@ -2176,12 +2196,12 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     const thumb = thumbOverride ?? (coverThumb || (first.startsWith("data:") ? first.slice(0, 40000) : first));
     return { v: 6, id: draftId || uid("d"), title: projTitle.slice(0, 80), updatedAt: Date.now(),
       slides: compactSlides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor,
-      musicUrl, musicName, ttsUrl, ttsText, voiceUrl: "", musicDur, ttsDur, voiceDur, musicOff, ttsOff, voiceOff, filterPreset, adj, qualitySharp,
+      musicUrl, musicAssetId, musicName, ttsUrl, ttsText, voiceUrl: "", musicDur, ttsDur, voiceDur, musicOff, ttsOff, voiceOff, filterPreset, adj, qualitySharp,
       musicVol, voiceVol, musicFadeIn, musicFadeOut,
       capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb: thumb, audMuted,
       audioSynced: audioSyncedRef.current ? 1 : 0, // ⏱ v13.7
       mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal };
-  }, [slides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor, musicUrl, musicName, ttsUrl, ttsText, filterPreset, adj, qualitySharp, capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb, draftId, projTitle, mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal, audMuted]);
+  }, [slides, slideOptsById, ratio, slideDuration, transition, transitionDur, bgMode, bgColor, musicUrl, musicAssetId, musicName, ttsUrl, ttsText, filterPreset, adj, qualitySharp, capWords, capStyle, ccTpl, ccSize, ccY, niche, coverThumb, draftId, projTitle, mTitle, mLyrics, mStyle, mGenre, mMood, mModel, mVocal, audMuted]);
   function applySnapshot(d: any) {
     if (!d) return;
     stopPreview();
@@ -2194,6 +2214,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setRatio(d.ratio || "9:16"); setSlideDuration(d.slideDuration || 3);
     setTransition(d.transition || "dissolve"); setTransitionDur(d.transitionDur ?? 0.6);
     setBgMode(d.bgMode || "color"); setBgColor(d.bgColor || "#000000");
+    setMusicAssetId(d.musicAssetId || "");
     setMusicUrl(d.musicUrl || ""); setMusicName(d.musicName || "");
     setMusicDur(d.musicDur || 0); setTtsDur(d.ttsDur || 0); setVoiceDur(d.voiceDur || 0);
     setMusicOff(d.musicOff || 0); setTtsOff(d.ttsOff || 0); setVoiceOff(d.voiceOff || 0);
@@ -2359,7 +2380,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       const tl = timelineRef.current;
       const L = tl ? locate(tl, Math.min(curT, Math.max(0, tl.total - 0.01))) : null;
       const sid = selId || (L ? slidesRef.current[L.idx]?.id : slidesRef.current[0]?.id) || "";
-      if (sid) { setSelId(sid); setClipBar(true); }
+      if (sid) { setSelId(sid); setClipBar(true); setClipMoreOpen(false); }
       return;
     }
     if (t === "avatar") return;
@@ -2970,12 +2991,37 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       a.src = proxifyAudioUrl(url);
     });
   }
-  function uploadMusic(f: File | undefined) {
+  function releaseMusicAssetUrl() {
+    const old = musicAssetUrlRef.current;
+    if (old) { try { URL.revokeObjectURL(old); } catch {} }
+    musicAssetUrlRef.current = "";
+  }
+  async function uploadMusic(f: File | undefined) {
     if (!f) return;
-    if (f.size > 18 * 1024 * 1024) return setErr({ message: "File musik terlalu besar (maks 18MB)" });
-    const r = new FileReader();
-    r.onload = () => { const u = r.result as string; setMusicUrl(u); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40)); flash(`🎵 Musik ditambahkan mulai ${formatDur(curTRef.current)}`); getAudioDuration(u).then(setMusicDur); };
-    r.readAsDataURL(f);
+    if (!f.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(f.name)) {
+      return setErr({ message: "File ini bukan audio yang dikenali (MP3/WAV/M4A/AAC/OGG/FLAC/Opus)." });
+    }
+    // Batas lama 18MB dihapus. Lagu 40–60 menit sekarang disimpan sebagai Blob
+    // di IndexedDB; tidak diubah menjadi data URL raksasa.
+    const max = 512 * 1024 * 1024;
+    if (f.size > max) return setErr({ message: "File musik di atas 512MB belum aman diproses di browser HP. Gunakan MP3/AAC yang lebih ringan." });
+    setLoading("audio"); setError("");
+    try {
+      const assetId = await putMediaAsset(f, f.name);
+      const u = URL.createObjectURL(f);
+      releaseMusicAssetUrl();
+      musicAssetUrlRef.current = u;
+      setMusicAssetId(assetId || "");
+      setMusicUrl(u);
+      setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100);
+      setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 80));
+      const dur = await getAudioDuration(u);
+      if (dur > 0.5) setMusicDur(dur);
+      flash(assetId
+        ? `🎵 Musik ${formatDur(dur)} masuk — file asli diamankan di brankas lokal`
+        : `🎵 Musik ${formatDur(dur)} masuk — brankas penuh, aman selama tab ini terbuka`);
+    } catch (e: any) { setErr(e); }
+    setLoading(null);
   }
   async function mixAudioUrls(parts: { url: string; gain: number; fadeIn?: number; fadeOut?: number; off?: number }[]): Promise<string | null> {
     try {
@@ -3036,6 +3082,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (!buf) throw new Error("Audio di video ini tidak bisa dibaca (codec tak didukung).");
       const wav = bufferToWav(buf);
       const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+      releaseMusicAssetUrl();
+      setMusicAssetId("");
       setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName(f.name.replace(/\.[^.]+$/, "").slice(0, 40));
       getAudioDuration(url).then(setMusicDur);
       actx.close();
@@ -3051,6 +3099,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!clips.length) return null;
     const url = clips[0].url;
     if (clips.length > 1) flash(`🎵 Dipakai versi A (1 lagu). Ada ${clips.length} variasi terpisah — tidak digabung.`);
+    releaseMusicAssetUrl();
+    setMusicAssetId("");
     setMusicUrl(url); setMusicOff(Math.round(clampN(curTRef.current, 0, 7190) * 100) / 100); setMusicName((clips[0].title || data?.title || namaFallback || "Lagu AI").slice(0, 60));
     // 🎵 v19.86: durasi REAL dari isi file (decode) — header provider bisa bohong
     // (17:23 padahal isi 8:03) → timeline & video ikut durasi lagu yang benar.
@@ -3906,6 +3956,8 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) throw new Error(d.error || `Cloud media error ${r.status}`);
+      releaseMusicAssetUrl();
+      setMusicAssetId("");
       setMusicUrl(String(d.url || ""));
       if (!musicName) setMusicName("Musik Cloud");
       await copyTxt(String(d.url || ""));
@@ -4688,7 +4740,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onTextStart={moveTextStart} onTextDur={moveTextDur}
         onTextMoved={(sid: string, tid: string = "") => { pilihObjek("teks"); setSelTextSid(selTextEncode(sid, tid)); if (selId !== sid) setSelId(sid); const t = getTextOf(sid, tid); flash("🔤 Teks ditaruh mulai " + formatDur(t?.start ?? 0) + (t?.dur ? " · " + formatDur(t.dur) : "") + " — ketuk chip utk edit"); }}
         onTextRow={moveTextRow} onStickerRow={moveStickerRow} audRow={audRow} onAudRow={moveAudRow} onRowBad={() => flash("⚠️ Nggak bisa numpuk — di jalur itu sudah ada objek di waktu yang sama")}
-        onSel={(id: string) => { pilihObjek("clip"); if (selId === id) { setSelId(""); setClipBar(false); flash("🚫 Blok dilepas"); } else { setSelId(id); setClipBar(true); } }}
+        onSel={(id: string) => { pilihObjek("clip"); if (selId === id) { setSelId(""); setClipBar(false); setClipMoreOpen(false); flash("🚫 Blok dilepas"); } else { setSelId(id); setClipBar(true); setClipMoreOpen(false); } }}
         onTrim={(id: string, d: number) => trimSlide(id, d)}
         onMove={moveSlide}
         onSeek={(t: number) => seekPreview(t)}
@@ -4703,7 +4755,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         onStickerChipTap={(sid: string, stid: string) => onStickerChipTap(sid, stid)}
         onAddSticker={() => { setTool("stiker"); setSheetTab(""); setClipBar(false); }}
         onAddOutro={addOutro}
-        onTrans={(sid: string) => { pilihObjek("clip"); setSelId(sid); setClipBar(true); onClipTool("transisi"); }}
+        onTrans={(sid: string) => { pilihObjek("clip"); setSelId(sid); setClipBar(true); setClipMoreOpen(false); onClipTool("transisi"); }}
         onMute={() => setAudMuted(v => !v)} audMuted={audMuted}
         onAiCut={() => {
           const src = musicUrl || ttsUrl || voiceUrl;
@@ -4718,7 +4770,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             flash(`🤖 ${slides.length} klip otomatis pas durasi audio (${formatDur(d)})`);
           });
         }}
-        hapticSel={() => { pilihObjek("clip"); setClipBar(true); }}
+        hapticSel={() => { pilihObjek("clip"); setClipBar(true); setClipMoreOpen(false); }}
         transition={transition}
       />
 
@@ -4742,8 +4794,16 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         ) : clipBar && selId ? (
           <div className="v6e-tools">
             <button className="v6e-tlbtn v6e-tlback" onClick={() => { setClipBar(false); setSelId(""); }}>‹<span>Tutup</span></button>
-            {CLIP_TOOLS.map(t => (
+            {CLIP_TOOLS.filter(t => ["split", "pangkas", "ganti", "teks", "stiker", "speed", "transisi"].includes(t.id)).map(t => (
               <button key={t.id} className="v6e-tlbtn" onClick={() => onClipTool(t.id)}>
+                {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
+              </button>
+            ))}
+            <button className={`v6e-tlbtn ${clipMoreOpen ? "on" : ""}`} onClick={() => setClipMoreOpen(v => !v)}>
+              ⋯<span>{clipMoreOpen ? "Tutup" : "Lainnya"}</span>
+            </button>
+            {clipMoreOpen && CLIP_TOOLS.filter(t => ["animasi", "efek", "gambarai", "hapus", "dup", "geserkir", "geserkan"].includes(t.id)).map(t => (
+              <button key={t.id} className="v6e-tlbtn" onClick={() => { setClipMoreOpen(false); onClipTool(t.id); }}>
                 {t.icon}{t.bdg && <span className={`bdg ${t.bdgCls || ""}`}>{t.bdg}</span>}<span>{t.label}</span>
               </button>
             ))}
@@ -4863,9 +4923,10 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
             musicVol, setMusicVol, voiceVol, setVoiceVol, musicFadeIn, setMusicFadeIn, musicFadeOut, setMusicFadeOut,
             ambientUrl, setAmbientUrl, ambientName, setAmbientName, ambientVol, setAmbientVol,
             autoDucking, setAutoDucking,
-            delAudio: () => { 
+            delAudio: () => {
               if (musicUrl) { setLastMusicBackup({ url: musicUrl, name: musicName || "Lagu AI", dur: musicDur }); try { localStorage.setItem("verve_last_music_v1", JSON.stringify({ url: musicUrl, name: musicName, dur: musicDur, at: Date.now() })); } catch {} }
-              pushHist(); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan — tap ↩ Pulihkan di Musik AI kalau salah hapus"); 
+              releaseMusicAssetUrl();
+              pushHist(); setMusicAssetId(""); setMusicUrl(""); setMusicName(""); setTtsUrl(""); setVoiceUrl(""); setCapWords([]); setMusicDur(0); setTtsDur(0); setVoiceDur(0); setMusicOff(0); setTtsOff(0); setVoiceOff(0); setMusicVol(1); setVoiceVol(1); setMusicFadeIn(0); setMusicFadeOut(0); flash("🗑 Track audio dikosongkan — tap ↩ Pulihkan di Musik AI kalau salah hapus");
             },
             restoreLastMusic, downloadCurrentMusic, lastMusicBackup,
             startTextEdit, doSplitAtPlayhead, trimSlide,
@@ -4897,7 +4958,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         mTitle={mTitle} setMTitle={setMTitle} mLyrics={mLyrics} setMLyrics={setMLyrics} mStyle={mStyle} setMStyle={setMStyle}
         mGenre={mGenre} setMGenre={setMGenre} mMood={mMood} setMMood={setMMood} mModel={mModel} setMModel={setMModel}
         mVocal={mVocal} setMVocal={setMVocal} mTask={mTask} setMTask={setMTask} mStatus={mStatus} setMStatus={setMStatus} onGen={doSuno} onCek={cekSuno} loading={loading}
-        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} niche={niche} projTitle={projTitle} delAudio={()=>{ if (musicUrl) { setLastMusicBackup({ url: musicUrl, name: musicName || "Lagu AI", dur: musicDur }); try { localStorage.setItem("verve_last_music_v1", JSON.stringify({ url: musicUrl, name: musicName, dur: musicDur, at: Date.now() })); } catch {} } setMusicUrl(""); setMusicName(""); setMusicDur(0); }} restoreLastMusic={restoreLastMusic} downloadCurrentMusic={downloadCurrentMusic} lastMusicBackup={lastMusicBackup} />}
+        musicUrl={musicUrl} musicName={musicName} pollUi={pollUi} niche={niche} projTitle={projTitle} delAudio={()=>{ if (musicUrl) { setLastMusicBackup({ url: musicUrl, name: musicName || "Lagu AI", dur: musicDur }); try { localStorage.setItem("verve_last_music_v1", JSON.stringify({ url: musicUrl, name: musicName, dur: musicDur, at: Date.now() })); } catch {} } releaseMusicAssetUrl(); setMusicAssetId(""); setMusicUrl(""); setMusicName(""); setMusicDur(0); }} restoreLastMusic={restoreLastMusic} downloadCurrentMusic={downloadCurrentMusic} lastMusicBackup={lastMusicBackup} />}
       {modal === "kamera" && <KameraModal onClose={() => setModal(null)} onPhoto={(dataUrl: string) => { pushHist(); setSlides(c => [...c, { id: uid("cam"), imageUrl: dataUrl }]); flash("📷 Foto masuk timeline"); }} />}
       {modal === "wizard" && <WizardModal onClose={() => setModal(null)} niche={wzNiche} setNiche={setWzNiche} n={wzN} setN={setWzN} styleId={wzStyle} setStyle={setWzStyle} audio={wzAudio} setAudio={setWzAudio} onRun={runWizard} loading={loading} stageText={stageText} />}
 
