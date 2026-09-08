@@ -2955,6 +2955,15 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       } else {
         setSlides(c => [...c, ...ss]);
         flash(`✅ ${ss.length} media ditambahkan — file asli dipertahankan di brankas bila tersedia`);
+        // CapCut-style default: bila satu video lokal punya audio dan belum ada
+        // musik/narasi lain, pisahkan audio ke track terpisah otomatis. User
+        // tetap bebas menghapus/membisukan track itu tanpa menghapus visual.
+        if (ss.length === 1 && !!ss[0].videoUrl && !musicUrl && !voiceUrl) {
+          setTimeout(() => {
+            setSelId(ss[0].id); setClipBar(true); setClipMoreOpen(false);
+            void extractSelectedAudio();
+          }, 180);
+        }
       }
     });
   }
