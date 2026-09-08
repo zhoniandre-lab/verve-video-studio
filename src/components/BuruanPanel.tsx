@@ -121,7 +121,7 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
   // Rekomendasi cepat selalu memakai item kurasi lokal, bukan hasil parser
   // komunitas yang kadang namanya tidak jelas atau link-nya sudah mati.
   const videoPicks = useMemo(() => {
-    const order = ["google-flow", "fliki", "viggle", "pixverse", "kling", "seedance", "vidu"];
+    const order = ["vheer", "google-flow", "fliki", "pixverse", "kling", "seedance", "vidu", "viggle"];
     return order.map((id) => items.find((item) => item.id === id)).filter(Boolean) as BuruanItem[];
   }, [items]);
 
@@ -129,8 +129,8 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
      🐛 v19.54 FIX: dulu cuma set q (mis. "musik") padahal teks item Suno/Udio TIDAK mengandung
      kata "musik" → tombol panduan tidak nemu apa-apa. Sekarang set kategori juga. */
   const PANDUAN: { emoji: string; judul: string; q: string; kat: KategoriId | ""; desc: string }[] = [
-    { emoji: "🖼️➡️🎬", judul: "Bikin gambar jadi BERGERAK", q: "gambar bergerak", kat: "gambar-video", desc: "Kling · Hailuo · Vidu · PixVerse · Viggle — upload foto, jadi video" },
-    { emoji: "🎬✨", judul: "Bikin video AI dari teks", q: "text-to-video", kat: "gambar-video", desc: "Hailuo · Pika · Wan · Haiper · InVideo" },
+    { emoji: "🖼️➡️🎬", judul: "Bikin gambar jadi BERGERAK", q: "gambar bergerak", kat: "gambar-video", desc: "Vheer · Kling · Hailuo · Vidu · PixVerse · Viggle — upload foto, jadi video" },
+    { emoji: "🎬✨", judul: "Bikin video AI dari teks", q: "text-to-video", kat: "gambar-video", desc: "Vheer · Hailuo · Pika · Wan · Haiper · InVideo" },
     { emoji: "🧑‍💬", judul: "Bikin orang bicara (avatar)", q: "avatar", kat: "gambar-video", desc: "HeyGen · D-ID — foto jadi presenter ngomong" },
     { emoji: "🎵", judul: "Bikin lagu / musik", q: "", kat: "musik", desc: "Suno · Udio — lagu orisinal dari prompt" },
     { emoji: "🗣️", judul: "Bikin narasi suara", q: "", kat: "suara", desc: "ElevenLabs · Edge TTS — suara natural" },
@@ -308,7 +308,7 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
             <div className="v6-lbl">🚀 MULAI DARI SINI · VIDEO AI GRATIS</div>
             <p>Daftar di situs resmi, klaim kredit/kuota, lalu download hasilnya ke Verve. Jumlah gratis bisa berubah menurut negara dan akun—cek saldo sebelum produksi.</p>
             <div className="v6-buruan-pick-grid">
-              {videoPicks.slice(0, 6).map((item) => (
+              {videoPicks.slice(0, 8).map((item) => (
                 <button key={item.id} onClick={() => setDetail(item)}>
                   <b>{item.nama}</b><small>{item.gratis}</small><span>📖 Lihat panduan →</span>
                 </button>

@@ -141,6 +141,19 @@ const KATALOG_ASLI: Kasar[] = [
 
   // ---------------- GAMBAR → VIDEO ----------------
   K({
+    id: "vheer", nama: "Vheer AI", url: "https://vheer.com/", kategori: "gambar-video",
+    gratis: "Free tier untuk mencoba text-to-video & image-to-video; batas model, kualitas, dan kuota dapat berubah", jenis: "permanen",
+    syarat: "Tool tertentu bisa dicoba tanpa daftar; login mungkin diperlukan untuk fitur akun", mudah: 5, stabil: "cek",
+    tags: ["gambar bergerak", "text-to-video", "image-to-video", "tanpa daftar"],
+    desc: "Studio browser Vheer untuk membuat klip pendek dari teks atau gambar. Cocok membuat adegan referensi ibu-anak lalu download MP4 untuk dirakit di Verve; cek label free dan biaya model sebelum generate.",
+    tutorial: [
+      { t: "Buka https://vheer.com/ — gunakan situs resmi, bukan APK/mod dari sumber lain." },
+      { t: "Pilih AI Tools → Image to Video untuk menghidupkan gambar referensi, atau Text to Video untuk membuat adegan dari prompt." },
+      { t: "Masukkan prompt/gambar, pilih rasio dan durasi yang tersedia (umumnya klip pendek), lalu cek apakah modelnya memakai free quota sebelum Generate." },
+      { t: "Download MP4 hasilnya → upload ke Verve untuk dialog, lagu, lirik, dan render film/Shorts." },
+    ],
+  }),
+  K({
     id: "hailuo", nama: "Hailuo AI (MiniMax)", url: "https://hailuoai.video", kategori: "gambar-video",
     gratis: "⚠️ TIDAK STABIL — daily credits PERNAH DIHAPUS (2025). Kadang cuma dapet kalau akun baru.", jenis: "harian",
     syarat: "Email doang (Google bisa)", mudah: 2, stabil: "ubah",

@@ -24,6 +24,8 @@ T("katalog kurasi ≥ 30 item (diperdalam)", kurasi.length >= 30, `${kurasi.leng
 T("item gambar-video ≥ 15 (video AI dalam)", kurasi.filter((i) => i.kategori === "gambar-video").length >= 15, `${kurasi.filter((i) => i.kategori === "gambar-video").length} item`);
 T("Fliki gratis masuk katalog video", kurasi.some((i) => i.id === "fliki" && i.gratis.includes("3 menit")));
 T("Google Flow resmi masuk katalog video", kurasi.some((i) => i.id === "google-flow" && i.url.includes("labs.google/fx/tools/flow")));
+T("Vheer resmi masuk katalog video", kurasi.some((i) => i.id === "vheer" && i.url === "https://vheer.com/" && i.kategori === "gambar-video"));
+T("Vheer ditandai cek jujur", kurasi.find((i) => i.id === "vheer")?.stabil === "cek" && (kurasi.find((i) => i.id === "vheer")?.gratis || "").includes("batas model"));
 
 T("semua item kurasi punya tutorial ≥ 2 langkah", kurasi.every((i) => i.tutorial.length >= 2));
 T("skor mudah semua 1..5", kurasi.every((i) => i.mudah >= 1 && i.mudah <= 5));
