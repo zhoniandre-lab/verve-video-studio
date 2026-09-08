@@ -3012,6 +3012,17 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (old) { try { URL.revokeObjectURL(old); } catch {} }
     musicAssetUrlRef.current = "";
   }
+  async function audioUrlFromVideoFile(f: Blob): Promise<string> {
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    const actx = new AC();
+    try {
+      const buf = await actx.decodeAudioData(await f.arrayBuffer());
+      const wav = bufferToWav(buf);
+      return URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+    } finally {
+      try { await actx.close(); } catch {}
+    }
+  }
   async function uploadMusic(f: File | undefined) {
     if (!f) return;
     if (!f.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(f.name)) {
@@ -3092,12 +3103,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     if (!f) return;
     setLoading("ekstrak"); setStageText("Mengekstrak audio dari video...");
     try {
-      const AC = window.AudioContext || (window as any).webkitAudioContext;
-      const actx = new AC();
-      const buf = await actx.decodeAudioData(await f.arrayBuffer()).catch(() => null);
-      if (!buf) throw new Error("Video ini tidak memiliki audio yang bisa dibaca browser.");
-      const wav = bufferToWav(buf);
-      const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
+      const url = await audioUrlFromVideoFile(f);
       const start = Math.round(clampN(off, 0, 7190) * 100) / 100;
       if (target === "voice") {
         setVoiceUrl(url); setVoiceOff(start); getAudioDuration(url).then(setVoiceDur);
@@ -3109,7 +3115,6 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
         getAudioDuration(url).then(setMusicDur);
         flash(`🎬 Audio diekstrak ke track Musik — mulai ${formatDur(start)}`);
       }
-      actx.close();
     } catch (e: any) { setErr(e); }
     setLoading(null); setTimeout(() => setStageText(""), 100);
   }
@@ -4181,6 +4186,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     jobSet(setJobStage(job, "prepare", "running", "Menyiapkan font, wake-lock, dan media"));
     let wakeLock: any = null;
     let diskRender: EditorRenderDisk | null = null;
+    const tempAudioUrls: string[] = [];
     let lastBeat = 0; let rendering = false; let relock: any = null; let macetItv: any = null; // 🛡 v14.7 RENDER JAGA
     try {
       await ensureFontsLoaded().catch(() => {});
@@ -4205,6 +4211,29 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (ttsUrl) parts.push({ url: proxifyAudioUrl(ttsUrl), gain: voiceVol, off: ttsOff });
       if (voiceUrl) parts.push({ url: proxifyAudioUrl(voiceUrl), gain: voiceVol, off: voiceOff });
       if (ambientUrl) parts.push({ url: proxifyAudioUrl(ambientUrl), gain: ambientVol, off: 0 }); // 🔊 v17.6 AMBIENT AUDIO MIXING IN EXPORT
+      // Jika proyek hanya berisi video asli, ambil audio video secara internal
+      // saat export. User tidak perlu mengekstrak manual; preview tetap native.
+      if (!parts.length) {
+        const vi = useSlides.findIndex(s => !!s.videoUrl);
+        if (vi >= 0) {
+          const vs = useSlides[vi];
+          const srcVideo = slideVideoSource(vs);
+          try {
+            const raw = vs.assetId
+              ? await getMediaAsset(vs.assetId)
+              : await fetch(/^https?:/i.test(srcVideo) ? `/api/hcnsec/proxy-audio?url=${encodeURIComponent(srcVideo)}` : srcVideo).then(r => r.ok ? r.blob() : null);
+            if (raw?.size) {
+              setStageText("🎬 Memakai audio asli video untuk export...");
+              const vu = await audioUrlFromVideoFile(raw);
+              tempAudioUrls.push(vu);
+              const originalIndex = slides.findIndex(s => s.id === vs.id);
+              parts.push({ url: vu, gain: 1, off: timeline?.starts?.[originalIndex] || 0 });
+            }
+          } catch {
+            setStageText("⚠️ Audio asli video tidak bisa dibaca untuk export; video tetap dipertahankan.");
+          }
+        }
+      }
       let audioUrl: string | null = null;
       const single = parts.length === 1 ? parts[0] : null;
       const singleClean = single && Math.abs(single.gain - 1) < 0.01 && !single.fadeIn && !single.fadeOut && !(single.off && single.off > 0.01);
@@ -4307,7 +4336,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
       if (job) jobSet(failJob(job, job.current || "render", e?.message || String(e || "render gagal")));
       setErr(e);
     }
-    finally { rendering = false; if (relock) document.removeEventListener("visibilitychange", relock); if (macetItv) clearInterval(macetItv); try { wakeLock?.release?.(); } catch {} } // 🛡 v14.7: jagaan dicopot rapi
+    finally { rendering = false; tempAudioUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch {} }); if (relock) document.removeEventListener("visibilitychange", relock); if (macetItv) clearInterval(macetItv); try { wakeLock?.release?.(); } catch {} } // 🛡 v14.7: jagaan dicopot rapi
     setLoading(null); setTimeout(() => setStageText(""), 2500);
   }
   async function doRenderGif() {
