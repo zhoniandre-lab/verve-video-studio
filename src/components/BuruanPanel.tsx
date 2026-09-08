@@ -121,7 +121,7 @@ export default function BuruanPanel({ onExit }: { onExit?: () => void }) {
   // Rekomendasi cepat selalu memakai item kurasi lokal, bukan hasil parser
   // komunitas yang kadang namanya tidak jelas atau link-nya sudah mati.
   const videoPicks = useMemo(() => {
-    const order = ["fliki", "viggle", "pixverse", "kling", "seedance", "vidu"];
+    const order = ["google-flow", "fliki", "viggle", "pixverse", "kling", "seedance", "vidu"];
     return order.map((id) => items.find((item) => item.id === id)).filter(Boolean) as BuruanItem[];
   }, [items]);
 

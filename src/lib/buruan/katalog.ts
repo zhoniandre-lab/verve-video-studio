@@ -357,6 +357,18 @@ const KATALOG_ASLI: Kasar[] = [
     ],
   }),
   K({
+    id: "google-flow", nama: "Google Flow (Veo)", url: "https://labs.google/fx/tools/flow", kategori: "gambar-video",
+    gratis: "Gratis untuk dicoba dengan kredit harian (halaman Google saat ini mencantumkan 50 kredit/hari; region/akun bisa berbeda)", jenis: "harian",
+    syarat: "Akun Google", mudah: 5, stabil: "stabil", tags: ["gambar bergerak", "text-to-video", "image-to-video", "veo", "scene builder"],
+    desc: "Studio kreatif resmi Google untuk video/image dengan Veo, scene builder, dan audio pada model yang tersedia. Mulai dari free tier; cek saldo dan akses model di dashboard sebelum produksi.",
+    tutorial: [
+      { t: "Buka https://labs.google/fx/tools/flow dan login akun Google." },
+      { t: "Pilih Flow → Text to Video atau Image/Ingredients to Video → tulis prompt/upload bahan." },
+      { t: "Gunakan kredit gratis harian untuk draft pendek; cek biaya tiap model sebelum Generate." },
+      { t: "Download hasil → upload ke Verve untuk edit, lirik, spectrum, dan render." },
+    ],
+  }),
+  K({
     id: "google-veo", nama: "Google Veo (AI Studio)", url: "https://aistudio.google.com", kategori: "gambar-video",
     gratis: "Kuota video gratis terbatas di AI Studio", jenis: "bulanan",
     syarat: "Akun Google", berlaku: "Kuota di-refresh", mudah: 4, tags: ["gambar bergerak", "premium", "google"],
