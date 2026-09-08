@@ -12,6 +12,7 @@ T("Slide menyimpan assetId terpisah dari preview", /interface Slide \{[^}]*asset
 T("media vault memakai IndexedDB", /indexedDB\.open\(DB_NAME/.test(vault));
 T("upload menyimpan file asli ke vault", /putMediaAsset\(f, f\.name\)/.test(page));
 T("preview memakai sumber asset asli bila tersedia", /function slideImageSource[\s\S]*mediaAssetUrlsRef\.current\.get/.test(page));
+T("video memakai poster untuk Image dan Blob asli hanya untuk video deck", /if \(slide\.videoUrl\) return slide\.imageUrl/.test(page));
 T("render memakai sumber image asli", /images: useSlides\.map\(s => slideImageSource\(s\)\)/.test(page));
 T("render memakai sumber video asli", /videos: useSlides\.map\(s => slideVideoSource\(s\)/.test(page));
 T("asset yang hilang tidak mematikan seluruh proyek", /\(s\.imageUrl && s\.imageUrl\.length > 8\) \|\| s\.assetId/.test(page));

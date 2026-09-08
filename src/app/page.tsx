@@ -1478,6 +1478,9 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const durTRef = useRef(0); useEffect(() => { durTRef.current = durT; }, [durT]);
 
   function slideImageSource(slide: Slide): string {
+    // Video punya poster terpisah. Jangan pernah mengirim Blob video ke Image()
+    // sebagai still, karena browser akan gagal decode dan preview berubah hitam.
+    if (slide.videoUrl) return slide.imageUrl || "";
     return (slide.assetId && mediaAssetUrlsRef.current.get(slide.assetId)) || slide.imageUrl || "";
   }
   function slideVideoSource(slide: Slide): string {
