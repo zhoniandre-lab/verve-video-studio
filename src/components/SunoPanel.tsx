@@ -2,7 +2,7 @@
 /**
  * 🎵 SUNO PANEL v19.29 — panel generate lagu yang SAMA PERSIS dengan fitur
  * "Generate Lagu" di Lahan Awalan, tapi MANDIRI (bisa dipasang di Spectrum
- * Studio / layar mana pun). Provider, API key multi-kunci, model v3.5-v5.5,
+ * Studio / layar mana pun). Provider, API key multi-kunci, model v3.5-v6,
  * era/tempo/instrumen, genre/mood/vokal, lirik AI, generate + polling cerdas.
  * Hasil dikirim lewat callback `onSong(url, title, duration)`.
  */
@@ -36,13 +36,16 @@ const PROVIDER_DASH: Record<string, string> = { ...LINK_DASH_PROV, apiframe: "ht
 const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melankolis", "pop religi lembut", "folk sendu"];
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
 const SUNO_MODELS = [
-  { id: "V4_5PLUS", label: "v4.5+", note: "✦ stabil & jernih" },
-  { id: "V5_5", label: "v5.5", note: "🆕 terbaru" },
-  { id: "V5", label: "v5.0", note: "baru" },
-  { id: "V4_5ALL", label: "v4.5-all", note: "vokal lebih fokus" },
-  { id: "V4_5", label: "v4.5", note: "" },
-  { id: "V4", label: "v4.0", note: "hemat kredit" },
-  { id: "V3_5", label: "v3.5", note: "klasik" },
+  { id: "V6_MINI", label: "v6-mini", note: "⚡ cepat · semua akun" },
+  { id: "V6", label: "v6", note: "✨ flagship · Pro/Premier" },
+  { id: "V6_WILD", label: "v6-wild", note: "🔥 eksplorasi · Pro/Premier" },
+  { id: "V5_5", label: "v5.5", note: "legacy/provider lama" },
+  { id: "V5", label: "v5.0", note: "legacy/provider lama" },
+  { id: "V4_5PLUS", label: "v4.5+", note: "legacy · stabil" },
+  { id: "V4_5ALL", label: "v4.5-all", note: "legacy" },
+  { id: "V4_5", label: "v4.5", note: "legacy" },
+  { id: "V4", label: "v4.0", note: "legacy" },
+  { id: "V3_5", label: "v3.5", note: "legacy" },
 ];
 const SUNO_ERAS = [
   { id: "2020s", label: "modern 2020-an" }, { id: "2010s", label: "2010-an" },
@@ -76,7 +79,7 @@ export default function SunoPanel({ defaultTitle = "", defaultLyrics = "", onSon
   // Hydrasi dari localStorage dilakukan di effect agar SSR/hydration tidak
   // menghapus tampilan key atau membuat input berubah kembali ke kosong.
   const [sunoProv, setSunoProv] = useState("kie");
-  const [sunoModel, setSunoModel] = useState("V4_5PLUS");
+  const [sunoModel, setSunoModel] = useState("V6_MINI");
   const [keyPool, setKeyPool] = useState<SunoKey[]>([]);
   const [activeKey, setActiveKey] = useState("");
   const [activeProvider, setActiveProvider] = useState("");

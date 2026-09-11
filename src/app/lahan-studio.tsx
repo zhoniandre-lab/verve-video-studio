@@ -154,7 +154,7 @@ const SUNO_PROVIDERS = [
   { id: "musicapi", label: "🎧 MusicAPI (75 kredit uji)" },
   { id: "aimusicapi", label: "🎧 AIMusicAPI (30 kredit uji)" },
   { id: "sunoapi", label: "🟣 SunoAPI.org (akun terpisah)" },
-  { id: "evolink", label: "🧬 EvoLink (Suno v5/v5.5)" },
+  { id: "evolink", label: "🧬 EvoLink (Suno-compatible)" },
   { id: "cometapi", label: "☄️ CometAPI (Suno)" },
   { id: "ttapi", label: "🧩 TTAPI (Suno v5)" },
 ];
@@ -162,13 +162,16 @@ const GENRES = ["pop ballad Melayu sedih", "akustik mellow piano", "orkes melank
 const MOODS = ["haru", "rindu", "sedih", "menyentuh", "tenang"];
 // 🎚 v10.3 SUNO LENGKAP — panel ala proyek pertama + picker versi sampai yang terbaru
 const SUNO_MODELS = [
-  { id: "V4_5PLUS", label: "v4.5+", note: "✦ stabil & jernih" },
-  { id: "V5_5", label: "v5.5", note: "🆕 terbaru" },
-  { id: "V5", label: "v5.0", note: "baru" },
-  { id: "V4_5ALL", label: "v4.5-all", note: "vokal lebih fokus" },
-  { id: "V4_5", label: "v4.5", note: "" },
-  { id: "V4", label: "v4.0", note: "hemat kredit" },
-  { id: "V3_5", label: "v3.5", note: "klasik" },
+  { id: "V6_MINI", label: "v6-mini", note: "⚡ cepat · semua akun" },
+  { id: "V6", label: "v6", note: "✨ flagship · Pro/Premier" },
+  { id: "V6_WILD", label: "v6-wild", note: "🔥 eksplorasi · Pro/Premier" },
+  { id: "V5_5", label: "v5.5", note: "legacy/provider lama" },
+  { id: "V5", label: "v5.0", note: "legacy/provider lama" },
+  { id: "V4_5PLUS", label: "v4.5+", note: "legacy · stabil" },
+  { id: "V4_5ALL", label: "v4.5-all", note: "legacy" },
+  { id: "V4_5", label: "v4.5", note: "legacy" },
+  { id: "V4", label: "v4.0", note: "legacy" },
+  { id: "V3_5", label: "v3.5", note: "legacy" },
 ];
 const SUNO_ERAS = [
   { id: "2020s", label: "modern 2020-an" }, { id: "2010s", label: "2010-an" },
@@ -290,7 +293,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
   const [genre, setGenre] = useState(GENRES[0]);
   const [mood, setMood] = useState(MOODS[0]);
   const [vocal, setVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
-  const [sunoModel, setSunoModel] = useState("V4_5PLUS"); // 🎚 v10.3: versi Suno yang DIPAKAI (tampil & bisa dipilih sampai terbaru)
+  const [sunoModel, setSunoModel] = useState("V6_MINI"); // 🎚 v10.3: default generasi terbaru yang tersedia untuk semua akun
   const [sEra, setSEra] = useState("");
   const [sTempo, setSTempo] = useState("");
   const [sInstr, setSInstr] = useState<string[]>([]);
@@ -628,7 +631,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       }
       setCharLock(j.charLock || ""); // 🔒 v10.0
       setModelPinned(j.modelPinned || "");
-      setSunoModel(j.sunoModel && SUNO_MODELS.some((m) => m.id === j.sunoModel) ? (j.sunoModel as string) : "V4_5PLUS"); // 🎚 v10.3
+      setSunoModel(j.sunoModel && SUNO_MODELS.some((m) => m.id === j.sunoModel) ? (j.sunoModel as string) : "V6_MINI"); // 🎚 v10.3
       setSEra(j.sEra && SUNO_ERAS.some((e) => e.id === j.sEra) ? (j.sEra as string) : "");
       setSTempo(j.sTempo && SUNO_TEMPOS.some((t) => t.id === j.sTempo) ? (j.sTempo as string) : "");
       setSInstr(Array.isArray(j.sInstr) ? (j.sInstr as string[]).filter((x) => typeof x === "string" && SUNO_INSTRS.includes(x)) : []);
@@ -1617,7 +1620,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
       genre, tags: styleStr,
       custom: lyr.length > 30, instrumental,
       vocalGender: instrumental ? undefined : vocal === "auto" ? undefined : vocal,
-      model: sunoModel, // 🎚 v10.3: versi Suno pilihan user (v3.5 → v5.5 terbaru)
+      model: sunoModel, // 🎚 v10.3: versi Suno pilihan user (v6 family + legacy provider)
       style_bits: { era: sEra || undefined, tempo: sTempo || undefined, instruments: sInstr.length ? sInstr.join(", ") : undefined }, // 🎚 v10.3: panel lengkap ala proyek pertama
       _raw_title: selTitle.slice(0, 80), _raw_lyrics: lyr, _raw_style: styleStr,
     };
@@ -3021,7 +3024,7 @@ export default function LahanStudio({ onExit, gotoEditor, gotoThumb }: { onExit:
                 <option key={m.id} value={m.id}>Suno {m.label}{m.note ? ` — ${m.note}` : ""}</option>
               ))}
             </select>
-            <p className="lh-note">Yang dipakai: <b>{sunoModel}</b> — dari v3.5 klasik sampai v5.5 🆕 terbaru.</p>
+            <p className="lh-note">Yang dipakai: <b>{sunoModel}</b> — v6-mini untuk semua akun; v6/v6-wild bergantung paket/provider.</p>
             <div className="lh-h2" style={{ marginTop: 10 }}>🕰 Era & tempo</div>
             <div className="lh-chips">
               {SUNO_ERAS.map((e) => (

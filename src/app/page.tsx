@@ -1402,7 +1402,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
   const [mStyle, setMStyle] = useState("");
   const [mGenre, setMGenre] = useState("pop ballad");
   const [mMood, setMMood] = useState("emotional, menyentuh");
-  const [mModel, setMModel] = useState("suno-v5");
+  const [mModel, setMModel] = useState("suno-v6-mini");
   const [mVocal, setMVocal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
   const [mTask, setMTask] = useState("");
   const [mStatus, setMStatus] = useState("");
@@ -2240,7 +2240,7 @@ function EditorScreen({ onExit, openDraftId, cmd, onSaved }: { onExit: () => voi
     setProjTitle(d.title || "Proyek Tanpa Judul"); setDraftId(d.id || "");
     setMTitle(d.mTitle || ""); setMLyrics(d.mLyrics || ""); setMStyle(d.mStyle || "");
     setMGenre(d.mGenre || "pop ballad"); setMMood(d.mMood || "emotional, menyentuh");
-    setMModel(d.mModel || "suno-v5"); setMVocal((d.mVocal === "vocal" ? "auto" : d.mVocal) || "auto");
+    setMModel(d.mModel || "suno-v6-mini"); setMVocal((d.mVocal === "vocal" ? "auto" : d.mVocal) || "auto");
     audioSyncedRef.current = d.audioSynced ? 1 : 0; // ⏱ v13.7: draf yang sudah disetarakan tidak diusik lagi
     setSelId(""); setClipBar(false); setCurT(0);
     (window as any).__v6prevlen = fromArrayLen((d.slides || []));
@@ -7588,7 +7588,7 @@ function MusikModal(p: any) {
         <textarea className="v6-inp" style={{ minHeight: 60 }} value={p.mStyle} placeholder={""} onChange={e => p.setMStyle(e.target.value)} />
         <div className="v6-lbl">MODEL</div>
         <select className="v6-inp" value={p.mModel} onChange={e => p.setMModel(e.target.value)}>
-          {["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"].map(m => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎 terbaik" : m === "suno-v3.5" ? " ⚡ tercepat" : ""}</option>)}
+          {["suno-v6-mini", "suno-v6", "suno-v6-wild", "suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"].map(m => <option key={m} value={m}>{m}{m === "suno-v6" ? " ✨ flagship" : m === "suno-v6-mini" ? " ⚡ cepat" : m === "suno-v6-wild" ? " 🔥 eksplorasi" : m === "suno-v3.5" ? " legacy" : ""}</option>)}
         </select>
         {p.mStatus && (
           <div className={p.mStatus === "selesai" ? "v6-okbox" : p.mStatus === "gagal" ? "v6-risk" : "v6-okbox"} style={{ borderColor: p.mStatus==="selesai" ? "rgba(34,197,94,.4)" : p.mStatus==="gagal" ? "rgba(239,68,68,.4)" : "rgba(251,191,36,.35)", background: p.mStatus==="selesai" ? "rgba(34,197,94,.1)" : p.mStatus==="gagal" ? "rgba(239,68,68,.12)" : "rgba(251,191,36,.1)" }}>

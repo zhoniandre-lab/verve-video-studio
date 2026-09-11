@@ -464,7 +464,7 @@ function buildBodyRaw(payload: any, provider: Provider): any {
       title: finalTitle,
       prompt: isCustom ? finalLyrics.slice(0, 5000) : finalPrompt.slice(0, 500),
       tags: styleStr.slice(0, 480),
-      mv: "chirp-v3-5",
+      mv: mapModelSonicSample(model),
       instrumental: !!instrumental,
     };
     if (isCustom) {
@@ -530,7 +530,7 @@ function buildBodyRaw(payload: any, provider: Provider): any {
     tags: tagsStr, // v10.2: gender tertanam
     make_instrumental: !!instrumental,
     wait_audio: false,
-    mv: "chirp-v3-5",
+    mv: mapModelSonicSample(model),
     model: mapModelGeneric(model),
   };
   if (vocalGender === "male") body.gender = "male";

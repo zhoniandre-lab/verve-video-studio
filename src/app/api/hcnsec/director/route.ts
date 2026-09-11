@@ -63,7 +63,7 @@ SET WIZARD — GRATIS (langsung dijalankan aplikasi, tanpa kredit):
 - {"op":"edit_scene_line","scene":N,"lyric_line":"baris karaoke pengganti untuk adegan N"}
 - {"op":"edit_lyrics","lyrics":"lirik utuh hasil tulis ulang — WAJIB mempertahankan tag [Verse]/[Chorus]"}
 - {"op":"set_style","mStyle":"style musik bebas bahasa Inggris"}
-- {"op":"set_music_knobs","era":"2020s|2010s|2000s|90s|80s","tempo":"slow|mid|fast","instruments":"dipisah koma","vocal":"male|female|auto|instrumental","model":"V4_5PLUS|V5_5|V5|V4_5ALL|V4_5|V4|V3_5"}
+- {"op":"set_music_knobs","era":"2020s|2010s|2000s|90s|80s","tempo":"slow|mid|fast","instruments":"dipisah koma","vocal":"male|female|auto|instrumental","model":"V6_MINI|V6|V6_WILD|V5_5|V5|V4_5PLUS|V4_5ALL|V4_5|V4|V3_5"}
   (isikan HANYA kenop yang diminta berubah)
 BAKAR KREDIT (aplikasi hanya MENAMPILKAN tombol Gas/Batal — keputusan di tangan pembuat):
 - {"op":"regen_scene","scene":N,"instruction":"arahan perubahan gambar adegan N"}
@@ -83,7 +83,7 @@ const COST_OPS = new Set(["regen_scene", "regen_song"]);
 const ERAS = new Set(["2020s", "2010s", "2000s", "90s", "80s"]);
 const TEMPOS = new Set(["slow", "mid", "fast"]);
 const VOCALS = new Set(["male", "female", "auto", "instrumental"]);
-const MODELS = new Set(["V4_5PLUS", "V5_5", "V5", "V4_5ALL", "V4_5", "V4", "V3_5"]);
+const MODELS = new Set(["V6_MINI", "V6", "V6_WILD", "V5_5", "V5", "V4_5PLUS", "V4_5ALL", "V4_5", "V4", "V3_5"]);
 
 function s(v: unknown, max: number): string { return typeof v === "string" ? v.trim().slice(0, max) : ""; }
 

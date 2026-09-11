@@ -408,17 +408,21 @@ export function audioProbeCukup(p: ProbeAudio): boolean {
   return p.bytes > 2048;
 }
 
-/** Model key seragam: UI lama memakai underscore (V4_5PLUS), provider memakai titik/hyphen. */
+/** Model key seragam: UI memakai underscore, provider memakai titik/hyphen. */
 function normalisasiModel(modelId: string, fallback = "v5.5"): string {
   return String(modelId || fallback)
     .toLowerCase()
     .replace(/_/g, ".")
-    .replace(/v(\d+)-(\d+)/g, "v$1.$2");
+    .replace(/v(\d+)-(\d+)/g, "v$1.$2")
+    .replace(/v(\d+)-(wild|mini)/g, "v$1.$2");
 }
 
 /** Peta model ke format Kie. */
 export function mapModelKie(modelId: string): string {
   const m = normalisasiModel(modelId);
+  if (m.includes("v6.wild")) return "V6_WILD";
+  if (m.includes("v6.mini")) return "V6_MINI";
+  if (m === "v6" || m.startsWith("v6.")) return "V6";
   if (m.includes("v5.5")) return "V5_5";
   if (m.includes("v5")) return "V5";
   if (m.includes("v4.5plus")) return "V4_5PLUS";
@@ -432,6 +436,9 @@ export function mapModelKie(modelId: string): string {
 /** Peta model ke format generik suno-compatible. */
 export function mapModelGeneric(modelId: string): string {
   const m = normalisasiModel(modelId);
+  if (m.includes("v6.wild")) return "suno-v6-wild";
+  if (m.includes("v6.mini")) return "suno-v6-mini";
+  if (m === "v6" || m.startsWith("v6.")) return "suno-v6";
   if (m.includes("v5.5")) return "suno-v5.5";
   if (m.includes("v5")) return "suno-v5";
   if (m.includes("v4.5plus")) return "suno-v4.5plus";
@@ -445,6 +452,9 @@ export function mapModelGeneric(modelId: string): string {
 /** Peta model MusicAPI (sonic-v*). */
 export function mapModelMusicApi(modelId: string): string {
   const m = normalisasiModel(modelId);
+  if (m.includes("v6.wild")) return "sonic-v6-wild";
+  if (m.includes("v6.mini")) return "sonic-v6-mini";
+  if (m === "v6" || m.startsWith("v6.")) return "sonic-v6";
   if (m.includes("v5.5")) return "sonic-v5-5";
   if (m.includes("v5")) return "sonic-v5";
   if (m.includes("v4.5plus")) return "sonic-v4-5-plus";
@@ -462,6 +472,9 @@ export function mapModelAimusicApi(modelId: string): string {
 /** Peta model untuk endpoint Sonic sample/upload-cover yang memakai nama chirp-*. */
 export function mapModelSonicSample(modelId: string): string {
   const m = normalisasiModel(modelId);
+  if (m.includes("v6.wild")) return "chirp-v6-wild";
+  if (m.includes("v6.mini")) return "chirp-v6-mini";
+  if (m === "v6" || m.startsWith("v6.")) return "chirp-v6";
   if (m.includes("v5.5")) return "chirp-v5-5";
   if (m.includes("v5")) return "chirp-v5";
   if (m.includes("v4.5plus")) return "chirp-v4-5-plus";
@@ -472,9 +485,13 @@ export function mapModelSonicSample(modelId: string): string {
   return "chirp-v5";
 }
 
-/** 🎵 v19.78 EvoLink: suno-v5.5-beta dst. */
+/** 🎵 EvoLink: V6 IDs are passed through only when the provider exposes them;
+ * older mappings remain for legacy accounts. */
 export function mapModelEvolink(modelId: string): string {
   const m = normalisasiModel(modelId);
+  if (m.includes("v6.wild")) return "suno-v6-wild-beta";
+  if (m.includes("v6.mini")) return "suno-v6-mini-beta";
+  if (m === "v6" || m.startsWith("v6.")) return "suno-v6-beta";
   if (m.includes("v5.5")) return "suno-v5.5-beta";
   if (m.includes("v5")) return "suno-v5-beta";
   if (m.includes("v4.5plus")) return "suno-v4.5plus-beta";
@@ -484,9 +501,13 @@ export function mapModelEvolink(modelId: string): string {
   return "suno-v5.5-beta";
 }
 
-/** 🎵 v19.78 CometAPI mv: chirp-crow = v5, chirp-auk = v4.5. */
+/** 🎵 CometAPI mv: legacy aliases plus the reported V6 identifiers.
+ * Comet must confirm these names on the account; do not silently downgrade. */
 export function mapModelComet(modelId: string): string {
-  const m = normalisasiModel(modelId, "v5");
+  const m = normalisasiModel(modelId, "v5.5");
+  if (m.includes("v6.wild")) return "hawk-wild";
+  if (m.includes("v6.mini")) return "chirp-goose";
+  if (m === "v6" || m.startsWith("v6.")) return "chirp-hawk";
   if (m.includes("v5.5") || m.includes("v5")) return "chirp-crow";
   if (m.includes("v4.5plus")) return "chirp-bluejay";
   if (m.includes("v4.5")) return "chirp-auk";
@@ -495,9 +516,12 @@ export function mapModelComet(modelId: string): string {
   return "chirp-crow";
 }
 
-/** 🎵 v19.78 TTAPI mv: names from the current TTAPI enum. */
+/** 🎵 TTAPI mv: V6 family plus legacy names for older provider accounts. */
 export function mapModelTtapi(modelId: string): string {
   const m = normalisasiModel(modelId);
+  if (m.includes("v6.wild")) return "chirp-v6-wild";
+  if (m.includes("v6.mini")) return "chirp-v6-mini";
+  if (m === "v6" || m.startsWith("v6.")) return "chirp-v6";
   if (m.includes("v5.5")) return "chirp-v5-5";
   if (m.includes("v5")) return "chirp-v5";
   if (m.includes("v4.5plus")) return "chirp-v4-5+";

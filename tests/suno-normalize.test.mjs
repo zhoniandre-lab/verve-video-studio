@@ -90,12 +90,26 @@ const mk = normalizeLagu({ code: 200, data: { status: "SUCCESS", response: { sun
 T("Kie multi-segmen: audio_urls = 2", Array.isArray(mk.audio_urls) && mk.audio_urls.length === 2, String(mk.audio_urls?.length));
 
 /* 14. Model UI underscore harus dipetakan ke nama model provider yang valid. */
+T("model V6_MINI → Kie V6_MINI", mapModelKie("V6_MINI") === "V6_MINI");
+T("model V6 → Kie V6", mapModelKie("V6") === "V6");
+T("model V6_WILD → Kie V6_WILD", mapModelKie("V6_WILD") === "V6_WILD");
 T("model V4_5PLUS → Kie V4_5PLUS", mapModelKie("V4_5PLUS") === "V4_5PLUS");
 T("model V4_5PLUS → MusicAPI sonic-v4-5-plus", mapModelMusicApi("V4_5PLUS") === "sonic-v4-5-plus");
 T("model V4_5PLUS → AIMusicAPI sonic-v4-5-plus", mapModelAimusicApi("V4_5PLUS") === "sonic-v4-5-plus");
+T("model V6_MINI → MusicAPI sonic-v6-mini", mapModelMusicApi("V6_MINI") === "sonic-v6-mini");
+T("model V6 → MusicAPI sonic-v6", mapModelMusicApi("V6") === "sonic-v6");
+T("model V6_WILD → MusicAPI sonic-v6-wild", mapModelMusicApi("V6_WILD") === "sonic-v6-wild");
 T("model V5_5 → MusicAPI sonic-v5-5", mapModelMusicApi("V5_5") === "sonic-v5-5");
+T("model V6_MINI → EvoLink beta", mapModelEvolink("V6_MINI") === "suno-v6-mini-beta");
+T("model V6_WILD → EvoLink beta", mapModelEvolink("V6_WILD") === "suno-v6-wild-beta");
 T("model V4_5PLUS → EvoLink beta", mapModelEvolink("V4_5PLUS") === "suno-v4.5plus-beta");
+T("model V6_MINI → Comet reported v6-mini", mapModelComet("V6_MINI") === "chirp-goose");
+T("model V6_WILD → Comet reported v6-wild", mapModelComet("V6_WILD") === "hawk-wild");
+T("model V6 → Comet reported v6", mapModelComet("V6") === "chirp-hawk");
 T("model V4_5PLUS → Comet bluejay", mapModelComet("V4_5PLUS") === "chirp-bluejay");
+T("model V6_MINI → TTAPI chirp-v6-mini", mapModelTtapi("V6_MINI") === "chirp-v6-mini");
+T("model V6 → TTAPI chirp-v6", mapModelTtapi("V6") === "chirp-v6");
+T("model V6_WILD → TTAPI chirp-v6-wild", mapModelTtapi("V6_WILD") === "chirp-v6-wild");
 T("model V4_5PLUS → TTAPI v4-5+", mapModelTtapi("V4_5PLUS") === "chirp-v4-5+");
 
 const sonicPoll = normalizeLagu({ code: 200, data: [{ clip_id: "m1", state: "succeeded", audio_url: "https://cdn/music.mp3", duration: 180 }] }, "musicapi");

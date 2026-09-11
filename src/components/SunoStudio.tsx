@@ -3,7 +3,8 @@
    🎵 v19.77: SATU generate = SATU lagu. Provider Suno kasih 2 variasi —
    ditampilkan TERPISAH (A/B), JANGAN digabung jadi 1 file dua nada.
    🎵 v19.85: KEMBALI NORMAL — lagu dipakai apa adanya, tidak ada rute
-   ke Spectrum (di Spectrum sudah ada generate lagu sendiri). */
+   ke Spectrum (di Spectrum sudah ada generate lagu sendiri).
+   🎵 v6: model terbaru diprioritaskan; provider lama tetap ditampilkan sebagai legacy. */
 import { useEffect, useRef, useState } from "react";
 import { pilihKlipDariHasil, type KlipLagu } from "@/lib/suno-normalize";
 import { META_PROV_SUNO } from "@/lib/suno-providers";
@@ -21,7 +22,7 @@ import {
 } from "@/lib/suno-keys";
 
 const PROVIDERS = META_PROV_SUNO;
-const MODELS = ["suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"];
+const MODELS = ["suno-v6-mini", "suno-v6", "suno-v6-wild", "suno-v5.5", "suno-v5", "suno-v4.5", "suno-v4", "suno-v3.5"];
 
 export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   // Baca storage setelah mount agar SSR/hydration tidak menimpa key yang
@@ -35,7 +36,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
   const [lyrics, setLyrics] = useState("");
   // 🎤 v19.62: pilihan VOKAL — auto / pria / wanita / instrumen
   const [vokal, setVokal] = useState<"auto" | "male" | "female" | "instrumental">("auto");
-  const [model, setModel] = useState("suno-v5");
+  const [model, setModel] = useState("suno-v6-mini");
   // 🔑 v19.62: gerbang ganti key — muncul otomatis kalau kredit habis
   const [gantiKey, setGantiKey] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -605,7 +606,7 @@ export default function SunoStudio({ onExit }: { onExit?: () => void }) {
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
           <span style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 800 }}>Model</span>
           <select className="v6-inp" style={{ flex: 1, minWidth: 0 }} value={model} onChange={(e) => setModel(e.target.value)}>
-            {MODELS.map((m) => <option key={m} value={m}>{m}{m === "suno-v5.5" ? " 💎" : ""}</option>)}
+            {MODELS.map((m) => <option key={m} value={m}>{m}{m === "suno-v6" ? " ✨" : m === "suno-v6-mini" ? " ⚡" : m === "suno-v6-wild" ? " 🔥" : ""}</option>)}
           </select>
         </div>
         <div className="v6-lbl" style={{ marginTop: 8 }}>HASIL GENERATE</div>

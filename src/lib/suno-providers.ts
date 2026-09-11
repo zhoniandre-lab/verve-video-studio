@@ -51,8 +51,8 @@ export const META_PROV_SUNO: MetaProvSuno[] = [
   },
   {
     id: "evolink",
-    label: "🧬 EvoLink (Suno v5/v5.5)",
-    hint: "Daftar evolink.ai → Dashboard → API Keys. Suno v4–v5.5. Umumnya BERBAYAR (~$0.12/generate). Free credits tidak dijamin.",
+    label: "🧬 EvoLink (Suno-compatible)",
+    hint: "Daftar evolink.ai → Dashboard → API Keys. V6 hanya bisa dipakai jika model v6 sudah muncul di akun/provider; legacy tetap tersedia bila didukung. Umumnya berbayar, free credits tidak dijamin.",
     keyUrl: "https://evolink.ai/dashboard",
     dash: "https://evolink.ai/suno",
   },
@@ -65,8 +65,8 @@ export const META_PROV_SUNO: MetaProvSuno[] = [
   },
   {
     id: "ttapi",
-    label: "🧩 TTAPI (Suno v5)",
-    hint: "Daftar dashboard.ttapi.io → Get API key. Tempel key di sini (header TT-API-KEY). Model chirp-v5 / v5.5. Cek kredit di dashboard mereka.",
+    label: "🧩 TTAPI (Suno-compatible)",
+    hint: "Daftar dashboard.ttapi.io → Get API key. Tempel key di sini (header TT-API-KEY). Pilih v6 hanya jika enum model v6 tersedia di dashboard; cek kredit/provider.",
     keyUrl: "https://dashboard.ttapi.io/",
     dash: "https://dashboard.ttapi.io/",
   },
