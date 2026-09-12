@@ -1727,6 +1727,12 @@ function _cw(ctx: CanvasRenderingContext2D, fontKey: string, teks: string): numb
   return w;
 }
 
+/** Deteksi aksara RTL utama (Arab/Persia/Urdu/Ibrani) untuk caption.
+ * Arab harus dirender right-to-left, bukan sekadar digeser ke kanan. */
+export function isRtlCaptionText(text: string): boolean {
+  return /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(String(text || ""));
+}
+
 export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H: number, words: CapWord[], t: number, capStyle: string, opts?: { yRatio?: number; sizeRatio?: number; padRatio?: number }) {
   if (!words || !words.length) return;
   // 🐛 FIX v19.45: pilih baris yang PALING RELEVAN (bukan baris pertama yang aktif).
@@ -1753,6 +1759,7 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
   }
   const lineWords = words.filter(w => w.line === lineNo);
   const exact = words.find(w => t >= w.start && t < w.end && w.line === lineNo);
+  const isRTL = lineWords.some(w => isRtlCaptionText(w.text));
 
   // 🎭 v17.6 / v19.76: posisi & ukuran — TENGAH simetris, tidak nempel pinggir frame
   const isIndie = capStyle === "indie" || capStyle === "serifgold";
@@ -1774,11 +1781,14 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
   if (!toks.length) return;
 
   ctx.save();
-  const fontFace = isIndie
-    ? `'Playfair Display','Lora',Georgia,serif`
-    : `'Poppins',system-ui,sans-serif`;
+  const fontFace = isRTL
+    ? `'Noto Naskh Arabic','Amiri','Scheherazade New','Tahoma',serif`
+    : isIndie
+      ? `'Playfair Display','Lora',Georgia,serif`
+      : `'Poppins',system-ui,sans-serif`;
   const fontW = isIndie ? "600" : "900";
   const pasangFont = () => { ctx.font = `${fontW} ${fs}px ${fontFace}`; };
+  ctx.direction = isRTL ? "rtl" : "ltr";
   pasangFont();
   ctx.textBaseline = "middle"; ctx.lineJoin = "round";
 
@@ -1815,16 +1825,18 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
   groups.forEach((gi, gIdx) => {
     const gy = y0 + gIdx * lineH;
     const groupW = lebarGroup(widths, gi, gap);
-    let x = posisiTengahAman(groupW, W, padX); ctx.textAlign = "left";
+    const leftX = posisiTengahAman(groupW, W, padX);
+    let x = isRTL ? leftX + groupW : leftX;
+    ctx.textAlign = isRTL ? "right" : "left";
 
     if (capStyle === "boxhitam" || capStyle === "bar") {
-      const bx = x - fs * 0.28, by = gy - fs * 0.62, bw = groupW + fs * 0.56, bh = fs * 1.24;
+      const bx = (isRTL ? x - groupW : x) - fs * 0.28, by = gy - fs * 0.62, bw = groupW + fs * 0.56, bh = fs * 1.24;
       if (capStyle === "boxhitam") {
         ctx.fillStyle = "rgba(0,0,0,0.62)";
         roundRectPath(ctx, bx, by, bw, bh, fs * 0.22); ctx.fill();
       } else {
         ctx.strokeStyle = "rgba(251,191,36,0.9)"; ctx.lineWidth = Math.max(2, fs * 0.08);
-        ctx.beginPath(); ctx.moveTo(x, gy + fs * 0.58); ctx.lineTo(x + groupW, gy + fs * 0.58); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(isRTL ? x - groupW : x, gy + fs * 0.58); ctx.lineTo(isRTL ? x : x + groupW, gy + fs * 0.58); ctx.stroke();
       }
     }
 
@@ -1850,7 +1862,8 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
 
       if ((capStyle === "pop" || capStyle === "boxedkara") && isActive) {
         ctx.fillStyle = capStyle === "boxedkara" ? "#fde047" : "#fde047";
-        roundRectPath(ctx, x - fs * 0.12, gy - fs * 0.58, widths[wi] + fs * 0.24, fs * 1.16, fs * 0.2); ctx.fill();
+        const tx = isRTL ? x - widths[wi] : x;
+        roundRectPath(ctx, tx - fs * 0.12, gy - fs * 0.58, widths[wi] + fs * 0.24, fs * 1.16, fs * 0.2); ctx.fill();
         ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = fs * 0.06;
         ctx.strokeText(tk.text, x, gy);
       } else {
@@ -1859,7 +1872,7 @@ export function paintPreviewCaptions(ctx: CanvasRenderingContext2D, W: number, H
       if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = fs * (isActive ? 0.55 : 0.28); }
       ctx.fillStyle = fill; ctx.fillText(tk.text, x, gy);
       ctx.shadowBlur = 0;
-      x += widths[wi] + gap;
+      x += isRTL ? -(widths[wi] + gap) : (widths[wi] + gap);
     });
   });
   ctx.restore();

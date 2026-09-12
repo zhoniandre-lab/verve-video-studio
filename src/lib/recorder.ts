@@ -15,7 +15,7 @@
 import type { VizStyle } from "./types";
 import { avGet, avPut, avDel } from "./avault";
 import {
-  buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans,
+  buildTimeline, locate, paintClips, captionsFromClips, canonicalTrans, isRtlCaptionText,
   setDrawBg, getDrawBg, preloadStickerImages, preloadStickerVideos, paintFloatingTexts, paintFloatingStickers,
 } from "./editing";
 import type { SlideOpt, Timeline } from "./editing";
@@ -995,14 +995,17 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
   const { W, H, rgb } = s;
   const style = s.captionStyle || "capcut";
   const baseY = H*0.72;
+  const isRTL = words.some(w => isRtlCaptionText(w.text));
+  const fontStack = isRTL ? "'Noto Naskh Arabic','Amiri','Scheherazade New','Tahoma',serif" : "system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
 
   ctx.save();
+  ctx.direction = isRTL ? "rtl" : "ltr";
   ctx.textAlign="center"; ctx.textBaseline="middle";
 
   // CapCut "Rubah" yellow-pop style
   if (style==="capcut") {
     const fontSize = Math.max(28, Math.floor(H*0.055));
-    ctx.font = `900 ${fontSize}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
+    ctx.font = `900 ${fontSize}px ${fontStack}`;
     const lineH = fontSize*1.25;
     // Layout kata ke 1-2 baris
     const maxW = W*0.9;
@@ -1026,14 +1029,14 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
       });
       const spaceW = ctx.measureText(" ").width;
       totalTextW += spaceW*(ln.length-1);
-      let x = W/2 - totalTextW/2;
+      let x = isRTL ? W/2 + totalTextW/2 : W/2 - totalTextW/2;
       ww.forEach((w)=>{
         const isActive = w.start <= t && t <= w.end;
         const scale = isActive ? 1.1 : 1.0;
         const color = isActive ? "#fde047" : "#fff";
         // Outline hitam tebal (CapCut khas)
         ctx.save();
-        ctx.translate(x + w.w/2, y);
+        ctx.translate(isRTL ? x - w.w/2 : x + w.w/2, y);
         ctx.scale(scale, scale);
         ctx.lineWidth = Math.max(5, fontSize/7);
         ctx.strokeStyle = "rgba(0,0,0,0.95)";
@@ -1045,14 +1048,14 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
         ctx.shadowBlur = isActive ? 18 : 0;
         ctx.fillText(w.text, 0, 0);
         ctx.restore();
-        x += w.w + spaceW;
+        x += isRTL ? -(w.w + spaceW) : (w.w + spaceW);
       });
     });
   }
   // Neon style
   else if (style==="neon") {
     const fontSize = Math.max(26, Math.floor(H*0.05));
-    ctx.font = `900 ${fontSize}px system-ui,sans-serif`;
+    ctx.font = `900 ${fontSize}px ${fontStack}`;
     const cur = s.captions[activeIdx];
     const prev = s.captions[activeIdx-1]?.text||"";
     const line2 = cur.text;
@@ -1079,7 +1082,7 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
   // Bold White style (CapCut klasik: putih + outline hitam tebal, aktif sedikit lebih besar)
   else if (style==="boldwhite" || style==="pop" || style==="karaoke") {
     const fontSize = Math.max(28, Math.floor(H*0.055));
-    ctx.font = `900 ${fontSize}px system-ui,sans-serif`;
+    ctx.font = `900 ${fontSize}px ${fontStack}`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     // Tampilkan 2 baris (sebelum+aktif+sesudah)
     const around = s.captions.slice(Math.max(0,activeIdx-1), Math.min(s.captions.length, activeIdx+2));
@@ -1106,7 +1109,7 @@ function drawCaptions(ctx: CanvasRenderingContext2D, s: DrawState) {
   // Gradient (CapCut gradient pink-cyan)
   else if (style==="gradient") {
     const fontSize = Math.max(28, Math.floor(H*0.055));
-    ctx.font = `900 ${fontSize}px system-ui,sans-serif`;
+    ctx.font = `900 ${fontSize}px ${fontStack}`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.lineWidth=Math.max(5,fontSize/7); ctx.strokeStyle="rgba(0,0,0,0.9)"; ctx.lineJoin="round";
     const cur = s.captions[activeIdx];
